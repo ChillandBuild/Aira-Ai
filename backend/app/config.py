@@ -4,9 +4,9 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     supabase_url: str
     supabase_service_key: str
-    gemini_api_key: str
-    twilio_account_sid: str
-    twilio_auth_token: str
+    gemini_api_key: str | None = None
+    twilio_account_sid: str | None = None
+    twilio_auth_token: str | None = None
     twilio_whatsapp_number: str = "whatsapp:+14155238886"
     exotel_sid: str | None = None
     exotel_api_key: str | None = None
