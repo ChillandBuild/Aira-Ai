@@ -255,13 +255,14 @@ async def generate_reply(
         sid = await send_whatsapp(phone, reply_text) if phone else None
 
     # Step 4: Store outbound message
+    sid_field = "meta_message_id" if channel == "whatsapp" else "twilio_message_sid"
     db.table("messages").insert({
         "lead_id": str(lead_id),
         "direction": "outbound",
         "channel": channel,
         "content": reply_text,
         "is_ai_generated": is_ai,
-        "twilio_message_sid": sid,
+        sid_field: sid,
     }).execute()
 
     # Step 5: Re-score lead and update segment
