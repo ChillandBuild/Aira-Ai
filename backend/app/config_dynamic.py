@@ -1,0 +1,54 @@
+import os
+import time
+import logging
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+_CACHE: dict[str, tuple[float, Optional[str]]] = {}
+_TTL = 60.0
+
+_ENV_MAP = {
+    "meta_access_token": "META_ACCESS_TOKEN",
+    "meta_phone_number_id": "META_PHONE_NUMBER_ID",
+    "meta_webhook_verify_token": "META_WEBHOOK_VERIFY_TOKEN",
+    "twilio_account_sid": "TWILIO_ACCOUNT_SID",
+    "twilio_auth_token": "TWILIO_AUTH_TOKEN",
+    "gemini_api_key": "GEMINI_API_KEY",
+    "ai_auto_reply_enabled": "AI_AUTO_REPLY_ENABLED",
+    "faq_match_threshold": "FAQ_MATCH_THRESHOLD",
+}
+
+
+def get_setting(key: str, fallback: Optional[str] = None) -> Optional[str]:
+    """Read from cache → app_settings table → env var → fallback."""
+    now = time.monotonic()
+    cached = _CACHE.get(key)
+    if cached and now - cached[0] < _TTL:
+        return cached[1]
+
+    value: Optional[str] = None
+    try:
+        from app.db.supabase import get_supabase
+        db = get_supabase()
+        row = db.table("app_settings").select("value").eq("key", key).maybe_single().execute()
+        if row and row.data:
+            value = row.data.get("value")
+    except Exception as e:
+        logger.warning(f"get_setting({key}) DB read failed: {e}")
+
+    if not value:
+        value = os.environ.get(_ENV_MAP.get(key, key.upper()))
+
+    if not value:
+        value = fallback
+
+    _CACHE[key] = (now, value)
+    return value
+
+
+def invalidate_cache(key: Optional[str] = None) -> None:
+    if key:
+        _CACHE.pop(key, None)
+    else:
+        _CACHE.clear()
