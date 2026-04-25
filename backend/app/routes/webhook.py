@@ -44,8 +44,10 @@ async def whatsapp_webhook(
             payload = {}
         for entry in payload.get("entry", []):
             for change in entry.get("changes", []):
-                if change.get("field") == "phone_number_quality_update":
-                    value = change.get("value", {})
+                field = change.get("field")
+                value = change.get("value", {})
+
+                if field == "phone_number_quality_update":
                     meta_phone_number_id = value.get("phone_number_id")
                     quality_rating = value.get("quality_rating", "")
                     current_limit = value.get("current_limit")
@@ -62,7 +64,57 @@ async def whatsapp_webhook(
                             await handle_quality_red(row_id)
                         elif quality_rating == "YELLOW":
                             await handle_quality_yellow(row_id)
-                    return {"status": "ok"}
+
+                elif field == "messages":
+                    for msg in value.get("messages", []):
+                        msg_type = msg.get("type")
+                        if msg_type not in ("text", "button", "interactive"):
+                            continue
+                        wa_id = msg.get("from", "")
+                        phone = f"+{wa_id}" if wa_id and not wa_id.startswith("+") else wa_id
+                        if msg_type == "text":
+                            body = msg.get("text", {}).get("body", "").strip()
+                        elif msg_type == "button":
+                            body = msg.get("button", {}).get("text", "").strip()
+                        elif msg_type == "interactive":
+                            inter = msg.get("interactive", {})
+                            body = (inter.get("button_reply") or inter.get("list_reply") or {}).get("title", "").strip()
+                        else:
+                            body = ""
+                        msg_id = msg.get("id", "")
+                        if not phone or not body:
+                            continue
+                        db = get_supabase()
+                        logger.info(f"Inbound Meta WhatsApp from {phone}: {body!r}")
+                        existing = db.table("leads").select("id,score,segment").eq("phone", phone).limit(1).execute()
+                        if existing.data:
+                            lead_id = existing.data[0]["id"]
+                        else:
+                            new_lead = db.table("leads").insert({
+                                "phone": phone,
+                                "source": "whatsapp",
+                                "score": 5,
+                                "segment": "C",
+                            }).execute()
+                            lead_id = new_lead.data[0]["id"]
+                            record_stage_event(lead_id, to_segment="C", event_type="created", metadata={"source": "whatsapp"}, db=db)
+                        already = db.table("messages").select("id").eq("meta_message_id", msg_id).limit(1).execute()
+                        if already.data:
+                            continue
+                        db.table("messages").insert({
+                            "lead_id": lead_id,
+                            "direction": "inbound",
+                            "channel": "whatsapp",
+                            "content": body,
+                            "is_ai_generated": False,
+                            "meta_message_id": msg_id,
+                        }).execute()
+                        try:
+                            from app.services.ai_reply import generate_reply
+                            await generate_reply(lead_id=lead_id, message=body, phone=phone)
+                        except Exception as e:
+                            logger.error(f"AI reply failed for lead {lead_id}: {e}")
+
         return {"status": "ok"}
 
     if not From or not Body or not MessageSid:

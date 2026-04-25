@@ -1,7 +1,6 @@
 import logging
 import time
 import httpx
-from twilio.rest import Client as TwilioClient
 import google.generativeai as genai
 from app.config import settings
 from app.config_dynamic import get_setting
@@ -96,19 +95,16 @@ def _check_faq(message: str, db) -> str | None:
         logger.error(f"FAQ check failed: {e}")
     return None
 
-def send_whatsapp(to_phone: str, message: str) -> str | None:
-    """Send a WhatsApp message via Twilio. Returns message SID or None on failure."""
+async def send_whatsapp(to_phone: str, message: str) -> str | None:
+    """Send a WhatsApp message via Meta Cloud API. Returns message ID or None on failure."""
     try:
-        client = TwilioClient(settings.twilio_account_sid, settings.twilio_auth_token)
-        msg = client.messages.create(
-            from_=settings.twilio_whatsapp_number,
-            to=f"whatsapp:{to_phone}",
-            body=message,
-        )
-        logger.info(f"Twilio sent to {to_phone}: sid={msg.sid} status={msg.status}")
-        return msg.sid
+        from app.services.meta_cloud import send_text_message
+        data = await send_text_message(to_number=to_phone, text=message)
+        mid = (data.get("messages") or [{}])[0].get("id")
+        logger.info(f"Meta sent to {to_phone}: id={mid}")
+        return mid
     except Exception as e:
-        logger.error(f"Twilio send failed to {to_phone}: {e}")
+        logger.error(f"Meta send failed to {to_phone}: {e}")
         return None
 
 def send_instagram(ig_user_id: str, message: str) -> str | None:
@@ -256,7 +252,7 @@ async def generate_reply(
     if channel == "instagram":
         sid = send_instagram(ig_user_id, reply_text) if ig_user_id else None
     else:
-        sid = send_whatsapp(phone, reply_text) if phone else None
+        sid = await send_whatsapp(phone, reply_text) if phone else None
 
     # Step 4: Store outbound message
     db.table("messages").insert({
