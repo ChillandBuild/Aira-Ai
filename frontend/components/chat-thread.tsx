@@ -28,13 +28,12 @@ export function ChatThread({ lead }: { lead: Lead }) {
   const [nameDraft, setNameDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     setCurrent(lead);
     setDraft("");
     setSendError(null);
     setEditingName(false);
-  }, [lead.id]);
+  }, [lead.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function saveName() {
     const trimmed = nameDraft.trim();

@@ -120,14 +120,13 @@ export default function TelecallingPage() {
   const [noteSaving, setNoteSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     api.callers.list().then((rows) => {
       setCallers(rows);
       if (rows.length && !selected) setSelected(rows[0]);
     });
     api.leads.list({ segment: "A", limit: 10 }).then(setQueue);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!selected) return;
