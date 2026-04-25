@@ -64,7 +64,7 @@ async def run_due_follow_ups(limit: int = Query(20, ge=1, le=100)):
 
         try:
             message = generate_reengagement_message(job["lead_id"], job["cadence"])
-            sid = send_whatsapp(lead_data["phone"], message)
+            sid = await send_whatsapp(lead_data["phone"], message)
             if not sid:
                 raise RuntimeError("Channel send failed")
             db.table("messages").insert(
@@ -74,7 +74,7 @@ async def run_due_follow_ups(limit: int = Query(20, ge=1, le=100)):
                     "channel": "whatsapp",
                     "content": message,
                     "is_ai_generated": True,
-                    "twilio_message_sid": sid,
+                    "meta_message_id": sid,
                 }
             ).execute()
             db.table("follow_up_jobs").update(

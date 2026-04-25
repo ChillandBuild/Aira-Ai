@@ -174,7 +174,7 @@ async def upload_leads(
     failed = 0
     if campaign_message:
         for phone in phones:
-            sid = send_whatsapp(phone, campaign_message)
+            sid = await send_whatsapp(phone, campaign_message)
             if sid:
                 sent += 1
                 lead = db.table("leads").select("id").eq("phone", phone).limit(1).execute()
@@ -185,7 +185,7 @@ async def upload_leads(
                         "channel": "whatsapp",
                         "content": campaign_message,
                         "is_ai_generated": False,
-                        "twilio_message_sid": sid,
+                        "meta_message_id": sid,
                     }).execute()
             else:
                 failed += 1

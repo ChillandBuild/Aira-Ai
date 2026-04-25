@@ -86,7 +86,7 @@ async def broadcast_to_segment(segment: str = Path(pattern="^[ABCD]$")):
         if t["id"] not in eligible_ids:
             skipped_window += 1
             continue
-        sid = send_whatsapp(t["phone"], message)
+        sid = await send_whatsapp(t["phone"], message)
         if sid:
             sent += 1
             db.table("messages").insert({
@@ -95,7 +95,7 @@ async def broadcast_to_segment(segment: str = Path(pattern="^[ABCD]$")):
                 "channel": "whatsapp",
                 "content": message,
                 "is_ai_generated": False,
-                "twilio_message_sid": sid,
+                "meta_message_id": sid,
             }).execute()
         else:
             failed += 1

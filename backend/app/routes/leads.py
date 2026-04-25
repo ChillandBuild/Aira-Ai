@@ -218,18 +218,19 @@ async def send_human_message(lead_id: UUID, payload: HumanMessage):
         phone = lead.data.get("phone")
         if not phone:
             raise HTTPException(status_code=400, detail="Lead has no phone number")
-        sid = send_whatsapp(phone, content)
+        sid = await send_whatsapp(phone, content)
 
     if not sid:
         raise HTTPException(status_code=502, detail="Channel send failed — check backend logs")
 
+    sid_field = "meta_message_id" if channel == "whatsapp" else "twilio_message_sid"
     row = db.table("messages").insert({
         "lead_id": str(lead_id),
         "direction": "outbound",
         "channel": channel,
         "content": content,
         "is_ai_generated": False,
-        "twilio_message_sid": sid,
+        sid_field: sid,
     }).execute()
     return row.data[0] if row.data else {"sent": True, "sid": sid}
 
