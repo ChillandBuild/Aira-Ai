@@ -28,6 +28,7 @@ export function ChatThread({ lead }: { lead: Lead }) {
   const [nameDraft, setNameDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     setCurrent(lead);
     setDraft("");

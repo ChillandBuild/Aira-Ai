@@ -162,7 +162,7 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="mb-7">
         <h1 className="page-title">Good morning 👋</h1>
-        <p className="page-subtitle">Here's what's happening with your leads today.</p>
+        <p className="page-subtitle">Here&apos;s what&apos;s happening with your leads today.</p>
       </div>
 
       {loading ? (

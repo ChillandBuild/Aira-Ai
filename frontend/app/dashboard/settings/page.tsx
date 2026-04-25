@@ -148,6 +148,7 @@ export default function SettingsPage() {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function getDisplayValue(key: string): string {
     const s = settings.find((r) => r.key === key);
     if (!s) return "";

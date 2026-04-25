@@ -24,9 +24,8 @@ export default function AiTunePage() {
     }
   }
 
-  useEffect(() => {
-    loadAll();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadAll(); }, []);
 
   useEffect(() => {
     const cur = prompts.find((x) => x.name === activeName);

@@ -120,6 +120,7 @@ export default function TelecallingPage() {
   const [noteSaving, setNoteSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     api.callers.list().then((rows) => {
       setCallers(rows);
