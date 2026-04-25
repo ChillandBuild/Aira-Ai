@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { api, Lead, SegmentTemplate, BroadcastResult } from "@/lib/api";
 import { SegmentBadge } from "@/components/segment-badge";
-import { Download, Send, Save, Pencil } from "lucide-react";
+import { Download, Send, Save, Pencil, Plus, X, Loader2 } from "lucide-react";
 import { timeAgo, formatPhone } from "@/lib/utils";
 
 function NameCell({ lead, onUpdate }: { lead: Lead; onUpdate: (l: Lead) => void }) {
@@ -61,6 +61,114 @@ function NameCell({ lead, onUpdate }: { lead: Lead; onUpdate: (l: Lead) => void 
 
 const SEGMENTS = ["A", "B", "C", "D"] as const;
 
+function ComposeModal({ onClose, onSent }: { onClose: () => void; onSent: () => void }) {
+  const [phone, setPhone] = useState("");
+  const [name, setName] = useState("");
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function send() {
+    if (!phone.trim() || !message.trim()) {
+      setError("Phone and message are required");
+      return;
+    }
+    setSending(true);
+    setError(null);
+    try {
+      await api.leads.compose(phone.trim(), message.trim(), name.trim() || undefined);
+      onSent();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Send failed");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-surface rounded-card shadow-card w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="font-display text-lg font-bold text-tertiary">New WhatsApp Message</h3>
+          <button onClick={onClose} className="text-on-surface-muted hover:text-on-surface">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="font-label text-xs font-semibold text-on-surface-muted uppercase tracking-wider">
+              Phone Number
+            </label>
+            <input
+              autoFocus
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+919876543210"
+              className="mt-1 w-full px-4 py-2.5 bg-surface-low rounded-xl font-body text-sm border border-surface-mid focus:ring-2 focus:ring-tertiary focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="font-label text-xs font-semibold text-on-surface-muted uppercase tracking-wider">
+              Name <span className="text-on-surface-muted/60 normal-case">(optional)</span>
+            </label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Lead name"
+              className="mt-1 w-full px-4 py-2.5 bg-surface-low rounded-xl font-body text-sm border border-surface-mid focus:ring-2 focus:ring-tertiary focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="font-label text-xs font-semibold text-on-surface-muted uppercase tracking-wider">
+              Message
+            </label>
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              rows={4}
+              placeholder="Hello! ..."
+              className="mt-1 w-full px-4 py-2.5 bg-surface-low rounded-xl font-body text-sm border border-surface-mid focus:ring-2 focus:ring-tertiary focus:outline-none resize-none"
+            />
+          </div>
+
+          <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-100">
+            <p className="font-label text-xs text-amber-800 leading-relaxed">
+              <strong>Heads up:</strong> If this person hasn&apos;t messaged you in the last 24 hours, WhatsApp requires an <strong>approved template message</strong> — freeform text will fail. Use the Templates page to send templated outreach.
+            </p>
+          </div>
+
+          {error && (
+            <div className="p-3 rounded-xl bg-red-50 border border-red-100">
+              <p className="font-label text-xs text-red-700">{error}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 mt-6">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-surface-low text-on-surface-muted rounded-xl font-label text-sm font-semibold hover:bg-surface-mid"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={send}
+            disabled={sending}
+            className="flex items-center gap-2 px-4 py-2 bg-tertiary text-white rounded-xl font-label text-sm font-semibold hover:bg-tertiary/90 disabled:opacity-50"
+          >
+            {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+            {sending ? "Sending…" : "Send"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function LeadsPage() {
   const [tab, setTab] = useState<typeof SEGMENTS[number]>("A");
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -70,6 +178,7 @@ export default function LeadsPage() {
   const [savingTpl, setSavingTpl] = useState(false);
   const [broadcasting, setBroadcasting] = useState(false);
   const [lastResult, setLastResult] = useState<BroadcastResult | null>(null);
+  const [composing, setComposing] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -122,15 +231,31 @@ export default function LeadsPage() {
           <h1 className="font-display text-3xl font-bold text-tertiary">Leads</h1>
           <p className="font-body text-on-surface-muted mt-1">Priority segments A → D</p>
         </div>
-        <a
-          href={api.leads.exportUrl(tab)}
-          download
-          className="flex items-center gap-2 px-4 py-2.5 bg-tertiary text-white rounded-xl font-label text-sm font-semibold hover:bg-tertiary/90 transition-colors"
-        >
-          <Download size={16} />
-          Export Segment {tab}
-        </a>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setComposing(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-secondary text-white rounded-xl font-label text-sm font-semibold hover:bg-secondary/90 transition-colors"
+          >
+            <Plus size={16} />
+            New Message
+          </button>
+          <a
+            href={api.leads.exportUrl(tab)}
+            download
+            className="flex items-center gap-2 px-4 py-2.5 bg-tertiary text-white rounded-xl font-label text-sm font-semibold hover:bg-tertiary/90 transition-colors"
+          >
+            <Download size={16} />
+            Export Segment {tab}
+          </a>
+        </div>
       </div>
+
+      {composing && (
+        <ComposeModal
+          onClose={() => setComposing(false)}
+          onSent={() => api.leads.list({ segment: tab, limit: 200 }).then(setLeads)}
+        />
+      )}
 
       <div className="flex gap-1 mb-6 bg-surface-mid p-1 rounded-xl w-fit">
         {SEGMENTS.map((seg) => (

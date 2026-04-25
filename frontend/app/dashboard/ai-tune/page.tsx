@@ -113,15 +113,17 @@ export default function AiTunePage() {
             </select>
           </div>
           {activePrompt && (
-            <p className="font-label text-xs text-on-surface-muted mb-2">
+            <p className="font-label text-sm text-on-surface-muted mb-3">
               Updated {timeAgo(activePrompt.updated_at)} \u2014 {activePrompt.content.length} chars
             </p>
           )}
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            rows={16}
-            className="w-full px-4 py-3 rounded-xl bg-surface-low border border-surface-mid font-mono text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-tertiary"
+            rows={18}
+            spellCheck={false}
+            className="w-full px-5 py-4 rounded-xl bg-surface-low border border-surface-mid font-mono text-base leading-7 focus:outline-none focus:ring-2 focus:ring-tertiary"
+            style={{ fontSize: "15px", lineHeight: "1.7" }}
           />
           <div className="mt-4 flex gap-3">
             <button
@@ -142,21 +144,21 @@ export default function AiTunePage() {
         </div>
 
         <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
-          <h2 className="font-display text-sm font-bold text-tertiary flex items-center gap-2 mb-4">
-            <Sparkles size={14} className="text-secondary" />
+          <h2 className="font-display text-base font-bold text-tertiary flex items-center gap-2 mb-4">
+            <Sparkles size={16} className="text-secondary" />
             Pending Suggestions ({suggestions.length})
           </h2>
           {suggestions.length === 0 ? (
-            <p className="font-body text-sm text-on-surface-muted">
+            <p className="font-body text-sm text-on-surface-muted leading-relaxed">
               No pending suggestions. Mark leads as converted then run analysis.
             </p>
           ) : (
             <div className="space-y-3">
               {suggestions.map((s) => (
-                <div key={s.id} className="p-3 bg-surface-low rounded-xl">
-                  <p className="font-body text-sm text-on-surface">{s.suggestion}</p>
+                <div key={s.id} className="p-4 bg-surface-low rounded-xl">
+                  <p className="font-body text-sm text-on-surface leading-relaxed">{s.suggestion}</p>
                   {s.rationale && (
-                    <p className="mt-1 font-label text-xs text-on-surface-muted italic">
+                    <p className="mt-2 font-label text-sm text-on-surface-muted italic leading-relaxed">
                       {s.rationale}
                     </p>
                   )}

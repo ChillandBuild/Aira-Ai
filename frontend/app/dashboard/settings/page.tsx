@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import {
-  MessageSquare, Phone, Sparkles, Check, Eye, EyeOff, Save, AlertCircle, Loader2
+  MessageSquare, Phone, Sparkles, Check, Eye, EyeOff, Save, AlertCircle, Loader2, ExternalLink, Info
 } from "lucide-react";
 import { API_URL } from "@/lib/api";
 
@@ -31,7 +31,27 @@ async function saveSettings(updates: SettingsMap): Promise<void> {
   if (!res.ok) throw new Error("Failed to save settings");
 }
 
-const SECTIONS = [
+type SectionField = {
+  key: string;
+  label: string;
+  placeholder: string;
+  secret: boolean;
+  hint?: string;
+};
+
+type SectionDef = {
+  id: string;
+  label: string;
+  icon: typeof MessageSquare;
+  color: string;
+  bg: string;
+  description: string;
+  fields: SectionField[];
+  toggles?: { key: string; label: string; description: string }[];
+  warning?: { title: string; body: string; link?: { href: string; label: string } };
+};
+
+const SECTIONS: SectionDef[] = [
   {
     id: "whatsapp",
     label: "WhatsApp (Meta Cloud API)",
@@ -39,10 +59,34 @@ const SECTIONS = [
     color: "#059669",
     bg: "#d1fae5",
     description: "Connect your WhatsApp Business Account to send and receive messages.",
+    warning: {
+      title: "Use a System User token, not the temporary 24h token",
+      body: "The token shown on Meta's API Setup page expires every 24 hours and will silently break your auto-replies. For production, create a System User in Business Manager, assign your WABA, and generate a permanent token.",
+      link: {
+        href: "https://business.facebook.com/settings/system-users",
+        label: "Open Business Manager → System Users",
+      },
+    },
     fields: [
-      { key: "meta_phone_number_id", label: "Phone Number ID", placeholder: "From Meta Business Manager → WhatsApp → API Setup", secret: false },
-      { key: "meta_access_token", label: "Permanent Access Token", placeholder: "System User token — never expires", secret: true },
-      { key: "meta_webhook_verify_token", label: "Webhook Verify Token", placeholder: "A secret string you choose for webhook verification", secret: true },
+      {
+        key: "meta_phone_number_id",
+        label: "Phone Number ID",
+        placeholder: "16-digit ID — Meta → WhatsApp → API Setup",
+        secret: false,
+      },
+      {
+        key: "meta_access_token",
+        label: "Access Token",
+        placeholder: "System User token (never expires)",
+        secret: true,
+        hint: "Paste your System User token here. The temp token from Meta's Quickstart page expires every 24 hours.",
+      },
+      {
+        key: "meta_webhook_verify_token",
+        label: "Webhook Verify Token",
+        placeholder: "Any secret string you choose — must match what's configured in Meta",
+        secret: true,
+      },
     ],
   },
   {
@@ -219,6 +263,34 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
+                {/* Inline warning */}
+                {section.warning && (
+                  <div className="mb-4 p-3.5 rounded-2xl bg-amber-50 border border-amber-200">
+                    <div className="flex items-start gap-2">
+                      <Info size={15} className="text-amber-700 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-body text-sm font-semibold text-amber-900">
+                          {section.warning.title}
+                        </p>
+                        <p className="font-body text-xs text-amber-800 mt-1 leading-relaxed">
+                          {section.warning.body}
+                        </p>
+                        {section.warning.link && (
+                          <a
+                            href={section.warning.link.href}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 mt-2 font-label text-xs font-semibold text-amber-900 hover:text-amber-700"
+                          >
+                            {section.warning.link.label}
+                            <ExternalLink size={11} />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Fields */}
                 <div className="space-y-4">
                   {section.fields.map((field) => (
@@ -245,6 +317,11 @@ export default function SettingsPage() {
                           placeholder={field.placeholder}
                           className="input"
                         />
+                      )}
+                      {field.hint && (
+                        <p className="font-body text-xs text-ink-muted mt-1.5 leading-relaxed">
+                          {field.hint}
+                        </p>
                       )}
                     </div>
                   ))}

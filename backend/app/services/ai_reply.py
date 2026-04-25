@@ -95,16 +95,31 @@ def _check_faq(message: str, db) -> str | None:
         logger.error(f"FAQ check failed: {e}")
     return None
 
+_LAST_SEND_ERROR: str | None = None
+
+
+def get_last_send_error() -> str | None:
+    return _LAST_SEND_ERROR
+
+
 async def send_whatsapp(to_phone: str, message: str) -> str | None:
     """Send a WhatsApp message via Meta Cloud API. Returns message ID or None on failure."""
+    global _LAST_SEND_ERROR
     try:
         from app.services.meta_cloud import send_text_message
         data = await send_text_message(to_number=to_phone, text=message)
         mid = (data.get("messages") or [{}])[0].get("id")
         logger.info(f"Meta sent to {to_phone}: id={mid}")
+        _LAST_SEND_ERROR = None
         return mid
     except Exception as e:
-        logger.error(f"Meta send failed to {to_phone}: {e}")
+        err_msg = str(e)
+        # Surface Meta's actual error body so the UI can show it
+        from fastapi import HTTPException as _HTTP
+        if isinstance(e, _HTTP):
+            err_msg = str(e.detail)[:500]
+        _LAST_SEND_ERROR = err_msg
+        logger.error(f"Meta send failed to {to_phone}: {err_msg}")
         return None
 
 def send_instagram(ig_user_id: str, message: str) -> str | None:

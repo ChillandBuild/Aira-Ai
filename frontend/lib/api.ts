@@ -252,6 +252,11 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ content }),
       }),
+    compose: (phone: string, content: string, name?: string) =>
+      apiFetch<{ lead_id: string; sid: string; phone: string }>(`/api/v1/leads/compose`, {
+        method: "POST",
+        body: JSON.stringify({ phone, content, name }),
+      }),
     messages: async (id: string) => {
       const res = await apiFetch<Message[] | { data: Message[] }>(`/api/v1/leads/${id}/messages`);
       return Array.isArray(res) ? res : res.data || [];

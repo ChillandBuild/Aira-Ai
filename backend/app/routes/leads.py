@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
 from app.models.schemas import Lead, LeadUpdate, LeadWithMessages, Message, PaginatedResponse
-from app.services.ai_reply import send_whatsapp, send_instagram
+from app.services.ai_reply import send_whatsapp, send_instagram, get_last_send_error
 from app.services.growth import record_stage_event, sync_follow_up_jobs
 
 logger = logging.getLogger(__name__)
@@ -221,7 +221,8 @@ async def send_human_message(lead_id: UUID, payload: HumanMessage):
         sid = await send_whatsapp(phone, content)
 
     if not sid:
-        raise HTTPException(status_code=502, detail="Channel send failed — check backend logs")
+        meta_err = get_last_send_error() or "unknown error"
+        raise HTTPException(status_code=502, detail=f"Channel send failed: {meta_err}")
 
     sid_field = "meta_message_id" if channel == "whatsapp" else "twilio_message_sid"
     row = db.table("messages").insert({
@@ -233,6 +234,62 @@ async def send_human_message(lead_id: UUID, payload: HumanMessage):
         sid_field: sid,
     }).execute()
     return row.data[0] if row.data else {"sent": True, "sid": sid}
+
+
+class ComposeMessage(BaseModel):
+    phone: str
+    content: str
+    name: str | None = None
+
+
+@router.post("/compose")
+async def compose_new_message(payload: ComposeMessage):
+    """Send a WhatsApp message to any phone — creates lead if it doesn't exist."""
+    content = (payload.content or "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Message is empty")
+
+    phone = payload.phone.strip().replace(" ", "").replace("-", "")
+    if not phone.startswith("+"):
+        phone = "+" + phone
+    if len(phone) < 8:
+        raise HTTPException(status_code=400, detail="Invalid phone number")
+
+    db = get_supabase()
+    existing = db.table("leads").select("id").eq("phone", phone).limit(1).execute()
+    if existing.data:
+        lead_id = existing.data[0]["id"]
+        if payload.name:
+            db.table("leads").update({"name": payload.name}).eq("id", lead_id).execute()
+    else:
+        insert_data = {"phone": phone, "source": "manual", "score": 5, "segment": "C"}
+        if payload.name:
+            insert_data["name"] = payload.name
+        new_lead = db.table("leads").insert(insert_data).execute()
+        lead_id = new_lead.data[0]["id"]
+        record_stage_event(lead_id, to_segment="C", event_type="created", metadata={"source": "manual"}, db=db)
+
+    sid = await send_whatsapp(phone, content)
+    if not sid:
+        meta_err = get_last_send_error() or "unknown error"
+        # Note: outside 24h window, freeform text fails — Meta requires templates
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"Send failed: {meta_err}. "
+                "If recipient hasn't messaged you in 24h, you must use an approved template."
+            ),
+        )
+
+    db.table("messages").insert({
+        "lead_id": lead_id,
+        "direction": "outbound",
+        "channel": "whatsapp",
+        "content": content,
+        "is_ai_generated": False,
+        "meta_message_id": sid,
+    }).execute()
+    return {"lead_id": lead_id, "sid": sid, "phone": phone}
 
 
 @router.delete("/{lead_id}")
