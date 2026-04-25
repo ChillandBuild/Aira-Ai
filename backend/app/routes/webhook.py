@@ -8,6 +8,26 @@ from app.services.failover import update_number_quality, handle_quality_red, han
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+
+@router.get("")
+async def verify_webhook(request: Request):
+    mode = request.query_params.get("hub.mode")
+    token = request.query_params.get("hub.verify_token")
+    challenge = request.query_params.get("hub.challenge")
+
+    verify_token = settings.meta_verify_token
+    if not verify_token:
+        from app.config_dynamic import get_setting
+        verify_token = get_setting("meta_webhook_verify_token")
+
+    if mode == "subscribe" and token == verify_token:
+        logger.info("WhatsApp webhook verified successfully")
+        return Response(content=challenge, media_type="text/plain")
+
+    logger.warning(f"Webhook verification failed — token mismatch. received={token}")
+    return Response(content="Forbidden", status_code=403)
+
+
 @router.post("")
 async def whatsapp_webhook(
     request: Request,
