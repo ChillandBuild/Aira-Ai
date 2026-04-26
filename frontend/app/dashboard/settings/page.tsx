@@ -59,27 +59,18 @@ const SECTIONS: SectionDef[] = [
     color: "#059669",
     bg: "#d1fae5",
     description: "Connect your WhatsApp Business Account to send and receive messages.",
-    warning: {
-      title: "Use a System User token, not the temporary 24h token",
-      body: "The token shown on Meta's API Setup page expires every 24 hours and will silently break your auto-replies. For production, create a System User in Business Manager, assign your WABA, and generate a permanent token.",
-      link: {
-        href: "https://business.facebook.com/settings/system-users",
-        label: "Open Business Manager → System Users",
-      },
-    },
     fields: [
       {
         key: "meta_phone_number_id",
         label: "Phone Number ID",
-        placeholder: "16-digit ID — Meta → WhatsApp → API Setup",
+        placeholder: "From Meta Business Manager → WhatsApp → API Setup",
         secret: false,
       },
       {
         key: "meta_access_token",
-        label: "Access Token",
-        placeholder: "System User token (never expires)",
+        label: "Permanent Access Token",
+        placeholder: "Permanent System User token",
         secret: true,
-        hint: "Paste your System User token here. The temp token from Meta's Quickstart page expires every 24 hours.",
       },
       {
         key: "meta_webhook_verify_token",
