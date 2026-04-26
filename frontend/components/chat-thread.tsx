@@ -93,8 +93,10 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
     try {
       const sentMsg = await api.leads.sendMessage(lead.id, text);
       setMessages((prev) => {
-        if (prev.some((m) => m.id === (sentMsg as any).id)) return prev;
-        return [...prev, sentMsg as unknown as Message];
+        // Use an explicit fallback for id if the backend happened to return the simplistic sid object
+        const msgId = sentMsg.id || (sentMsg as Record<string, unknown>).sid || Date.now().toString();
+        if (prev.some((m) => m.id === msgId)) return prev;
+        return [...prev, sentMsg as Message];
       });
       setDraft("");
     } catch (err) {
