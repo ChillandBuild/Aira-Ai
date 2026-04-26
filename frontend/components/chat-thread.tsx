@@ -91,7 +91,11 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
     setSending(true);
     setSendError(null);
     try {
-      await api.leads.sendMessage(lead.id, text);
+      const sentMsg = await api.leads.sendMessage(lead.id, text);
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === (sentMsg as any).id)) return prev;
+        return [...prev, sentMsg as unknown as Message];
+      });
       setDraft("");
     } catch (err) {
       setSendError(err instanceof Error ? err.message : "Send failed");
@@ -101,22 +105,61 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
   }
 
   useEffect(() => {
+    let mounted = true;
     setLoading(true);
-    api.leads.messages(lead.id).then((msgs) => {
-      setMessages(msgs);
-      setLoading(false);
-    });
+    
+    const fetchMsgs = async () => {
+      try {
+        const msgs = await api.leads.messages(lead.id);
+        if (mounted) {
+          setMessages(msgs);
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error("Failed to load messages", err);
+        if (mounted) setLoading(false);
+      }
+    };
+    
+    fetchMsgs();
+
+    // Fallback polling every 3 seconds (in case Supabase Realtime is disabled on the table)
+    const interval = setInterval(() => {
+      api.leads.messages(lead.id).then((newMsgs) => {
+        if (!mounted) return;
+        setMessages((prev) => {
+          // Only update state if there's a new message to prevent unnecessary re-renders & auto-scrolling
+          if (
+            prev.length !== newMsgs.length ||
+            (prev.length > 0 && newMsgs.length > 0 && prev[prev.length - 1].id !== newMsgs[newMsgs.length - 1].id)
+          ) {
+            return newMsgs;
+          }
+          return prev;
+        });
+      });
+    }, 3000);
 
     const channel = supabase
       .channel(`messages:${lead.id}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `lead_id=eq.${lead.id}` },
-        (payload) => setMessages((prev) => [...prev, payload.new as Message])
+        (payload) => {
+          if (!mounted) return;
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === payload.new.id)) return prev;
+            return [...prev, payload.new as Message];
+          });
+        }
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { 
+      mounted = false;
+      clearInterval(interval);
+      supabase.removeChannel(channel); 
+    };
   }, [lead.id]);
 
   useEffect(() => {
