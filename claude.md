@@ -68,9 +68,32 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | CSV upload, bulk send, 7-step flow | .claude/context/upload.md |
 
 ## Agent Dispatch
-See .claude/agents.md for full rules.
+See .claude/rules/aira-agents.md (auto-loaded every session).
 Spawn sub-agents automatically (never ask) when task has 2+ independent work units.
 Each agent gets only its relevant context file — not the full CLAUDE.md.
+
+## Provider Decisions (locked 2026-04-22)
+- WhatsApp primary: Meta Cloud API Direct
+- WhatsApp secondary: WATI
+- Voice: Exotel (built, commit 27d98a3)
+- AI: Gemini (not Claude) — 2.5-pro for complex/scoring, 2.0-flash for FAQ classify
+
+## Known Tech Debt
+- webhook_instagram.py registered in main.py — disable route
+- Analytics page shows ad metrics — repurpose to service metrics (WA + telecalling + funnel)
+- AI Tune label may need rename to clarify it tunes WA auto-reply prompts only
+
+## Key File Locations
+| File | Purpose |
+|---|---|
+| backend/app/main.py | FastAPI entry, route registration |
+| backend/app/routes/webhook.py | WA webhook handler — extend for quality events |
+| backend/app/routes/webhook_instagram.py | DISABLE this route |
+| backend/app/services/ai_reply.py | FAQ cache → Gemini pipeline |
+| backend/app/services/lead_scorer.py | Gemini scoring (1–10) |
+| backend/app/services/segmentation.py | A/B/C/D logic |
+| backend/app/db/supabase.py | Supabase client singleton |
+| frontend/app/dashboard/ | All dashboard pages |
 
 ## Response Style
 - One sentence per progress update while working
