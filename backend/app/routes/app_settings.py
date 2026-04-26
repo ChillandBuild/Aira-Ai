@@ -33,7 +33,14 @@ async def list_settings():
         effective_value = db_value or env_value
         is_set = effective_value is not None
         source = "db" if db_value else ("env" if env_value else None)
-        display_value = "••••••••" if row["is_secret"] and is_set else (effective_value or "Not set")
+        if row["is_secret"] and is_set and effective_value:
+            v = str(effective_value)
+            if len(v) > 12:
+                display_value = f"{v[:4]}{'•' * 8}{v[-4:]}"
+            else:
+                display_value = "•" * len(v)
+        else:
+            display_value = effective_value or "Not set"
         settings.append({
             "key": row["key"],
             "display_value": display_value,
