@@ -93,8 +93,8 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
     try {
       const sentMsg = await api.leads.sendMessage(lead.id, text);
       setMessages((prev) => {
-        if (prev.some((m) => m.id === (sentMsg as any).id)) return prev;
-        return [...prev, sentMsg as unknown as Message];
+        if (prev.some((m) => m.id === sentMsg.id)) return prev;
+        return [...prev, sentMsg];
       });
       setDraft("");
     } catch (err) {
