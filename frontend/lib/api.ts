@@ -257,6 +257,10 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ phone, content, name }),
       }),
+    delete: (id: string) =>
+      apiFetch<{ success: boolean; message: string }>(`/api/v1/leads/${id}`, {
+        method: "DELETE",
+      }),
     messages: async (id: string) => {
       const res = await apiFetch<Message[] | { data: Message[] }>(`/api/v1/leads/${id}/messages`);
       return Array.isArray(res) ? res : res.data || [];

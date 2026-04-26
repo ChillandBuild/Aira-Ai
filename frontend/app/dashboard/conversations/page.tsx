@@ -21,7 +21,13 @@ export default function ConversationsPage() {
     <div className="-m-8 h-screen flex">
       <ConversationList leads={leads} selectedId={selected?.id ?? null} onSelect={setSelected} />
       {selected ? (
-        <ChatThread lead={selected} />
+        <ChatThread
+          lead={selected}
+          onDeleted={(id) => {
+            setLeads((prev) => prev.filter((l) => l.id !== id));
+            setSelected(null);
+          }}
+        />
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center text-on-surface-muted gap-3">
           <MessageSquare size={48} className="opacity-20" />

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, Lead, Message } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
-import { Bot, User, CheckCircle2, Send, PowerOff, Power, AlertTriangle, Pencil, MessageCircle } from "lucide-react";
+import { Bot, User, CheckCircle2, Send, PowerOff, Power, AlertTriangle, Pencil, MessageCircle, Trash2 } from "lucide-react";
 
 function IgIcon({ size = 10, className = "" }: { size?: number; className?: string }) {
   return (
@@ -15,12 +15,13 @@ function IgIcon({ size = 10, className = "" }: { size?: number; className?: stri
   );
 }
 
-export function ChatThread({ lead }: { lead: Lead }) {
+export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: string) => void }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [current, setCurrent] = useState<Lead>(lead);
   const [converting, setConverting] = useState(false);
   const [toggling, setToggling] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -57,6 +58,18 @@ export function ChatThread({ lead }: { lead: Lead }) {
       alert(err instanceof Error ? err.message : "Failed");
     } finally {
       setConverting(false);
+    }
+  }
+
+  async function deleteConversation() {
+    if (!confirm(`Delete the conversation with ${current.name || current.phone}? This removes the lead from every page. This action cannot be undone from the dashboard.`)) return;
+    setDeleting(true);
+    try {
+      await api.leads.delete(lead.id);
+      onDeleted?.(lead.id);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Delete failed");
+      setDeleting(false);
     }
   }
 
@@ -198,6 +211,15 @@ export function ChatThread({ lead }: { lead: Lead }) {
             <CheckCircle2 size={13} /> {converting ? "Saving…" : "Mark Converted"}
           </button>
         )}
+
+        <button
+          onClick={deleteConversation}
+          disabled={deleting}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 font-label text-xs font-semibold disabled:opacity-40 border border-red-100"
+          title="Delete conversation"
+        >
+          <Trash2 size={13} /> {deleting ? "Deleting…" : "Delete"}
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3 bg-background">

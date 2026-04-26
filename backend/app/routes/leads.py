@@ -34,7 +34,7 @@ async def list_leads(
 ):
     db = get_supabase()
     offset = (page - 1) * limit
-    query = db.table("leads").select("*", count="exact")
+    query = db.table("leads").select("*", count="exact").is_("deleted_at", "null")
     if segment:
         query = query.eq("segment", segment)
     result = query.order("score", desc=True).range(offset, offset + limit - 1).execute()
@@ -50,7 +50,7 @@ async def export_leads(
     segment: str | None = Query(None, pattern="^[ABCD]$"),
 ):
     db = get_supabase()
-    query = db.table("leads").select("id,phone,name,source,score,segment,notes,created_at")
+    query = db.table("leads").select("id,phone,name,source,score,segment,notes,created_at").is_("deleted_at", "null")
     if segment:
         query = query.eq("segment", segment)
     result = query.order("score", desc=True).execute()
@@ -77,7 +77,7 @@ async def get_lead_messages(lead_id: UUID):
 @router.get("/{lead_id}", response_model=LeadWithMessages)
 async def get_lead(lead_id: UUID):
     db = get_supabase()
-    lead_result = db.table("leads").select("*").eq("id", str(lead_id)).maybe_single().execute()
+    lead_result = db.table("leads").select("*").eq("id", str(lead_id)).is_("deleted_at", "null").maybe_single().execute()
     if not lead_result.data:
         raise HTTPException(status_code=404, detail="Lead not found")
     msgs_result = db.table("messages").select("*").eq("lead_id", str(lead_id)).order("created_at").execute()
@@ -295,5 +295,9 @@ async def compose_new_message(payload: ComposeMessage):
 @router.delete("/{lead_id}")
 async def delete_lead(lead_id: UUID):
     db = get_supabase()
-    db.table("leads").delete().eq("id", str(lead_id)).execute()
+    now = datetime.now(timezone.utc).isoformat()
+    result = db.table("leads").update({"deleted_at": now, "ai_enabled": False}).eq("id", str(lead_id)).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    db.table("follow_up_jobs").update({"status": "skipped", "skip_reason": "Lead deleted."}).eq("lead_id", str(lead_id)).eq("status", "pending").execute()
     return {"success": True, "message": "Lead deleted"}

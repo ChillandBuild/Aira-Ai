@@ -1,142 +1,238 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api, Lead, AnalyticsOverview } from "@/lib/api";
-import { MessageSquare, Users, Sparkles, TrendingUp, Phone, Zap } from "lucide-react";
+import {
+  MessageSquare,
+  Sparkles,
+  TrendingUp,
+  CheckCircle2,
+  AlertCircle,
+  ArrowUpRight,
+  Inbox,
+  Send as SendIcon,
+} from "lucide-react";
+import Link from "next/link";
 
-const SEGMENT_CONFIG = {
-  A: { label: "Hot", color: "#059669", bg: "#d1fae5", desc: "High Intent" },
-  B: { label: "Warm", color: "#d97706", bg: "#fef3c7", desc: "In Discussion" },
-  C: { label: "Cold", color: "#6b7280", bg: "#f3f4f6", desc: "No Reply" },
-  D: { label: "Lost", color: "#ef4444", bg: "#fee2e2", desc: "Disqualified" },
+const SEGMENT_CONFIG: Record<"A" | "B" | "C" | "D", { label: string; tone: string; bar: string; bg: string }> = {
+  A: { label: "Hot", tone: "text-emerald-700", bar: "bg-emerald-500", bg: "bg-emerald-50" },
+  B: { label: "Warm", tone: "text-amber-700", bar: "bg-amber-500", bg: "bg-amber-50" },
+  C: { label: "Cold", tone: "text-slate-600", bar: "bg-slate-400", bg: "bg-slate-50" },
+  D: { label: "Lost", tone: "text-rose-600", bar: "bg-rose-400", bg: "bg-rose-50" },
 };
 
-function StatCard({
+function greet(): string {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+function Kpi({
   label,
   value,
   sub,
-  icon: Icon,
-  accent = false,
+  Icon,
+  href,
+  tone = "default",
 }: {
   label: string;
   value: string | number;
   sub: string;
-  icon: React.ElementType;
-  accent?: boolean;
+  Icon: React.ElementType;
+  href?: string;
+  tone?: "default" | "alert" | "good";
 }) {
-  return (
-    <div
-      className={`card card-hover rounded-3xl ${accent ? "bg-emerald-vivid text-white border-transparent" : ""}`}
-      style={accent ? { background: "linear-gradient(135deg, #059669 0%, #047857 100%)" } : {}}
-    >
-      <div className="flex items-start justify-between mb-4">
-        <div
-          className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
-            accent ? "bg-white/20" : "bg-surface-low"
-          }`}
-        >
-          <Icon size={18} className={accent ? "text-white" : "text-primary"} />
+  const toneClass =
+    tone === "alert" ? "text-rose-600" : tone === "good" ? "text-emerald-600" : "text-ink";
+  const Body = (
+    <div className="card rounded-3xl h-full flex flex-col justify-between">
+      <div className="flex items-start justify-between">
+        <div className="w-10 h-10 rounded-xl bg-surface-subtle flex items-center justify-center">
+          <Icon size={18} className="text-ink-muted" />
         </div>
+        {href && <ArrowUpRight size={14} className="text-ink-muted/40" />}
       </div>
-      <div className={`stat-num mb-1 ${accent ? "text-white" : ""}`}>{value}</div>
-      <div className={`font-body text-sm font-medium ${accent ? "text-white/90" : "text-ink"} mb-0.5`}>
-        {label}
+      <div className="mt-6">
+        <div className={`font-display font-bold leading-none ${toneClass}`} style={{ fontSize: "2rem", letterSpacing: "-0.03em" }}>
+          {value}
+        </div>
+        <div className="font-body text-sm font-medium text-ink mt-2">{label}</div>
+        <div className="font-body text-xs text-ink-muted mt-0.5">{sub}</div>
       </div>
-      <div className={`stat-label ${accent ? "text-white/60" : ""}`}>{sub}</div>
     </div>
   );
+  return href ? <Link href={href} className="block hover:-translate-y-px transition-transform">{Body}</Link> : Body;
 }
 
-function SegmentBar({ leads }: { leads: Lead[] }) {
-  const total = leads.length || 1;
+function PipelineBar({ leads }: { leads: Lead[] }) {
+  const total = leads.length;
+  const counts = (["A", "B", "C", "D"] as const).map((s) => ({
+    seg: s,
+    count: leads.filter((l) => l.segment === s).length,
+  }));
+
   return (
     <div className="card rounded-3xl">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="font-display font-bold text-ink" style={{ fontSize: "1.05rem", letterSpacing: "-0.02em" }}>
-            Segment Distribution
+            Pipeline
           </h2>
-          <p className="font-body text-sm text-ink-muted mt-0.5">{leads.length} total leads across all stages</p>
+          <p className="font-body text-sm text-ink-muted mt-0.5">
+            {total === 0 ? "No leads yet" : `${total} active leads`}
+          </p>
         </div>
       </div>
-      {/* Bar chart */}
-      <div className="flex gap-3 items-end" style={{ height: "120px" }}>
-        {(["A", "B", "C", "D"] as const).map((seg) => {
-          const count = leads.filter((l) => l.segment === seg).length;
-          const pct = (count / total) * 100;
-          const cfg = SEGMENT_CONFIG[seg];
-          return (
-            <div key={seg} className="flex-1 flex flex-col items-center gap-2 h-full justify-end">
-              <span className="font-label font-semibold text-ink-secondary" style={{ fontSize: "0.8rem" }}>{count}</span>
-              <div
-                className="w-full rounded-t-xl transition-all duration-500"
-                style={{
-                  height: `${Math.max(pct * 0.9, 6)}%`,
-                  background: cfg.color,
-                  opacity: 0.85,
-                  minHeight: "6px",
-                }}
-              />
+
+      {total === 0 ? (
+        <div className="py-8 text-center font-body text-sm text-ink-muted">
+          Upload leads or wait for inbound WhatsApp messages.
+        </div>
+      ) : (
+        <>
+          {/* Single horizontal stacked bar */}
+          <div className="h-2.5 rounded-full overflow-hidden flex bg-surface-subtle mb-5">
+            {counts.map(({ seg, count }) =>
+              count > 0 ? (
+                <div
+                  key={seg}
+                  className={SEGMENT_CONFIG[seg].bar}
+                  style={{ width: `${(count / total) * 100}%` }}
+                  title={`${SEGMENT_CONFIG[seg].label}: ${count}`}
+                />
+              ) : null,
+            )}
+          </div>
+
+          {/* Counts table */}
+          <div className="grid grid-cols-4 gap-3">
+            {counts.map(({ seg, count }) => {
+              const cfg = SEGMENT_CONFIG[seg];
+              const pct = total ? Math.round((count / total) * 100) : 0;
+              return (
+                <Link
+                  key={seg}
+                  href={`/dashboard/leads?segment=${seg}`}
+                  className={`p-3 rounded-2xl ${cfg.bg} hover:ring-1 hover:ring-current ${cfg.tone} transition-all`}
+                >
+                  <div className="font-display font-bold text-ink" style={{ fontSize: "1.5rem", letterSpacing: "-0.02em" }}>
+                    {count}
+                  </div>
+                  <div className="font-label text-xs font-semibold mt-1 uppercase tracking-wider">
+                    {cfg.label}
+                  </div>
+                  <div className="font-body text-xs text-ink-muted mt-0.5">{pct}% of total</div>
+                </Link>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function TodaySnapshot({ overview }: { overview: AnalyticsOverview | null }) {
+  const today = overview?.daily_messages?.at(-1);
+  const inbound = today?.inbound ?? 0;
+  const outbound = today?.outbound ?? 0;
+  const aiToday = overview?.ai_handled_today ?? 0;
+
+  return (
+    <div className="card rounded-3xl">
+      <h2 className="font-display font-bold text-ink mb-4" style={{ fontSize: "1.05rem", letterSpacing: "-0.02em" }}>
+        Today
+      </h2>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
+              <Inbox size={16} className="text-blue-600" />
             </div>
-          );
-        })}
-      </div>
-      {/* Labels */}
-      <div className="flex gap-3 mt-3">
-        {(["A", "B", "C", "D"] as const).map((seg) => {
-          const cfg = SEGMENT_CONFIG[seg];
-          return (
-            <div key={seg} className="flex-1 text-center">
-              <span
-                className="inline-block px-2 py-0.5 rounded-full font-label font-semibold"
-                style={{ fontSize: "0.65rem", background: cfg.bg, color: cfg.color, letterSpacing: "0.04em" }}
-              >
-                {cfg.label}
-              </span>
+            <div>
+              <div className="font-body font-medium text-sm text-ink">Inbound</div>
+              <div className="font-body text-xs text-ink-muted">Messages received</div>
             </div>
-          );
-        })}
+          </div>
+          <div className="font-display font-bold text-ink" style={{ fontSize: "1.5rem" }}>
+            {inbound}
+          </div>
+        </div>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center">
+              <SendIcon size={16} className="text-emerald-600" />
+            </div>
+            <div>
+              <div className="font-body font-medium text-sm text-ink">Outbound</div>
+              <div className="font-body text-xs text-ink-muted">Replies sent</div>
+            </div>
+          </div>
+          <div className="font-display font-bold text-ink" style={{ fontSize: "1.5rem" }}>
+            {outbound}
+          </div>
+        </div>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-purple-50 flex items-center justify-center">
+              <Sparkles size={16} className="text-purple-600" />
+            </div>
+            <div>
+              <div className="font-body font-medium text-sm text-ink">AI handled</div>
+              <div className="font-body text-xs text-ink-muted">Auto-replies sent</div>
+            </div>
+          </div>
+          <div className="font-display font-bold text-ink" style={{ fontSize: "1.5rem" }}>
+            {aiToday}
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function ActivityFeed({ leads }: { leads: Lead[] }) {
-  const recent = leads.slice(0, 6);
+function RecentLeads({ leads }: { leads: Lead[] }) {
+  const recent = [...leads].sort((a, b) => (b.created_at > a.created_at ? 1 : -1)).slice(0, 5);
   return (
     <div className="card rounded-3xl">
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between mb-4">
         <h2 className="font-display font-bold text-ink" style={{ fontSize: "1.05rem", letterSpacing: "-0.02em" }}>
           Recent Leads
         </h2>
-        <span className="badge badge-green">Live</span>
+        <Link href="/dashboard/leads" className="font-label text-xs font-semibold text-primary hover:underline">
+          View all →
+        </Link>
       </div>
-      <div className="space-y-3">
-        {recent.length === 0 && (
-          <p className="font-body text-sm text-ink-muted text-center py-6">No leads yet</p>
-        )}
-        {recent.map((lead) => {
-          const cfg = SEGMENT_CONFIG[lead.segment as keyof typeof SEGMENT_CONFIG];
-          return (
-            <div key={lead.id} className="flex items-center gap-3 p-3 rounded-2xl hover:bg-surface-subtle transition-colors">
-              <div
-                className="w-9 h-9 rounded-2xl flex items-center justify-center font-label font-bold flex-shrink-0"
-                style={{ background: cfg?.bg, color: cfg?.color, fontSize: "0.75rem" }}
+      {recent.length === 0 ? (
+        <p className="font-body text-sm text-ink-muted text-center py-6">No leads yet</p>
+      ) : (
+        <div className="divide-y divide-border-subtle">
+          {recent.map((lead) => {
+            const cfg = SEGMENT_CONFIG[lead.segment as keyof typeof SEGMENT_CONFIG];
+            return (
+              <Link
+                key={lead.id}
+                href={`/dashboard/conversations`}
+                className="flex items-center gap-3 py-3 hover:bg-surface-subtle -mx-2 px-2 rounded-xl transition-colors"
               >
-                {cfg?.label[0]}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-body font-medium text-sm text-ink truncate">{lead.name || "Unknown"}</p>
-                <p className="font-body text-xs text-ink-muted truncate">{lead.phone}</p>
-              </div>
-              <div className="text-right flex-shrink-0">
-                <p className="font-label font-semibold text-primary" style={{ fontSize: "0.75rem" }}>
-                  {lead.score}/10
-                </p>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+                <div className={`w-8 h-8 rounded-full ${cfg?.bg} flex items-center justify-center font-label text-xs font-bold ${cfg?.tone}`}>
+                  {cfg?.label[0]}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-body font-medium text-sm text-ink truncate">
+                    {lead.name || "Unnamed"}
+                  </p>
+                  <p className="font-body text-xs text-ink-muted truncate">{lead.phone}</p>
+                </div>
+                <div className="text-right">
+                  <div className="font-display font-bold text-sm text-ink">{lead.score}</div>
+                  <div className="font-label text-[10px] uppercase tracking-wider text-ink-muted">/10</div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -147,59 +243,100 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([api.leads.list({ limit: 200 }), api.analytics.overview()])
-      .then(([l, o]) => { setLeads(l); setOverview(o); })
-      .catch(() => {})
+    Promise.all([api.leads.list({ limit: 200 }), api.analytics.overview().catch(() => null)])
+      .then(([l, o]) => {
+        setLeads(l);
+        setOverview(o);
+      })
       .finally(() => setLoading(false));
   }, []);
 
   const total = leads.length;
   const segA = leads.filter((l) => l.segment === "A").length;
-  const segB = leads.filter((l) => l.segment === "B").length;
+  const aiVsHuman = overview?.ai_vs_human;
+  const totalReplies = (aiVsHuman?.ai ?? 0) + (aiVsHuman?.human ?? 0);
+  const aiPct = totalReplies > 0 ? Math.round(((aiVsHuman?.ai ?? 0) / totalReplies) * 100) : 0;
 
   return (
     <div>
-      {/* Header */}
       <div className="mb-7">
-        <h1 className="page-title">Good morning 👋</h1>
-        <p className="page-subtitle">Here&apos;s what&apos;s happening with your leads today.</p>
+        <h1 className="page-title">{greet()}</h1>
+        <p className="page-subtitle">Here&apos;s what&apos;s happening with your leads.</p>
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-4 gap-5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
           {[...Array(4)].map((_, i) => (
             <div key={i} className="rounded-3xl h-36 bg-border-subtle animate-pulse" />
           ))}
         </div>
       ) : (
         <>
-          {/* Stat row */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 mb-5">
-            <StatCard label="Total Leads" value={total} sub="All segments" icon={Users} accent />
-            <StatCard label="Hot Leads" value={segA} sub="Segment A — high intent" icon={TrendingUp} />
-            <StatCard label="Warm Leads" value={segB} sub="Segment B — in discussion" icon={MessageSquare} />
-            <StatCard label="AI Handled" value={overview?.ai_handled_today ?? 0} sub="Today's auto-replies" icon={Sparkles} />
-          </div>
-
-          {/* Second row */}
-          <div className="grid grid-cols-3 gap-5 mb-5">
-            <StatCard label="Converted (7d)" value={overview?.converted_7d ?? 0} sub="Closed this week" icon={Zap} />
-            <StatCard label="Unreplied (24h)" value={overview?.unreplied_24h ?? 0} sub="Awaiting reply" icon={MessageSquare} />
-            <StatCard
-              label="AI vs Human"
-              value={overview ? `${overview.ai_vs_human.ai} · ${overview.ai_vs_human.human}` : "—"}
-              sub="Auto vs manual replies (7d)"
-              icon={Phone}
+            <Kpi
+              label="Total leads"
+              value={total}
+              sub="Active in pipeline"
+              Icon={MessageSquare}
+              href="/dashboard/leads"
+            />
+            <Kpi
+              label="Hot leads"
+              value={segA}
+              sub="High intent · Segment A"
+              Icon={TrendingUp}
+              tone="good"
+              href="/dashboard/leads?segment=A"
+            />
+            <Kpi
+              label="Converted (7d)"
+              value={overview?.converted_7d ?? 0}
+              sub="Closed this week"
+              Icon={CheckCircle2}
+              tone="good"
+            />
+            <Kpi
+              label="Awaiting reply"
+              value={overview?.unreplied_24h ?? 0}
+              sub="Inbound > 0 · No outbound (24h)"
+              Icon={AlertCircle}
+              tone={(overview?.unreplied_24h ?? 0) > 0 ? "alert" : "default"}
+              href="/dashboard/conversations"
             />
           </div>
 
-          {/* Bottom section */}
-          <div className="grid grid-cols-3 gap-5">
-            <div className="col-span-2">
-              <SegmentBar leads={leads} />
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
+            <Kpi
+              label="AI auto-reply share"
+              value={`${aiPct}%`}
+              sub={`${aiVsHuman?.ai ?? 0} AI · ${aiVsHuman?.human ?? 0} human (7 days)`}
+              Icon={Sparkles}
+            />
+            <Kpi
+              label="Inquiries (7d)"
+              value={overview?.daily_leads?.reduce((acc, d) => acc + d.count, 0) ?? 0}
+              sub="New leads added this week"
+              Icon={Inbox}
+            />
+            <Kpi
+              label="Funnel velocity"
+              value={
+                overview?.funnel
+                  ? `${overview.funnel.converted}/${overview.funnel.inquiries}`
+                  : "—"
+              }
+              sub="Converted vs inquiries (7d)"
+              Icon={TrendingUp}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            <div className="lg:col-span-2 space-y-5">
+              <PipelineBar leads={leads} />
+              <RecentLeads leads={leads} />
             </div>
             <div>
-              <ActivityFeed leads={leads} />
+              <TodaySnapshot overview={overview} />
             </div>
           </div>
         </>
