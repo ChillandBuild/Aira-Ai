@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Literal
@@ -54,13 +55,23 @@ async def initiate_call(payload: InitiateCall):
 
     db = get_supabase()
 
+    matched_lead_id: str | None = None
+    matched_lead_name: str | None = None
+
     if payload.lead_id:
-        lead = db.table("leads").select("phone").eq("id", str(payload.lead_id)).maybe_single().execute()
+        lead = db.table("leads").select("phone,name").eq("id", str(payload.lead_id)).maybe_single().execute()
         if not lead.data:
             raise HTTPException(status_code=404, detail="Lead not found")
         lead_phone = lead.data["phone"]
+        matched_lead_id = str(payload.lead_id)
+        matched_lead_name = lead.data.get("name")
     else:
         lead_phone = payload.phone
+        # try to find a lead by phone so live notes can be linked
+        match = db.table("leads").select("id,name").eq("phone", lead_phone).maybe_single().execute()
+        if match.data:
+            matched_lead_id = match.data["id"]
+            matched_lead_name = match.data.get("name")
 
     caller_phone: str | None = None
     if payload.caller_id:
@@ -103,7 +114,69 @@ async def initiate_call(payload: InitiateCall):
 
     db.table("call_logs").update({"call_sid": call.sid}).eq("id", call_log_id).execute()
     await increment_voice_call_count(best_number["id"])
-    return {"call_log_id": call_log_id, "call_sid": call.sid, "status": call.status}
+    return {
+        "call_log_id": call_log_id,
+        "call_sid": call.sid,
+        "status": call.status,
+        "lead_id": matched_lead_id,
+        "lead_name": matched_lead_name,
+    }
+
+
+async def _download_recording_with_retry(
+    call_log_id: str,
+    recording_url: str,
+    twilio_sid: str,
+    twilio_token: str,
+    max_attempts: int = 5,
+    initial_delay: int = 12,
+) -> str | None:
+    """Download Twilio recording MP3 with exponential retry. Returns Supabase public URL or None."""
+    recording_mp3 = recording_url if recording_url.endswith(".mp3") else f"{recording_url}.mp3"
+    db = get_supabase()
+
+    for attempt in range(1, max_attempts + 1):
+        delay = initial_delay * attempt
+        logger.info(f"Recording attempt {attempt}/{max_attempts} for {call_log_id} — waiting {delay}s")
+        await asyncio.sleep(delay)
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.get(recording_mp3, auth=(twilio_sid, twilio_token))
+                if resp.status_code == 404:
+                    logger.warning(f"Recording not ready yet (attempt {attempt}): {recording_mp3}")
+                    continue
+                resp.raise_for_status()
+                audio_bytes = resp.content
+
+            storage_path = f"{call_log_id}.mp3"
+            db.storage.from_("call-recordings").upload(
+                storage_path,
+                audio_bytes,
+                {"content-type": "audio/mpeg", "upsert": "true"},
+            )
+            public_url = db.storage.from_("call-recordings").get_public_url(storage_path)
+            db.table("call_logs").update({"recording_url": public_url}).eq("id", call_log_id).execute()
+            logger.info(f"Recording saved for {call_log_id}: {public_url}")
+            return public_url
+
+        except Exception as e:
+            logger.error(f"Recording attempt {attempt} failed for {call_log_id}: {e}")
+
+    logger.error(f"All {max_attempts} recording attempts failed for {call_log_id}")
+    return None
+
+
+async def _process_call_recording(
+    call_log_id: str,
+    recording_url: str,
+    twilio_sid: str,
+    twilio_token: str,
+) -> None:
+    """Download recording then run AI summarization."""
+    public_url = await _download_recording_with_retry(call_log_id, recording_url, twilio_sid, twilio_token)
+    if not public_url:
+        return
+    await _run_summarization(call_log_id, public_url)
 
 
 async def _run_summarization(call_log_id: str, recording_url: str) -> None:
@@ -128,6 +201,7 @@ async def _run_summarization(call_log_id: str, recording_url: str) -> None:
                     "structured": summary,
                     "is_pinned": False,
                 }).execute()
+        logger.info(f"Summarization complete for {call_log_id}")
     except Exception as e:
         logger.error(f"Summarization failed for {call_log_id}: {e}")
 
@@ -163,25 +237,11 @@ async def twilio_voice_status(
             pass
 
     if RecordingUrl:
-        try:
-            twilio_sid = get_setting("twilio_account_sid") or settings.twilio_account_sid
-            twilio_token = get_setting("twilio_auth_token") or settings.twilio_auth_token
-            recording_mp3 = RecordingUrl if RecordingUrl.endswith(".mp3") else f"{RecordingUrl}.mp3"
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.get(recording_mp3, auth=(twilio_sid, twilio_token))
-                resp.raise_for_status()
-                audio_bytes = resp.content
-            storage_path = f"{call_log_id}.mp3"
-            db.storage.from_("call-recordings").upload(
-                storage_path,
-                audio_bytes,
-                {"content-type": "audio/mpeg", "upsert": "true"},
-            )
-            public_url = db.storage.from_("call-recordings").get_public_url(storage_path)
-            updates["recording_url"] = public_url
-            background_tasks.add_task(_run_summarization, call_log_id, public_url)
-        except Exception as e:
-            logger.error(f"Recording upload failed for {call_log_id}: {e}")
+        twilio_sid = get_setting("twilio_account_sid") or settings.twilio_account_sid or ""
+        twilio_token = get_setting("twilio_auth_token") or settings.twilio_auth_token or ""
+        background_tasks.add_task(
+            _process_call_recording, call_log_id, RecordingUrl, twilio_sid, twilio_token
+        )
 
     if updates:
         db.table("call_logs").update(updates).eq("id", call_log_id).execute()

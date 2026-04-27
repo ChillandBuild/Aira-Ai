@@ -245,8 +245,8 @@ export default function TelecallingPage() {
     if (!selected) { alert("Select a caller first"); return; }
     setDialing(leadId);
     try {
-      await api.calls.initiate({ leadId }, selected.id);
-      setActiveCallCtx({ leadId, name: lead.name, phone: lead.phone });
+      const res = await api.calls.initiate({ leadId }, selected.id);
+      setActiveCallCtx({ leadId: res.lead_id ?? leadId, name: res.lead_name ?? lead.name, phone: lead.phone });
       api.callers.logs(selected.id).then(setLogs);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Call failed");
@@ -270,8 +270,12 @@ export default function TelecallingPage() {
     if (!manualPhone.trim()) return;
     setManualDialing(true);
     try {
-      await api.calls.initiate({ phone: manualPhone.trim() }, selected.id);
-      setActiveCallCtx({ leadId: null, name: null, phone: manualPhone.trim() });
+      const res = await api.calls.initiate({ phone: manualPhone.trim() }, selected.id);
+      setActiveCallCtx({
+        leadId: res.lead_id ?? null,
+        name: res.lead_name ?? null,
+        phone: manualPhone.trim(),
+      });
       setManualPhone("");
       api.callers.logs(selected.id).then(setLogs);
     } catch (err) {
@@ -464,15 +468,35 @@ export default function TelecallingPage() {
                 <p className="font-body text-sm text-on-surface-muted">No calls yet.</p>
               ) : (
                 <div className="space-y-3">
-                  {logs.map((log) => (
-                    <div key={log.id} className="p-3 bg-surface-low rounded-xl">
+                  {logs.map((log) => {
+                    const leadPhone = log.leads?.phone;
+                    const leadName = log.leads?.name;
+                    return (
+                    <div key={log.id} className="p-4 bg-surface-low rounded-xl">
+                      {/* lead info row */}
+                      {(leadName || leadPhone) && (
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                            {leadName && <p className="font-body text-sm font-semibold text-on-surface">{leadName}</p>}
+                            {leadPhone && <p className="font-label text-xs text-on-surface-muted">{leadPhone}</p>}
+                          </div>
+                          {log.lead_id && (
+                            <button
+                              onClick={() => callAgain(log)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 transition-colors"
+                            >
+                              <Phone size={11} /> Call Again
+                            </button>
+                          )}
+                        </div>
+                      )}
                       <div className="flex items-center justify-between">
                         <span className="font-label text-xs font-semibold text-on-surface capitalize">
                           {log.status.replace("_", " ")}
                           {log.outcome && ` · ${log.outcome.replace("_", " ")}`}
                         </span>
                         <div className="flex items-center gap-2">
-                          {log.lead_id && (
+                          {log.lead_id && !leadPhone && (
                             <button
                               onClick={() => callAgain(log)}
                               className="p-1 rounded hover:bg-surface-mid transition-colors text-on-surface-muted hover:text-tertiary"
@@ -556,7 +580,7 @@ export default function TelecallingPage() {
                         <audio controls src={log.recording_url} className="mt-2 w-full h-8" />
                       )}
                     </div>
-                  ))}
+                  );})}
                 </div>
               )}
             </div>
@@ -565,6 +589,11 @@ export default function TelecallingPage() {
 
         {/* ── right panel ── */}
         <div className="space-y-6">
+          {/* Live Notes — embedded when call is active */}
+          {activeCallCtx && (
+            <LiveNotesPane ctx={activeCallCtx} onClose={() => setActiveCallCtx(null)} />
+          )}
+
           {/* AI Coaching */}
           <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
             <div className="flex items-center justify-between mb-3">
@@ -701,11 +730,6 @@ export default function TelecallingPage() {
       {/* ── Full Notes History Modal ── */}
       {historyLead && (
         <NotesHistoryModal lead={historyLead} onClose={() => setHistoryLead(null)} />
-      )}
-
-      {/* ── Live Notes Pane ── */}
-      {activeCallCtx && (
-        <LiveNotesPane ctx={activeCallCtx} onClose={() => setActiveCallCtx(null)} />
       )}
     </div>
   );

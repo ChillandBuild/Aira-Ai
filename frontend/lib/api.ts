@@ -50,6 +50,7 @@ export interface CallLog {
   } | null;
   transcript: string | null;
   created_at: string;
+  leads?: { phone: string | null; name: string | null } | null;
 }
 
 export interface SegmentTemplate {
@@ -303,7 +304,7 @@ export const api = {
   },
   calls: {
     initiate: (target: { leadId?: string; phone?: string }, callerId?: string) =>
-      apiFetch<{ call_log_id: string; call_sid: string; status: string }>(
+      apiFetch<{ call_log_id: string; call_sid: string; status: string; lead_id: string | null; lead_name: string | null }>(
         `/api/v1/calls/initiate`,
         { method: "POST", body: JSON.stringify({ lead_id: target.leadId, phone: target.phone, caller_id: callerId }) }
       ),
