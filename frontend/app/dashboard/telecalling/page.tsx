@@ -26,13 +26,6 @@ function defaultCallbackTime(): string {
   return d.toISOString().slice(0, 16);
 }
 
-function formatAiSummary(s: CallLog["ai_summary"]): string {
-  if (!s) return "";
-  return Object.entries(s)
-    .filter(([, v]) => v)
-    .map(([k, v]) => `${k.replace("_", " ")}: ${v}`)
-    .join(" · ");
-}
 
 // ── sub-component: queue card ─────────────────────────────────────────────────
 
@@ -145,8 +138,6 @@ export default function TelecallingPage() {
   const [callbackTimeMap, setCallbackTimeMap] = useState<Record<string, string>>({});
   const [showCallbackPicker, setShowCallbackPicker] = useState<Record<string, boolean>>({});
 
-  // phase 2: AI summary toggle
-  const [aiSummaryOpen, setAiSummaryOpen] = useState<Record<string, boolean>>({});
 
   // ── data loading ────────────────────────────────────────────────────────────
 
@@ -598,24 +589,6 @@ export default function TelecallingPage() {
                         </div>
                       )}
 
-                      {/* Phase 2: AI summary */}
-                      {log.ai_summary && (
-                        <div className="mt-2">
-                          <button
-                            onClick={() => setAiSummaryOpen((prev) => ({ ...prev, [log.id]: !prev[log.id] }))}
-                            className="flex items-center gap-1 font-label text-xs text-secondary hover:underline"
-                          >
-                            <Sparkles size={11} />
-                            AI Summary
-                            {aiSummaryOpen[log.id] ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-                          </button>
-                          {aiSummaryOpen[log.id] && (
-                            <p className="mt-1 font-body text-xs text-on-surface-muted bg-surface p-2 rounded-lg border border-surface-mid">
-                              {formatAiSummary(log.ai_summary)}
-                            </p>
-                          )}
-                        </div>
-                      )}
 
                       {log.recording_url && (
                         <audio controls src={log.recording_url} className="mt-2 w-full h-8" />
