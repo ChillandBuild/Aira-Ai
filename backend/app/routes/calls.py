@@ -358,15 +358,6 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate):
     }
 
 
-@router.delete("/{call_log_id}")
-async def delete_call_log(call_log_id: str):
-    db = get_supabase()
-    result = db.table("call_logs").delete().eq("id", call_log_id).execute()
-    if not result.data:
-        raise HTTPException(status_code=404, detail="Call log not found")
-    return {"deleted": True}
-
-
 @router.get("/recent-by-leads")
 async def recent_by_leads(lead_ids: str = Query(..., description="Comma-separated lead UUIDs, max 50")):
     ids = [i.strip() for i in lead_ids.split(",") if i.strip()][:50]
@@ -406,3 +397,12 @@ async def backfill_summaries(background_tasks: BackgroundTasks, limit: int = Que
         background_tasks.add_task(_run_summarization, row["id"], row["recording_url"])
 
     return {"queued": len(rows)}
+
+
+@router.delete("/{call_log_id}")
+async def delete_call_log(call_log_id: str):
+    db = get_supabase()
+    result = db.table("call_logs").delete().eq("id", call_log_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Call log not found")
+    return {"deleted": True}
