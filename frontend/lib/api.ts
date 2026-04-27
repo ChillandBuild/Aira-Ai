@@ -34,13 +34,23 @@ export interface Caller {
 
 export interface CallLog {
   id: string;
-  lead_id: string;
+  lead_id: string | null;
+  call_sid: string | null;
   duration_seconds: number | null;
   outcome: "converted" | "callback" | "not_interested" | "no_answer" | null;
   recording_url: string | null;
   score: number | null;
   status: string;
+  ai_summary: {
+    course?: string;
+    budget?: string;
+    timeline?: string;
+    next_action?: string;
+    sentiment?: string;
+  } | null;
+  transcript: string | null;
   created_at: string;
+  leads?: { phone: string | null; name: string | null } | null;
 }
 
 export interface SegmentTemplate {
@@ -265,6 +275,10 @@ export const api = {
       const res = await apiFetch<Message[] | { data: Message[] }>(`/api/v1/leads/${id}/messages`);
       return Array.isArray(res) ? res : res.data || [];
     },
+    callLogs: async (leadId: string) => {
+      const res = await apiFetch<{ data: CallLog[] }>(`/api/v1/leads/${leadId}/call-logs`);
+      return res.data || [];
+    },
     exportUrl: (segment?: string) =>
       `${API_URL}/api/v1/leads/export${segment ? `?segment=${segment}` : ""}`,
   },
@@ -294,11 +308,11 @@ export const api = {
   },
   calls: {
     initiate: (target: { leadId?: string; phone?: string }, callerId?: string) =>
-      apiFetch<{ call_log_id: string; call_sid: string; status: string }>(
+      apiFetch<{ call_log_id: string; call_sid: string; status: string; lead_id: string | null; lead_name: string | null }>(
         `/api/v1/calls/initiate`,
         { method: "POST", body: JSON.stringify({ lead_id: target.leadId, phone: target.phone, caller_id: callerId }) }
       ),
-    setOutcome: (callLogId: string, outcome: NonNullable<CallLog["outcome"]>) =>
+    setOutcome: (callLogId: string, outcome: NonNullable<CallLog["outcome"]>, callbackTime?: string) =>
       apiFetch<{
         call_log_id: string;
         outcome: string;
@@ -306,8 +320,23 @@ export const api = {
         caller_overall_score: number | null;
       }>(`/api/v1/calls/${callLogId}/outcome`, {
         method: "PATCH",
-        body: JSON.stringify({ outcome }),
+        body: JSON.stringify({ outcome, callback_time: callbackTime ?? null }),
       }),
+    recentByLeads: (leadIds: string[]) =>
+      apiFetch<Record<string, string>>(
+        `/api/v1/calls/recent-by-leads?lead_ids=${leadIds.slice(0, 50).join(",")}`,
+      ),
+    deleteLog: (callLogId: string) =>
+      apiFetch<{ deleted: boolean }>(`/api/v1/calls/${callLogId}`, { method: "DELETE" }),
+  },
+  notes: {
+    update: (noteId: string, data: { content?: string; is_pinned?: boolean }) =>
+      apiFetch<{ id: string; content: string; is_pinned: boolean }>(
+        `/api/v1/lead-notes/note/${noteId}`,
+        { method: "PATCH", body: JSON.stringify(data) }
+      ),
+    delete: (noteId: string) =>
+      apiFetch<{ deleted: boolean }>(`/api/v1/lead-notes/note/${noteId}`, { method: "DELETE" }),
   },
   segments: {
     templates: async () => {

@@ -1,131 +1,152 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Phone, Star, TrendingUp, Sparkles, RefreshCw, UserPlus, X, Pencil, Trash2, Pin, FileText } from "lucide-react";
-import { api, Caller, CallLog, Lead, API_URL } from "@/lib/api";
+import {
+  Phone, Star, TrendingUp, Sparkles, RefreshCw, UserPlus, X,
+  Pencil, Trash2, Eye, RotateCcw, ChevronDown, ChevronUp,
+} from "lucide-react";
+import { api, Caller, CallLog, Lead } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
-
-type Note = {
-  id: string;
-  lead_id: string;
-  caller_id: string | null;
-  call_log_id: string | null;
-  content: string;
-  structured: {
-    course?: string;
-    budget?: string;
-    timeline?: string;
-    next_action?: string;
-    sentiment?: string;
-  };
-  is_pinned: boolean;
-  created_at: string;
-};
-
-type NotesResponse = {
-  pinned: Note[];
-  notes: Note[];
-};
-
-async function fetchNotes(leadId: string): Promise<NotesResponse> {
-  const res = await fetch(`${API_URL}/api/v1/lead-notes/${leadId}`, {
-    headers: { "Content-Type": "application/json" },
-  });
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  return res.json();
-}
-
-async function saveNote(
-  leadId: string,
-  content: string,
-  isPinned: boolean,
-): Promise<Note> {
-  const res = await fetch(`${API_URL}/api/v1/lead-notes/${leadId}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content, is_pinned: isPinned }),
-  });
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  return res.json();
-}
+import BriefingModal from "./components/briefing-modal";
+import LiveNotesPane from "./components/live-notes-pane";
+import NotesHistoryModal from "./components/notes-history-modal";
+import { fetchNotes } from "./lib/notes-api";
+import type { ActiveCallCtx, NotesResponse } from "./types";
 
 const STATUS_COLORS: Record<string, string> = {
   active: "bg-green-100 text-green-700",
   inactive: "bg-surface-mid text-on-surface-muted",
 };
 
-const BRIEFING_TAGS = [
-  "Confirm campus visit",
-  "Discuss fees",
-  "Schedule callback",
-  "Send brochure",
-];
+// ── helpers ──────────────────────────────────────────────────────────────────
 
-const LIVE_NOTE_TAGS = [
-  "Meeting scheduled",
-  "Not interested",
-  "Call back later",
-  "Discussed fees",
-  "Campus visit planned",
-  "Needs more info",
-];
+function defaultCallbackTime(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(10, 0, 0, 0);
+  return d.toISOString().slice(0, 16);
+}
 
-function StructuredFields({ data }: { data: Note["structured"] }) {
-  const entries = Object.entries(data).filter(([, v]) => v);
-  if (!entries.length) return null;
+
+// ── sub-component: queue card ─────────────────────────────────────────────────
+
+function QueueCard({
+  lead,
+  dialing,
+  lastCalledAt,
+  hasSelected,
+  onCall,
+  onView,
+}: {
+  lead: Lead;
+  dialing: string | null;
+  lastCalledAt: string | undefined;
+  hasSelected: boolean;
+  onCall: (lead: Lead) => void;
+  onView: (lead: Lead) => void;
+}) {
   return (
-    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
-      {entries.map(([k, v]) => (
-        <span key={k} className="font-label text-[10px] text-on-surface-muted">
-          <span className="font-semibold capitalize">{k.replace("_", " ")}:</span> {v}
-        </span>
-      ))}
+    <div className="p-3 bg-surface-low rounded-xl">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-body text-sm font-semibold text-on-surface truncate">
+            {lead.name || formatPhone(lead.phone)}
+          </p>
+          <p className="font-label text-xs text-on-surface-muted mt-0.5">
+            {lead.name ? formatPhone(lead.phone) + " · " : ""}Score {lead.score}
+          </p>
+          {lastCalledAt && (
+            <p className="font-label text-[10px] text-on-surface-muted mt-0.5">
+              Called {timeAgo(lastCalledAt)}
+            </p>
+          )}
+        </div>
+        <button
+          onClick={() => onView(lead)}
+          className="p-1.5 rounded-lg hover:bg-surface-mid transition-colors text-on-surface-muted shrink-0"
+          title="View notes"
+        >
+          <Eye size={13} />
+        </button>
+      </div>
+      <button
+        onClick={() => onCall(lead)}
+        disabled={dialing === lead.id || !hasSelected}
+        className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >
+        <Phone size={12} />
+        {dialing === lead.id ? "Dialing…" : "Call"}
+      </button>
     </div>
   );
 }
 
+// ── main page ─────────────────────────────────────────────────────────────────
+
 export default function TelecallingPage() {
+  // callers
   const [callers, setCallers] = useState<Caller[]>([]);
-  const [queue, setQueue] = useState<Lead[]>([]);
   const [selected, setSelected] = useState<Caller | null>(null);
   const [logs, setLogs] = useState<CallLog[]>([]);
-  const [tip, setTip] = useState<string>("");
+  const [tip, setTip] = useState("");
   const [tipLoading, setTipLoading] = useState(false);
-  const [dialing, setDialing] = useState<string | null>(null);
 
-  // add form
+  // add / edit caller form
   const [showAddForm, setShowAddForm] = useState(false);
   const [newName, setNewName] = useState("");
   const [newPhone, setNewPhone] = useState("");
   const [adding, setAdding] = useState(false);
-
-  // edit form
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // queues
+  const [hotQueue, setHotQueue] = useState<Lead[]>([]);
+  const [callbackQueue, setCallbackQueue] = useState<Lead[]>([]);
+  const [coldQueue, setColdQueue] = useState<Lead[]>([]);
+  const [disqualQueue, setDisqualQueue] = useState<Lead[]>([]);
+  const [showCallbackQueue, setShowCallbackQueue] = useState(true);
+  const [showColdQueue, setShowColdQueue] = useState(false);
+  const [showDisqualQueue, setShowDisqualQueue] = useState(false);
+  const [lastCalledMap, setLastCalledMap] = useState<Record<string, string>>({});
+
+  // dialing state
+  const [dialing, setDialing] = useState<string | null>(null);
+  const [callingAgainId, setCallingAgainId] = useState<string | null>(null);
+
   // manual dial
   const [manualPhone, setManualPhone] = useState("");
   const [manualDialing, setManualDialing] = useState(false);
 
-  // briefing modal
+  // briefing modal (for calling)
   const [briefingLead, setBriefingLead] = useState<Lead | null>(null);
   const [briefingNotes, setBriefingNotes] = useState<NotesResponse | null>(null);
   const [briefingLoading, setBriefingLoading] = useState(false);
 
+  // notes-only viewer (eye icon)
+  const [viewingLead, setViewingLead] = useState<Lead | null>(null);
+  const [viewingNotes, setViewingNotes] = useState<NotesResponse | null>(null);
+  const [viewingLoading, setViewingLoading] = useState(false);
+
+  // full notes history modal
+  const [historyLead, setHistoryLead] = useState<Lead | null>(null);
+
   // live notes pane
-  const [activeCallLeadId, setActiveCallLeadId] = useState<string | null>(null);
-  const [noteContent, setNoteContent] = useState("");
-  const [notePinned, setNotePinned] = useState(false);
-  const [noteSaving, setNoteSaving] = useState(false);
-  const [savedFlash, setSavedFlash] = useState(false);
+  const [activeCallCtx, setActiveCallCtx] = useState<ActiveCallCtx | null>(null);
+
+  // phase 3: callback time picker per log
+  const [callbackTimeMap, setCallbackTimeMap] = useState<Record<string, string>>({});
+  const [showCallbackPicker, setShowCallbackPicker] = useState<Record<string, boolean>>({});
+
+
+  // ── data loading ────────────────────────────────────────────────────────────
 
   useEffect(() => {
     api.callers.list().then((rows) => {
       setCallers(rows);
       if (rows.length && !selected) setSelected(rows[0]);
     });
-    api.leads.list({ segment: "A", limit: 10 }).then(setQueue);
+    loadQueues();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -135,10 +156,7 @@ export default function TelecallingPage() {
   }, [selected]);
 
   useEffect(() => {
-    if (!briefingLead) {
-      setBriefingNotes(null);
-      return;
-    }
+    if (!briefingLead) { setBriefingNotes(null); return; }
     setBriefingLoading(true);
     fetchNotes(briefingLead.id)
       .then(setBriefingNotes)
@@ -146,18 +164,34 @@ export default function TelecallingPage() {
       .finally(() => setBriefingLoading(false));
   }, [briefingLead]);
 
-  async function loadTip() {
-    if (!selected) return;
-    setTipLoading(true);
-    try {
-      const res = await api.callers.coaching(selected.id);
-      setTip(res.tip);
-    } catch (err) {
-      setTip(err instanceof Error ? err.message : "Could not fetch tip");
-    } finally {
-      setTipLoading(false);
+  useEffect(() => {
+    if (!viewingLead) { setViewingNotes(null); return; }
+    setViewingLoading(true);
+    fetchNotes(viewingLead.id)
+      .then(setViewingNotes)
+      .catch(() => setViewingNotes({ pinned: [], notes: [] }))
+      .finally(() => setViewingLoading(false));
+  }, [viewingLead]);
+
+  async function loadQueues() {
+    const [hot, cb, cold, disqual] = await Promise.all([
+      api.leads.list({ segment: "A", limit: 20 }),
+      api.leads.list({ segment: "B", limit: 20 }),
+      api.leads.list({ segment: "C", limit: 20 }),
+      api.leads.list({ segment: "D", limit: 20 }),
+    ]);
+    setHotQueue(hot);
+    setCallbackQueue(cb);
+    setColdQueue(cold);
+    setDisqualQueue(disqual);
+
+    const allIds = [...hot, ...cb, ...cold, ...disqual].map((l) => l.id).filter(Boolean);
+    if (allIds.length) {
+      api.calls.recentByLeads(allIds).then(setLastCalledMap).catch(() => {});
     }
   }
+
+  // ── caller CRUD ─────────────────────────────────────────────────────────────
 
   async function addCaller() {
     if (!newName.trim() || !newPhone.trim()) return;
@@ -166,14 +200,10 @@ export default function TelecallingPage() {
       await api.callers.create(newName.trim(), newPhone.trim());
       const rows = await api.callers.list();
       setCallers(rows);
-      setNewName("");
-      setNewPhone("");
-      setShowAddForm(false);
+      setNewName(""); setNewPhone(""); setShowAddForm(false);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to add caller");
-    } finally {
-      setAdding(false);
-    }
+    } finally { setAdding(false); }
   }
 
   function startEdit(caller: Caller, e: React.MouseEvent) {
@@ -193,9 +223,7 @@ export default function TelecallingPage() {
       setEditingId(null);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Update failed");
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
 
   async function deleteCaller(id: string, e: React.MouseEvent) {
@@ -211,18 +239,18 @@ export default function TelecallingPage() {
     }
   }
 
-  async function executeDial(leadId: string) {
+  // ── dialing ─────────────────────────────────────────────────────────────────
+
+  async function executeDial(leadId: string, lead: Lead) {
     if (!selected) { alert("Select a caller first"); return; }
     setDialing(leadId);
     try {
       const res = await api.calls.initiate({ leadId }, selected.id);
-      alert(`Call initiated (${res.status}). SID ${res.call_sid}`);
+      setActiveCallCtx({ leadId: res.lead_id ?? leadId, name: res.lead_name ?? lead.name, phone: lead.phone });
       api.callers.logs(selected.id).then(setLogs);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Call failed");
-    } finally {
-      setDialing(null);
-    }
+    } finally { setDialing(null); }
   }
 
   function openBriefing(lead: Lead) {
@@ -234,10 +262,7 @@ export default function TelecallingPage() {
     if (!briefingLead) return;
     const lead = briefingLead;
     setBriefingLead(null);
-    setActiveCallLeadId(lead.id);
-    setNoteContent("");
-    setNotePinned(false);
-    executeDial(lead.id);
+    executeDial(lead.id, lead);
   }
 
   async function manualDial() {
@@ -246,35 +271,96 @@ export default function TelecallingPage() {
     setManualDialing(true);
     try {
       const res = await api.calls.initiate({ phone: manualPhone.trim() }, selected.id);
-      alert(`Call initiated (${res.status}). SID ${res.call_sid}`);
+      setActiveCallCtx({
+        leadId: res.lead_id ?? null,
+        name: res.lead_name ?? null,
+        phone: manualPhone.trim(),
+      });
       setManualPhone("");
       api.callers.logs(selected.id).then(setLogs);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Call failed");
-    } finally {
-      setManualDialing(false);
-    }
+    } finally { setManualDialing(false); }
   }
 
-  async function handleSaveNote() {
-    if (!activeCallLeadId || !noteContent.trim()) return;
-    setNoteSaving(true);
+  // ── outcome + callback time ──────────────────────────────────────────────────
+
+  async function handleSetOutcome(log: CallLog, outcome: NonNullable<CallLog["outcome"]>) {
+    if (!selected) return;
+    if (outcome === "callback") {
+      setShowCallbackPicker((prev) => ({ ...prev, [log.id]: true }));
+      setCallbackTimeMap((prev) => ({ ...prev, [log.id]: prev[log.id] ?? defaultCallbackTime() }));
+    }
     try {
-      await saveNote(activeCallLeadId, noteContent.trim(), notePinned);
-      setNoteContent("");
-      setNotePinned(false);
-      setSavedFlash(true);
-      setTimeout(() => setSavedFlash(false), 2000);
+      await api.calls.setOutcome(log.id, outcome);
+      const [freshLogs, freshCallers] = await Promise.all([
+        api.callers.logs(selected.id),
+        api.callers.list(),
+      ]);
+      setLogs(freshLogs);
+      setCallers(freshCallers);
+      setSelected(freshCallers.find((c) => c.id === selected.id) ?? selected);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to save note");
-    } finally {
-      setNoteSaving(false);
+      alert(err instanceof Error ? err.message : "Update failed");
     }
   }
 
-  function appendTag(tag: string) {
-    setNoteContent((prev) => (prev.trim() ? `${prev.trim()}\n${tag}` : tag));
+  async function saveCallbackTime(logId: string) {
+    const cbTime = callbackTimeMap[logId];
+    if (!cbTime || !selected) return;
+    try {
+      await api.calls.setOutcome(logId, "callback", new Date(cbTime).toISOString());
+      setShowCallbackPicker((prev) => ({ ...prev, [logId]: false }));
+      alert(`Callback reminder set for ${new Date(cbTime).toLocaleString()}`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to save callback time");
+    }
   }
+
+  // ── call again ───────────────────────────────────────────────────────────────
+
+  async function callAgain(log: CallLog) {
+    if (!selected || !log.lead_id) return;
+    setCallingAgainId(log.id);
+    try {
+      const res = await api.calls.initiate({ leadId: log.lead_id }, selected.id);
+      setActiveCallCtx({
+        leadId: res.lead_id ?? log.lead_id,
+        name: res.lead_name ?? log.leads?.name ?? null,
+        phone: log.leads?.phone ?? null,
+      });
+      api.callers.logs(selected.id).then(setLogs);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Call failed");
+    } finally {
+      setCallingAgainId(null);
+    }
+  }
+
+  async function deleteLog(logId: string) {
+    if (!confirm("Delete this call log?")) return;
+    try {
+      await api.calls.deleteLog(logId);
+      if (selected) api.callers.logs(selected.id).then(setLogs);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Delete failed");
+    }
+  }
+
+  // ── AI coaching ──────────────────────────────────────────────────────────────
+
+  async function loadTip() {
+    if (!selected) return;
+    setTipLoading(true);
+    try {
+      const res = await api.callers.coaching(selected.id);
+      setTip(res.tip);
+    } catch (err) {
+      setTip(err instanceof Error ? err.message : "Could not fetch tip");
+    } finally { setTipLoading(false); }
+  }
+
+  // ── render ───────────────────────────────────────────────────────────────────
 
   return (
     <div>
@@ -284,7 +370,9 @@ export default function TelecallingPage() {
       </div>
 
       <div className="grid grid-cols-3 gap-6">
+        {/* ── left panel ── */}
         <div className="col-span-2 bg-surface rounded-card p-8 shadow-card ring-1 ring-[#c4c7c7]/15">
+          {/* caller roster header */}
           <div className="flex items-center justify-between mb-6">
             <h2 className="font-display text-lg font-bold text-tertiary">Caller Roster</h2>
             <button
@@ -296,25 +384,21 @@ export default function TelecallingPage() {
             </button>
           </div>
 
+          {/* add form */}
           {showAddForm && (
             <div className="mb-6 p-4 bg-surface-low rounded-xl space-y-3">
               <input
-                type="text"
-                placeholder="Name (e.g. Priya)"
-                value={newName}
+                type="text" placeholder="Name (e.g. Priya)" value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg bg-surface border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary"
               />
               <input
-                type="tel"
-                placeholder="Phone (e.g. +919345679286)"
-                value={newPhone}
+                type="tel" placeholder="Phone (e.g. +919345679286)" value={newPhone}
                 onChange={(e) => setNewPhone(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg bg-surface border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary"
               />
               <button
-                onClick={addCaller}
-                disabled={adding || !newName.trim() || !newPhone.trim()}
+                onClick={addCaller} disabled={adding || !newName.trim() || !newPhone.trim()}
                 className="w-full py-2 bg-tertiary text-white rounded-lg font-label text-sm font-semibold hover:bg-tertiary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {adding ? "Adding…" : "Add Caller"}
@@ -322,10 +406,9 @@ export default function TelecallingPage() {
             </div>
           )}
 
+          {/* caller list */}
           {callers.length === 0 ? (
-            <p className="font-body text-sm text-on-surface-muted">
-              No callers yet. Click &quot;Add Caller&quot; to get started.
-            </p>
+            <p className="font-body text-sm text-on-surface-muted">No callers yet. Click &quot;Add Caller&quot; to get started.</p>
           ) : (
             <div className="space-y-3">
               {callers.map((caller) => {
@@ -335,40 +418,21 @@ export default function TelecallingPage() {
                   <div
                     key={caller.id}
                     onClick={() => !isEditing && setSelected(caller)}
-                    className={`p-4 rounded-xl transition-all ${
-                      isEditing ? "bg-surface-low ring-2 ring-tertiary" :
-                      isSelected ? "bg-tertiary-bg ring-2 ring-tertiary cursor-pointer" :
-                      "bg-surface-low hover:bg-surface-mid cursor-pointer"
-                    }`}
+                    className={`p-4 rounded-xl transition-all ${isEditing ? "bg-surface-low ring-2 ring-tertiary" : isSelected ? "bg-tertiary-bg ring-2 ring-tertiary cursor-pointer" : "bg-surface-low hover:bg-surface-mid cursor-pointer"}`}
                   >
                     {isEditing ? (
                       <div className="space-y-2">
-                        <input
-                          type="text"
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="w-full px-3 py-1.5 rounded-lg bg-surface border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary"
-                        />
-                        <input
-                          type="tel"
-                          value={editPhone}
-                          onChange={(e) => setEditPhone(e.target.value)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="w-full px-3 py-1.5 rounded-lg bg-surface border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary"
-                        />
+                        <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} onClick={(e) => e.stopPropagation()}
+                          className="w-full px-3 py-1.5 rounded-lg bg-surface border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary" />
+                        <input type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} onClick={(e) => e.stopPropagation()}
+                          className="w-full px-3 py-1.5 rounded-lg bg-surface border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary" />
                         <div className="flex gap-2">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); saveCaller(caller.id); }}
-                            disabled={saving}
-                            className="flex-1 py-1.5 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 disabled:opacity-50 transition-colors"
-                          >
+                          <button onClick={(e) => { e.stopPropagation(); saveCaller(caller.id); }} disabled={saving}
+                            className="flex-1 py-1.5 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 disabled:opacity-50 transition-colors">
                             {saving ? "Saving…" : "Save"}
                           </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setEditingId(null); }}
-                            className="flex-1 py-1.5 bg-surface border border-surface-mid rounded-lg font-label text-xs font-semibold hover:bg-surface-mid transition-colors"
-                          >
+                          <button onClick={(e) => { e.stopPropagation(); setEditingId(null); }}
+                            className="flex-1 py-1.5 bg-surface border border-surface-mid rounded-lg font-label text-xs font-semibold hover:bg-surface-mid transition-colors">
                             Cancel
                           </button>
                         </div>
@@ -394,18 +458,12 @@ export default function TelecallingPage() {
                           {caller.active ? "active" : "inactive"}
                         </span>
                         <div className="flex items-center gap-1 ml-1">
-                          <button
-                            onClick={(e) => startEdit(caller, e)}
-                            className="p-1.5 rounded-lg hover:bg-surface-mid transition-colors text-on-surface-muted hover:text-on-surface"
-                            title="Edit"
-                          >
+                          <button onClick={(e) => startEdit(caller, e)}
+                            className="p-1.5 rounded-lg hover:bg-surface-mid transition-colors text-on-surface-muted hover:text-on-surface" title="Edit">
                             <Pencil size={13} />
                           </button>
-                          <button
-                            onClick={(e) => deleteCaller(caller.id, e)}
-                            className="p-1.5 rounded-lg hover:bg-red-50 transition-colors text-on-surface-muted hover:text-red-500"
-                            title="Remove"
-                          >
+                          <button onClick={(e) => deleteCaller(caller.id, e)}
+                            className="p-1.5 rounded-lg hover:bg-red-50 transition-colors text-on-surface-muted hover:text-red-500" title="Remove">
                             <Trash2 size={13} />
                           </button>
                         </div>
@@ -417,6 +475,7 @@ export default function TelecallingPage() {
             </div>
           )}
 
+          {/* recent calls */}
           {selected && (
             <div className="mt-8 pt-6 border-t border-surface-mid">
               <h3 className="font-display text-sm font-bold text-tertiary mb-4">
@@ -425,40 +484,74 @@ export default function TelecallingPage() {
               {logs.length === 0 ? (
                 <p className="font-body text-sm text-on-surface-muted">No calls yet.</p>
               ) : (
-                <div className="space-y-2">
-                  {logs.map((log) => (
-                    <div key={log.id} className="p-3 bg-surface-low rounded-xl">
+                <div className="space-y-3">
+                  {logs.map((log) => {
+                    const leadPhone = log.leads?.phone;
+                    const leadName = log.leads?.name;
+                    return (
+                    <div key={log.id} className="p-4 bg-surface-low rounded-xl">
+                      {/* lead info row */}
+                      {(leadName || leadPhone) && (
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                            {leadName && <p className="font-body text-sm font-semibold text-on-surface">{leadName}</p>}
+                            {leadPhone && <p className="font-label text-xs text-on-surface-muted">{leadPhone}</p>}
+                          </div>
+                          {log.lead_id && (
+                            <button
+                              onClick={() => callAgain(log)}
+                              disabled={callingAgainId === log.id}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 disabled:opacity-70 transition-colors"
+                            >
+                              {callingAgainId === log.id ? (
+                                <>
+                                  <RefreshCw size={11} className="animate-spin" />
+                                  Calling…
+                                </>
+                              ) : (
+                                <><Phone size={11} /> Call Again</>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      )}
                       <div className="flex items-center justify-between">
                         <span className="font-label text-xs font-semibold text-on-surface capitalize">
                           {log.status.replace("_", " ")}
                           {log.outcome && ` · ${log.outcome.replace("_", " ")}`}
                         </span>
-                        <span className="font-label text-xs text-on-surface-muted">{timeAgo(log.created_at)}</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => deleteLog(log.id)}
+                            className="p-1 rounded hover:bg-red-50 transition-colors text-on-surface-muted hover:text-red-500"
+                            title="Delete log"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                          {log.lead_id && !leadPhone && (
+                            <button
+                              onClick={() => callAgain(log)}
+                              className="p-1 rounded hover:bg-surface-mid transition-colors text-on-surface-muted hover:text-tertiary"
+                              title="Call again"
+                            >
+                              <RotateCcw size={12} />
+                            </button>
+                          )}
+                          <span className="font-label text-xs text-on-surface-muted">{timeAgo(log.created_at)}</span>
+                        </div>
                       </div>
+
                       <div className="flex items-center gap-3 mt-1 font-label text-xs text-on-surface-muted">
                         {log.duration_seconds != null && <span>{log.duration_seconds}s</span>}
                         {log.score != null && <span>Score {Number(log.score).toFixed(1)}</span>}
                       </div>
+
+                      {/* outcome dropdown */}
                       <div className="mt-2 flex items-center gap-2">
                         <label className="font-label text-xs text-on-surface-muted">Outcome</label>
                         <select
                           value={log.outcome ?? ""}
-                          onChange={async (e) => {
-                            const outcome = e.target.value as NonNullable<CallLog["outcome"]>;
-                            if (!outcome || !selected) return;
-                            try {
-                              await api.calls.setOutcome(log.id, outcome);
-                              const [freshLogs, freshCallers] = await Promise.all([
-                                api.callers.logs(selected.id),
-                                api.callers.list(),
-                              ]);
-                              setLogs(freshLogs);
-                              setCallers(freshCallers);
-                              setSelected(freshCallers.find((c) => c.id === selected.id) ?? selected);
-                            } catch (err) {
-                              alert(err instanceof Error ? err.message : "Update failed");
-                            }
-                          }}
+                          onChange={(e) => handleSetOutcome(log, e.target.value as NonNullable<CallLog["outcome"]>)}
                           className="px-2 py-1 rounded-md bg-surface border border-surface-mid font-label text-xs"
                         >
                           <option value="">—</option>
@@ -468,260 +561,266 @@ export default function TelecallingPage() {
                           <option value="no_answer">No answer</option>
                         </select>
                       </div>
+
+                      {/* Phase 3: callback time picker */}
+                      {showCallbackPicker[log.id] && (
+                        <div className="mt-2 p-3 bg-surface rounded-lg border border-surface-mid space-y-2">
+                          <p className="font-label text-xs font-semibold text-on-surface-muted">Schedule callback reminder</p>
+                          <input
+                            type="datetime-local"
+                            value={callbackTimeMap[log.id] ?? ""}
+                            onChange={(e) => setCallbackTimeMap((prev) => ({ ...prev, [log.id]: e.target.value }))}
+                            className="w-full px-2 py-1 rounded-md bg-surface-low border border-surface-mid font-label text-xs focus:outline-none focus:ring-2 focus:ring-tertiary"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => saveCallbackTime(log.id)}
+                              className="flex-1 py-1.5 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 transition-colors"
+                            >
+                              Save Reminder
+                            </button>
+                            <button
+                              onClick={() => setShowCallbackPicker((prev) => ({ ...prev, [log.id]: false }))}
+                              className="flex-1 py-1.5 bg-surface border border-surface-mid rounded-lg font-label text-xs font-semibold hover:bg-surface-mid transition-colors"
+                            >
+                              Skip
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+
                       {log.recording_url && (
                         <audio controls src={log.recording_url} className="mt-2 w-full h-8" />
                       )}
                     </div>
-                  ))}
+                  );})}
                 </div>
               )}
             </div>
           )}
         </div>
 
+        {/* ── right panel ── */}
         <div className="space-y-6">
+          {/* Live Notes — embedded when call is active */}
+          {activeCallCtx && (
+            <LiveNotesPane ctx={activeCallCtx} onClose={() => setActiveCallCtx(null)} />
+          )}
+
+          {/* AI Coaching */}
           <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-display text-sm font-bold text-tertiary flex items-center gap-2">
-                <Sparkles size={14} className="text-secondary" />
-                AI Coaching
+                <Sparkles size={14} className="text-secondary" /> AI Coaching
               </h2>
-              <button
-                onClick={loadTip}
-                disabled={!selected || tipLoading}
-                className="p-1.5 rounded-lg hover:bg-surface-low transition-colors disabled:opacity-40"
-                title="Refresh tip"
-              >
+              <button onClick={loadTip} disabled={!selected || tipLoading}
+                className="p-1.5 rounded-lg hover:bg-surface-low transition-colors disabled:opacity-40" title="Refresh tip">
                 <RefreshCw size={14} className={tipLoading ? "animate-spin" : ""} />
               </button>
             </div>
             <p className="font-body text-sm text-on-surface min-h-[3rem]">
-              {!selected ? "Select a caller to get coaching."
-                : tip ? tip
-                : tipLoading ? "Generating…"
-                : "Click refresh to generate a tip."}
+              {!selected ? "Select a caller to get coaching." : tip ? tip : tipLoading ? "Generating…" : "Click refresh to generate a tip."}
             </p>
           </div>
 
           {/* Manual Dial */}
           <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
             <h2 className="font-display text-sm font-bold text-tertiary mb-3 flex items-center gap-2">
-              <Phone size={14} className="text-secondary" />
-              Manual Dial
+              <Phone size={14} className="text-secondary" /> Manual Dial
             </h2>
             <div className="flex gap-2">
               <input
-                type="tel"
-                placeholder="e.g. +919942497199"
-                value={manualPhone}
+                type="tel" placeholder="e.g. +919942497199" value={manualPhone}
                 onChange={(e) => setManualPhone(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && manualDial()}
                 className="flex-1 px-3 py-2 rounded-lg bg-surface-low border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary"
               />
-              <button
-                onClick={manualDial}
-                disabled={manualDialing || !manualPhone.trim() || !selected}
-                className="px-3 py-2 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
+              <button onClick={manualDial} disabled={manualDialing || !manualPhone.trim() || !selected}
+                className="px-3 py-2 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                 {manualDialing ? "…" : <Phone size={14} />}
               </button>
             </div>
-            {!selected && (
-              <p className="font-label text-xs text-on-surface-muted mt-2">Select a caller first.</p>
-            )}
+            {!selected && <p className="font-label text-xs text-on-surface-muted mt-2">Select a caller first.</p>}
           </div>
 
-          {/* Hot Call Queue */}
+          {/* Hot Queue (Segment A) */}
           <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
             <h2 className="font-display text-base font-bold text-tertiary mb-4 flex items-center gap-2">
               <TrendingUp size={16} className="text-secondary" />
-              Hot Call Queue (Segment A)
+              Hot Queue (Segment A)
+              {hotQueue.length > 0 && (
+                <span className="ml-auto px-2 py-0.5 bg-secondary/10 text-secondary rounded-full font-label text-xs font-semibold">
+                  {hotQueue.length}
+                </span>
+              )}
             </h2>
-            {queue.length === 0 ? (
+            {hotQueue.length === 0 ? (
               <p className="font-body text-sm text-on-surface-muted">No hot leads.</p>
             ) : (
               <div className="space-y-3">
-                {queue.map((lead) => (
-                  <div key={lead.id} className="p-3 bg-surface-low rounded-xl">
-                    <p className="font-body text-sm font-semibold text-on-surface">
-                      {formatPhone(lead.phone)}
-                    </p>
-                    <p className="font-label text-xs text-on-surface-muted mt-0.5">
-                      {lead.name || "Unnamed lead"} · Score {lead.score}
-                    </p>
-                    <button
-                      onClick={() => openBriefing(lead)}
-                      disabled={dialing === lead.id || !selected}
-                      className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <Phone size={12} />
-                      {dialing === lead.id ? "Dialing…" : "Call"}
-                    </button>
-                  </div>
+                {hotQueue.map((lead) => (
+                  <QueueCard
+                    key={lead.id} lead={lead} dialing={dialing}
+                    lastCalledAt={lastCalledMap[lead.id]}
+                    hasSelected={!!selected}
+                    onCall={openBriefing}
+                    onView={(l) => setViewingLead(l)}
+                  />
                 ))}
               </div>
             )}
           </div>
+
+          {/* Callback Queue (Segment B) */}
+          <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
+            <button
+              onClick={() => setShowCallbackQueue((v) => !v)}
+              className="w-full flex items-center gap-2 mb-1"
+            >
+              <h2 className="font-display text-base font-bold text-tertiary flex items-center gap-2 flex-1 text-left">
+                <Phone size={16} className="text-secondary" />
+                Callbacks (Segment B)
+                {callbackQueue.length > 0 && (
+                  <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-label text-xs font-semibold">
+                    {callbackQueue.length}
+                  </span>
+                )}
+              </h2>
+              {showCallbackQueue ? <ChevronUp size={14} className="text-on-surface-muted" /> : <ChevronDown size={14} className="text-on-surface-muted" />}
+            </button>
+
+            {showCallbackQueue && (
+              <div className="mt-4">
+                {callbackQueue.length === 0 ? (
+                  <p className="font-body text-sm text-on-surface-muted">No callbacks pending.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {callbackQueue.map((lead) => (
+                      <QueueCard
+                        key={lead.id} lead={lead} dialing={dialing}
+                        lastCalledAt={lastCalledMap[lead.id]}
+                        hasSelected={!!selected}
+                        onCall={openBriefing}
+                        onView={(l) => setViewingLead(l)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Cold Leads (Segment C) */}
+          <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
+            <button
+              onClick={() => setShowColdQueue((v) => !v)}
+              className="w-full flex items-center gap-2 mb-1"
+            >
+              <h2 className="font-display text-base font-bold text-tertiary flex items-center gap-2 flex-1 text-left">
+                <Phone size={16} className="text-on-surface-muted" />
+                Cold Leads (Segment C)
+                {coldQueue.length > 0 && (
+                  <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full font-label text-xs font-semibold">
+                    {coldQueue.length}
+                  </span>
+                )}
+              </h2>
+              {showColdQueue ? <ChevronUp size={14} className="text-on-surface-muted" /> : <ChevronDown size={14} className="text-on-surface-muted" />}
+            </button>
+            {showColdQueue && (
+              <div className="mt-4">
+                {coldQueue.length === 0 ? (
+                  <p className="font-body text-sm text-on-surface-muted">No cold leads.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {coldQueue.map((lead) => (
+                      <QueueCard
+                        key={lead.id} lead={lead} dialing={dialing}
+                        lastCalledAt={lastCalledMap[lead.id]}
+                        hasSelected={!!selected}
+                        onCall={openBriefing}
+                        onView={(l) => setViewingLead(l)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Disqualified (Segment D) */}
+          <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
+            <button
+              onClick={() => setShowDisqualQueue((v) => !v)}
+              className="w-full flex items-center gap-2 mb-1"
+            >
+              <h2 className="font-display text-base font-bold text-tertiary flex items-center gap-2 flex-1 text-left">
+                <Phone size={16} className="text-red-400" />
+                Disqualified (Segment D)
+                {disqualQueue.length > 0 && (
+                  <span className="px-2 py-0.5 bg-red-100 text-red-600 rounded-full font-label text-xs font-semibold">
+                    {disqualQueue.length}
+                  </span>
+                )}
+              </h2>
+              {showDisqualQueue ? <ChevronUp size={14} className="text-on-surface-muted" /> : <ChevronDown size={14} className="text-on-surface-muted" />}
+            </button>
+            {showDisqualQueue && (
+              <div className="mt-4">
+                {disqualQueue.length === 0 ? (
+                  <p className="font-body text-sm text-on-surface-muted">No disqualified leads.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {disqualQueue.map((lead) => (
+                      <QueueCard
+                        key={lead.id} lead={lead} dialing={dialing}
+                        lastCalledAt={lastCalledMap[lead.id]}
+                        hasSelected={!!selected}
+                        onCall={openBriefing}
+                        onView={(l) => setViewingLead(l)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
         </div>
       </div>
 
-      {/* Briefing Modal */}
+      {/* ── Briefing Modal (pre-call) ── */}
       {briefingLead && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-surface rounded-card p-8 shadow-card w-full max-w-md ring-1 ring-[#c4c7c7]/20 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="font-display text-lg font-bold text-tertiary">Pre-Call Briefing</h2>
-              <button
-                onClick={() => setBriefingLead(null)}
-                className="p-1.5 rounded-lg hover:bg-surface-low transition-colors text-on-surface-muted"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="mb-5">
-              <p className="font-body text-base font-semibold text-on-surface">
-                {briefingLead.name || "Unnamed lead"}
-              </p>
-              <p className="font-label text-sm text-on-surface-muted mt-0.5">
-                {formatPhone(briefingLead.phone)} · Score {briefingLead.score} · Segment {briefingLead.segment}
-              </p>
-            </div>
-
-            {briefingLoading ? (
-              <p className="font-body text-sm text-on-surface-muted mb-5">Loading notes…</p>
-            ) : briefingNotes ? (
-              <>
-                {briefingNotes.pinned.length > 0 && (
-                  <div className="mb-5">
-                    <h3 className="font-label text-xs font-semibold text-on-surface-muted uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                      <Pin size={11} />
-                      Pinned Facts
-                    </h3>
-                    <div className="space-y-2">
-                      {briefingNotes.pinned.map((note) => (
-                        <div key={note.id} className="p-3 bg-surface-low rounded-xl">
-                          <p className="font-body text-sm text-on-surface">{note.content}</p>
-                          <StructuredFields data={note.structured} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {briefingNotes.notes.length > 0 && (
-                  <div className="mb-5">
-                    <h3 className="font-label text-xs font-semibold text-on-surface-muted uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                      <FileText size={11} />
-                      Last 3 Interactions
-                    </h3>
-                    <div className="space-y-2">
-                      {briefingNotes.notes.slice(0, 3).map((note) => (
-                        <div key={note.id} className="p-3 bg-surface-low rounded-xl">
-                          <p className="font-label text-[10px] text-on-surface-muted mb-1">{timeAgo(note.created_at)}</p>
-                          <p className="font-body text-sm text-on-surface line-clamp-2">{note.content}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {briefingNotes.pinned.length === 0 && briefingNotes.notes.length === 0 && (
-                  <p className="font-body text-sm text-on-surface-muted mb-5">No previous notes for this lead.</p>
-                )}
-              </>
-            ) : null}
-
-            <div className="mb-6">
-              <h3 className="font-label text-xs font-semibold text-on-surface-muted uppercase tracking-wide mb-2">
-                Suggested Next Steps
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                {BRIEFING_TAGS.map((tag) => (
-                  <span
-                    key={tag}
-                    className="px-2.5 py-1 bg-tertiary-bg text-tertiary rounded-full font-label text-xs font-semibold"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={startCallFromBriefing}
-                disabled={dialing === briefingLead.id}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-tertiary text-white rounded-lg font-label text-sm font-semibold hover:bg-tertiary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                <Phone size={14} />
-                {dialing === briefingLead.id ? "Dialing…" : "Start Call"}
-              </button>
-              <button
-                onClick={() => setBriefingLead(null)}
-                className="flex-1 py-2.5 bg-surface border border-surface-mid rounded-lg font-label text-sm font-semibold hover:bg-surface-low transition-colors text-on-surface"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
+        <BriefingModal
+          lead={briefingLead}
+          notes={briefingNotes}
+          loading={briefingLoading}
+          dialing={dialing === briefingLead.id}
+          viewOnly={false}
+          onStartCall={startCallFromBriefing}
+          onClose={() => setBriefingLead(null)}
+          onViewAllNotes={() => { setHistoryLead(briefingLead); setBriefingLead(null); }}
+        />
       )}
 
-      {/* Live Notes Pane */}
-      {activeCallLeadId && (
-        <div className="fixed right-4 top-20 z-40 w-80 bg-surface rounded-card shadow-card ring-1 ring-[#c4c7c7]/20 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-display text-sm font-bold text-tertiary flex items-center gap-2">
-              <FileText size={14} className="text-secondary" />
-              Live Notes
-            </h2>
-            <button
-              onClick={() => setActiveCallLeadId(null)}
-              className="p-1.5 rounded-lg hover:bg-surface-low transition-colors text-on-surface-muted"
-            >
-              <X size={14} />
-            </button>
-          </div>
+      {/* ── Notes Viewer Modal (read-only, eye icon) ── */}
+      {viewingLead && (
+        <BriefingModal
+          lead={viewingLead}
+          notes={viewingNotes}
+          loading={viewingLoading}
+          dialing={false}
+          viewOnly={true}
+          onStartCall={() => {}}
+          onClose={() => setViewingLead(null)}
+          onViewAllNotes={() => { setHistoryLead(viewingLead); setViewingLead(null); }}
+        />
+      )}
 
-          <div className="flex flex-wrap gap-1.5 mb-3">
-            {LIVE_NOTE_TAGS.map((tag) => (
-              <button
-                key={tag}
-                onClick={() => appendTag(tag)}
-                className="px-2 py-1 bg-surface-low hover:bg-surface-mid rounded-lg font-label text-[10px] font-semibold text-on-surface transition-colors"
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
-
-          <textarea
-            value={noteContent}
-            onChange={(e) => setNoteContent(e.target.value)}
-            placeholder="Type notes here…"
-            rows={4}
-            className="w-full px-3 py-2 rounded-lg bg-surface-low border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary resize-none"
-          />
-
-          <label className="flex items-center gap-2 mt-2 mb-3 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={notePinned}
-              onChange={(e) => setNotePinned(e.target.checked)}
-              className="rounded"
-            />
-            <span className="font-label text-xs text-on-surface-muted">Pin this note</span>
-          </label>
-
-          <button
-            onClick={handleSaveNote}
-            disabled={noteSaving || !noteContent.trim()}
-            className="w-full py-2 bg-tertiary text-white rounded-lg font-label text-sm font-semibold hover:bg-tertiary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {savedFlash ? "Saved ✓" : noteSaving ? "Saving…" : "Save Note"}
-          </button>
-        </div>
+      {/* ── Full Notes History Modal ── */}
+      {historyLead && (
+        <NotesHistoryModal lead={historyLead} onClose={() => setHistoryLead(null)} />
       )}
     </div>
   );

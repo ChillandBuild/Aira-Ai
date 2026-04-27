@@ -14,6 +14,7 @@ import {
   Layers,
   AlertTriangle,
   FileCheck,
+  StickyNote,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AiraLogo } from "./logo";
@@ -24,6 +25,7 @@ const NAV = [
   { href: "/dashboard/leads", icon: Users, label: "Leads" },
   { href: "/dashboard/upload", icon: Upload, label: "Upload" },
   { href: "/dashboard/telecalling", icon: Phone, label: "Telecalling" },
+  { href: "/dashboard/notes", icon: StickyNote, label: "Notes" },
   { href: "/dashboard/knowledge", icon: BookOpen, label: "Knowledge" },
   { href: "/dashboard/ai-tune", icon: Sparkles, label: "AI Tune" },
   { href: "/dashboard/numbers", icon: Layers, label: "Numbers" },
