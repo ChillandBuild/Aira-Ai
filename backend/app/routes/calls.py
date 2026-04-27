@@ -164,8 +164,11 @@ async def twilio_voice_status(
 
     if RecordingUrl:
         try:
+            twilio_sid = get_setting("twilio_account_sid") or settings.twilio_account_sid
+            twilio_token = get_setting("twilio_auth_token") or settings.twilio_auth_token
+            recording_mp3 = RecordingUrl if RecordingUrl.endswith(".mp3") else f"{RecordingUrl}.mp3"
             async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.get(RecordingUrl)
+                resp = await client.get(recording_mp3, auth=(twilio_sid, twilio_token))
                 resp.raise_for_status()
                 audio_bytes = resp.content
             storage_path = f"{call_log_id}.mp3"
