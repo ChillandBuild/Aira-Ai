@@ -322,6 +322,8 @@ export const api = {
       apiFetch<Record<string, string>>(
         `/api/v1/calls/recent-by-leads?lead_ids=${leadIds.slice(0, 50).join(",")}`,
       ),
+    deleteLog: (callLogId: string) =>
+      apiFetch<{ deleted: boolean }>(`/api/v1/calls/${callLogId}`, { method: "DELETE" }),
   },
   segments: {
     templates: async () => {

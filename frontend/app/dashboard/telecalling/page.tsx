@@ -110,7 +110,11 @@ export default function TelecallingPage() {
   // queues
   const [hotQueue, setHotQueue] = useState<Lead[]>([]);
   const [callbackQueue, setCallbackQueue] = useState<Lead[]>([]);
+  const [coldQueue, setColdQueue] = useState<Lead[]>([]);
+  const [disqualQueue, setDisqualQueue] = useState<Lead[]>([]);
   const [showCallbackQueue, setShowCallbackQueue] = useState(true);
+  const [showColdQueue, setShowColdQueue] = useState(false);
+  const [showDisqualQueue, setShowDisqualQueue] = useState(false);
   const [lastCalledMap, setLastCalledMap] = useState<Record<string, string>>({});
 
   // dialing state
@@ -179,14 +183,18 @@ export default function TelecallingPage() {
   }, [viewingLead]);
 
   async function loadQueues() {
-    const [hot, cb] = await Promise.all([
-      api.leads.list({ segment: "A", limit: 10 }),
-      api.leads.list({ segment: "B", limit: 10 }),
+    const [hot, cb, cold, disqual] = await Promise.all([
+      api.leads.list({ segment: "A", limit: 20 }),
+      api.leads.list({ segment: "B", limit: 20 }),
+      api.leads.list({ segment: "C", limit: 20 }),
+      api.leads.list({ segment: "D", limit: 20 }),
     ]);
     setHotQueue(hot);
     setCallbackQueue(cb);
+    setColdQueue(cold);
+    setDisqualQueue(disqual);
 
-    const allIds = [...hot, ...cb].map((l) => l.id).filter(Boolean);
+    const allIds = [...hot, ...cb, ...cold, ...disqual].map((l) => l.id).filter(Boolean);
     if (allIds.length) {
       api.calls.recentByLeads(allIds).then(setLastCalledMap).catch(() => {});
     }
@@ -335,6 +343,16 @@ export default function TelecallingPage() {
       alert(err instanceof Error ? err.message : "Call failed");
     } finally {
       setCallingAgainId(null);
+    }
+  }
+
+  async function deleteLog(logId: string) {
+    if (!confirm("Delete this call log?")) return;
+    try {
+      await api.calls.deleteLog(logId);
+      if (selected) api.callers.logs(selected.id).then(setLogs);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Delete failed");
     }
   }
 
@@ -512,6 +530,13 @@ export default function TelecallingPage() {
                           {log.outcome && ` · ${log.outcome.replace("_", " ")}`}
                         </span>
                         <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => deleteLog(log.id)}
+                            className="p-1 rounded hover:bg-red-50 transition-colors text-on-surface-muted hover:text-red-500"
+                            title="Delete log"
+                          >
+                            <Trash2 size={12} />
+                          </button>
                           {log.lead_id && !leadPhone && (
                             <button
                               onClick={() => callAgain(log)}
@@ -712,6 +737,83 @@ export default function TelecallingPage() {
               </div>
             )}
           </div>
+
+          {/* Cold Leads (Segment C) */}
+          <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
+            <button
+              onClick={() => setShowColdQueue((v) => !v)}
+              className="w-full flex items-center gap-2 mb-1"
+            >
+              <h2 className="font-display text-base font-bold text-tertiary flex items-center gap-2 flex-1 text-left">
+                <Phone size={16} className="text-on-surface-muted" />
+                Cold Leads (Segment C)
+                {coldQueue.length > 0 && (
+                  <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full font-label text-xs font-semibold">
+                    {coldQueue.length}
+                  </span>
+                )}
+              </h2>
+              {showColdQueue ? <ChevronUp size={14} className="text-on-surface-muted" /> : <ChevronDown size={14} className="text-on-surface-muted" />}
+            </button>
+            {showColdQueue && (
+              <div className="mt-4">
+                {coldQueue.length === 0 ? (
+                  <p className="font-body text-sm text-on-surface-muted">No cold leads.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {coldQueue.map((lead) => (
+                      <QueueCard
+                        key={lead.id} lead={lead} dialing={dialing}
+                        lastCalledAt={lastCalledMap[lead.id]}
+                        hasSelected={!!selected}
+                        onCall={openBriefing}
+                        onView={(l) => setViewingLead(l)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Disqualified (Segment D) */}
+          <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
+            <button
+              onClick={() => setShowDisqualQueue((v) => !v)}
+              className="w-full flex items-center gap-2 mb-1"
+            >
+              <h2 className="font-display text-base font-bold text-tertiary flex items-center gap-2 flex-1 text-left">
+                <Phone size={16} className="text-red-400" />
+                Disqualified (Segment D)
+                {disqualQueue.length > 0 && (
+                  <span className="px-2 py-0.5 bg-red-100 text-red-600 rounded-full font-label text-xs font-semibold">
+                    {disqualQueue.length}
+                  </span>
+                )}
+              </h2>
+              {showDisqualQueue ? <ChevronUp size={14} className="text-on-surface-muted" /> : <ChevronDown size={14} className="text-on-surface-muted" />}
+            </button>
+            {showDisqualQueue && (
+              <div className="mt-4">
+                {disqualQueue.length === 0 ? (
+                  <p className="font-body text-sm text-on-surface-muted">No disqualified leads.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {disqualQueue.map((lead) => (
+                      <QueueCard
+                        key={lead.id} lead={lead} dialing={dialing}
+                        lastCalledAt={lastCalledMap[lead.id]}
+                        hasSelected={!!selected}
+                        onCall={openBriefing}
+                        onView={(l) => setViewingLead(l)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
         </div>
       </div>
 
