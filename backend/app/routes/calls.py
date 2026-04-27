@@ -386,3 +386,23 @@ async def recent_by_leads(lead_ids: str = Query(..., description="Comma-separate
         if lid not in seen:
             seen[lid] = row["created_at"]
     return seen
+
+
+@router.post("/backfill-summaries")
+async def backfill_summaries(background_tasks: BackgroundTasks, limit: int = Query(10, ge=1, le=50)):
+    """Re-run summarization on call logs that have recording_url but no ai_summary."""
+    db = get_supabase()
+    rows = (
+        db.table("call_logs")
+        .select("id,recording_url")
+        .not_.is_("recording_url", "null")
+        .is_("ai_summary", "null")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    ).data or []
+
+    for row in rows:
+        background_tasks.add_task(_run_summarization, row["id"], row["recording_url"])
+
+    return {"queued": len(rows)}
