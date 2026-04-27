@@ -275,6 +275,10 @@ export const api = {
       const res = await apiFetch<Message[] | { data: Message[] }>(`/api/v1/leads/${id}/messages`);
       return Array.isArray(res) ? res : res.data || [];
     },
+    callLogs: async (leadId: string) => {
+      const res = await apiFetch<{ data: CallLog[] }>(`/api/v1/leads/${leadId}/call-logs`);
+      return res.data || [];
+    },
     exportUrl: (segment?: string) =>
       `${API_URL}/api/v1/leads/export${segment ? `?segment=${segment}` : ""}`,
   },
@@ -324,6 +328,15 @@ export const api = {
       ),
     deleteLog: (callLogId: string) =>
       apiFetch<{ deleted: boolean }>(`/api/v1/calls/${callLogId}`, { method: "DELETE" }),
+  },
+  notes: {
+    update: (noteId: string, data: { content?: string; is_pinned?: boolean }) =>
+      apiFetch<{ id: string; content: string; is_pinned: boolean }>(
+        `/api/v1/lead-notes/note/${noteId}`,
+        { method: "PATCH", body: JSON.stringify(data) }
+      ),
+    delete: (noteId: string) =>
+      apiFetch<{ deleted: boolean }>(`/api/v1/lead-notes/note/${noteId}`, { method: "DELETE" }),
   },
   segments: {
     templates: async () => {
