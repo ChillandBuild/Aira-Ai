@@ -38,7 +38,10 @@ export default function LiveNotesPane({ ctx, onClose }: Props) {
       setContent("");
       setPinned(false);
       setSavedFlash(true);
-      setTimeout(() => setSavedFlash(false), 2000);
+      setTimeout(() => {
+        setSavedFlash(false);
+        onClose();
+      }, 1200);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to save note");
     } finally {
