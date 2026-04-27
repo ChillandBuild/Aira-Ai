@@ -33,7 +33,7 @@ class OutcomeUpdate(BaseModel):
     callback_time: datetime | None = None
 
 
-@router.get("/twiml")
+@router.api_route("/twiml", methods=["GET", "POST"])
 async def twiml_connect(lead_phone: str | None = None):
     dial_body = f"<Dial>{lead_phone}</Dial>" if lead_phone else ""
     xml = f'<?xml version="1.0"?><Response><Say>Connecting your call.</Say>{dial_body}</Response>'
