@@ -34,12 +34,21 @@ export interface Caller {
 
 export interface CallLog {
   id: string;
-  lead_id: string;
+  lead_id: string | null;
+  call_sid: string | null;
   duration_seconds: number | null;
   outcome: "converted" | "callback" | "not_interested" | "no_answer" | null;
   recording_url: string | null;
   score: number | null;
   status: string;
+  ai_summary: {
+    course?: string;
+    budget?: string;
+    timeline?: string;
+    next_action?: string;
+    sentiment?: string;
+  } | null;
+  transcript: string | null;
   created_at: string;
 }
 
@@ -298,7 +307,7 @@ export const api = {
         `/api/v1/calls/initiate`,
         { method: "POST", body: JSON.stringify({ lead_id: target.leadId, phone: target.phone, caller_id: callerId }) }
       ),
-    setOutcome: (callLogId: string, outcome: NonNullable<CallLog["outcome"]>) =>
+    setOutcome: (callLogId: string, outcome: NonNullable<CallLog["outcome"]>, callbackTime?: string) =>
       apiFetch<{
         call_log_id: string;
         outcome: string;
@@ -306,8 +315,12 @@ export const api = {
         caller_overall_score: number | null;
       }>(`/api/v1/calls/${callLogId}/outcome`, {
         method: "PATCH",
-        body: JSON.stringify({ outcome }),
+        body: JSON.stringify({ outcome, callback_time: callbackTime ?? null }),
       }),
+    recentByLeads: (leadIds: string[]) =>
+      apiFetch<Record<string, string>>(
+        `/api/v1/calls/recent-by-leads?lead_ids=${leadIds.slice(0, 50).join(",")}`,
+      ),
   },
   segments: {
     templates: async () => {

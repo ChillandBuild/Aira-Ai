@@ -1,8 +1,10 @@
 import logging
 from datetime import datetime, timezone
 from typing import Literal
+from urllib.parse import quote
 from uuid import UUID
 import httpx
+from fastapi import Query
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Response
 from pydantic import BaseModel
 from twilio.rest import Client as TwilioClient
@@ -28,6 +30,7 @@ class InitiateCall(BaseModel):
 
 class OutcomeUpdate(BaseModel):
     outcome: Outcome
+    callback_time: datetime | None = None
 
 
 @router.get("/twiml")
@@ -81,7 +84,7 @@ async def initiate_call(payload: InitiateCall):
 
     base_url = settings.public_base_url.rstrip("/")
     status_cb = f"{base_url}/api/v1/calls/voice-status?call_log_id={call_log_id}"
-    twiml_url = f"{base_url}/api/v1/calls/twiml?caller_phone={caller_phone}"
+    twiml_url = f"{base_url}/api/v1/calls/twiml?caller_phone={quote(caller_phone or '')}"
 
     try:
         client = TwilioClient(twilio_sid, twilio_token)
@@ -269,6 +272,20 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate):
                 reason=f"call_{payload.outcome}",
                 db=db,
             )
+            if payload.outcome == "callback" and payload.callback_time:
+                job = (
+                    db.table("follow_up_jobs")
+                    .select("id")
+                    .eq("lead_id", str(lead_id))
+                    .eq("status", "pending")
+                    .order("scheduled_for")
+                    .limit(1)
+                    .execute()
+                )
+                if job.data:
+                    db.table("follow_up_jobs").update({
+                        "scheduled_for": payload.callback_time.isoformat(),
+                    }).eq("id", job.data[0]["id"]).execute()
 
     return {
         "call_log_id": call_log_id,
@@ -276,3 +293,24 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate):
         "score": score,
         "caller_overall_score": new_caller_score,
     }
+
+
+@router.get("/recent-by-leads")
+async def recent_by_leads(lead_ids: str = Query(..., description="Comma-separated lead UUIDs, max 50")):
+    ids = [i.strip() for i in lead_ids.split(",") if i.strip()][:50]
+    if not ids:
+        return {}
+    db = get_supabase()
+    rows = (
+        db.table("call_logs")
+        .select("lead_id,created_at")
+        .in_("lead_id", ids)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    seen: dict[str, str] = {}
+    for row in rows.data or []:
+        lid = row["lead_id"]
+        if lid not in seen:
+            seen[lid] = row["created_at"]
+    return seen

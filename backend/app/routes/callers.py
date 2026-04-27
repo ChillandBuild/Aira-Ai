@@ -66,7 +66,7 @@ async def list_caller_logs(caller_id: UUID):
     db = get_supabase()
     result = (
         db.table("call_logs")
-        .select("id,lead_id,duration_seconds,outcome,recording_url,score,status,created_at")
+        .select("id,lead_id,call_sid,duration_seconds,outcome,recording_url,score,status,ai_summary,transcript,created_at")
         .eq("caller_id", str(caller_id))
         .order("created_at", desc=True)
         .limit(50)
