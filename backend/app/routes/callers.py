@@ -69,7 +69,7 @@ async def list_caller_logs(caller_id: UUID):
         .select("id,lead_id,call_sid,duration_seconds,outcome,recording_url,score,status,ai_summary,transcript,created_at,leads(phone,name)")
         .eq("caller_id", str(caller_id))
         .order("created_at", desc=True)
-        .limit(50)
+        .limit(2)
         .execute()
     )
     return {"data": result.data or []}

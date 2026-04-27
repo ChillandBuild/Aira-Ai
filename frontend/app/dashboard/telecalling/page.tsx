@@ -115,6 +115,7 @@ export default function TelecallingPage() {
 
   // dialing state
   const [dialing, setDialing] = useState<string | null>(null);
+  const [callingAgainId, setCallingAgainId] = useState<string | null>(null);
 
   // manual dial
   const [manualPhone, setManualPhone] = useState("");
@@ -321,12 +322,19 @@ export default function TelecallingPage() {
 
   async function callAgain(log: CallLog) {
     if (!selected || !log.lead_id) return;
+    setCallingAgainId(log.id);
     try {
-      await api.calls.initiate({ leadId: log.lead_id }, selected.id);
-      setActiveCallCtx({ leadId: log.lead_id, name: null, phone: null });
+      const res = await api.calls.initiate({ leadId: log.lead_id }, selected.id);
+      setActiveCallCtx({
+        leadId: res.lead_id ?? log.lead_id,
+        name: res.lead_name ?? log.leads?.name ?? null,
+        phone: log.leads?.phone ?? null,
+      });
       api.callers.logs(selected.id).then(setLogs);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Call failed");
+    } finally {
+      setCallingAgainId(null);
     }
   }
 
@@ -483,9 +491,17 @@ export default function TelecallingPage() {
                           {log.lead_id && (
                             <button
                               onClick={() => callAgain(log)}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 transition-colors"
+                              disabled={callingAgainId === log.id}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 disabled:opacity-70 transition-colors"
                             >
-                              <Phone size={11} /> Call Again
+                              {callingAgainId === log.id ? (
+                                <>
+                                  <RefreshCw size={11} className="animate-spin" />
+                                  Calling…
+                                </>
+                              ) : (
+                                <><Phone size={11} /> Call Again</>
+                              )}
                             </button>
                           )}
                         </div>
