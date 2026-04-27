@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 
@@ -10,21 +11,23 @@ from app.config_dynamic import get_setting
 logger = logging.getLogger(__name__)
 
 _gemini_configured = False
+_flash_model = None
+_pro_model = None
 
 
 def _ensure_gemini():
-    global _gemini_configured
+    global _gemini_configured, _flash_model, _pro_model
     if not _gemini_configured:
         key = get_setting("gemini_api_key") or settings.gemini_api_key
         if key:
             genai.configure(api_key=key)
+            _flash_model = genai.GenerativeModel("gemini-2.0-flash")
+            _pro_model = genai.GenerativeModel(
+                "gemini-2.5-pro",
+                generation_config={"response_mime_type": "application/json"},
+            )
             _gemini_configured = True
-
-_flash_model = genai.GenerativeModel("gemini-2.0-flash")
-_pro_model = genai.GenerativeModel(
-    "gemini-2.5-pro",
-    generation_config={"response_mime_type": "application/json"},
-)
+            logger.info("Gemini configured for call summarization")
 
 _SUMMARIZE_SYSTEM = "You are analyzing a sales call transcript for an education consultancy."
 
@@ -48,10 +51,14 @@ async def transcribe_recording(recording_url: str) -> str:
         return ""
 
     try:
-        part = {"inline_data": {"mime_type": "audio/mp3", "data": audio_bytes}}
+        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        part = {"inline_data": {"mime_type": "audio/mp3", "data": audio_b64}}
         prompt = "Transcribe this audio recording of a sales call. Return only the transcript, no commentary."
+        logger.info(f"Sending {len(audio_bytes)} bytes to Gemini for transcription")
         response = _flash_model.generate_content([prompt, part])
-        return response.text.strip()
+        transcript = response.text.strip()
+        logger.info(f"Transcription complete: {len(transcript)} chars")
+        return transcript
     except Exception as e:
         logger.error(f"Gemini transcription failed for {recording_url}: {e}")
         return ""
