@@ -34,8 +34,8 @@ class OutcomeUpdate(BaseModel):
 
 
 @router.get("/twiml")
-async def twiml_connect(caller_phone: str | None = None):
-    dial_body = f"<Dial>{caller_phone}</Dial>" if caller_phone else ""
+async def twiml_connect(lead_phone: str | None = None):
+    dial_body = f"<Dial>{lead_phone}</Dial>" if lead_phone else ""
     xml = f'<?xml version="1.0"?><Response><Say>Connecting your call.</Say>{dial_body}</Response>'
     return Response(content=xml, media_type="application/xml")
 
@@ -84,12 +84,12 @@ async def initiate_call(payload: InitiateCall):
 
     base_url = settings.public_base_url.rstrip("/")
     status_cb = f"{base_url}/api/v1/calls/voice-status?call_log_id={call_log_id}"
-    twiml_url = f"{base_url}/api/v1/calls/twiml?caller_phone={quote(caller_phone or '')}"
+    twiml_url = f"{base_url}/api/v1/calls/twiml?lead_phone={quote(lead_phone or '')}"
 
     try:
         client = TwilioClient(twilio_sid, twilio_token)
         call = client.calls.create(
-            to=lead_phone,
+            to=caller_phone,
             from_=best_number["number"],
             url=twiml_url,
             status_callback=status_cb,
