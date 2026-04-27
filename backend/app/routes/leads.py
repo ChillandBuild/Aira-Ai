@@ -301,3 +301,16 @@ async def delete_lead(lead_id: UUID):
         raise HTTPException(status_code=404, detail="Lead not found")
     db.table("follow_up_jobs").update({"status": "skipped", "skip_reason": "Lead deleted."}).eq("lead_id", str(lead_id)).eq("status", "pending").execute()
     return {"success": True, "message": "Lead deleted"}
+
+@router.get("/{lead_id}/call-logs")
+async def get_lead_call_logs(lead_id: UUID):
+    db = get_supabase()
+    result = (
+        db.table("call_logs")
+        .select("id,call_sid,status,outcome,duration_seconds,recording_url,score,ai_summary,transcript,created_at,callers(name)")
+        .eq("lead_id", str(lead_id))
+        .order("created_at", desc=True)
+        .limit(20)
+        .execute()
+    )
+    return {"data": result.data or []}
