@@ -1,5 +1,14 @@
+import { createClient } from "@/lib/supabase/client";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const MAX_LEADS_LIST_LIMIT = 200;
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return {};
+  return { Authorization: `Bearer ${session.access_token}` };
+}
 
 export interface Lead {
   id: string;
@@ -220,12 +229,20 @@ export interface FunnelAnalytics {
   avg_score: number | null;
 }
 
-async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
+  const authHeaders = await getAuthHeaders();
   const res = await fetch(`${API_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
+    ...opts,
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders,
+      ...(opts.headers as Record<string, string> ?? {}),
+    },
   });
-  if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Request failed" }));
+    throw new Error(err.detail || "Request failed");
+  }
   return res.json();
 }
 
@@ -454,7 +471,8 @@ export const api = {
       if (options?.utmCampaign) fd.append("utm_campaign", options.utmCampaign);
       if (options?.utmContent) fd.append("utm_content", options.utmContent);
       if (options?.spendInr) fd.append("spend_inr", options.spendInr);
-      const res = await fetch(`${API_URL}/api/v1/upload/leads`, { method: "POST", body: fd });
+      const authHeaders = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/upload/leads`, { method: "POST", body: fd, headers: { ...authHeaders } });
       if (!res.ok) throw new Error(`Upload failed ${res.status}: ${await res.text()}`);
       return res.json() as Promise<{
         total: number;
