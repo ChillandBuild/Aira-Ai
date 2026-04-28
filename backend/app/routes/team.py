@@ -1,9 +1,7 @@
 import logging
-import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 
-from app.config import settings
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_and_role
 
@@ -70,23 +68,12 @@ async def invite_member(payload: InvitePayload, ctx: dict = Depends(get_tenant_a
     if ctx["role"] != "owner":
         raise HTTPException(status_code=403, detail="Only owners can invite members")
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(
-            f"{settings.supabase_url}/auth/v1/admin/invite",
-            headers={
-                "apikey": settings.supabase_service_key,
-                "Authorization": f"Bearer {settings.supabase_service_key}",
-                "Content-Type": "application/json",
-            },
-            json={"email": payload.email},
-        )
-        if resp.status_code not in (200, 201):
-            detail = resp.json().get("msg", resp.text)
-            raise HTTPException(status_code=400, detail=f"Invite failed: {detail}")
-        invited_user = resp.json()
-
-    invited_user_id = invited_user["id"]
     db = get_supabase()
+    try:
+        result = db.auth.admin.invite_user_by_email(payload.email)
+        invited_user_id = result.user.id
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invite failed: {e}")
 
     existing = (
         db.table("tenant_users")
