@@ -1,8 +1,9 @@
 import logging
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
+from app.dependencies.tenant import get_tenant_id
 from app.services.ai_reply import send_whatsapp
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ def _ensure_templates(db) -> list[dict]:
 
 
 @router.get("/templates")
-async def list_templates():
+async def list_templates(tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
     return {"data": _ensure_templates(db)}
 
@@ -36,6 +37,7 @@ async def list_templates():
 async def upsert_template(
     updates: TemplateUpdate,
     segment: str = Path(pattern="^[ABCD]$"),
+    tenant_id: str = Depends(get_tenant_id),
 ):
     db = get_supabase()
     _ensure_templates(db)
@@ -43,6 +45,7 @@ async def upsert_template(
         db.table("segment_templates")
         .update({"message": updates.message, "enabled": updates.enabled})
         .eq("segment", segment)
+        .eq("tenant_id", tenant_id)
         .execute()
     )
     if not result.data:
@@ -51,17 +54,17 @@ async def upsert_template(
 
 
 @router.post("/{segment}/broadcast")
-async def broadcast_to_segment(segment: str = Path(pattern="^[ABCD]$")):
+async def broadcast_to_segment(segment: str = Path(pattern="^[ABCD]$"), tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
 
-    tpl = db.table("segment_templates").select("*").eq("segment", segment).limit(1).execute()
+    tpl = db.table("segment_templates").select("*").eq("segment", segment).eq("tenant_id", tenant_id).limit(1).execute()
     if not tpl.data or not (tpl.data[0].get("message") or "").strip():
         raise HTTPException(status_code=400, detail="Template is empty — save a message first")
     if not tpl.data[0].get("enabled"):
         raise HTTPException(status_code=400, detail="Template is disabled")
     message = tpl.data[0]["message"]
 
-    leads = db.table("leads").select("id,phone").eq("segment", segment).execute()
+    leads = db.table("leads").select("id,phone").eq("segment", segment).eq("tenant_id", tenant_id).execute()
     targets = leads.data or []
     if not targets:
         return {"sent": 0, "failed": 0, "skipped_window": 0, "total": 0}
@@ -73,6 +76,7 @@ async def broadcast_to_segment(segment: str = Path(pattern="^[ABCD]$")):
         db.table("messages")
         .select("lead_id")
         .eq("direction", "inbound")
+        .eq("tenant_id", tenant_id)
         .gte("created_at", cutoff)
         .in_("lead_id", lead_ids)
         .execute()
@@ -91,6 +95,7 @@ async def broadcast_to_segment(segment: str = Path(pattern="^[ABCD]$")):
             sent += 1
             db.table("messages").insert({
                 "lead_id": t["id"],
+                "tenant_id": tenant_id,
                 "direction": "outbound",
                 "channel": "whatsapp",
                 "content": message,

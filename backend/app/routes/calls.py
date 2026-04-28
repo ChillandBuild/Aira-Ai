@@ -5,13 +5,14 @@ from typing import Literal
 from urllib.parse import quote
 from uuid import UUID
 import httpx
-from fastapi import Query
+from fastapi import Depends, Query
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Response
 from pydantic import BaseModel
 from twilio.rest import Client as TwilioClient
 from app.config import settings
 from app.config_dynamic import get_setting
 from app.db.supabase import get_supabase
+from app.dependencies.tenant import get_tenant_id
 from app.services.call_scorer import score_from_outcome, recompute_caller_score
 from app.services.call_summarizer import transcribe_recording, summarize_call
 from app.services.growth import record_stage_event, sync_follow_up_jobs
@@ -42,7 +43,7 @@ async def twiml_connect(lead_phone: str | None = None):
 
 
 @router.post("/initiate")
-async def initiate_call(payload: InitiateCall):
+async def initiate_call(payload: InitiateCall, tenant_id: str = Depends(get_tenant_id)):
     twilio_sid = get_setting("twilio_account_sid") or settings.twilio_account_sid
     twilio_token = get_setting("twilio_auth_token") or settings.twilio_auth_token
     if not twilio_sid or not twilio_token:
@@ -59,7 +60,7 @@ async def initiate_call(payload: InitiateCall):
     matched_lead_name: str | None = None
 
     if payload.lead_id:
-        lead = db.table("leads").select("phone,name").eq("id", str(payload.lead_id)).maybe_single().execute()
+        lead = db.table("leads").select("phone,name").eq("id", str(payload.lead_id)).eq("tenant_id", tenant_id).maybe_single().execute()
         if not lead.data:
             raise HTTPException(status_code=404, detail="Lead not found")
         lead_phone = lead.data["phone"]
@@ -75,7 +76,7 @@ async def initiate_call(payload: InitiateCall):
 
     caller_phone: str | None = None
     if payload.caller_id:
-        caller = db.table("callers").select("phone").eq("id", str(payload.caller_id)).maybe_single().execute()
+        caller = db.table("callers").select("phone").eq("id", str(payload.caller_id)).eq("tenant_id", tenant_id).maybe_single().execute()
         if caller.data:
             caller_phone = caller.data.get("phone")
 
@@ -90,6 +91,7 @@ async def initiate_call(payload: InitiateCall):
         "lead_id": str(payload.lead_id) if payload.lead_id else None,
         "caller_id": str(payload.caller_id) if payload.caller_id else None,
         "status": "initiated",
+        "tenant_id": tenant_id,
     }).execute()
     call_log_id = log_insert.data[0]["id"]
 

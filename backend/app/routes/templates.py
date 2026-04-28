@@ -1,7 +1,8 @@
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
+from app.dependencies.tenant import get_tenant_id
 from app.services.meta_cloud import submit_template
 from app.config_dynamic import get_setting
 
@@ -17,14 +18,14 @@ class CreateTemplate(BaseModel):
 
 
 @router.get("/")
-async def list_templates():
+async def list_templates(tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
-    result = db.table("message_templates").select("*").order("submitted_at", desc=True).execute()
+    result = db.table("message_templates").select("*").eq("tenant_id", tenant_id).order("submitted_at", desc=True).execute()
     return {"data": result.data or []}
 
 
 @router.post("/")
-async def create_template(payload: CreateTemplate):
+async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_tenant_id)):
     name = payload.name.strip().lower().replace(" ", "_")
     category = payload.category.upper()
     if category not in ("MARKETING", "UTILITY", "AUTHENTICATION"):
@@ -33,7 +34,7 @@ async def create_template(payload: CreateTemplate):
     waba_id = get_setting("meta_phone_number_id")
 
     db = get_supabase()
-    existing = db.table("message_templates").select("id").eq("name", name).maybe_single().execute()
+    existing = db.table("message_templates").select("id").eq("name", name).eq("tenant_id", tenant_id).maybe_single().execute()
     if existing.data:
         raise HTTPException(status_code=409, detail=f"Template '{name}' already exists")
 
@@ -61,15 +62,16 @@ async def create_template(payload: CreateTemplate):
         "body_text": payload.body_text,
         "status": status,
         "meta_template_id": meta_template_id,
+        "tenant_id": tenant_id,
     }).execute()
 
     return result.data[0]
 
 
 @router.delete("/{template_id}")
-async def delete_template(template_id: str):
+async def delete_template(template_id: str, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
-    db.table("message_templates").delete().eq("id", template_id).execute()
+    db.table("message_templates").delete().eq("id", template_id).eq("tenant_id", tenant_id).execute()
     return {"deleted": True}
 
 

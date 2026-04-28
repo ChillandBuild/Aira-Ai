@@ -1,8 +1,9 @@
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
 from app.config import settings as env_settings
+from app.dependencies.tenant import get_tenant_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -13,9 +14,9 @@ class SettingsUpdate(BaseModel):
 
 
 @router.get("/")
-async def list_settings():
+async def list_settings(tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
-    result = db.table("app_settings").select("*").order("key").execute()
+    result = db.table("app_settings").select("*").eq("tenant_id", tenant_id).order("key").execute()
     rows = result.data or []
     settings = []
     _ENV_ATTRS = {
@@ -53,7 +54,7 @@ async def list_settings():
 
 
 @router.patch("/")
-async def update_settings(payload: SettingsUpdate):
+async def update_settings(payload: SettingsUpdate, tenant_id: str = Depends(get_tenant_id)):
     if not payload.updates:
         raise HTTPException(status_code=400, detail="Nothing to update")
     db = get_supabase()
@@ -63,6 +64,7 @@ async def update_settings(payload: SettingsUpdate):
             db.table("app_settings")
             .update({"value": value, "updated_at": "now()"})
             .eq("key", key)
+            .eq("tenant_id", tenant_id)
             .execute()
         )
         if result.data:
