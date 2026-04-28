@@ -205,6 +205,30 @@ export interface AdPerformanceSummary {
   campaigns: AdCampaignInsight[];
 }
 
+export interface TeamMember {
+  user_id: string;
+  role: "owner" | "caller";
+  created_at: string;
+  caller_profile: {
+    id: string;
+    name: string | null;
+    phone: string | null;
+    overall_score: number | null;
+    active: boolean;
+  } | null;
+}
+
+export interface MyProfile {
+  tenant_id: string;
+  role: "owner" | "caller";
+  caller_profile: {
+    id: string;
+    name: string | null;
+    phone: string | null;
+    overall_score: number | null;
+  } | null;
+}
+
 export interface WhatsAppAnalytics {
   messages_sent_today: number;
   messages_received_today: number;
@@ -492,6 +516,17 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ name }),
       }),
+  },
+  team: {
+    me: () => apiFetch<MyProfile>("/api/v1/team/me"),
+    list: () => apiFetch<{ data: TeamMember[] }>("/api/v1/team/"),
+    invite: (email: string, name?: string, phone?: string) =>
+      apiFetch<{ invited: boolean; email: string; user_id: string }>("/api/v1/team/invite", {
+        method: "POST",
+        body: JSON.stringify({ email, name, phone }),
+      }),
+    remove: (userId: string) =>
+      apiFetch<{ removed: boolean }>(`/api/v1/team/${userId}`, { method: "DELETE" }),
   },
 };
 
