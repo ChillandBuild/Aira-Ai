@@ -31,29 +31,28 @@ async def create_template(payload: CreateTemplate):
         raise HTTPException(status_code=400, detail="Invalid category")
 
     waba_id = get_setting("meta_phone_number_id")
-    if not waba_id:
-        raise HTTPException(status_code=400, detail="Meta Phone Number ID not configured in Settings")
 
     db = get_supabase()
     existing = db.table("message_templates").select("id").eq("name", name).maybe_single().execute()
     if existing.data:
         raise HTTPException(status_code=409, detail=f"Template '{name}' already exists")
 
-    meta_response = {}
     meta_template_id = None
     status = "PENDING"
-    try:
-        meta_response = await submit_template(
-            waba_id=waba_id,
-            name=name,
-            category=category,
-            language=payload.language,
-            body_text=payload.body_text,
-        )
-        meta_template_id = str(meta_response.get("id", ""))
-    except HTTPException:
-        status = "PENDING"
-        logger.warning(f"Meta template submission failed for {name}, saved as PENDING")
+    if waba_id:
+        try:
+            meta_response = await submit_template(
+                waba_id=waba_id,
+                name=name,
+                category=category,
+                language=payload.language,
+                body_text=payload.body_text,
+            )
+            meta_template_id = str(meta_response.get("id", ""))
+        except Exception:
+            logger.warning(f"Meta template submission failed for {name}, saved as PENDING")
+    else:
+        logger.info(f"No WABA ID configured — saving template '{name}' locally as PENDING")
 
     result = db.table("message_templates").insert({
         "name": name,

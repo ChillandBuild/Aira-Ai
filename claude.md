@@ -1,7 +1,7 @@
 # Aira AI — Claude Code Operating Manual
 
 ## Identity
-B2B SaaS for education consultancies. Leads via WhatsApp + manual telecalling.
+Generic B2B SaaS — any business that does WhatsApp lead-gen + telecalling (not education-specific).
 North Star: no single block/flag/outage stops a client's lead-gen for >5 minutes.
 Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless asked.
 
@@ -14,7 +14,7 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Lead scoring (1–10, Gemini) | ✅ Built |
 | Segmentation A/B/C/D | ✅ Built |
 | Callers CRUD (create/edit/delete) | ✅ Built |
-| Manual dial via Exotel click-to-call | ✅ Built — commit 27d98a3 |
+| Manual dial via Twilio click-to-call | ✅ Built — migrated from Exotel |
 | AI coaching post-call (call_coach.py) | ✅ Built |
 | Call scoring (call_scorer.py) | ✅ Built |
 | Follow-up scheduler | ✅ Built |
@@ -35,6 +35,8 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Incidents page (frontend) | ✅ Built — dashboard/incidents/ |
 | lead_notes table + briefing modal | ✅ Built — migration 012 + lead_notes.py + telecalling modal |
 | Gemini transcription + AI call summary | ✅ Built — call_summarizer.py + BackgroundTasks |
+| Notes page (/dashboard/notes) | ✅ Built — lead search, notes CRUD, AI summary cards, audio player |
+| Message Templates page | ✅ Built — dashboard/templates/ |
 
 ## Hard Invariants — Never Break
 1. **FAQ-first**: ai_reply.py checks Redis BEFORE any Gemini call
@@ -54,7 +56,7 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Frontend | Next.js 14 App Router, TypeScript, Tailwind, shadcn/ui | frontend/app/dashboard/ |
 | AI | Gemini 2.5-pro (scoring/complex), Gemini 2.0-flash (FAQ/classify) | — |
 | WhatsApp | Meta Cloud API Direct (primary) + WATI (secondary) | — |
-| Voice | Exotel click-to-call | — |
+| Voice | Twilio click-to-call + recording | — |
 | Queue | Celery + Redis | — |
 | Cache | Redis (FAQ embedding cache) | — |
 
@@ -62,7 +64,7 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Task involves | Read first |
 |---|---|
 | WhatsApp, Meta API, WATI, provider layer, phone_numbers | .claude/context/whatsapp.md |
-| Telecalling, Exotel, call logs, notes, briefing modal | .claude/context/telecalling.md |
+| Telecalling, Twilio, call logs, notes, briefing modal | .claude/context/telecalling.md |
 | Leads, scoring, segments, opt-in | .claude/context/leads.md |
 | Number pool, failover, Numbers page, Incidents page | .claude/context/resilience.md |
 | CSV upload, bulk send, 7-step flow | .claude/context/upload.md |
@@ -75,7 +77,7 @@ Each agent gets only its relevant context file — not the full CLAUDE.md.
 ## Provider Decisions (locked 2026-04-22)
 - WhatsApp primary: Meta Cloud API Direct
 - WhatsApp secondary: WATI
-- Voice: Exotel (built, commit 27d98a3)
+- Voice: Twilio (migrated from Exotel)
 - AI: Gemini (not Claude) — 2.5-pro for complex/scoring, 2.0-flash for FAQ classify
 
 ## Known Tech Debt

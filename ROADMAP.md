@@ -2,7 +2,7 @@
 
 **Audience:** founder / solo dev preparing to ship to first paying client.
 **Tone:** blunt, opinionated, ordered by impact. No fluff.
-**Last updated:** 2026-04-26.
+**Last updated:** 2026-04-28.
 
 ---
 
@@ -14,11 +14,18 @@
 | AI auto-reply (FAQ → Gemini fallback) | ✅ Working |
 | Lead CRUD, scoring, A/B/C/D segmentation | ✅ Working |
 | CSV upload + bulk send | ✅ Built |
-| Manual telecalling (Exotel) | ⚠️ Built but unusable without registered company |
-| Auth, multi-tenancy, RLS | ❌ **Not implemented** (CLAUDE.md says it is — it isn't) |
+| Manual telecalling (Twilio click-to-call + recording) | ✅ Working |
+| Gemini transcription + AI call summary | ✅ Built |
+| Notes page (lead notes + AI summaries) | ✅ Built |
+| Message templates page | ✅ Built |
+| STOP/opt-out handling | ✅ Built — webhook detection + bulk-send gate |
+| Daily WhatsApp number tier limit cap | ✅ Built — auto-skips exhausted numbers |
+| Conversation segment filter | ✅ Built |
+| Auth (login/logout/session/route protection) | ✅ Built — Supabase Auth + Next.js middleware + backend JWT |
+| Multi-tenancy, RLS, roles | ❌ Not implemented — next priority |
+| Auto-assign leads to telecallers | ❌ Not implemented |
 | Webhook signature verification | ❌ Not implemented |
 | Async outbound queue | ⚠️ Webhook handler awaits Meta + Gemini inline (5–6s response) |
-| Templates submission to Meta | ❌ Not built |
 | Billing / subscriptions | ❌ Not built |
 | Onboarding wizard | ❌ Not built |
 | Privacy Policy / T&C pages | ❌ Not in repo (Meta requires for production WABA) |
