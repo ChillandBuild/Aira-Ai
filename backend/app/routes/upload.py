@@ -326,11 +326,21 @@ async def bulk_send(body: BulkSendRequest):
     if upsert_rows:
         db.table("leads").upsert(upsert_rows, on_conflict="phone").execute()
 
+    all_phones = [_normalize_phone(l.phone or "") for l in eligible if _normalize_phone(l.phone or "")]
+    opted_out_phones: set[str] = set()
+    if all_phones:
+        rows = db.table("leads").select("phone").in_("phone", all_phones).eq("opted_out", True).execute()
+        opted_out_phones = {r["phone"] for r in (rows.data or [])}
+
     sent = 0
     failed = 0
     for lead in eligible:
         phone = _normalize_phone(lead.phone or "")
         if not phone:
+            continue
+        if phone in opted_out_phones:
+            failed += 1
+            logger.info(f"Bulk-send skipped opted-out lead {phone}")
             continue
         try:
             await send_template_message(

@@ -9,6 +9,7 @@ export interface Lead {
   score: number;
   segment: "A" | "B" | "C" | "D";
   ai_enabled: boolean;
+  opted_out: boolean;
   converted_at?: string | null;
   created_at: string;
 }
