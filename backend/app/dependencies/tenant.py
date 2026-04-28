@@ -38,4 +38,8 @@ def get_tenant_and_role(user: dict = Depends(get_current_user)) -> dict:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tenant associated with this account.",
         )
-    return {"tenant_id": result.data["tenant_id"], "role": result.data["role"]}
+    return {
+        "tenant_id": result.data["tenant_id"],
+        "role": result.data["role"],
+        "user_id": user["user_id"],
+    }

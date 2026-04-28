@@ -7,7 +7,7 @@ from app.dependencies.auth import get_current_user
 
 import os
 from app.config import settings
-from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding
+from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team
 
 # Configure logging
 logging.basicConfig(
@@ -79,3 +79,4 @@ app.include_router(voice_numbers.router, prefix="/api/v1/voice-numbers", tags=["
 app.include_router(app_settings.router, prefix="/api/v1/settings", tags=["settings"], dependencies=_auth)
 app.include_router(templates.router, prefix="/api/v1/templates", tags=["templates"], dependencies=_auth)
 app.include_router(onboarding.router, prefix="/api/v1/onboarding", tags=["onboarding"], dependencies=_auth)
+app.include_router(team.router, prefix="/api/v1/team", tags=["team"], dependencies=_auth)
