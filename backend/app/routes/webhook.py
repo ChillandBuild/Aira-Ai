@@ -12,12 +12,16 @@ _STOP_WORDS = frozenset({"stop", "unsubscribe", "cancel", "quit", "end", "optout
 
 
 def _handle_opt_out(phone: str, db) -> bool:
-    lead = db.table("leads").select("id").eq("phone", phone).maybe_single().execute()
-    if not lead.data:
+    try:
+        lead = db.table("leads").select("id").eq("phone", phone).maybe_single().execute()
+        if not lead.data:
+            return False
+        db.table("leads").update({"opted_out": True, "ai_enabled": False}).eq("id", lead.data["id"]).execute()
+        logger.info(f"Lead {lead.data['id']} opted out via STOP from {phone}")
+        return True
+    except Exception as e:
+        logger.error(f"opt-out DB update failed for {phone}: {e}")
         return False
-    db.table("leads").update({"opted_out": True, "ai_enabled": False}).eq("id", lead.data["id"]).execute()
-    logger.info(f"Lead {lead.data['id']} opted out via STOP from {phone}")
-    return True
 
 
 @router.get("")
@@ -140,6 +144,10 @@ async def whatsapp_webhook(
     db = get_supabase()
     logger.info(f"Inbound WhatsApp from {phone}: {Body!r}")
 
+    if Body and Body.lower().strip() in _STOP_WORDS:
+        _handle_opt_out(phone, db)
+        return Response(content='<?xml version="1.0" encoding="UTF-8"?><Response></Response>', media_type="text/xml")
+
     # Upsert lead
     existing = db.table("leads").select("id,score,segment").eq("phone", phone).limit(1).execute()
     if existing.data:
@@ -159,10 +167,6 @@ async def whatsapp_webhook(
             metadata={"source": "whatsapp"},
             db=db,
         )
-
-    if Body and Body.lower().strip() in _STOP_WORDS:
-        _handle_opt_out(phone, db)
-        return Response(content='<?xml version="1.0" encoding="UTF-8"?><Response></Response>', media_type="text/xml")
 
     # Store inbound message
     db.table("messages").insert({
