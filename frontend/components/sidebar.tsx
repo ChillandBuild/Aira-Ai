@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   MessageSquare,
@@ -15,9 +15,11 @@ import {
   AlertTriangle,
   FileCheck,
   StickyNote,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AiraLogo } from "./logo";
+import { createClient } from "@/lib/supabase/client";
 
 const NAV = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Overview" },
@@ -37,6 +39,27 @@ const NAV = [
 const BOTTOM_NAV = [
   { href: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];
+
+function LogoutButton() {
+  const router = useRouter();
+
+  async function handleLogout() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  }
+
+  return (
+    <button
+      onClick={handleLogout}
+      className="flex items-center gap-3 px-4 py-2.5 w-full rounded-xl text-on-surface-muted hover:bg-surface-low hover:text-on-surface transition-colors font-label text-sm font-medium"
+    >
+      <LogOut size={16} />
+      Sign out
+    </button>
+  );
+}
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -132,6 +155,10 @@ export function Sidebar() {
               ALL SYSTEMS OPERATIONAL
             </span>
           </div>
+        </div>
+        {/* Logout */}
+        <div className="mt-auto pt-4 border-t border-surface-mid px-0">
+          <LogoutButton />
         </div>
       </div>
     </aside>
