@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Mail, Trash2, UserPlus, Phone } from "lucide-react";
+import { Trash2, UserPlus, Phone } from "lucide-react";
 import { api, TeamMember } from "@/lib/api";
 
 export default function TeamPage() {
