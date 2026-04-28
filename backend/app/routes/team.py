@@ -11,6 +11,7 @@ router = APIRouter()
 
 class InvitePayload(BaseModel):
     email: EmailStr
+    password: str
     name: str | None = None
     phone: str | None = None
 
@@ -70,10 +71,14 @@ async def invite_member(payload: InvitePayload, ctx: dict = Depends(get_tenant_a
 
     db = get_supabase()
     try:
-        result = db.auth.admin.invite_user_by_email(payload.email)
+        result = db.auth.admin.create_user({
+            "email": payload.email,
+            "password": payload.password,
+            "email_confirm": True,
+        })
         invited_user_id = result.user.id
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invite failed: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to create user: {e}")
 
     existing = (
         db.table("tenant_users")

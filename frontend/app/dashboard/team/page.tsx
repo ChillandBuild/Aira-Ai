@@ -8,6 +8,7 @@ export default function TeamPage() {
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [inviting, setInviting] = useState(false);
@@ -27,16 +28,16 @@ export default function TeamPage() {
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
-    if (!email.trim()) return;
+    if (!email.trim() || !password.trim()) return;
     setInviting(true);
     setError(null);
     try {
-      await api.team.invite(email.trim(), name.trim() || undefined, phone.trim() || undefined);
-      setEmail(""); setName(""); setPhone("");
+      await api.team.invite(email.trim(), password.trim(), name.trim() || undefined, phone.trim() || undefined);
+      setEmail(""); setPassword(""); setName(""); setPhone("");
       setShowInvite(false);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Invite failed");
+      setError(err instanceof Error ? err.message : "Failed to create telecaller");
     } finally {
       setInviting(false);
     }
@@ -73,6 +74,10 @@ export default function TeamPage() {
               <div>
                 <label className="font-body text-sm font-medium text-ink mb-1.5 block">Email *</label>
                 <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="input" placeholder="telecaller@example.com" />
+              </div>
+              <div>
+                <label className="font-body text-sm font-medium text-ink mb-1.5 block">Password *</label>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="input" placeholder="Set a password for them" />
               </div>
               <div>
                 <label className="font-body text-sm font-medium text-ink mb-1.5 block">Name</label>
