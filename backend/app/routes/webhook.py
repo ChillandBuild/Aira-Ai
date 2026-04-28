@@ -11,6 +11,16 @@ router = APIRouter()
 _STOP_WORDS = frozenset({"stop", "unsubscribe", "cancel", "quit", "end", "optout", "opt out", "opt-out"})
 
 
+def _get_tenant_id_for_meta_number(phone_number_id: str, db) -> str | None:
+    result = db.table("phone_numbers").select("tenant_id").eq("meta_phone_number_id", phone_number_id).maybe_single().execute()
+    return (result.data or {}).get("tenant_id")
+
+
+def _get_tenant_id_for_twilio_number(number: str, db) -> str | None:
+    result = db.table("phone_numbers").select("tenant_id").eq("number", number).maybe_single().execute()
+    return (result.data or {}).get("tenant_id")
+
+
 def _handle_opt_out(phone: str, db) -> bool:
     try:
         lead = db.table("leads").select("id").eq("phone", phone).maybe_single().execute()
@@ -81,6 +91,12 @@ async def whatsapp_webhook(
                             await handle_quality_yellow(row_id)
 
                 elif field == "messages":
+                    meta_phone_number_id = value.get("metadata", {}).get("phone_number_id", "")
+                    db = get_supabase()
+                    tenant_id = _get_tenant_id_for_meta_number(meta_phone_number_id, db) if meta_phone_number_id else None
+                    if not tenant_id:
+                        logger.warning(f"No tenant for meta phone_number_id={meta_phone_number_id}, using default")
+                        tenant_id = "00000000-0000-0000-0000-000000000001"
                     for msg in value.get("messages", []):
                         msg_type = msg.get("type")
                         if msg_type not in ("text", "button", "interactive"):
@@ -99,12 +115,11 @@ async def whatsapp_webhook(
                         msg_id = msg.get("id", "")
                         if not phone or not body:
                             continue
-                        db = get_supabase()
                         logger.info(f"Inbound Meta WhatsApp from {phone}: {body!r}")
                         if body.lower().strip() in _STOP_WORDS:
                             _handle_opt_out(phone, db)
                             continue
-                        existing = db.table("leads").select("id,score,segment").eq("phone", phone).limit(1).execute()
+                        existing = db.table("leads").select("id,score,segment").eq("phone", phone).eq("tenant_id", tenant_id).limit(1).execute()
                         if existing.data:
                             lead_id = existing.data[0]["id"]
                         else:
@@ -113,6 +128,7 @@ async def whatsapp_webhook(
                                 "source": "whatsapp",
                                 "score": 5,
                                 "segment": "C",
+                                "tenant_id": tenant_id,
                             }).execute()
                             lead_id = new_lead.data[0]["id"]
                             record_stage_event(lead_id, to_segment="C", event_type="created", metadata={"source": "whatsapp"}, db=db)
@@ -126,6 +142,7 @@ async def whatsapp_webhook(
                             "content": body,
                             "is_ai_generated": False,
                             "meta_message_id": msg_id,
+                            "tenant_id": tenant_id,
                         }).execute()
                         try:
                             from app.services.ai_reply import generate_reply
@@ -141,7 +158,12 @@ async def whatsapp_webhook(
     phone = From.replace("whatsapp:", "").strip().replace(" ", "")
     if phone and not phone.startswith("+"):
         phone = "+" + phone
+    to_number = (To or "").replace("whatsapp:", "").strip()
     db = get_supabase()
+    tenant_id = _get_tenant_id_for_twilio_number(to_number, db) if to_number else None
+    if not tenant_id:
+        logger.warning(f"No tenant for Twilio number={to_number}, using default")
+        tenant_id = "00000000-0000-0000-0000-000000000001"
     logger.info(f"Inbound WhatsApp from {phone}: {Body!r}")
 
     if Body and Body.lower().strip() in _STOP_WORDS:
@@ -149,7 +171,7 @@ async def whatsapp_webhook(
         return Response(content='<?xml version="1.0" encoding="UTF-8"?><Response></Response>', media_type="text/xml")
 
     # Upsert lead
-    existing = db.table("leads").select("id,score,segment").eq("phone", phone).limit(1).execute()
+    existing = db.table("leads").select("id,score,segment").eq("phone", phone).eq("tenant_id", tenant_id).limit(1).execute()
     if existing.data:
         lead_id = existing.data[0]["id"]
     else:
@@ -157,7 +179,8 @@ async def whatsapp_webhook(
             "phone": phone,
             "source": "whatsapp",
             "score": 5,
-            "segment": "C"
+            "segment": "C",
+            "tenant_id": tenant_id,
         }).execute()
         lead_id = new_lead.data[0]["id"]
         record_stage_event(

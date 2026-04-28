@@ -484,6 +484,15 @@ export const api = {
       }>;
     },
   },
+  onboarding: {
+    status: () =>
+      apiFetch<{ has_tenant: boolean; tenant_id?: string; role?: string }>("/api/v1/onboarding/status"),
+    create: (name: string) =>
+      apiFetch<{ tenant_id: string; already_exists: boolean }>("/api/v1/onboarding/", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      }),
+  },
 };
 
 export { API_URL };
