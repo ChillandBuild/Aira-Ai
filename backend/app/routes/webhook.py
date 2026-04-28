@@ -8,6 +8,17 @@ from app.services.failover import update_number_quality, handle_quality_red, han
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+_STOP_WORDS = frozenset({"stop", "unsubscribe", "cancel", "quit", "end", "optout", "opt out", "opt-out"})
+
+
+def _handle_opt_out(phone: str, db) -> bool:
+    lead = db.table("leads").select("id").eq("phone", phone).maybe_single().execute()
+    if not lead.data:
+        return False
+    db.table("leads").update({"opted_out": True, "ai_enabled": False}).eq("id", lead.data["id"]).execute()
+    logger.info(f"Lead {lead.data['id']} opted out via STOP from {phone}")
+    return True
+
 
 @router.get("")
 async def verify_webhook(request: Request):
@@ -86,6 +97,9 @@ async def whatsapp_webhook(
                             continue
                         db = get_supabase()
                         logger.info(f"Inbound Meta WhatsApp from {phone}: {body!r}")
+                        if body.lower().strip() in _STOP_WORDS:
+                            _handle_opt_out(phone, db)
+                            continue
                         existing = db.table("leads").select("id,score,segment").eq("phone", phone).limit(1).execute()
                         if existing.data:
                             lead_id = existing.data[0]["id"]
@@ -145,6 +159,10 @@ async def whatsapp_webhook(
             metadata={"source": "whatsapp"},
             db=db,
         )
+
+    if Body and Body.lower().strip() in _STOP_WORDS:
+        _handle_opt_out(phone, db)
+        return Response(content='<?xml version="1.0" encoding="UTF-8"?><Response></Response>', media_type="text/xml")
 
     # Store inbound message
     db.table("messages").insert({
