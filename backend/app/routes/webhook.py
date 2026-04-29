@@ -102,7 +102,15 @@ async def whatsapp_webhook(
                         if msg_type not in ("text", "button", "interactive"):
                             continue
                         wa_id = msg.get("from", "")
+                        msg_id = msg.get("id")
                         phone = f"+{wa_id}" if wa_id and not wa_id.startswith("+") else wa_id
+                        
+                        body = ""
+                        media_type = None
+                        media_url = None
+                        media_filename = None
+                        media_mime_type = None
+
                         if msg_type == "text":
                             body = msg.get("text", {}).get("body", "").strip()
                         elif msg_type == "button":
@@ -110,15 +118,27 @@ async def whatsapp_webhook(
                         elif msg_type == "interactive":
                             inter = msg.get("interactive", {})
                             body = (inter.get("button_reply") or inter.get("list_reply") or {}).get("title", "").strip()
-                        else:
-                            body = ""
-                        msg_id = msg.get("id", "")
-                        if not phone or not body:
+                        elif msg_type in ("image", "document", "audio", "video", "sticker"):
+                            media_obj = msg.get(msg_type, {})
+                            media_id = media_obj.get("id", "")
+                            media_mime_type = media_obj.get("mime_type", "")
+                            media_filename = media_obj.get("filename") or f"file.{media_mime_type.split('/')[-1] if media_mime_type else 'bin'}"
+                            caption = media_obj.get("caption", "")
+                            media_type = msg_type
+                            media_url = f"meta:{media_id}" if media_id else None
+                            body = caption if caption else f"[{msg_type}: {media_filename}]"
+
+                        if not phone:
                             continue
-                        logger.info(f"Inbound Meta WhatsApp from {phone}: {body!r}")
-                        if body.lower().strip() in _STOP_WORDS:
+                        if not body and not media_type:
+                            continue
+
+                        logger.info(f"Inbound Meta WhatsApp from {phone}: type={msg_type} body={body!r}")
+
+                        if body and body.lower().strip() in _STOP_WORDS:
                             _handle_opt_out(phone, db)
                             continue
+
                         existing = db.table("leads").select("id,score,segment").eq("phone", phone).eq("tenant_id", tenant_id).limit(1).execute()
                         if existing.data:
                             lead_id = existing.data[0]["id"]
@@ -132,10 +152,12 @@ async def whatsapp_webhook(
                             }).execute()
                             lead_id = new_lead.data[0]["id"]
                             record_stage_event(lead_id, to_segment="C", event_type="created", metadata={"source": "whatsapp"}, db=db)
+
                         already = db.table("messages").select("id").eq("meta_message_id", msg_id).limit(1).execute()
                         if already.data:
                             continue
-                        db.table("messages").insert({
+
+                        insert_row: dict = {
                             "lead_id": lead_id,
                             "direction": "inbound",
                             "channel": "whatsapp",
@@ -143,12 +165,25 @@ async def whatsapp_webhook(
                             "is_ai_generated": False,
                             "meta_message_id": msg_id,
                             "tenant_id": tenant_id,
-                        }).execute()
-                        try:
-                            from app.services.ai_reply import generate_reply
-                            await generate_reply(lead_id=lead_id, message=body, phone=phone)
-                        except Exception as e:
-                            logger.error(f"AI reply failed for lead {lead_id}: {e}")
+                        }
+                        if media_type:
+                            insert_row["media_type"] = media_type
+                        if media_url:
+                            insert_row["media_url"] = media_url
+                        if media_filename:
+                            insert_row["media_filename"] = media_filename
+                        if media_mime_type:
+                            insert_row["media_mime_type"] = media_mime_type
+
+                        db.table("messages").insert(insert_row).execute()
+
+                        # Only trigger AI reply for text messages (not media)
+                        if msg_type in ("text", "button", "interactive") and body:
+                            try:
+                                from app.services.ai_reply import generate_reply
+                                await generate_reply(lead_id=lead_id, message=body, phone=phone)
+                            except Exception as e:
+                                logger.error(f"AI reply failed for lead {lead_id}: {e}")
 
         return {"status": "ok"}
 

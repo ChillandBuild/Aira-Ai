@@ -3,7 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import { api, Lead, Message } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
-import { Bot, User, CheckCircle2, Send, PowerOff, Power, AlertTriangle, Pencil, MessageCircle, Trash2 } from "lucide-react";
+import {
+  Bot, User, CheckCircle2, Send, PowerOff, Power,
+  AlertTriangle, Pencil, MessageCircle, Trash2,
+  Paperclip, Mic, MicOff, FileText, Image as ImageIcon,
+  Music, Video, Download, X,
+} from "lucide-react";
 
 function IgIcon({ size = 10, className = "" }: { size?: number; className?: string }) {
   return (
@@ -15,6 +20,119 @@ function IgIcon({ size = 10, className = "" }: { size?: number; className?: stri
   );
 }
 
+// ─── Media bubble renderer ────────────────────────────────────────────────────
+function MediaBubble({ msg }: { msg: Message }) {
+  const mediaType = msg.media_type;
+  const filename = msg.media_filename || "file";
+  const isOutbound = msg.direction === "outbound";
+
+  if (!mediaType) return null;
+
+  if (mediaType === "image") {
+    // Images: show placeholder since we store meta:ID not public URL
+    return (
+      <div className={cn(
+        "max-w-[240px] rounded-xl overflow-hidden border",
+        isOutbound ? "border-white/20" : "border-surface-mid"
+      )}>
+        <div className={cn(
+          "flex flex-col items-center justify-center gap-2 p-6 rounded-xl",
+          isOutbound ? "bg-white/10" : "bg-surface-low"
+        )}>
+          <ImageIcon size={32} className={isOutbound ? "text-white/70" : "text-on-surface-muted"} />
+          <span className={cn("font-label text-xs truncate max-w-[180px]", isOutbound ? "text-white/80" : "text-on-surface-muted")}>
+            {filename}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  if (mediaType === "audio") {
+    return (
+      <div className={cn(
+        "flex items-center gap-2 px-3 py-2 rounded-xl",
+        isOutbound ? "bg-white/10" : "bg-surface-low"
+      )}>
+        <Music size={16} className={isOutbound ? "text-white/80" : "text-secondary"} />
+        <span className={cn("font-label text-xs", isOutbound ? "text-white/80" : "text-on-surface-muted")}>
+          {filename}
+        </span>
+      </div>
+    );
+  }
+
+  if (mediaType === "video") {
+    return (
+      <div className={cn(
+        "flex items-center gap-2 px-3 py-2 rounded-xl",
+        isOutbound ? "bg-white/10" : "bg-surface-low"
+      )}>
+        <Video size={16} className={isOutbound ? "text-white/80" : "text-secondary"} />
+        <span className={cn("font-label text-xs", isOutbound ? "text-white/80" : "text-on-surface-muted")}>
+          {filename}
+        </span>
+      </div>
+    );
+  }
+
+  // Document / sticker / default
+  return (
+    <div className={cn(
+      "flex items-center gap-2 px-3 py-2 rounded-xl border",
+      isOutbound ? "bg-white/10 border-white/20" : "bg-surface-low border-surface-mid"
+    )}>
+      <FileText size={16} className={isOutbound ? "text-white/80" : "text-secondary"} />
+      <div className="min-w-0">
+        <p className={cn("font-label text-xs font-semibold truncate max-w-[160px]", isOutbound ? "text-white" : "text-on-surface")}>
+          {filename}
+        </p>
+        <p className={cn("font-label text-[10px]", isOutbound ? "text-white/60" : "text-on-surface-muted")}>
+          {mediaType}
+        </p>
+      </div>
+      <Download size={13} className={isOutbound ? "text-white/60" : "text-on-surface-muted"} />
+    </div>
+  );
+}
+
+// ─── Selected file preview ────────────────────────────────────────────────────
+function FilePreview({ file, onRemove }: { file: File; onRemove: () => void }) {
+  const isImage = file.type.startsWith("image/");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isImage) {
+      const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
+      return () => URL.revokeObjectURL(url);
+    }
+  }, [file, isImage]);
+
+  const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 mb-2 bg-surface-low rounded-xl border border-surface-mid">
+      {isImage && previewUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={previewUrl} alt={file.name} className="w-10 h-10 object-cover rounded-lg shrink-0" />
+      ) : (
+        <div className="w-10 h-10 bg-tertiary/10 rounded-lg flex items-center justify-center shrink-0">
+          <FileText size={18} className="text-tertiary" />
+        </div>
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="font-label text-xs font-semibold text-on-surface truncate">{file.name}</p>
+        <p className="font-label text-[10px] text-on-surface-muted">{sizeMB} MB</p>
+      </div>
+      <button onClick={onRemove} className="p-1 rounded-lg hover:bg-surface-mid transition-colors text-on-surface-muted hover:text-red-500">
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
+
+// ─── Main ChatThread component ────────────────────────────────────────────────
 export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: string) => void }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,13 +145,23 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
   const [sendError, setSendError] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
+
+  // Media state
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileCaption, setFileCaption] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setCurrent(lead);
     setDraft("");
     setSendError(null);
     setEditingName(false);
+    setSelectedFile(null);
+    setFileCaption("");
   }, [lead.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function saveName() {
@@ -56,9 +184,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
       setCurrent(updated);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed");
-    } finally {
-      setConverting(false);
-    }
+    } finally { setConverting(false); }
   }
 
   async function deleteConversation() {
@@ -80,9 +206,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
       setCurrent(updated);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Toggle failed");
-    } finally {
-      setToggling(false);
-    }
+    } finally { setToggling(false); }
   }
 
   async function sendReply() {
@@ -93,50 +217,92 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
     try {
       const sentMsg = await api.leads.sendMessage(lead.id, text);
       setMessages((prev) => {
-        // Use an explicit fallback for id if the backend happened to return the simplistic sid object
-        const msgId = sentMsg.id || (sentMsg as Record<string, unknown>).sid || Date.now().toString();
+        const msgId = sentMsg.id || (sentMsg as unknown as Record<string, unknown>).sid || Date.now().toString();
         if (prev.some((m) => m.id === msgId)) return prev;
         return [...prev, sentMsg as Message];
       });
       setDraft("");
     } catch (err) {
       setSendError(err instanceof Error ? err.message : "Send failed");
-    } finally {
-      setSending(false);
+    } finally { setSending(false); }
+  }
+
+  async function sendMedia() {
+    if (!selectedFile || sending) return;
+    setSending(true);
+    setSendError(null);
+    try {
+      const sentMsg = await api.leads.sendMedia(lead.id, selectedFile, fileCaption || undefined);
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === sentMsg.id)) return prev;
+        return [...prev, sentMsg as Message];
+      });
+      setSelectedFile(null);
+      setFileCaption("");
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : "Media send failed");
+    } finally { setSending(false); }
+  }
+
+  async function startRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Try OGG first (WhatsApp native), fall back to webm
+      const mimeType = MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")
+        ? "audio/ogg;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : "audio/webm";
+
+      const recorder = new MediaRecorder(stream, { mimeType });
+      const chunks: Blob[] = [];
+
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+      recorder.onstop = () => {
+        const ext = mimeType.includes("ogg") ? "ogg" : "webm";
+        const blob = new Blob(chunks, { type: mimeType });
+        const file = new File([blob], `voice-note.${ext}`, { type: mimeType });
+        setSelectedFile(file);
+        stream.getTracks().forEach(t => t.stop());
+      };
+
+      recorder.start();
+      setMediaRecorder(recorder);
+      setIsRecording(true);
+    } catch {
+      alert("Microphone access denied. Please allow microphone access in your browser settings.");
     }
+  }
+
+  function stopRecording() {
+    mediaRecorder?.stop();
+    setIsRecording(false);
+    setMediaRecorder(null);
   }
 
   useEffect(() => {
     let mounted = true;
     setLoading(true);
-    
+
     const fetchMsgs = async () => {
       try {
         const msgs = await api.leads.messages(lead.id);
-        if (mounted) {
-          setMessages(msgs);
-          setLoading(false);
-        }
-      } catch (err) {
-        console.error("Failed to load messages", err);
+        if (mounted) { setMessages(msgs); setLoading(false); }
+      } catch {
         if (mounted) setLoading(false);
       }
     };
-    
+
     fetchMsgs();
 
-    // Fallback polling every 3 seconds (in case Supabase Realtime is disabled on the table)
     const interval = setInterval(() => {
       api.leads.messages(lead.id).then((newMsgs) => {
         if (!mounted) return;
         setMessages((prev) => {
-          // Only update state if there's a new message to prevent unnecessary re-renders & auto-scrolling
           if (
             prev.length !== newMsgs.length ||
             (prev.length > 0 && newMsgs.length > 0 && prev[prev.length - 1].id !== newMsgs[newMsgs.length - 1].id)
-          ) {
-            return newMsgs;
-          }
+          ) return newMsgs;
           return prev;
         });
       });
@@ -157,10 +323,10 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
       )
       .subscribe();
 
-    return () => { 
+    return () => {
       mounted = false;
       clearInterval(interval);
-      supabase.removeChannel(channel); 
+      supabase.removeChannel(channel);
     };
   }, [lead.id]);
 
@@ -171,6 +337,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
   const aiEnabled = current.ai_enabled !== false;
   const converted = Boolean(current.converted_at);
   const isInstagram = current.source === "instagram";
+  const canSendMedia = !aiEnabled && !isInstagram;
 
   const lastInbound = [...messages].reverse().find((m) => m.direction === "inbound");
   const hoursSinceInbound = lastInbound
@@ -180,6 +347,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
 
   return (
     <div className="flex-1 flex flex-col h-full">
+      {/* Header */}
       <div className="px-6 py-4 border-b border-surface-mid bg-surface flex items-center gap-3">
         <div className="w-9 h-9 rounded-full bg-tertiary-bg flex items-center justify-center">
           <User size={16} className="text-tertiary" />
@@ -200,10 +368,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
             />
           ) : (
             <button
-              onClick={() => {
-                setNameDraft(current.name || "");
-                setEditingName(true);
-              }}
+              onClick={() => { setNameDraft(current.name || ""); setEditingName(true); }}
               className="group flex items-center gap-1.5 text-left"
               title="Click to rename"
             >
@@ -267,6 +432,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
         </button>
       </div>
 
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3 bg-background">
         {loading ? (
           <div className="flex items-center justify-center h-full text-on-surface-muted font-body text-sm">
@@ -278,10 +444,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
           </div>
         ) : (
           messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={cn("flex gap-2", msg.direction === "outbound" && "flex-row-reverse")}
-            >
+            <div key={msg.id} className={cn("flex gap-2", msg.direction === "outbound" && "flex-row-reverse")}>
               <div className={cn(
                 "w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5",
                 msg.direction === "outbound"
@@ -289,24 +452,25 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
                   : "bg-surface-mid"
               )}>
                 {msg.direction === "outbound" ? (
-                  msg.is_ai_generated ? (
-                    <Bot size={14} className="text-secondary" />
-                  ) : (
-                    <User size={14} className="text-tertiary" />
-                  )
+                  msg.is_ai_generated ? <Bot size={14} className="text-secondary" /> : <User size={14} className="text-tertiary" />
                 ) : (
                   <User size={14} className="text-on-surface-muted" />
                 )}
               </div>
-              <div
-                className={cn(
-                  "max-w-[70%] px-4 py-2.5 rounded-2xl font-body text-sm",
-                  msg.direction === "outbound"
-                    ? "bg-tertiary text-white rounded-tr-sm"
-                    : "bg-surface text-on-surface shadow-card rounded-tl-sm"
+              <div className={cn(
+                "max-w-[70%] px-4 py-2.5 rounded-2xl font-body text-sm",
+                msg.direction === "outbound"
+                  ? "bg-tertiary text-white rounded-tr-sm"
+                  : "bg-surface text-on-surface shadow-card rounded-tl-sm"
+              )}>
+                {/* Media bubble if message has media */}
+                {msg.media_type && <MediaBubble msg={msg} />}
+                {/* Text content (caption or text body) */}
+                {msg.content && !(msg.media_type && msg.content.startsWith("[")) && (
+                  <p className={cn("whitespace-pre-wrap", msg.media_type && "mt-1.5 text-xs opacity-80")}>
+                    {msg.content}
+                  </p>
                 )}
-              >
-                <p className="whitespace-pre-wrap">{msg.content}</p>
                 {msg.direction === "outbound" && (
                   <p className="mt-1 text-[10px] opacity-60">
                     {msg.is_ai_generated ? "AI generated" : "Sent by you"}
@@ -319,6 +483,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
         <div ref={bottomRef} />
       </div>
 
+      {/* Input area */}
       <div className="border-t border-surface-mid bg-surface px-6 py-3">
         {outsideWindow && !aiEnabled && !isInstagram && (
           <div className="mb-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800">
@@ -335,29 +500,102 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
             AI is paused — your replies go directly to the lead.
           </p>
         )}
-        <div className="flex items-end gap-2">
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                sendReply();
+
+        {/* File preview */}
+        {selectedFile && (
+          <FilePreview file={selectedFile} onRemove={() => { setSelectedFile(null); setFileCaption(""); }} />
+        )}
+
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.txt,.csv,.png,.jpg,.jpeg,.webp,.mp3,.ogg,.wav,.aac,.amr,.mp4,.3gp,audio/webm"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) setSelectedFile(f);
+            e.target.value = "";
+          }}
+        />
+
+        {selectedFile ? (
+          /* Send media mode */
+          <div className="flex items-end gap-2">
+            <input
+              value={fileCaption}
+              onChange={(e) => setFileCaption(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") sendMedia(); }}
+              placeholder="Add a caption (optional)…"
+              disabled={sending}
+              className="flex-1 px-3 py-2 rounded-lg bg-surface-low border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary disabled:opacity-50"
+            />
+            <button
+              onClick={sendMedia}
+              disabled={sending}
+              className="px-4 py-2 rounded-lg bg-tertiary text-white font-label text-sm font-semibold hover:bg-tertiary/90 disabled:opacity-40 flex items-center gap-1.5"
+            >
+              <Send size={14} /> {sending ? "Sending…" : "Send File"}
+            </button>
+          </div>
+        ) : (
+          /* Text + media buttons row */
+          <div className="flex items-end gap-2">
+            {/* Attachment button */}
+            {canSendMedia && (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isRecording}
+                title="Attach file (PDF, DOCX, image, audio, video)"
+                className="p-2 rounded-lg text-on-surface-muted hover:text-tertiary hover:bg-tertiary/10 transition-colors disabled:opacity-40 shrink-0 self-center"
+              >
+                <Paperclip size={18} />
+              </button>
+            )}
+
+            {/* Voice note button */}
+            {canSendMedia && (
+              <button
+                onClick={isRecording ? stopRecording : startRecording}
+                title={isRecording ? "Stop recording" : "Record voice note"}
+                className={cn(
+                  "p-2 rounded-lg transition-colors shrink-0 self-center",
+                  isRecording
+                    ? "text-red-600 bg-red-50 hover:bg-red-100 animate-pulse"
+                    : "text-on-surface-muted hover:text-tertiary hover:bg-tertiary/10"
+                )}
+              >
+                {isRecording ? <MicOff size={18} /> : <Mic size={18} />}
+              </button>
+            )}
+
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply(); }
+              }}
+              placeholder={
+                isRecording
+                  ? "Recording… click 🔴 to stop"
+                  : aiEnabled
+                    ? "Take over: pause AI first, then type…"
+                    : `Type a message via ${isInstagram ? "Instagram DM" : "WhatsApp"} (Enter to send, Shift+Enter for newline)`
               }
-            }}
-            placeholder={aiEnabled ? "Take over: pause AI first, then type…" : `Type a message via ${isInstagram ? "Instagram DM" : "WhatsApp"} (Enter to send, Shift+Enter for newline)`}
-            rows={2}
-            disabled={aiEnabled || sending}
-            className="flex-1 px-3 py-2 rounded-lg bg-surface-low border border-surface-mid font-body text-sm resize-none focus:outline-none focus:ring-2 focus:ring-tertiary disabled:opacity-50"
-          />
-          <button
-            onClick={sendReply}
-            disabled={aiEnabled || sending || !draft.trim()}
-            className="px-4 py-2 h-[56px] rounded-lg bg-tertiary text-white font-label text-sm font-semibold hover:bg-tertiary/90 disabled:opacity-40 flex items-center gap-1.5"
-          >
-            <Send size={14} /> {sending ? "Sending…" : "Send"}
-          </button>
-        </div>
+              rows={2}
+              disabled={aiEnabled || sending || isRecording}
+              className="flex-1 px-3 py-2 rounded-lg bg-surface-low border border-surface-mid font-body text-sm resize-none focus:outline-none focus:ring-2 focus:ring-tertiary disabled:opacity-50"
+            />
+            <button
+              onClick={sendReply}
+              disabled={aiEnabled || sending || !draft.trim() || isRecording}
+              className="px-4 py-2 h-[56px] rounded-lg bg-tertiary text-white font-label text-sm font-semibold hover:bg-tertiary/90 disabled:opacity-40 flex items-center gap-1.5"
+            >
+              <Send size={14} /> {sending ? "Sending…" : "Send"}
+            </button>
+          </div>
+        )}
+
         {sendError && <p className="mt-2 font-label text-xs text-red-600">{sendError}</p>}
       </div>
     </div>

@@ -1,4 +1,6 @@
 import { createClient } from "@/lib/supabase/client";
+import { supabase } from "@/lib/supabase";
+import { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const MAX_LEADS_LIST_LIMIT = 200;
@@ -31,6 +33,11 @@ export interface Message {
   content: string;
   is_ai_generated: boolean;
   twilio_message_sid: string | null;
+  meta_message_id?: string | null;
+  media_url?: string | null;
+  media_type?: "image" | "document" | "audio" | "video" | "sticker" | null;
+  media_filename?: string | null;
+  media_mime_type?: string | null;
   created_at: string;
 }
 
@@ -85,6 +92,11 @@ export interface FAQ {
   keywords: string[];
   hit_count: number;
   active: boolean;
+  media_id?: string | null;
+  media_type?: "image" | "document" | "audio" | "video" | "sticker" | null;
+  media_url?: string | null;
+  media_filename?: string | null;
+  media_mime_type?: string | null;
   created_at?: string;
 }
 
@@ -304,6 +316,22 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ content }),
       }),
+    sendMedia: async (id: string, file: File, caption?: string): Promise<Message> => {
+      const authHeaders = await getAuthHeaders();
+      const fd = new FormData();
+      fd.append("file", file);
+      if (caption) fd.append("caption", caption);
+      const res = await fetch(`${API_URL}/api/v1/leads/${id}/send-media`, {
+        method: "POST",
+        body: fd,
+        headers: { ...authHeaders },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Media send failed" }));
+        throw new Error(err.detail || "Media send failed");
+      }
+      return res.json();
+    },
     compose: (phone: string, content: string, name?: string) =>
       apiFetch<{ lead_id: string; sid: string; phone: string }>(`/api/v1/leads/compose`, {
         method: "POST",
@@ -323,6 +351,19 @@ export const api = {
     },
     exportUrl: (segment?: string) =>
       `${API_URL}/api/v1/leads/export${segment ? `?segment=${segment}` : ""}`,
+    subscribeToAll: (handler: (payload: RealtimePostgresChangesPayload<Lead>) => void): RealtimeChannel => {
+      return supabase
+        .channel("leads-all")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "leads" },
+          (payload) => handler(payload as RealtimePostgresChangesPayload<Lead>)
+        )
+        .subscribe();
+    },
+    unsubscribe: (channel: RealtimeChannel) => {
+      supabase.removeChannel(channel);
+    },
   },
   callers: {
     create: (name: string, phone: string) =>
@@ -372,8 +413,8 @@ export const api = {
       apiFetch<{ deleted: boolean }>(`/api/v1/calls/${callLogId}`, { method: "DELETE" }),
   },
   notes: {
-    update: (noteId: string, data: { content?: string; is_pinned?: boolean }) =>
-      apiFetch<{ id: string; content: string; is_pinned: boolean }>(
+    update: (noteId: string, data: { content?: string; is_pinned?: boolean; tags?: string[] }) =>
+      apiFetch<{ id: string; content: string; is_pinned: boolean; tags: string[] }>(
         `/api/v1/lead-notes/note/${noteId}`,
         { method: "PATCH", body: JSON.stringify(data) }
       ),
@@ -410,6 +451,25 @@ export const api = {
       }),
     remove: (id: string) =>
       apiFetch<{ success: boolean }>(`/api/v1/knowledge/faqs/${id}`, {
+        method: "DELETE",
+      }),
+    uploadMedia: async (id: string, file: File): Promise<FAQ> => {
+      const authHeaders = await getAuthHeaders();
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`${API_URL}/api/v1/knowledge/faqs/${id}/media`, {
+        method: "POST",
+        body: fd,
+        headers: { ...authHeaders },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Media upload failed" }));
+        throw new Error(err.detail || "Media upload failed");
+      }
+      return res.json();
+    },
+    removeMedia: (id: string) =>
+      apiFetch<FAQ>(`/api/v1/knowledge/faqs/${id}/media`, {
         method: "DELETE",
       }),
   },

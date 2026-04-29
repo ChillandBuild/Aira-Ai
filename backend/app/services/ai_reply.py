@@ -80,19 +80,19 @@ def _recent_thread(db, lead_id: str, limit: int = 6) -> list[dict]:
         or []
     )
 
-def _check_faq(message: str, db) -> str | None:
-    """Check FAQ table for a keyword match. Returns answer or None."""
+def _check_faq(message: str, db, tenant_id: str) -> dict | None:
+    """Check FAQ table for a keyword match. Returns the FAQ dict or None."""
     try:
         message_lower = message.lower()
-        faqs = db.table("faqs").select("id,answer,keywords").eq("active", True).execute()
+        faqs = db.table("faqs").select("id,answer,keywords,media_id,media_type,media_url,media_filename,media_mime_type,hit_count").eq("active", True).eq("tenant_id", tenant_id).execute()
         for faq in (faqs.data or []):
             keywords = faq.get("keywords") or []
             if any(kw.lower() in message_lower for kw in keywords if kw):
                 # increment hit count
                 db.table("faqs").update({"hit_count": (faq.get("hit_count", 0) or 0) + 1}).eq("id", faq["id"]).execute()
-                return faq["answer"]
+                return faq
     except Exception as e:
-        logger.error(f"FAQ check failed: {e}")
+        logger.error(f"FAQ check failed for tenant {tenant_id}: {e}")
     return None
 
 _LAST_SEND_ERROR: str | None = None
@@ -245,10 +245,23 @@ async def generate_reply(
             logger.error(f"Scoring update failed (takeover mode) for lead {lead_id}: {e}")
         return
 
+    tenant_id = lead_data.data.get("tenant_id")
+    if not tenant_id:
+        logger.warning(f"No tenant_id found for lead {lead_id}, using default")
+        tenant_id = "00000000-0000-0000-0000-000000000001"
+
     # Step 1: FAQ check (no LLM cost)
-    faq_answer = _check_faq(message, db)
-    if faq_answer:
-        reply_text = faq_answer
+    faq_match = _check_faq(message, db, tenant_id)
+    media_data = None
+    if faq_match:
+        reply_text = faq_match["answer"]
+        media_data = {
+            "media_id": faq_match.get("media_id"),
+            "media_type": faq_match.get("media_type"),
+            "media_url": faq_match.get("media_url"),
+            "media_filename": faq_match.get("media_filename"),
+            "media_mime_type": faq_match.get("media_mime_type"),
+        } if faq_match.get("media_id") else None
         is_ai = False
         logger.info(f"FAQ hit for lead {lead_id}")
     else:
@@ -264,21 +277,48 @@ async def generate_reply(
             is_ai = False
 
     # Step 3: Dispatch to the correct channel
+    sid = None
     if channel == "instagram":
+        # IG media not currently supported in this snippet, fallback to text
         sid = send_instagram(ig_user_id, reply_text) if ig_user_id else None
     else:
-        sid = await send_whatsapp(phone, reply_text) if phone else None
+        if phone:
+            if media_data and media_data["media_id"]:
+                from app.services.meta_cloud import send_media_message
+                try:
+                    res = await send_media_message(
+                        to_number=phone,
+                        media_id=media_data["media_id"],
+                        wa_type=media_data["media_type"],
+                        filename=media_data["media_filename"] if media_data["media_type"] == "document" else None,
+                        caption=reply_text,
+                    )
+                    sid = (res.get("messages") or [{}])[0].get("id")
+                    logger.info(f"Meta media sent to {phone}: id={sid}")
+                except Exception as e:
+                    logger.error(f"Meta media send failed for FAQ: {e}")
+                    sid = None
+            else:
+                sid = await send_whatsapp(phone, reply_text)
 
     # Step 4: Store outbound message
     sid_field = "meta_message_id" if channel == "whatsapp" else "twilio_message_sid"
-    db.table("messages").insert({
+    insert_data = {
         "lead_id": str(lead_id),
         "direction": "outbound",
         "channel": channel,
         "content": reply_text,
         "is_ai_generated": is_ai,
         sid_field: sid,
-    }).execute()
+    }
+    if media_data and media_data["media_id"] and channel == "whatsapp":
+        insert_data.update({
+            "media_url": media_data["media_url"],
+            "media_type": media_data["media_type"],
+            "media_filename": media_data["media_filename"],
+            "media_mime_type": media_data["media_mime_type"],
+        })
+    db.table("messages").insert(insert_data).execute()
 
     # Step 5: Re-score lead and update segment
     try:

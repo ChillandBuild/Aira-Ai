@@ -11,10 +11,20 @@ export default function ConversationsPage() {
 
   useEffect(() => {
     api.leads.list({ limit: 100 }).then(setLeads);
-    const interval = setInterval(() => {
-      api.leads.list({ limit: 100 }).then(setLeads);
-    }, 15000);
-    return () => clearInterval(interval);
+    
+    const channel = api.leads.subscribeToAll((payload) => {
+      if (payload.eventType === "INSERT") {
+        setLeads((prev) => [payload.new as Lead, ...prev]);
+      } else if (payload.eventType === "UPDATE") {
+        setLeads((prev) => prev.map((l) => l.id === payload.new.id ? payload.new as Lead : l));
+      } else if (payload.eventType === "DELETE") {
+        setLeads((prev) => prev.filter((l) => l.id === payload.old.id));
+      }
+    });
+
+    return () => {
+      api.leads.unsubscribe(channel);
+    };
   }, []);
 
   return (
