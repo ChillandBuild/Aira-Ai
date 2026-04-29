@@ -76,43 +76,52 @@ async def invite_member(payload: InvitePayload, ctx: dict = Depends(get_tenant_a
             "password": payload.password,
             "email_confirm": True,
         })
-        invited_user_id = result.user.id
+        user = result.user
+        invited_user_id = user.id if hasattr(user, "id") else user["id"]
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to create user: {e}")
+        msg = str(e)
+        if "already" in msg.lower() or "duplicate" in msg.lower() or "registered" in msg.lower():
+            raise HTTPException(status_code=400, detail="A user with this email already exists")
+        logger.error(f"create_user failed: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to create user: {msg}")
 
-    existing = (
-        db.table("tenant_users")
-        .select("id")
-        .eq("user_id", invited_user_id)
-        .eq("tenant_id", ctx["tenant_id"])
-        .maybe_single()
-        .execute()
-    )
-    if not existing.data:
-        db.table("tenant_users").insert({
-            "tenant_id": ctx["tenant_id"],
-            "user_id": invited_user_id,
-            "role": "caller",
-        }).execute()
+    try:
+        existing = (
+            db.table("tenant_users")
+            .select("id")
+            .eq("user_id", invited_user_id)
+            .eq("tenant_id", ctx["tenant_id"])
+            .limit(1)
+            .execute()
+        )
+        if not existing.data:
+            db.table("tenant_users").insert({
+                "tenant_id": ctx["tenant_id"],
+                "user_id": invited_user_id,
+                "role": "caller",
+            }).execute()
 
-    caller_existing = (
-        db.table("callers")
-        .select("id")
-        .eq("user_id", invited_user_id)
-        .eq("tenant_id", ctx["tenant_id"])
-        .maybe_single()
-        .execute()
-    )
-    if not caller_existing.data:
-        db.table("callers").insert({
-            "tenant_id": ctx["tenant_id"],
-            "user_id": invited_user_id,
-            "name": payload.name or payload.email.split("@")[0],
-            "phone": payload.phone,
-            "active": True,
-        }).execute()
+        caller_existing = (
+            db.table("callers")
+            .select("id")
+            .eq("user_id", invited_user_id)
+            .eq("tenant_id", ctx["tenant_id"])
+            .limit(1)
+            .execute()
+        )
+        if not caller_existing.data:
+            db.table("callers").insert({
+                "tenant_id": ctx["tenant_id"],
+                "user_id": invited_user_id,
+                "name": payload.name or payload.email.split("@")[0],
+                "phone": payload.phone,
+                "active": True,
+            }).execute()
+    except Exception as e:
+        logger.error(f"tenant_users/callers insert failed: {e}")
+        raise HTTPException(status_code=500, detail=f"User created but assignment failed: {e}")
 
-    logger.info(f"Invited {payload.email} to tenant {ctx['tenant_id']}")
+    logger.info(f"Created telecaller {payload.email} for tenant {ctx['tenant_id']}")
     return {"invited": True, "email": payload.email, "user_id": invited_user_id}
 
 

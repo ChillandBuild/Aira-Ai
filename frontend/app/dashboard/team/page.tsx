@@ -54,10 +54,10 @@ export default function TeamPage() {
       <div className="flex items-center justify-between mb-7">
         <div>
           <h1 className="page-title">Team</h1>
-          <p className="page-subtitle">Invite and manage telecallers under your account.</p>
+          <p className="page-subtitle">Add and manage telecallers under your account.</p>
         </div>
         <button onClick={() => setShowInvite(true)} className="btn-primary">
-          <UserPlus size={14} /> Invite Telecaller
+          <UserPlus size={14} /> Add Telecaller
         </button>
       </div>
 
@@ -65,7 +65,7 @@ export default function TeamPage() {
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-card-hover w-full max-w-md p-6">
             <h2 className="font-display font-bold text-ink mb-4" style={{ fontSize: "1.05rem" }}>
-              Invite Telecaller
+              Add Telecaller
             </h2>
             {error && (
               <div className="mb-4 p-3 rounded-xl bg-red-50 text-red-700 font-body text-sm">{error}</div>
@@ -90,7 +90,7 @@ export default function TeamPage() {
               <div className="flex gap-2 pt-2">
                 <button type="button" onClick={() => { setShowInvite(false); setError(null); }} className="btn-ghost flex-1">Cancel</button>
                 <button type="submit" disabled={inviting || !email.trim()} className="btn-primary flex-1">
-                  {inviting ? "Sending…" : "Send Invite"}
+                  {inviting ? "Adding…" : "Add"}
                 </button>
               </div>
             </form>
