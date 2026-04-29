@@ -1,8 +1,9 @@
 import logging
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from app.db.supabase import get_supabase
+from app.dependencies.tenant import get_tenant_id
 from app.services.ai_reply import generate_reengagement_message, send_whatsapp
 from app.services.growth import build_follow_up_summary, utcnow
 
@@ -11,18 +12,19 @@ router = APIRouter()
 
 
 @router.get("/summary")
-async def summary():
+async def summary(tenant_id: str = Depends(get_tenant_id)):
     return build_follow_up_summary()
 
 
 @router.post("/run")
-async def run_due_follow_ups(limit: int = Query(20, ge=1, le=100)):
+async def run_due_follow_ups(limit: int = Query(20, ge=1, le=100), tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
     now = utcnow().isoformat()
     jobs = (
         db.table("follow_up_jobs")
         .select("*")
         .eq("status", "pending")
+        .eq("tenant_id", tenant_id)
         .lte("scheduled_for", now)
         .order("scheduled_for")
         .limit(limit)
@@ -42,6 +44,7 @@ async def run_due_follow_ups(limit: int = Query(20, ge=1, le=100)):
             db.table("leads")
             .select("id,name,phone,segment,converted_at,ai_enabled")
             .eq("id", job["lead_id"])
+            .eq("tenant_id", tenant_id)
             .maybe_single()
             .execute()
         )
@@ -70,6 +73,7 @@ async def run_due_follow_ups(limit: int = Query(20, ge=1, le=100)):
             db.table("messages").insert(
                 {
                     "lead_id": job["lead_id"],
+                    "tenant_id": tenant_id,
                     "direction": "outbound",
                     "channel": "whatsapp",
                     "content": message,

@@ -3,9 +3,10 @@ import io
 import logging
 import re
 from typing import Optional
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
+from app.dependencies.tenant import get_tenant_id
 from app.services.ai_reply import send_whatsapp
 from app.services.growth import get_or_create_campaign, record_stage_event, sync_follow_up_jobs
 from app.services.meta_cloud import send_template_message
@@ -69,6 +70,7 @@ async def upload_leads(
     utm_campaign: str | None = Form(None),
     utm_content: str | None = Form(None),
     spend_inr: str | None = Form(None),
+    tenant_id: str = Depends(get_tenant_id),
 ):
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="File must be a .csv")
@@ -108,6 +110,7 @@ async def upload_leads(
             "source": "upload",
             "score": 5,
             "segment": segment_override or "C",
+            "tenant_id": tenant_id,
         }
         campaign_key = (row_platform, row_campaign_name, row_external_campaign_id, row_spend)
         campaign = None
@@ -140,7 +143,7 @@ async def upload_leads(
         raise HTTPException(status_code=400, detail="No valid rows found in CSV")
 
     phones = list(rows_by_phone.keys())
-    existing = db.table("leads").select("phone").in_("phone", phones).execute()
+    existing = db.table("leads").select("phone").in_("phone", phones).eq("tenant_id", tenant_id).execute()
     existing_set = {r["phone"] for r in (existing.data or [])}
 
     to_insert = [rows_by_phone[p] for p in phones if p not in existing_set]
@@ -181,6 +184,7 @@ async def upload_leads(
                 if lead.data:
                     db.table("messages").insert({
                         "lead_id": lead.data[0]["id"],
+                        "tenant_id": tenant_id,
                         "direction": "outbound",
                         "channel": "whatsapp",
                         "content": campaign_message,
@@ -235,7 +239,7 @@ class BulkSendRequest(BaseModel):
 
 
 @router.post("/parse")
-async def parse_csv(file: UploadFile = File(...)):
+async def parse_csv(file: UploadFile = File(...), tenant_id: str = Depends(get_tenant_id)):
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="File must be a .csv")
 
@@ -253,7 +257,7 @@ async def parse_csv(file: UploadFile = File(...)):
                 suggested_mapping[key] = col
 
     db = get_supabase()
-    existing_resp = db.table("leads").select("phone").execute()
+    existing_resp = db.table("leads").select("phone").eq("tenant_id", tenant_id).execute()
     existing_phones = {r["phone"] for r in (existing_resp.data or []) if r.get("phone")}
 
     rows = list(reader)
@@ -291,7 +295,7 @@ async def validate_optin(body: OptInRequest):
 
 
 @router.post("/bulk-send")
-async def bulk_send(body: BulkSendRequest):
+async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_id)):
     eligible = []
     rejected = []
     for lead in body.leads:
@@ -321,16 +325,27 @@ async def bulk_send(body: BulkSendRequest):
             "source": "upload",
             "score": 5,
             "segment": "C",
+            "tenant_id": tenant_id,
         })
 
     if upsert_rows:
         db.table("leads").upsert(upsert_rows, on_conflict="phone").execute()
+
+    all_phones = [_normalize_phone(l.phone or "") for l in eligible if _normalize_phone(l.phone or "")]
+    opted_out_phones: set[str] = set()
+    if all_phones:
+        rows = db.table("leads").select("phone").in_("phone", all_phones).eq("tenant_id", tenant_id).eq("opted_out", True).execute()
+        opted_out_phones = {r["phone"] for r in (rows.data or [])}
 
     sent = 0
     failed = 0
     for lead in eligible:
         phone = _normalize_phone(lead.phone or "")
         if not phone:
+            continue
+        if phone in opted_out_phones:
+            failed += 1
+            logger.info(f"Bulk-send skipped opted-out lead {phone}")
             continue
         try:
             await send_template_message(

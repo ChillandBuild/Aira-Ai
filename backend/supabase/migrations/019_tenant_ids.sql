@@ -1,0 +1,56 @@
+ALTER TABLE leads             ADD COLUMN IF NOT EXISTS tenant_id uuid REFERENCES tenants(id);
+ALTER TABLE messages          ADD COLUMN IF NOT EXISTS tenant_id uuid REFERENCES tenants(id);
+ALTER TABLE call_logs         ADD COLUMN IF NOT EXISTS tenant_id uuid REFERENCES tenants(id);
+ALTER TABLE callers            ADD COLUMN IF NOT EXISTS tenant_id uuid REFERENCES tenants(id);
+ALTER TABLE phone_numbers     ADD COLUMN IF NOT EXISTS tenant_id uuid REFERENCES tenants(id);
+ALTER TABLE lead_notes        ADD COLUMN IF NOT EXISTS tenant_id uuid REFERENCES tenants(id);
+ALTER TABLE follow_up_jobs    ADD COLUMN IF NOT EXISTS tenant_id uuid REFERENCES tenants(id);
+ALTER TABLE segment_templates ADD COLUMN IF NOT EXISTS tenant_id uuid REFERENCES tenants(id);
+ALTER TABLE faqs              ADD COLUMN IF NOT EXISTS tenant_id uuid REFERENCES tenants(id);
+ALTER TABLE app_settings      ADD COLUMN IF NOT EXISTS tenant_id uuid REFERENCES tenants(id);
+ALTER TABLE incidents         ADD COLUMN IF NOT EXISTS tenant_id uuid REFERENCES tenants(id);
+ALTER TABLE message_templates ADD COLUMN IF NOT EXISTS tenant_id uuid REFERENCES tenants(id);
+ALTER TABLE lead_stage_events ADD COLUMN IF NOT EXISTS tenant_id uuid REFERENCES tenants(id);
+
+INSERT INTO tenants (id, name, plan) VALUES ('00000000-0000-0000-0000-000000000001', 'Default Tenant', 'trial') ON CONFLICT (id) DO NOTHING;
+INSERT INTO tenant_users (tenant_id, user_id, role) VALUES ('00000000-0000-0000-0000-000000000001', '15e0a852-c2a5-4e8a-9714-3f1b71444d56', 'owner') ON CONFLICT DO NOTHING;
+
+UPDATE leads             SET tenant_id = '00000000-0000-0000-0000-000000000001' WHERE tenant_id IS NULL;
+UPDATE messages          SET tenant_id = '00000000-0000-0000-0000-000000000001' WHERE tenant_id IS NULL;
+UPDATE call_logs         SET tenant_id = '00000000-0000-0000-0000-000000000001' WHERE tenant_id IS NULL;
+UPDATE callers            SET tenant_id = '00000000-0000-0000-0000-000000000001' WHERE tenant_id IS NULL;
+UPDATE phone_numbers     SET tenant_id = '00000000-0000-0000-0000-000000000001' WHERE tenant_id IS NULL;
+UPDATE lead_notes        SET tenant_id = '00000000-0000-0000-0000-000000000001' WHERE tenant_id IS NULL;
+UPDATE follow_up_jobs    SET tenant_id = '00000000-0000-0000-0000-000000000001' WHERE tenant_id IS NULL;
+UPDATE segment_templates SET tenant_id = '00000000-0000-0000-0000-000000000001' WHERE tenant_id IS NULL;
+UPDATE faqs              SET tenant_id = '00000000-0000-0000-0000-000000000001' WHERE tenant_id IS NULL;
+UPDATE app_settings      SET tenant_id = '00000000-0000-0000-0000-000000000001' WHERE tenant_id IS NULL;
+UPDATE incidents         SET tenant_id = '00000000-0000-0000-0000-000000000001' WHERE tenant_id IS NULL;
+UPDATE message_templates SET tenant_id = '00000000-0000-0000-0000-000000000001' WHERE tenant_id IS NULL;
+UPDATE lead_stage_events SET tenant_id = '00000000-0000-0000-0000-000000000001' WHERE tenant_id IS NULL;
+
+ALTER TABLE leads             ALTER COLUMN tenant_id SET NOT NULL;
+ALTER TABLE messages          ALTER COLUMN tenant_id SET NOT NULL;
+ALTER TABLE call_logs         ALTER COLUMN tenant_id SET NOT NULL;
+ALTER TABLE callers            ALTER COLUMN tenant_id SET NOT NULL;
+ALTER TABLE phone_numbers     ALTER COLUMN tenant_id SET NOT NULL;
+ALTER TABLE lead_notes        ALTER COLUMN tenant_id SET NOT NULL;
+ALTER TABLE follow_up_jobs    ALTER COLUMN tenant_id SET NOT NULL;
+ALTER TABLE segment_templates ALTER COLUMN tenant_id SET NOT NULL;
+ALTER TABLE faqs              ALTER COLUMN tenant_id SET NOT NULL;
+ALTER TABLE app_settings      ALTER COLUMN tenant_id SET NOT NULL;
+ALTER TABLE incidents         ALTER COLUMN tenant_id SET NOT NULL;
+ALTER TABLE message_templates ALTER COLUMN tenant_id SET NOT NULL;
+ALTER TABLE lead_stage_events ALTER COLUMN tenant_id SET NOT NULL;
+
+CREATE INDEX IF NOT EXISTS leads_tenant_id_idx             ON leads (tenant_id);
+CREATE INDEX IF NOT EXISTS messages_tenant_id_idx          ON messages (tenant_id);
+CREATE INDEX IF NOT EXISTS call_logs_tenant_id_idx         ON call_logs (tenant_id);
+CREATE INDEX IF NOT EXISTS callers_tenant_id_idx           ON callers (tenant_id);
+CREATE INDEX IF NOT EXISTS phone_numbers_tenant_id_idx     ON phone_numbers (tenant_id);
+CREATE INDEX IF NOT EXISTS lead_notes_tenant_id_idx        ON lead_notes (tenant_id);
+CREATE INDEX IF NOT EXISTS follow_up_jobs_tenant_id_idx    ON follow_up_jobs (tenant_id);
+CREATE INDEX IF NOT EXISTS faqs_tenant_id_idx              ON faqs (tenant_id);
+CREATE INDEX IF NOT EXISTS app_settings_tenant_id_idx      ON app_settings (tenant_id);
+CREATE INDEX IF NOT EXISTS incidents_tenant_id_idx         ON incidents (tenant_id);
+CREATE INDEX IF NOT EXISTS message_templates_tenant_id_idx ON message_templates (tenant_id);

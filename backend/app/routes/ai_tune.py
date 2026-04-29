@@ -3,10 +3,11 @@ import logging
 import re
 from typing import Literal
 import google.generativeai as genai
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.config import settings
 from app.db.supabase import get_supabase
+from app.dependencies.tenant import get_tenant_id
 from app.services.ai_reply import invalidate_prompt_cache
 
 logger = logging.getLogger(__name__)
@@ -40,16 +41,16 @@ class PromptUpdate(BaseModel):
 
 
 @router.get("/prompts")
-async def list_prompts():
+async def list_prompts(tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
-    res = db.table("ai_prompts").select("*").order("name").execute()
+    res = db.table("ai_prompts").select("*").eq("tenant_id", tenant_id).order("name").execute()
     return {"data": res.data or []}
 
 
 @router.put("/prompts/{name}")
-async def update_prompt(name: str, payload: PromptUpdate):
+async def update_prompt(name: str, payload: PromptUpdate, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
-    res = db.table("ai_prompts").update({"content": payload.content}).eq("name", name).execute()
+    res = db.table("ai_prompts").update({"content": payload.content}).eq("name", name).eq("tenant_id", tenant_id).execute()
     if not res.data:
         raise HTTPException(status_code=404, detail=f"Prompt '{name}' not found")
     invalidate_prompt_cache(name)
@@ -57,10 +58,10 @@ async def update_prompt(name: str, payload: PromptUpdate):
 
 
 @router.post("/analyze")
-async def analyze(for_prompt: str = "whatsapp_reply", limit: int = 5):
+async def analyze(for_prompt: str = "whatsapp_reply", limit: int = 5, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
 
-    prompt_row = db.table("ai_prompts").select("content").eq("name", for_prompt).maybe_single().execute()
+    prompt_row = db.table("ai_prompts").select("content").eq("name", for_prompt).eq("tenant_id", tenant_id).maybe_single().execute()
     if not prompt_row.data:
         raise HTTPException(status_code=404, detail=f"Prompt '{for_prompt}' not found")
     active_prompt = prompt_row.data["content"]
@@ -68,6 +69,7 @@ async def analyze(for_prompt: str = "whatsapp_reply", limit: int = 5):
     converted = (
         db.table("leads")
         .select("id,name,phone")
+        .eq("tenant_id", tenant_id)
         .not_.is_("converted_at", "null")
         .order("converted_at", desc=True)
         .limit(limit)
@@ -83,6 +85,7 @@ async def analyze(for_prompt: str = "whatsapp_reply", limit: int = 5):
             db.table("messages")
             .select("direction,content,created_at")
             .eq("lead_id", lead["id"])
+            .eq("tenant_id", tenant_id)
             .order("created_at", desc=False)
             .limit(40)
             .execute()
@@ -128,6 +131,7 @@ async def analyze(for_prompt: str = "whatsapp_reply", limit: int = 5):
             "for_prompt": for_prompt,
             "suggestion": suggestion,
             "rationale": rationale,
+            "tenant_id": tenant_id,
         }).execute()
         if row.data:
             inserted.append(row.data[0])
@@ -136,9 +140,9 @@ async def analyze(for_prompt: str = "whatsapp_reply", limit: int = 5):
 
 
 @router.get("/suggestions")
-async def list_suggestions(status: Literal["pending", "applied", "rejected", "all"] = "pending"):
+async def list_suggestions(status: Literal["pending", "applied", "rejected", "all"] = "pending", tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
-    query = db.table("ai_tune_suggestions").select("*").order("created_at", desc=True).limit(100)
+    query = db.table("ai_tune_suggestions").select("*").eq("tenant_id", tenant_id).order("created_at", desc=True).limit(100)
     if status != "all":
         query = query.eq("status", status)
     res = query.execute()
@@ -146,30 +150,30 @@ async def list_suggestions(status: Literal["pending", "applied", "rejected", "al
 
 
 @router.post("/suggestions/{suggestion_id}/apply")
-async def apply_suggestion(suggestion_id: str):
+async def apply_suggestion(suggestion_id: str, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
-    sug = db.table("ai_tune_suggestions").select("*").eq("id", suggestion_id).maybe_single().execute()
+    sug = db.table("ai_tune_suggestions").select("*").eq("id", suggestion_id).eq("tenant_id", tenant_id).maybe_single().execute()
     if not sug.data:
         raise HTTPException(status_code=404, detail="Suggestion not found")
     if sug.data["status"] != "pending":
         raise HTTPException(status_code=400, detail=f"Suggestion already {sug.data['status']}")
 
     name = sug.data["for_prompt"]
-    prompt_row = db.table("ai_prompts").select("content").eq("name", name).maybe_single().execute()
+    prompt_row = db.table("ai_prompts").select("content").eq("name", name).eq("tenant_id", tenant_id).maybe_single().execute()
     if not prompt_row.data:
         raise HTTPException(status_code=404, detail=f"Prompt '{name}' not found")
 
     new_content = prompt_row.data["content"].rstrip() + "\n\n" + sug.data["suggestion"].strip() + "\n"
-    db.table("ai_prompts").update({"content": new_content}).eq("name", name).execute()
-    db.table("ai_tune_suggestions").update({"status": "applied"}).eq("id", suggestion_id).execute()
+    db.table("ai_prompts").update({"content": new_content}).eq("name", name).eq("tenant_id", tenant_id).execute()
+    db.table("ai_tune_suggestions").update({"status": "applied"}).eq("id", suggestion_id).eq("tenant_id", tenant_id).execute()
     invalidate_prompt_cache(name)
     return {"applied": True, "for_prompt": name, "new_length": len(new_content)}
 
 
 @router.post("/suggestions/{suggestion_id}/reject")
-async def reject_suggestion(suggestion_id: str):
+async def reject_suggestion(suggestion_id: str, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
-    res = db.table("ai_tune_suggestions").update({"status": "rejected"}).eq("id", suggestion_id).execute()
+    res = db.table("ai_tune_suggestions").update({"status": "rejected"}).eq("id", suggestion_id).eq("tenant_id", tenant_id).execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Suggestion not found")
     return {"rejected": True}

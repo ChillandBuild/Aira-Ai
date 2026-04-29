@@ -1,12 +1,13 @@
 import logging
 import sys
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.dependencies.auth import get_current_user
 
 import os
 from app.config import settings
-from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates
+from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team
 
 # Configure logging
 logging.basicConfig(
@@ -53,25 +54,29 @@ app.add_middleware(
 async def health():
     return {"status": "ok", "service": "aira-ai"}
 
-# Webhook routes — no /api/v1/ prefix
+_auth = [Depends(get_current_user)]
+
+# Webhook routes — no auth (Meta/Twilio call directly)
 app.include_router(webhook.router, prefix="/webhook/whatsapp", tags=["webhook"])
 # Instagram webhook disabled — Phase 2
 
-# API routes
-app.include_router(leads.router, prefix="/api/v1/leads", tags=["leads"])
-app.include_router(messages.router, prefix="/api/v1/messages", tags=["messages"])
-app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytics"])
-app.include_router(upload.router, prefix="/api/v1/upload", tags=["upload"])
-app.include_router(segments.router, prefix="/api/v1/segments", tags=["segments"])
-app.include_router(calls.router, prefix="/api/v1/calls", tags=["calls"])
-app.include_router(callers.router, prefix="/api/v1/callers", tags=["callers"])
-app.include_router(ai_tune.router, prefix="/api/v1/ai-tune", tags=["ai-tune"])
-app.include_router(knowledge.router, prefix="/api/v1/knowledge", tags=["knowledge"])
-app.include_router(system.router, prefix="/api/v1/system", tags=["system"])
-app.include_router(follow_ups.router, prefix="/api/v1/follow-ups", tags=["follow-ups"])
-app.include_router(numbers.router, prefix="/api/v1/numbers", tags=["numbers"])
-app.include_router(incidents.router, prefix="/api/v1/incidents", tags=["incidents"])
-app.include_router(lead_notes.router, prefix="/api/v1/lead-notes", tags=["lead-notes"])
-app.include_router(voice_numbers.router, prefix="/api/v1/voice-numbers", tags=["voice-numbers"])
-app.include_router(app_settings.router, prefix="/api/v1/settings", tags=["settings"])
-app.include_router(templates.router, prefix="/api/v1/templates", tags=["templates"])
+# API routes — all require auth
+app.include_router(leads.router, prefix="/api/v1/leads", tags=["leads"], dependencies=_auth)
+app.include_router(messages.router, prefix="/api/v1/messages", tags=["messages"], dependencies=_auth)
+app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytics"], dependencies=_auth)
+app.include_router(upload.router, prefix="/api/v1/upload", tags=["upload"], dependencies=_auth)
+app.include_router(segments.router, prefix="/api/v1/segments", tags=["segments"], dependencies=_auth)
+app.include_router(calls.router, prefix="/api/v1/calls", tags=["calls"], dependencies=_auth)
+app.include_router(callers.router, prefix="/api/v1/callers", tags=["callers"], dependencies=_auth)
+app.include_router(ai_tune.router, prefix="/api/v1/ai-tune", tags=["ai-tune"], dependencies=_auth)
+app.include_router(knowledge.router, prefix="/api/v1/knowledge", tags=["knowledge"], dependencies=_auth)
+app.include_router(system.router, prefix="/api/v1/system", tags=["system"], dependencies=_auth)
+app.include_router(follow_ups.router, prefix="/api/v1/follow-ups", tags=["follow-ups"], dependencies=_auth)
+app.include_router(numbers.router, prefix="/api/v1/numbers", tags=["numbers"], dependencies=_auth)
+app.include_router(incidents.router, prefix="/api/v1/incidents", tags=["incidents"], dependencies=_auth)
+app.include_router(lead_notes.router, prefix="/api/v1/lead-notes", tags=["lead-notes"], dependencies=_auth)
+app.include_router(voice_numbers.router, prefix="/api/v1/voice-numbers", tags=["voice-numbers"], dependencies=_auth)
+app.include_router(app_settings.router, prefix="/api/v1/settings", tags=["settings"], dependencies=_auth)
+app.include_router(templates.router, prefix="/api/v1/templates", tags=["templates"], dependencies=_auth)
+app.include_router(onboarding.router, prefix="/api/v1/onboarding", tags=["onboarding"], dependencies=_auth)
+app.include_router(team.router, prefix="/api/v1/team", tags=["team"], dependencies=_auth)

@@ -3,10 +3,11 @@ import io
 import logging
 from datetime import datetime, timezone
 from uuid import UUID
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
+from app.dependencies.tenant import get_tenant_id
 from app.models.schemas import Lead, LeadUpdate, LeadWithMessages, Message, PaginatedResponse
 from app.services.ai_reply import send_whatsapp, send_instagram, get_last_send_error
 from app.services.growth import record_stage_event, sync_follow_up_jobs
@@ -31,10 +32,11 @@ async def list_leads(
     segment: str | None = Query(None, pattern="^[ABCD]$"),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
+    tenant_id: str = Depends(get_tenant_id),
 ):
     db = get_supabase()
     offset = (page - 1) * limit
-    query = db.table("leads").select("*", count="exact").is_("deleted_at", "null")
+    query = db.table("leads").select("*", count="exact").eq("tenant_id", tenant_id).is_("deleted_at", "null")
     if segment:
         query = query.eq("segment", segment)
     result = query.order("score", desc=True).range(offset, offset + limit - 1).execute()
@@ -48,9 +50,10 @@ async def list_leads(
 @router.get("/export")
 async def export_leads(
     segment: str | None = Query(None, pattern="^[ABCD]$"),
+    tenant_id: str = Depends(get_tenant_id),
 ):
     db = get_supabase()
-    query = db.table("leads").select("id,phone,name,source,score,segment,notes,created_at").is_("deleted_at", "null")
+    query = db.table("leads").select("id,phone,name,source,score,segment,notes,created_at").eq("tenant_id", tenant_id).is_("deleted_at", "null")
     if segment:
         query = query.eq("segment", segment)
     result = query.order("score", desc=True).execute()
@@ -69,29 +72,30 @@ async def export_leads(
     )
 
 @router.get("/{lead_id}/messages", response_model=list[Message])
-async def get_lead_messages(lead_id: UUID):
+async def get_lead_messages(lead_id: UUID, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
-    result = db.table("messages").select("*").eq("lead_id", str(lead_id)).order("created_at").execute()
+    result = db.table("messages").select("*").eq("lead_id", str(lead_id)).eq("tenant_id", tenant_id).order("created_at").execute()
     return result.data or []
 
 @router.get("/{lead_id}", response_model=LeadWithMessages)
-async def get_lead(lead_id: UUID):
+async def get_lead(lead_id: UUID, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
-    lead_result = db.table("leads").select("*").eq("id", str(lead_id)).is_("deleted_at", "null").maybe_single().execute()
+    lead_result = db.table("leads").select("*").eq("id", str(lead_id)).eq("tenant_id", tenant_id).is_("deleted_at", "null").maybe_single().execute()
     if not lead_result.data:
         raise HTTPException(status_code=404, detail="Lead not found")
-    msgs_result = db.table("messages").select("*").eq("lead_id", str(lead_id)).order("created_at").execute()
+    msgs_result = db.table("messages").select("*").eq("lead_id", str(lead_id)).eq("tenant_id", tenant_id).order("created_at").execute()
     lead = lead_result.data
     lead["messages"] = msgs_result.data or []
     return lead
 
 @router.patch("/{lead_id}", response_model=Lead)
-async def update_lead(lead_id: UUID, updates: LeadUpdate):
+async def update_lead(lead_id: UUID, updates: LeadUpdate, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
     existing = (
         db.table("leads")
         .select("segment,phone,ai_enabled,converted_at")
         .eq("id", str(lead_id))
+        .eq("tenant_id", tenant_id)
         .maybe_single()
         .execute()
     )
@@ -100,7 +104,7 @@ async def update_lead(lead_id: UUID, updates: LeadUpdate):
     update_data = updates.model_dump(exclude_none=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")
-    result = db.table("leads").update(update_data).eq("id", str(lead_id)).execute()
+    result = db.table("leads").update(update_data).eq("id", str(lead_id)).eq("tenant_id", tenant_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Lead not found")
     updated = result.data[0]
@@ -125,12 +129,13 @@ async def update_lead(lead_id: UUID, updates: LeadUpdate):
     return updated
 
 @router.post("/{lead_id}/convert", response_model=Lead)
-async def mark_converted(lead_id: UUID, payload: ConvertPayload | None = None):
+async def mark_converted(lead_id: UUID, payload: ConvertPayload | None = None, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
     existing = (
         db.table("leads")
         .select("segment,phone,ai_enabled")
         .eq("id", str(lead_id))
+        .eq("tenant_id", tenant_id)
         .maybe_single()
         .execute()
     )
@@ -143,7 +148,7 @@ async def mark_converted(lead_id: UUID, payload: ConvertPayload | None = None):
     }
     if notes:
         update["conversion_notes"] = notes
-    result = db.table("leads").update(update).eq("id", str(lead_id)).execute()
+    result = db.table("leads").update(update).eq("id", str(lead_id)).eq("tenant_id", tenant_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Lead not found")
     updated = result.data[0]
@@ -168,18 +173,19 @@ async def mark_converted(lead_id: UUID, payload: ConvertPayload | None = None):
 
 
 @router.patch("/{lead_id}/ai", response_model=Lead)
-async def toggle_ai(lead_id: UUID, payload: AiToggle):
+async def toggle_ai(lead_id: UUID, payload: AiToggle, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
     existing = (
         db.table("leads")
         .select("segment,phone,converted_at")
         .eq("id", str(lead_id))
+        .eq("tenant_id", tenant_id)
         .maybe_single()
         .execute()
     )
     if not existing.data:
         raise HTTPException(status_code=404, detail="Lead not found")
-    result = db.table("leads").update({"ai_enabled": payload.enabled}).eq("id", str(lead_id)).execute()
+    result = db.table("leads").update({"ai_enabled": payload.enabled}).eq("id", str(lead_id)).eq("tenant_id", tenant_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Lead not found")
     updated = result.data[0]
@@ -196,13 +202,13 @@ async def toggle_ai(lead_id: UUID, payload: AiToggle):
 
 
 @router.post("/{lead_id}/send")
-async def send_human_message(lead_id: UUID, payload: HumanMessage):
+async def send_human_message(lead_id: UUID, payload: HumanMessage, tenant_id: str = Depends(get_tenant_id)):
     content = (payload.content or "").strip()
     if not content:
         raise HTTPException(status_code=400, detail="Message is empty")
 
     db = get_supabase()
-    lead = db.table("leads").select("phone,source,ig_user_id").eq("id", str(lead_id)).maybe_single().execute()
+    lead = db.table("leads").select("phone,source,ig_user_id").eq("id", str(lead_id)).eq("tenant_id", tenant_id).maybe_single().execute()
     if not lead.data:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -227,6 +233,7 @@ async def send_human_message(lead_id: UUID, payload: HumanMessage):
     sid_field = "meta_message_id" if channel == "whatsapp" else "twilio_message_sid"
     row = db.table("messages").insert({
         "lead_id": str(lead_id),
+        "tenant_id": tenant_id,
         "direction": "outbound",
         "channel": channel,
         "content": content,
@@ -243,7 +250,7 @@ class ComposeMessage(BaseModel):
 
 
 @router.post("/compose")
-async def compose_new_message(payload: ComposeMessage):
+async def compose_new_message(payload: ComposeMessage, tenant_id: str = Depends(get_tenant_id)):
     """Send a WhatsApp message to any phone — creates lead if it doesn't exist."""
     content = (payload.content or "").strip()
     if not content:
@@ -256,13 +263,13 @@ async def compose_new_message(payload: ComposeMessage):
         raise HTTPException(status_code=400, detail="Invalid phone number")
 
     db = get_supabase()
-    existing = db.table("leads").select("id").eq("phone", phone).limit(1).execute()
+    existing = db.table("leads").select("id").eq("phone", phone).eq("tenant_id", tenant_id).limit(1).execute()
     if existing.data:
         lead_id = existing.data[0]["id"]
         if payload.name:
-            db.table("leads").update({"name": payload.name}).eq("id", lead_id).execute()
+            db.table("leads").update({"name": payload.name}).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
     else:
-        insert_data = {"phone": phone, "source": "manual", "score": 5, "segment": "C"}
+        insert_data = {"phone": phone, "source": "manual", "score": 5, "segment": "C", "tenant_id": tenant_id}
         if payload.name:
             insert_data["name"] = payload.name
         new_lead = db.table("leads").insert(insert_data).execute()
@@ -283,6 +290,7 @@ async def compose_new_message(payload: ComposeMessage):
 
     db.table("messages").insert({
         "lead_id": lead_id,
+        "tenant_id": tenant_id,
         "direction": "outbound",
         "channel": "whatsapp",
         "content": content,
@@ -293,22 +301,23 @@ async def compose_new_message(payload: ComposeMessage):
 
 
 @router.delete("/{lead_id}")
-async def delete_lead(lead_id: UUID):
+async def delete_lead(lead_id: UUID, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
     now = datetime.now(timezone.utc).isoformat()
-    result = db.table("leads").update({"deleted_at": now, "ai_enabled": False}).eq("id", str(lead_id)).execute()
+    result = db.table("leads").update({"deleted_at": now, "ai_enabled": False}).eq("id", str(lead_id)).eq("tenant_id", tenant_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Lead not found")
     db.table("follow_up_jobs").update({"status": "skipped", "skip_reason": "Lead deleted."}).eq("lead_id", str(lead_id)).eq("status", "pending").execute()
     return {"success": True, "message": "Lead deleted"}
 
 @router.get("/{lead_id}/call-logs")
-async def get_lead_call_logs(lead_id: UUID):
+async def get_lead_call_logs(lead_id: UUID, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
     result = (
         db.table("call_logs")
         .select("id,call_sid,status,outcome,duration_seconds,recording_url,score,ai_summary,transcript,created_at,callers(name)")
         .eq("lead_id", str(lead_id))
+        .eq("tenant_id", tenant_id)
         .order("created_at", desc=True)
         .limit(20)
         .execute()

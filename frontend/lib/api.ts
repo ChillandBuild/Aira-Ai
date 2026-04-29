@@ -1,5 +1,14 @@
+import { createClient } from "@/lib/supabase/client";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const MAX_LEADS_LIST_LIMIT = 200;
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return {};
+  return { Authorization: `Bearer ${session.access_token}` };
+}
 
 export interface Lead {
   id: string;
@@ -9,6 +18,7 @@ export interface Lead {
   score: number;
   segment: "A" | "B" | "C" | "D";
   ai_enabled: boolean;
+  opted_out: boolean;
   converted_at?: string | null;
   created_at: string;
 }
@@ -195,6 +205,30 @@ export interface AdPerformanceSummary {
   campaigns: AdCampaignInsight[];
 }
 
+export interface TeamMember {
+  user_id: string;
+  role: "owner" | "caller";
+  created_at: string;
+  caller_profile: {
+    id: string;
+    name: string | null;
+    phone: string | null;
+    overall_score: number | null;
+    active: boolean;
+  } | null;
+}
+
+export interface MyProfile {
+  tenant_id: string;
+  role: "owner" | "caller";
+  caller_profile: {
+    id: string;
+    name: string | null;
+    phone: string | null;
+    overall_score: number | null;
+  } | null;
+}
+
 export interface WhatsAppAnalytics {
   messages_sent_today: number;
   messages_received_today: number;
@@ -219,12 +253,20 @@ export interface FunnelAnalytics {
   avg_score: number | null;
 }
 
-async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
+  const authHeaders = await getAuthHeaders();
   const res = await fetch(`${API_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
+    ...opts,
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders,
+      ...(opts.headers as Record<string, string> ?? {}),
+    },
   });
-  if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Request failed" }));
+    throw new Error(err.detail || "Request failed");
+  }
   return res.json();
 }
 
@@ -453,7 +495,8 @@ export const api = {
       if (options?.utmCampaign) fd.append("utm_campaign", options.utmCampaign);
       if (options?.utmContent) fd.append("utm_content", options.utmContent);
       if (options?.spendInr) fd.append("spend_inr", options.spendInr);
-      const res = await fetch(`${API_URL}/api/v1/upload/leads`, { method: "POST", body: fd });
+      const authHeaders = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/upload/leads`, { method: "POST", body: fd, headers: { ...authHeaders } });
       if (!res.ok) throw new Error(`Upload failed ${res.status}: ${await res.text()}`);
       return res.json() as Promise<{
         total: number;
@@ -464,6 +507,26 @@ export const api = {
         campaign_failed: number;
       }>;
     },
+  },
+  onboarding: {
+    status: () =>
+      apiFetch<{ has_tenant: boolean; tenant_id?: string; role?: string }>("/api/v1/onboarding/status"),
+    create: (name: string) =>
+      apiFetch<{ tenant_id: string; already_exists: boolean }>("/api/v1/onboarding/", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      }),
+  },
+  team: {
+    me: () => apiFetch<MyProfile>("/api/v1/team/me"),
+    list: () => apiFetch<{ data: TeamMember[] }>("/api/v1/team/"),
+    invite: (email: string, password: string, name?: string, phone?: string) =>
+      apiFetch<{ invited: boolean; email: string; user_id: string }>("/api/v1/team/invite", {
+        method: "POST",
+        body: JSON.stringify({ email, password, name, phone }),
+      }),
+    remove: (userId: string) =>
+      apiFetch<{ removed: boolean }>(`/api/v1/team/${userId}`, { method: "DELETE" }),
   },
 };
 

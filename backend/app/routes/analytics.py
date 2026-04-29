@@ -5,9 +5,10 @@ Analytics routes — service metrics for WhatsApp, telecalling, and lead funnel.
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.db.supabase import get_supabase
+from app.dependencies.tenant import get_tenant_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -23,13 +24,14 @@ def _week_start() -> str:
 
 
 @router.get("/whatsapp")
-async def whatsapp_analytics():
+async def whatsapp_analytics(tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
     today = _today_start()
 
     msgs_today = (
         db.table("messages")
         .select("id,direction,is_ai_generated")
+        .eq("tenant_id", tenant_id)
         .gte("created_at", today)
         .execute()
         .data or []
@@ -45,6 +47,7 @@ async def whatsapp_analytics():
     faqs_res = (
         db.table("faqs")
         .select("question,hit_count")
+        .eq("tenant_id", tenant_id)
         .order("hit_count", desc=True)
         .limit(5)
         .execute()
@@ -61,7 +64,7 @@ async def whatsapp_analytics():
 
 
 @router.get("/telecalling")
-async def telecalling_analytics():
+async def telecalling_analytics(tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
     today = _today_start()
     week = _week_start()
@@ -69,6 +72,7 @@ async def telecalling_analytics():
     logs_today_res = (
         db.table("call_logs")
         .select("id,duration_seconds,outcome,caller_id")
+        .eq("tenant_id", tenant_id)
         .gte("created_at", today)
         .execute()
         .data or []
@@ -77,6 +81,7 @@ async def telecalling_analytics():
     logs_week_res = (
         db.table("call_logs")
         .select("id")
+        .eq("tenant_id", tenant_id)
         .gte("created_at", week)
         .execute()
         .data or []
@@ -85,6 +90,7 @@ async def telecalling_analytics():
     all_logs_res = (
         db.table("call_logs")
         .select("id,duration_seconds,outcome,caller_id")
+        .eq("tenant_id", tenant_id)
         .execute()
         .data or []
     )
@@ -104,6 +110,7 @@ async def telecalling_analytics():
     callers_res = (
         db.table("callers")
         .select("id,name,overall_score")
+        .eq("tenant_id", tenant_id)
         .eq("active", True)
         .execute()
         .data or []
@@ -135,13 +142,14 @@ async def telecalling_analytics():
 
 
 @router.get("/funnel")
-async def funnel_analytics():
+async def funnel_analytics(tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
     week = _week_start()
 
     leads_all = (
         db.table("leads")
         .select("id,segment,source,score,created_at")
+        .eq("tenant_id", tenant_id)
         .execute()
         .data or []
     )
@@ -181,7 +189,7 @@ async def funnel_analytics():
 
 
 @router.get("/overview")
-async def overview_analytics():
+async def overview_analytics(tenant_id: str = Depends(get_tenant_id)):
     """Dashboard root — KPIs and 7-day series."""
     db = get_supabase()
     now = datetime.now(timezone.utc)
@@ -192,6 +200,7 @@ async def overview_analytics():
     leads_rows = (
         db.table("leads")
         .select("id,phone,segment,score,created_at,converted_at,ai_enabled,deleted_at")
+        .eq("tenant_id", tenant_id)
         .is_("deleted_at", "null")
         .execute()
         .data or []
@@ -220,6 +229,7 @@ async def overview_analytics():
     msgs_week = (
         db.table("messages")
         .select("id,direction,is_ai_generated,created_at,lead_id")
+        .eq("tenant_id", tenant_id)
         .gte("created_at", week_start_dt.isoformat())
         .execute()
         .data or []
@@ -287,7 +297,7 @@ async def overview_analytics():
 
 
 @router.get("/ad-performance")
-async def ad_performance_summary():
+async def ad_performance_summary(tenant_id: str = Depends(get_tenant_id)):
     """Stub — ad attribution to be wired when an Ads source/UTM column exists."""
     return {
         "campaigns": [],
