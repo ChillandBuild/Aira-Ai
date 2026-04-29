@@ -31,6 +31,11 @@ export interface Message {
   content: string;
   is_ai_generated: boolean;
   twilio_message_sid: string | null;
+  meta_message_id?: string | null;
+  media_url?: string | null;
+  media_type?: "image" | "document" | "audio" | "video" | "sticker" | null;
+  media_filename?: string | null;
+  media_mime_type?: string | null;
   created_at: string;
 }
 
@@ -304,6 +309,22 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ content }),
       }),
+    sendMedia: async (id: string, file: File, caption?: string): Promise<Message> => {
+      const authHeaders = await getAuthHeaders();
+      const fd = new FormData();
+      fd.append("file", file);
+      if (caption) fd.append("caption", caption);
+      const res = await fetch(`${API_URL}/api/v1/leads/${id}/send-media`, {
+        method: "POST",
+        body: fd,
+        headers: { ...authHeaders },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Media send failed" }));
+        throw new Error(err.detail || "Media send failed");
+      }
+      return res.json();
+    },
     compose: (phone: string, content: string, name?: string) =>
       apiFetch<{ lead_id: string; sid: string; phone: string }>(`/api/v1/leads/compose`, {
         method: "POST",
@@ -372,8 +393,8 @@ export const api = {
       apiFetch<{ deleted: boolean }>(`/api/v1/calls/${callLogId}`, { method: "DELETE" }),
   },
   notes: {
-    update: (noteId: string, data: { content?: string; is_pinned?: boolean }) =>
-      apiFetch<{ id: string; content: string; is_pinned: boolean }>(
+    update: (noteId: string, data: { content?: string; is_pinned?: boolean; tags?: string[] }) =>
+      apiFetch<{ id: string; content: string; is_pinned: boolean; tags: string[] }>(
         `/api/v1/lead-notes/note/${noteId}`,
         { method: "PATCH", body: JSON.stringify(data) }
       ),
