@@ -8,6 +8,7 @@ from app.db.supabase import get_supabase
 from app.services.growth import record_stage_event, sync_follow_up_jobs
 from app.services.lead_scorer import score_message
 from app.services.segmentation import score_to_segment
+from app.services.knowledge_service import search_knowledge
 
 logger = logging.getLogger(__name__)
 
@@ -247,14 +248,29 @@ async def generate_reply(
 
     # Step 1: FAQ check (no LLM cost)
     faq_answer = _check_faq(message, db)
+    
+    context_text = ""
+    is_rag = False
+    
     if faq_answer:
         reply_text = faq_answer
         is_ai = False
         logger.info(f"FAQ hit for lead {lead_id}")
     else:
+        # Step 2: Knowledge Base RAG search
+        relevant_chunks = await search_knowledge(message, tenant_id=lead_row.data.get("tenant_id") or "00000000-0000-0000-0000-000000000000")
+        if relevant_chunks:
+            context_text = "\n\nRELEVANT CONTEXT FROM DOCUMENTS:\n" + "\n---\n".join(relevant_chunks)
+            is_rag = True
+            logger.info(f"RAG hit for lead {lead_id} ({len(relevant_chunks)} chunks)")
+
         try:
+            system_prompt = _get_prompt(f"{channel}_reply")
+            if context_text:
+                system_prompt += "\n\nIMPORTANT: Use the following context to answer the student's question accurately. If the answer is not in the context, do not hallucinate; instead, say you'll connect them with a counsellor." + context_text
+            
             response = _reply_model.generate_content(
-                [{"role": "user", "parts": [_get_prompt(f"{channel}_reply") + "\n\nStudent message: " + message]}]
+                [{"role": "user", "parts": [system_prompt + "\n\nStudent message: " + message]}]
             )
             reply_text = response.text.strip()
             is_ai = True

@@ -433,6 +433,26 @@ export const api = {
       apiFetch<{ success: boolean }>(`/api/v1/knowledge/faqs/${id}`, {
         method: "DELETE",
       }),
+    listDocuments: async () => {
+      const res = await apiFetch<{ data: Array<Record<string, unknown>> }>(`/api/v1/knowledge/documents`);
+      return res.data || [];
+    },
+    uploadDocument: async (file: File) => {
+      const authHeaders = await getAuthHeaders();
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`${API_URL}/api/v1/knowledge/upload-document`, {
+        method: "POST",
+        body: fd,
+        headers: { ...authHeaders },
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      return res.json();
+    },
+    deleteDocument: (id: string) =>
+      apiFetch<{ success: boolean }>(`/api/v1/knowledge/documents/${id}`, {
+        method: "DELETE",
+      }),
   },
   aiTune: {
     prompts: async () => {
