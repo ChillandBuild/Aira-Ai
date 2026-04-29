@@ -1,24 +1,7 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { Plus, Trash2, Save, X, BookOpen, Flame, Paperclip, FileText, Image as ImageIcon, Video, Music } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Plus, Trash2, Save, X, BookOpen, Flame } from "lucide-react";
 import { api, FAQ, FAQInput } from "@/lib/api";
-
-function FaqMedia({ faq }: { faq: FAQ }) {
-  if (!faq.media_type) return null;
-  return (
-    <div className="mt-3 flex items-center gap-3 p-3 rounded-lg border border-surface-mid bg-surface-low w-fit max-w-sm">
-      {faq.media_type === "image" && <ImageIcon size={20} className="text-blue-500 shrink-0" />}
-      {faq.media_type === "document" && <FileText size={20} className="text-red-500 shrink-0" />}
-      {faq.media_type === "video" && <Video size={20} className="text-purple-500 shrink-0" />}
-      {faq.media_type === "audio" && <Music size={20} className="text-amber-500 shrink-0" />}
-      {!["image", "document", "video", "audio"].includes(faq.media_type) && <Paperclip size={20} className="text-on-surface-muted shrink-0" />}
-      <div className="flex flex-col min-w-0">
-        <span className="font-label text-xs font-semibold text-on-surface truncate">{faq.media_filename || "Attachment"}</span>
-        <span className="font-label text-[10px] text-on-surface-muted uppercase">{faq.media_type}</span>
-      </div>
-    </div>
-  );
-}
 
 const EMPTY: FAQInput = { question: "", answer: "", keywords: [], active: true };
 
@@ -27,15 +10,10 @@ export default function KnowledgePage() {
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState<FAQInput>(EMPTY);
   const [draftKeywords, setDraftKeywords] = useState("");
-  const [draftFile, setDraftFile] = useState<File | null>(null);
-  const draftFileRef = useRef<HTMLInputElement>(null);
-  
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [editBuf, setEditBuf] = useState<FAQInput>(EMPTY);
   const [editKeywords, setEditKeywords] = useState("");
-  const [editFile, setEditFile] = useState<File | null>(null);
-  const editFileRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
   async function load() {
@@ -66,17 +44,12 @@ export default function KnowledgePage() {
     setSaving(true);
     setMsg(null);
     try {
-      const newFaq = await api.knowledge.create({
+      await api.knowledge.create({
         ...draft,
         keywords: parseKeywords(draftKeywords),
       });
-      if (draftFile) {
-        setMsg("Uploading media...");
-        await api.knowledge.uploadMedia(newFaq.id, draftFile);
-      }
       setDraft(EMPTY);
       setDraftKeywords("");
-      setDraftFile(null);
       setMsg("FAQ added.");
       await load();
     } catch (err) {
@@ -95,7 +68,6 @@ export default function KnowledgePage() {
       active: faq.active,
     });
     setEditKeywords(faq.keywords.join(", "));
-    setEditFile(null);
   }
 
   async function saveEdit(id: string) {
@@ -105,10 +77,6 @@ export default function KnowledgePage() {
         ...editBuf,
         keywords: parseKeywords(editKeywords),
       });
-      if (editFile) {
-        setMsg("Uploading new media...");
-        await api.knowledge.uploadMedia(id, editFile);
-      }
       setEditing(null);
       await load();
       setMsg("Saved.");
@@ -116,16 +84,6 @@ export default function KnowledgePage() {
       setMsg(err instanceof Error ? err.message : "Update failed");
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function removeMedia(id: string) {
-    if (!confirm("Remove attachment from this FAQ?")) return;
-    try {
-      await api.knowledge.removeMedia(id);
-      await load();
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Remove media failed");
     }
   }
 
@@ -205,32 +163,7 @@ export default function KnowledgePage() {
             />
           </div>
         </div>
-        {draftFile && (
-          <div className="mt-4 p-3 rounded-lg border border-surface-mid bg-surface-low w-fit flex items-center gap-3">
-            <FileText size={16} className="text-tertiary" />
-            <span className="font-label text-xs text-on-surface truncate max-w-[200px]">{draftFile.name}</span>
-            <button onClick={() => setDraftFile(null)} className="p-1 hover:bg-surface-mid rounded-md text-on-surface-muted"><X size={14}/></button>
-          </div>
-        )}
-        <div className="mt-4 flex justify-between items-center">
-          <div>
-            <input 
-              type="file" 
-              className="hidden" 
-              ref={draftFileRef}
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.mp3,.mp4"
-              onChange={(e) => {
-                if (e.target.files?.[0]) setDraftFile(e.target.files[0]);
-                e.target.value = '';
-              }}
-            />
-            <button
-              onClick={() => draftFileRef.current?.click()}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-surface-mid text-on-surface-muted font-label text-xs hover:bg-surface-mid"
-            >
-              <Paperclip size={14} /> Attach File (PDF, Excel, CSV, Image...)
-            </button>
-          </div>
+        <div className="mt-4 flex justify-end">
           <button
             onClick={createFaq}
             disabled={saving}
@@ -278,52 +211,20 @@ export default function KnowledgePage() {
                     rows={3}
                     className="w-full px-3 py-2 rounded-lg bg-surface-low border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary"
                   />
-                  {faq.media_id && !editFile && (
-                    <div className="flex items-center justify-between p-2 rounded-lg border border-surface-mid bg-surface-low">
-                       <span className="font-label text-xs text-on-surface truncate">Current: {faq.media_filename}</span>
-                       <button onClick={() => removeMedia(faq.id)} className="text-red-500 hover:text-red-600 font-label text-xs">Remove</button>
-                    </div>
-                  )}
-                  {editFile && (
-                    <div className="flex items-center justify-between p-2 rounded-lg border border-surface-mid bg-surface-low">
-                       <span className="font-label text-xs text-on-surface truncate">New: {editFile.name}</span>
-                       <button onClick={() => setEditFile(null)} className="text-on-surface-muted hover:text-on-surface font-label text-xs"><X size={14}/></button>
-                    </div>
-                  )}
-                  <div className="flex gap-2 items-center justify-between">
-                    <div>
-                      <input 
-                        type="file" 
-                        className="hidden" 
-                        ref={editFileRef}
-                        accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.mp3,.mp4"
-                        onChange={(e) => {
-                          if (e.target.files?.[0]) setEditFile(e.target.files[0]);
-                          e.target.value = '';
-                        }}
-                      />
-                      <button
-                        onClick={() => editFileRef.current?.click()}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-surface-mid text-on-surface-muted font-label text-xs hover:bg-surface-mid"
-                      >
-                        <Paperclip size={12} /> Replace File
-                      </button>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => saveEdit(faq.id)}
-                        disabled={saving}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 disabled:opacity-40"
-                      >
-                        <Save size={12} /> {saving ? "…" : "Save"}
-                      </button>
-                      <button
-                        onClick={() => setEditing(null)}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-surface border border-surface-mid text-on-surface-muted rounded-lg font-label text-xs hover:bg-surface-mid"
-                      >
-                        <X size={12} /> Cancel
-                      </button>
-                    </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => saveEdit(faq.id)}
+                      disabled={saving}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 disabled:opacity-40"
+                    >
+                      <Save size={12} /> {saving ? "…" : "Save"}
+                    </button>
+                    <button
+                      onClick={() => setEditing(null)}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-surface border border-surface-mid text-on-surface-muted rounded-lg font-label text-xs hover:bg-surface-mid"
+                    >
+                      <X size={12} /> Cancel
+                    </button>
                   </div>
                 </div>
               ) : (
@@ -352,7 +253,6 @@ export default function KnowledgePage() {
                         ))}
                       </div>
                     )}
-                    <FaqMedia faq={faq} />
                   </div>
                   <div className="flex flex-col gap-2 shrink-0">
                     <button

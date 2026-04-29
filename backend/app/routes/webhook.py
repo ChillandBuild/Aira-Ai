@@ -102,15 +102,7 @@ async def whatsapp_webhook(
                         if msg_type not in ("text", "button", "interactive"):
                             continue
                         wa_id = msg.get("from", "")
-                        msg_id = msg.get("id")
                         phone = f"+{wa_id}" if wa_id and not wa_id.startswith("+") else wa_id
-                        
-                        body = ""
-                        media_type = None
-                        media_url = None
-                        media_filename = None
-                        media_mime_type = None
-
                         if msg_type == "text":
                             body = msg.get("text", {}).get("body", "").strip()
                         elif msg_type == "button":
