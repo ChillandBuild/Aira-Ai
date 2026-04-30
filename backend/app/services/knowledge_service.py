@@ -1,6 +1,7 @@
 import logging
 import io
 from uuid import UUID
+import httpx
 import pdfplumber
 from docx import Document as DocxDocument
 from pptx import Presentation
@@ -12,10 +13,46 @@ from app.config_dynamic import get_setting
 
 logger = logging.getLogger(__name__)
 
+EMBEDDING_MODEL = "models/text-embedding-004"
+EMBEDDING_URL = f"https://generativelanguage.googleapis.com/v1beta/{EMBEDDING_MODEL}:embedContent"
+
+
+_gemini_configured = False
+
+
+def _gemini_api_key() -> str:
+    return get_setting("gemini_api_key") or settings.gemini_api_key or ""
+
+
 def _ensure_gemini():
-    key = get_setting("gemini_api_key") or settings.gemini_api_key
-    if key:
-        genai.configure(api_key=key)
+    global _gemini_configured
+    if not _gemini_configured:
+        key = _gemini_api_key()
+        if key:
+            genai.configure(api_key=key)
+            _gemini_configured = True
+
+
+def _embed_text(text: str, task_type: str, title: str | None = None) -> list[float]:
+    """Call Gemini embedding REST API directly. Returns 768-dim vector."""
+    payload: dict = {
+        "model": EMBEDDING_MODEL,
+        "content": {"parts": [{"text": text}]},
+    }
+    if task_type:
+        payload["taskType"] = task_type
+    if title:
+        payload["title"] = title
+
+    resp = httpx.post(
+        EMBEDDING_URL,
+        params={"key": _gemini_api_key()},
+        json=payload,
+        timeout=30.0,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    return list(data["embedding"]["values"])
 
 def extract_text_from_file(file_content: bytes, filename: str, mime_type: str) -> str:
     """Extract text from various file formats."""
@@ -97,17 +134,10 @@ async def process_document(document_id: UUID, tenant_id: str, file_content: byte
         chunks = chunk_text(text)
         
         # 3. Embed and Store
-        _ensure_gemini()
         stored = 0
         for i, chunk in enumerate(chunks):
             try:
-                embedding_res = genai.embed_content(
-                    model="models/text-embedding-004",
-                    content=chunk,
-                    task_type="retrieval_document",
-                    title=filename
-                )
-                embedding = embedding_res["embedding"]
+                embedding = _embed_text(chunk, task_type="RETRIEVAL_DOCUMENT", title=filename)
 
                 db.table("knowledge_chunks").insert({
                     "document_id": str(document_id),
@@ -139,15 +169,8 @@ async def process_document(document_id: UUID, tenant_id: str, file_content: byte
 
 async def search_knowledge(query: str, tenant_id: str, limit: int = 5) -> list[str]:
     """Search for relevant chunks."""
-    _ensure_gemini()
     try:
-        # Get query embedding
-        embedding_res = genai.embed_content(
-            model="models/text-embedding-004",
-            content=query,
-            task_type="retrieval_query"
-        )
-        query_embedding = embedding_res["embedding"]
+        query_embedding = _embed_text(query, task_type="RETRIEVAL_QUERY")
         
         # Search via RPC
         db = get_supabase()
