@@ -150,15 +150,6 @@ async def whatsapp_webhook(
                             "meta_message_id": msg_id,
                             "tenant_id": tenant_id,
                         }
-                        if media_type:
-                            insert_row["media_type"] = media_type
-                        if media_url:
-                            insert_row["media_url"] = media_url
-                        if media_filename:
-                            insert_row["media_filename"] = media_filename
-                        if media_mime_type:
-                            insert_row["media_mime_type"] = media_mime_type
-
                         db.table("messages").insert(insert_row).execute()
 
                         # Only trigger AI reply for text messages (not media)
