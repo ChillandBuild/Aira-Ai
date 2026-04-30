@@ -191,51 +191,6 @@ function TodaySnapshot({ overview }: { overview: AnalyticsOverview | null }) {
   );
 }
 
-function RecentLeads({ leads }: { leads: Lead[] }) {
-  const recent = [...leads].sort((a, b) => (b.created_at > a.created_at ? 1 : -1)).slice(0, 5);
-  return (
-    <div className="card rounded-3xl">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="font-display font-bold text-ink" style={{ fontSize: "1.05rem", letterSpacing: "-0.02em" }}>
-          Recent Leads
-        </h2>
-        <Link href="/dashboard/leads" className="font-label text-xs font-semibold text-primary hover:underline">
-          View all →
-        </Link>
-      </div>
-      {recent.length === 0 ? (
-        <p className="font-body text-sm text-ink-muted text-center py-6">No leads yet</p>
-      ) : (
-        <div className="divide-y divide-border-subtle">
-          {recent.map((lead) => {
-            const cfg = SEGMENT_CONFIG[lead.segment as keyof typeof SEGMENT_CONFIG];
-            return (
-              <Link
-                key={lead.id}
-                href={`/dashboard/conversations`}
-                className="flex items-center gap-3 py-3 hover:bg-surface-subtle -mx-2 px-2 rounded-xl transition-colors"
-              >
-                <div className={`w-8 h-8 rounded-full ${cfg?.bg} flex items-center justify-center font-label text-xs font-bold ${cfg?.tone}`}>
-                  {cfg?.label[0]}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-body font-medium text-sm text-ink truncate">
-                    {lead.name || "Unnamed"}
-                  </p>
-                  <p className="font-body text-xs text-ink-muted truncate">{lead.phone}</p>
-                </div>
-                <div className="text-right">
-                  <div className="font-display font-bold text-sm text-ink">{lead.score}</div>
-                  <div className="font-label text-[10px] uppercase tracking-wider text-ink-muted">/10</div>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
 
 export default function DashboardPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
