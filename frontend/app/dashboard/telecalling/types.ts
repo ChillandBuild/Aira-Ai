@@ -26,3 +26,12 @@ export type ActiveCallCtx = {
   name: string | null;
   phone: string | null;
 };
+
+export interface CallbackJob {
+  id: string;
+  lead_id: string;
+  scheduled_for: string;
+  message_preview: string | null;
+  status: string;
+  lead: { id: string; name: string | null; phone: string; segment: string };
+}

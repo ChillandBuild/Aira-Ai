@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { X, FileText } from "lucide-react";
 import type { ActiveCallCtx } from "../types";
-import { saveNote } from "../lib/notes-api";
+import { createCallback, saveNote } from "../lib/notes-api";
 
 const LIVE_NOTE_TAGS = [
   "Meeting scheduled",
@@ -18,16 +18,26 @@ type Props = {
   onClose: () => void;
 };
 
+const CALLBACK_TAGS = new Set(["Call back later", "Meeting scheduled"]);
+
 export default function LiveNotesPane({ ctx, onClose }: Props) {
   const [content, setContent] = useState("");
   const [pinned, setPinned] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [callbackAt, setCallbackAt] = useState("");
 
   const canSave = !!ctx.leadId && content.trim().length > 0;
 
   function appendTag(tag: string) {
     setContent((prev) => (prev.trim() ? `${prev.trim()}\n${tag}` : tag));
+    if (CALLBACK_TAGS.has(tag)) {
+      setShowDatePicker(true);
+    } else {
+      setShowDatePicker(false);
+      setCallbackAt("");
+    }
   }
 
   async function handleSave() {
@@ -35,8 +45,13 @@ export default function LiveNotesPane({ ctx, onClose }: Props) {
     setSaving(true);
     try {
       await saveNote(ctx.leadId, content.trim(), pinned);
+      if (callbackAt) {
+        await createCallback(ctx.leadId, new Date(callbackAt).toISOString(), content.trim());
+      }
       setContent("");
       setPinned(false);
+      setCallbackAt("");
+      setShowDatePicker(false);
       setSavedFlash(true);
       setTimeout(() => {
         setSavedFlash(false);
@@ -92,6 +107,19 @@ export default function LiveNotesPane({ ctx, onClose }: Props) {
           </button>
         ))}
       </div>
+
+      {showDatePicker && (
+        <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl mb-4">
+          <p className="text-xs font-semibold text-amber-800 mb-1.5">Schedule callback</p>
+          <input
+            type="datetime-local"
+            value={callbackAt}
+            onChange={(e) => setCallbackAt(e.target.value)}
+            min={new Date().toISOString().slice(0, 16)}
+            className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+          />
+        </div>
+      )}
 
       {/* textarea */}
       <textarea

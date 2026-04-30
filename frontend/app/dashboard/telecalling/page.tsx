@@ -9,8 +9,8 @@ import { formatPhone, timeAgo } from "@/lib/utils";
 import BriefingModal from "./components/briefing-modal";
 import LiveNotesPane from "./components/live-notes-pane";
 import NotesHistoryModal from "./components/notes-history-modal";
-import { fetchNotes } from "./lib/notes-api";
-import type { ActiveCallCtx, NotesResponse } from "./types";
+import { fetchNotes, fetchTodayCallbacks, markCallbackDone } from "./lib/notes-api";
+import type { ActiveCallCtx, CallbackJob, NotesResponse } from "./types";
 
 const STATUS_COLORS: Record<string, string> = {
   active: "bg-green-100 text-green-700",
@@ -138,6 +138,9 @@ export default function TelecallingPage() {
   const [callbackTimeMap, setCallbackTimeMap] = useState<Record<string, string>>({});
   const [showCallbackPicker, setShowCallbackPicker] = useState<Record<string, boolean>>({});
 
+  // today's scheduled callbacks
+  const [todayCallbacks, setTodayCallbacks] = useState<CallbackJob[]>([]);
+
 
   // ── data loading ────────────────────────────────────────────────────────────
 
@@ -147,6 +150,7 @@ export default function TelecallingPage() {
       if (rows.length && !selected) setSelected(rows[0]);
     });
     loadQueues();
+    fetchTodayCallbacks().then(setTodayCallbacks).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -368,6 +372,33 @@ export default function TelecallingPage() {
         <h1 className="font-display text-3xl font-bold text-tertiary">Telecalling</h1>
         <p className="font-body text-on-surface-muted mt-1">AI-assisted caller management</p>
       </div>
+
+      {todayCallbacks.length > 0 && (
+        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl">
+          <h2 className="font-bold text-amber-900 text-sm mb-3 flex items-center gap-2">
+            <span>📞</span> Today&apos;s Callbacks ({todayCallbacks.length})
+          </h2>
+          <div className="space-y-2">
+            {todayCallbacks.map((cb) => (
+              <div key={cb.id} className="flex items-center justify-between bg-white rounded-xl px-4 py-2.5 shadow-sm">
+                <div>
+                  <p className="font-semibold text-sm">{cb.lead.name ?? "Unnamed"}</p>
+                  <p className="text-xs text-gray-500">
+                    {cb.lead.phone} · {new Date(cb.scheduled_for).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                  {cb.message_preview && <p className="text-xs text-gray-400 mt-0.5">{cb.message_preview}</p>}
+                </div>
+                <button
+                  onClick={() => markCallbackDone(cb.id).then(() => fetchTodayCallbacks().then(setTodayCallbacks))}
+                  className="text-xs px-3 py-1.5 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700"
+                >
+                  Done
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-6">
         {/* ── left panel ── */}
