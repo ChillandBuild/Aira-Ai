@@ -20,6 +20,7 @@ export interface Lead {
   ai_enabled: boolean;
   opted_out: boolean;
   converted_at?: string | null;
+  assigned_to?: string | null;
   created_at: string;
 }
 
@@ -570,6 +571,23 @@ export const api = {
     remove: (userId: string) =>
       apiFetch<{ removed: boolean }>(`/api/v1/team/${userId}`, { method: "DELETE" }),
   },
+  alerts: {
+    mine: async (): Promise<HotLeadAlert[]> => {
+      const res = await apiFetch<{ data: HotLeadAlert[] }>("/api/v1/alerts/mine");
+      return res.data || [];
+    },
+    acknowledge: (id: string) =>
+      apiFetch<{ success: boolean }>(`/api/v1/alerts/${id}/acknowledge`, { method: "PATCH" }),
+  },
 };
+
+export interface HotLeadAlert {
+  id: string;
+  lead_id: string;
+  status: "pending" | "acknowledged" | "escalated";
+  created_at: string;
+  assigned_caller_id: string | null;
+  lead: { id: string; name: string | null; phone: string; score: number; segment: string } | null;
+}
 
 export { API_URL };
