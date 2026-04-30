@@ -207,7 +207,7 @@ async def generate_reply(
     # Step 0: respect human-takeover flag
     lead_row = (
         db.table("leads")
-        .select("ai_enabled,score,segment,phone,converted_at")
+        .select("ai_enabled,score,segment,phone,converted_at,tenant_id")
         .eq("id", str(lead_id))
         .maybe_single()
         .execute()
@@ -297,6 +297,7 @@ async def generate_reply(
         "channel": channel,
         "content": reply_text,
         "is_ai_generated": is_ai,
+        "tenant_id": lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000000",
         sid_field: sid,
     }).execute()
 
