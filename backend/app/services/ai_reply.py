@@ -213,7 +213,7 @@ async def generate_reply(
     # Step 0: respect human-takeover flag
     lead_row = (
         db.table("leads")
-        .select("ai_enabled,score,segment,phone,converted_at,tenant_id")
+        .select("ai_enabled,score,segment,phone,converted_at,tenant_id,assigned_to")
         .eq("id", str(lead_id))
         .maybe_single()
         .execute()
@@ -334,5 +334,15 @@ async def generate_reply(
             db=db,
         )
         logger.info(f"Lead {lead_id} scored {new_score} → segment {new_segment}")
+        if new_score >= 7 and (lead_data.get("score") or 5) < 7:
+            try:
+                from app.routes.alerts import create_alert
+                create_alert(
+                    lead_id=str(lead_id),
+                    tenant_id=lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001",
+                    assigned_caller_id=lead_data.get("assigned_to"),
+                )
+            except Exception as alert_err:
+                logger.warning(f"Alert creation failed for lead {lead_id}: {alert_err}")
     except Exception as e:
         logger.error(f"Scoring update failed for lead {lead_id}: {e}")
