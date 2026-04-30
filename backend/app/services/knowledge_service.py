@@ -2,7 +2,6 @@ import asyncio
 import logging
 import io
 from uuid import UUID
-import httpx
 import pdfplumber
 from docx import Document as DocxDocument
 from pptx import Presentation
@@ -14,11 +13,7 @@ from app.config_dynamic import get_setting
 
 logger = logging.getLogger(__name__)
 
-EMBEDDING_MODEL = "models/gemini-embedding-001"
-EMBEDDING_URL = f"https://generativelanguage.googleapis.com/v1beta/{EMBEDDING_MODEL}:embedContent"
-
-
-_gemini_configured = False
+_MAX_TEXT_CHARS = 50_000
 
 
 def _gemini_api_key() -> str:
@@ -26,167 +21,98 @@ def _gemini_api_key() -> str:
 
 
 def _ensure_gemini():
-    global _gemini_configured
-    if not _gemini_configured:
-        key = _gemini_api_key()
-        if key:
-            genai.configure(api_key=key)
-            _gemini_configured = True
+    key = _gemini_api_key()
+    if key:
+        genai.configure(api_key=key)
 
-
-def _embed_text(text: str, task_type: str, title: str | None = None) -> list[float]:
-    """Call Gemini embedding REST API directly. Returns 768-dim vector."""
-    payload: dict = {
-        "model": EMBEDDING_MODEL,
-        "content": {"parts": [{"text": text}]},
-        "outputDimensionality": 768,
-    }
-    if task_type:
-        payload["taskType"] = task_type
-    if title:
-        payload["title"] = title
-
-    resp = httpx.post(
-        EMBEDDING_URL,
-        params={"key": _gemini_api_key()},
-        json=payload,
-        timeout=30.0,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    return list(data["embedding"]["values"])
 
 def extract_text_from_file(file_content: bytes, filename: str, mime_type: str) -> str:
-    """Extract text from various file formats."""
-    text = ""
     file_obj = io.BytesIO(file_content)
-    
+    text = ""
     try:
         if mime_type == "application/pdf" or filename.endswith(".pdf"):
             with pdfplumber.open(file_obj) as pdf:
-                text = "\n".join([page.extract_text() or "" for page in pdf.pages])
-        
+                text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+
         elif mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" or filename.endswith(".docx"):
             doc = DocxDocument(file_obj)
-            text = "\n".join([para.text for para in doc.paragraphs])
-            
+            text = "\n".join(p.text for p in doc.paragraphs)
+
         elif mime_type == "application/vnd.openxmlformats-officedocument.presentationml.presentation" or filename.endswith(".pptx"):
             prs = Presentation(file_obj)
             for slide in prs.slides:
                 for shape in slide.shapes:
                     if hasattr(shape, "text"):
                         text += shape.text + "\n"
-                        
+
         elif mime_type == "text/csv" or filename.endswith(".csv"):
             df = pd.read_csv(file_obj)
             text = df.to_string()
-            
-        elif mime_type in ["application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"] or filename.endswith((".xls", ".xlsx")):
+
+        elif mime_type in ("application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") or filename.endswith((".xls", ".xlsx")):
             df = pd.read_excel(file_obj)
             text = df.to_string()
-            
+
         elif mime_type.startswith("image/"):
-            # Use Gemini to extract text from images (multimodal OCR)
             _ensure_gemini()
             model = genai.GenerativeModel("gemini-2.0-flash")
             response = model.generate_content([
                 "Extract all text from this image. Return only the extracted text.",
-                {"mime_type": mime_type, "data": file_content}
+                {"mime_type": mime_type, "data": file_content},
             ])
             text = response.text
-            
+
         else:
-            # Fallback for plain text
             try:
                 text = file_content.decode("utf-8")
-            except:
-                text = str(file_content)
-                
+            except Exception:
+                text = ""
+
     except Exception as e:
         logger.error(f"Text extraction failed for {filename}: {e}")
-        raise ValueError(f"Could not extract text from {filename}: {str(e)}")
-        
+        raise ValueError(f"Could not extract text from {filename}: {e}")
+
     return text.strip()
 
-def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> list[str]:
-    """Split text into chunks with overlap."""
-    if not text:
-        return []
-    
-    chunks = []
-    start = 0
-    while start < len(text):
-        end = start + chunk_size
-        chunks.append(text[start:end])
-        start += chunk_size - overlap
-        
-    return chunks
 
 async def process_document(document_id: UUID, tenant_id: str, file_content: bytes, filename: str, mime_type: str):
-    """Full pipeline: Extract -> Chunk -> Embed -> Store."""
     db = get_supabase()
-    
     try:
-        # 1. Extract (blocking I/O — run in thread)
         text = await asyncio.to_thread(extract_text_from_file, file_content, filename, mime_type)
         if not text:
-            raise ValueError("No text extracted from file")
+            raise ValueError("No text could be extracted from the file.")
 
-        # 2. Chunk
-        chunks = chunk_text(text)
+        db.table("knowledge_documents").update({
+            "status": "indexed",
+            "full_text": text[:_MAX_TEXT_CHARS],
+        }).eq("id", str(document_id)).execute()
 
-        # 3. Embed and Store
-        stored = 0
-        first_error: str | None = None
-        for i, chunk in enumerate(chunks):
-            try:
-                embedding = await asyncio.to_thread(_embed_text, chunk, "RETRIEVAL_DOCUMENT", filename)
-                db.table("knowledge_chunks").insert({
-                    "document_id": str(document_id),
-                    "tenant_id": tenant_id,
-                    "content": chunk,
-                    "embedding": embedding,
-                    "metadata": {"index": i, "filename": filename}
-                }).execute()
-                stored += 1
-            except Exception as e:
-                err = f"{type(e).__name__}: {e}"
-                logger.error(f"Chunk {i} embed failed for doc {document_id}: {err}")
-                if first_error is None:
-                    first_error = err
+        logger.info(f"Document {document_id} indexed — {len(text)} chars")
 
-        # 4. Update status
-        if stored > 0:
-            db.table("knowledge_documents").update({"status": "indexed"}).eq("id", str(document_id)).execute()
-        else:
-            db.table("knowledge_documents").update({
-                "status": "failed",
-                "error_message": first_error or "All chunks failed to embed."
-            }).eq("id", str(document_id)).execute()
-        
     except Exception as e:
         logger.error(f"Document processing failed for {document_id}: {e}")
         db.table("knowledge_documents").update({
             "status": "failed",
-            "error_message": str(e)
+            "error_message": str(e),
         }).eq("id", str(document_id)).execute()
 
-async def search_knowledge(query: str, tenant_id: str, limit: int = 5) -> list[str]:
-    """Search for relevant chunks."""
+
+async def get_knowledge_context(tenant_id: str) -> str:
+    """Return full text of all indexed documents for this tenant, ready to inject into a prompt."""
     try:
-        query_embedding = await asyncio.to_thread(_embed_text, query, "RETRIEVAL_QUERY")
-        
-        # Search via RPC
         db = get_supabase()
-        res = db.rpc("match_knowledge_chunks", {
-            "query_embedding": query_embedding,
-            "match_threshold": 0.3,
-            "match_count": limit,
-            "p_tenant_id": tenant_id
-        }).execute()
-        
-        return [item["content"] for item in (res.data or [])]
-        
+        res = (
+            db.table("knowledge_documents")
+            .select("name,full_text")
+            .eq("tenant_id", tenant_id)
+            .eq("status", "indexed")
+            .execute()
+        )
+        parts = []
+        for doc in (res.data or []):
+            if doc.get("full_text"):
+                parts.append(f"=== {doc['name']} ===\n{doc['full_text']}")
+        return "\n\n".join(parts)
     except Exception as e:
-        logger.error(f"Knowledge search failed: {e}")
-        return []
+        logger.error(f"Knowledge context fetch failed: {e}")
+        return ""

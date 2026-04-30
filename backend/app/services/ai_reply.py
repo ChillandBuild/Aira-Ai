@@ -8,7 +8,7 @@ from app.db.supabase import get_supabase
 from app.services.growth import record_stage_event, sync_follow_up_jobs
 from app.services.lead_scorer import score_message
 from app.services.segmentation import score_to_segment
-from app.services.knowledge_service import search_knowledge
+from app.services.knowledge_service import get_knowledge_context
 
 logger = logging.getLogger(__name__)
 
@@ -256,28 +256,23 @@ async def generate_reply(
     faq_answer = _check_faq(message, db)
     
     context_text = ""
-    is_rag = False
-    
+
     if faq_answer:
         reply_text = faq_answer
         is_ai = False
         logger.info(f"FAQ hit for lead {lead_id}")
     else:
-        # Step 2: Knowledge Base RAG search (optional — fails silently if table not set up)
+        # Step 2: Inject full knowledge base text if any documents are indexed
         try:
-            relevant_chunks = await search_knowledge(message, tenant_id=lead_row.data.get("tenant_id") or "00000000-0000-0000-0000-000000000000")
-        except Exception as rag_err:
-            logger.warning(f"RAG search skipped for lead {lead_id}: {rag_err}")
-            relevant_chunks = []
-        if relevant_chunks:
-            context_text = "\n\nRELEVANT CONTEXT FROM DOCUMENTS:\n" + "\n---\n".join(relevant_chunks)
-            is_rag = True
-            logger.info(f"RAG hit for lead {lead_id} ({len(relevant_chunks)} chunks)")
+            context_text = await get_knowledge_context(lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001")
+        except Exception as e:
+            logger.warning(f"Knowledge context fetch failed for lead {lead_id}: {e}")
+            context_text = ""
 
         try:
             system_prompt = _get_prompt(f"{channel}_reply", tenant_id=lead_data.get("tenant_id"))
             if context_text:
-                system_prompt += "\n\nIMPORTANT: Use the following context to answer the student's question accurately. If the answer is not in the context, do not hallucinate; instead, say you'll connect them with a counsellor." + context_text
+                system_prompt += "\n\nKNOWLEDGE BASE:\nUse the following documents to answer the user's question accurately. If the answer is not in the documents, say you will connect them with a team member.\n\n" + context_text
             
             response = _reply_model.generate_content(
                 [{"role": "user", "parts": [system_prompt + "\n\nStudent message: " + message]}]
