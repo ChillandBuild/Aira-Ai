@@ -99,6 +99,7 @@ async def whatsapp_webhook(
                         tenant_id = "00000000-0000-0000-0000-000000000001"
                     for msg in value.get("messages", []):
                         msg_type = msg.get("type")
+                        msg_id = msg.get("id", "")
                         if msg_type not in ("text", "button", "interactive"):
                             continue
                         wa_id = msg.get("from", "")
@@ -110,19 +111,10 @@ async def whatsapp_webhook(
                         elif msg_type == "interactive":
                             inter = msg.get("interactive", {})
                             body = (inter.get("button_reply") or inter.get("list_reply") or {}).get("title", "").strip()
-                        elif msg_type in ("image", "document", "audio", "video", "sticker"):
-                            media_obj = msg.get(msg_type, {})
-                            media_id = media_obj.get("id", "")
-                            media_mime_type = media_obj.get("mime_type", "")
-                            media_filename = media_obj.get("filename") or f"file.{media_mime_type.split('/')[-1] if media_mime_type else 'bin'}"
-                            caption = media_obj.get("caption", "")
-                            media_type = msg_type
-                            media_url = f"meta:{media_id}" if media_id else None
-                            body = caption if caption else f"[{msg_type}: {media_filename}]"
+                        else:
+                            body = ""
 
-                        if not phone:
-                            continue
-                        if not body and not media_type:
+                        if not phone or not body:
                             continue
 
                         logger.info(f"Inbound Meta WhatsApp from {phone}: type={msg_type} body={body!r}")
