@@ -29,6 +29,7 @@ def get_me(ctx: dict = Depends(get_tenant_and_role)):
     return {
         "tenant_id": ctx["tenant_id"],
         "role": ctx["role"],
+        "caller_id": ctx.get("caller_id"),
         "caller_profile": caller.data,
     }
 

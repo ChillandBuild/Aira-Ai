@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/sidebar";
+import { AuthRoleProvider } from "./contexts/AuthRoleContext";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -36,7 +37,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <Sidebar />
       <main className="ml-[220px] flex-1 min-h-screen">
         <div className="p-7 max-w-[1400px]">
-          {children}
+          <AuthRoleProvider>
+            {children}
+          </AuthRoleProvider>
         </div>
       </main>
     </div>
