@@ -145,7 +145,7 @@ export function Sidebar() {
       {/* Bottom section */}
       <div className="px-3 pb-4 space-y-0.5">
         <div className="mx-2 mb-2 h-px bg-border-subtle" />
-        {BOTTOM_NAV.map(({ href, icon: Icon, label }) => {
+        {role !== "caller" && BOTTOM_NAV.map(({ href, icon: Icon, label }) => {
           const active = pathname.startsWith(href);
           return (
             <Link
