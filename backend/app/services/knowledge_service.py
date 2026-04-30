@@ -98,9 +98,9 @@ async def process_document(document_id: UUID, tenant_id: str, file_content: byte
         
         # 3. Embed and Store
         _ensure_gemini()
+        stored = 0
         for i, chunk in enumerate(chunks):
             try:
-                # Get embedding from Gemini
                 embedding_res = genai.embed_content(
                     model="models/text-embedding-004",
                     content=chunk,
@@ -108,8 +108,7 @@ async def process_document(document_id: UUID, tenant_id: str, file_content: byte
                     title=filename
                 )
                 embedding = embedding_res["embedding"]
-                
-                # Store chunk
+
                 db.table("knowledge_chunks").insert({
                     "document_id": str(document_id),
                     "tenant_id": tenant_id,
@@ -117,13 +116,19 @@ async def process_document(document_id: UUID, tenant_id: str, file_content: byte
                     "embedding": embedding,
                     "metadata": {"index": i, "filename": filename}
                 }).execute()
-                
+                stored += 1
+
             except Exception as e:
-                logger.error(f"Failed to embed chunk {i} for doc {document_id}: {e}")
-                continue
-                
-        # 4. Update status
-        db.table("knowledge_documents").update({"status": "indexed"}).eq("id", str(document_id)).execute()
+                logger.error(f"Failed to embed chunk {i} for doc {document_id}: {type(e).__name__}: {e}")
+
+        # 4. Update status — only mark indexed if at least one chunk was stored
+        if stored > 0:
+            db.table("knowledge_documents").update({"status": "indexed"}).eq("id", str(document_id)).execute()
+        else:
+            db.table("knowledge_documents").update({
+                "status": "failed",
+                "error_message": f"All {len(chunks)} chunks failed to embed. Check Render logs for Gemini embedding errors."
+            }).eq("id", str(document_id)).execute()
         
     except Exception as e:
         logger.error(f"Document processing failed for {document_id}: {e}")
