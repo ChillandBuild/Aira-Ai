@@ -14,7 +14,7 @@ from app.config_dynamic import get_setting
 
 logger = logging.getLogger(__name__)
 
-EMBEDDING_MODEL = "models/text-embedding-004"
+EMBEDDING_MODEL = "models/gemini-embedding-001"
 EMBEDDING_URL = f"https://generativelanguage.googleapis.com/v1beta/{EMBEDDING_MODEL}:embedContent"
 
 
@@ -39,6 +39,7 @@ def _embed_text(text: str, task_type: str, title: str | None = None) -> list[flo
     payload: dict = {
         "model": EMBEDDING_MODEL,
         "content": {"parts": [{"text": text}]},
+        "outputDimensionality": 768,
     }
     if task_type:
         payload["taskType"] = task_type
