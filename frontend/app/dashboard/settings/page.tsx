@@ -12,7 +12,7 @@ import {
   CheckCircle2,
   ChevronDown,
 } from "lucide-react";
-import { API_URL } from "@/lib/api";
+import { API_URL, getAuthHeaders } from "@/lib/api";
 
 type Setting = {
   key: string;
@@ -96,16 +96,18 @@ const SECTIONS: SectionDef[] = [
 ];
 
 async function fetchSettings(): Promise<Setting[]> {
-  const res = await fetch(`${API_URL}/api/v1/settings`);
+  const authHeaders = await getAuthHeaders();
+  const res = await fetch(`${API_URL}/api/v1/settings`, { headers: authHeaders });
   if (!res.ok) throw new Error("Failed to load settings");
   const data = await res.json();
   return data.settings;
 }
 
 async function saveSettings(updates: SettingsMap): Promise<void> {
+  const authHeaders = await getAuthHeaders();
   const res = await fetch(`${API_URL}/api/v1/settings`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders },
     body: JSON.stringify({ updates }),
   });
   if (!res.ok) throw new Error("Failed to save settings");
@@ -433,12 +435,12 @@ export default function SettingsPage() {
                                   }))
                                 }
                                 className={`relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ${
-                                  enabled ? "bg-primary" : "bg-border"
+                                  enabled ? "bg-green-600" : "bg-gray-300"
                                 }`}
                               >
                                 <span
-                                  className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ${
-                                    enabled ? "translate-x-5" : "translate-x-0.5"
+                                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ${
+                                    enabled ? "translate-x-5" : "translate-x-0"
                                   }`}
                                 />
                               </button>
