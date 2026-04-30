@@ -130,6 +130,7 @@ async def upload_document(
     return res.data[0]
 
 
+
 @router.delete("/documents/{doc_id}")
 async def delete_document(doc_id: UUID, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()

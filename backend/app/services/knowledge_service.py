@@ -136,10 +136,10 @@ async def process_document(document_id: UUID, tenant_id: str, file_content: byte
 
         # 3. Embed and Store
         stored = 0
+        first_error: str | None = None
         for i, chunk in enumerate(chunks):
             try:
                 embedding = await asyncio.to_thread(_embed_text, chunk, "RETRIEVAL_DOCUMENT", filename)
-
                 db.table("knowledge_chunks").insert({
                     "document_id": str(document_id),
                     "tenant_id": tenant_id,
@@ -148,17 +148,19 @@ async def process_document(document_id: UUID, tenant_id: str, file_content: byte
                     "metadata": {"index": i, "filename": filename}
                 }).execute()
                 stored += 1
-
             except Exception as e:
-                logger.error(f"Failed to embed chunk {i} for doc {document_id}: {type(e).__name__}: {e}")
+                err = f"{type(e).__name__}: {e}"
+                logger.error(f"Chunk {i} embed failed for doc {document_id}: {err}")
+                if first_error is None:
+                    first_error = err
 
-        # 4. Update status — only mark indexed if at least one chunk was stored
+        # 4. Update status
         if stored > 0:
             db.table("knowledge_documents").update({"status": "indexed"}).eq("id", str(document_id)).execute()
         else:
             db.table("knowledge_documents").update({
                 "status": "failed",
-                "error_message": f"All {len(chunks)} chunks failed to embed. Check Render logs for Gemini embedding errors."
+                "error_message": first_error or "All chunks failed to embed."
             }).eq("id", str(document_id)).execute()
         
     except Exception as e:

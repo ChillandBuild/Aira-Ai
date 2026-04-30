@@ -298,8 +298,10 @@ export default function KnowledgePage() {
                           <div>
                             <p className="font-semibold text-on-surface">{doc.name}</p>
                             <p className="text-xs text-on-surface-muted">{(doc.size_bytes / 1024).toFixed(1)} KB</p>
-                            {doc.status === "failed" && doc.error_message && (
-                              <p className="text-xs text-red-500 mt-0.5 max-w-xs truncate" title={doc.error_message}>{doc.error_message}</p>
+                            {doc.status === "failed" && (
+                              <p className="text-xs text-red-500 mt-0.5 max-w-xs" title={doc.error_message || undefined}>
+                                {doc.error_message ? doc.error_message.slice(0, 80) + (doc.error_message.length > 80 ? "…" : "") : "Indexing failed — delete and re-upload"}
+                              </p>
                             )}
                           </div>
                         </div>
