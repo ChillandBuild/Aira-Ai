@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
-from app.dependencies.tenant import get_tenant_id
+from app.dependencies.tenant import get_tenant_id, get_tenant_and_role
 from app.models.schemas import Lead, LeadUpdate, LeadWithMessages, Message, PaginatedResponse
 from app.services.ai_reply import send_whatsapp, send_instagram, get_last_send_error
 from app.services.growth import record_stage_event, sync_follow_up_jobs
@@ -27,18 +27,26 @@ class AiToggle(BaseModel):
 class HumanMessage(BaseModel):
     content: str
 
+
+class AssignPayload(BaseModel):
+    caller_id: str | None = None
+
+
 @router.get("/", response_model=PaginatedResponse)
 async def list_leads(
     segment: str | None = Query(None, pattern="^[ABCD]$"),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
-    tenant_id: str = Depends(get_tenant_id),
+    ctx: dict = Depends(get_tenant_and_role),
 ):
     db = get_supabase()
+    tenant_id = ctx["tenant_id"]
     offset = (page - 1) * limit
     query = db.table("leads").select("*", count="exact").eq("tenant_id", tenant_id).is_("deleted_at", "null")
     if segment:
         query = query.eq("segment", segment)
+    if ctx.get("role") == "caller" and ctx.get("caller_id"):
+        query = query.eq("assigned_to", ctx["caller_id"])
     result = query.order("score", desc=True).range(offset, offset + limit - 1).execute()
     return PaginatedResponse(
         data=result.data,
@@ -46,6 +54,21 @@ async def list_leads(
         page=page,
         limit=limit,
     )
+
+
+@router.patch("/{lead_id}/assign")
+async def assign_lead(
+    lead_id: str,
+    payload: AssignPayload,
+    ctx: dict = Depends(get_tenant_and_role),
+):
+    if ctx["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Owner only")
+    db = get_supabase()
+    db.table("leads").update({"assigned_to": payload.caller_id}).eq(
+        "id", lead_id
+    ).eq("tenant_id", ctx["tenant_id"]).execute()
+    return {"success": True}
 
 @router.get("/export")
 async def export_leads(

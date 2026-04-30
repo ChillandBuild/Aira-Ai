@@ -142,6 +142,11 @@ async def whatsapp_webhook(
                             }).execute()
                             lead_id = new_lead.data[0]["id"]
                             record_stage_event(lead_id, to_segment="C", event_type="created", metadata={"source": "whatsapp"}, db=db)
+                            try:
+                                from app.services.assignment import auto_assign_lead
+                                auto_assign_lead(lead_id, tenant_id)
+                            except Exception as e:
+                                logger.warning(f"Auto-assign failed for lead {lead_id}: {e}")
 
                         already = db.table("messages").select("id").eq("meta_message_id", msg_id).limit(1).execute()
                         if already.data:
