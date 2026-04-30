@@ -21,8 +21,8 @@ export default function KnowledgePage() {
     try {
       const data = await api.knowledge.list();
       setFaqs(data);
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Failed to load FAQs");
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Failed to load FAQs");
     } finally {
       setLoading(false);
     }
@@ -52,8 +52,8 @@ export default function KnowledgePage() {
       setDraftKeywords("");
       setMsg("FAQ added.");
       await load();
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Save failed");
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Save failed");
     } finally {
       setSaving(false);
     }
