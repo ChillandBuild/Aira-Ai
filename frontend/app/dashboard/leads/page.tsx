@@ -4,6 +4,8 @@ import { api, Lead, SegmentTemplate, BroadcastResult } from "@/lib/api";
 import { SegmentBadge } from "@/components/segment-badge";
 import { Download, Send, Save, Pencil, Plus, X, Loader2 } from "lucide-react";
 import { timeAgo, formatPhone } from "@/lib/utils";
+import { useAuthRole } from "../contexts/AuthRoleContext";
+import { AssignButton } from "./AssignButton";
 
 function NameCell({ lead, onUpdate }: { lead: Lead; onUpdate: (l: Lead) => void }) {
   const [editing, setEditing] = useState(false);
@@ -170,6 +172,7 @@ function ComposeModal({ onClose, onSent }: { onClose: () => void; onSent: () => 
 }
 
 export default function LeadsPage() {
+  const { role } = useAuthRole();
   const [tab, setTab] = useState<typeof SEGMENTS[number]>("A");
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -325,6 +328,9 @@ export default function LeadsPage() {
                 <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Segment</th>
                 <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Source</th>
                 <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Added</th>
+                {role === "owner" && (
+                  <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Actions</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -358,6 +364,11 @@ export default function LeadsPage() {
                   <td className="px-6 py-4"><SegmentBadge segment={lead.segment} /></td>
                   <td className="px-6 py-4 font-label text-xs text-on-surface-muted capitalize">{lead.source}</td>
                   <td className="px-6 py-4 font-label text-xs text-on-surface-muted">{timeAgo(lead.created_at)}</td>
+                  {role === "owner" && (
+                    <td className="px-6 py-4">
+                      <AssignButton leadId={lead.id} currentAssignedTo={lead.assigned_to} />
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
