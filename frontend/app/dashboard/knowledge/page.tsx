@@ -405,7 +405,7 @@ export default function KnowledgePage() {
                         setKeywordInput("");
                       }
                     }}
-                    placeholder="add keyword..."
+                    placeholder="type keyword, press Enter..."
                     className="flex-1 bg-transparent border-none focus:outline-none text-sm px-2 min-w-[120px]"
                   />
                 </div>
@@ -418,8 +418,14 @@ export default function KnowledgePage() {
               >
                 Cancel
               </button>
-              <button 
-                onClick={saveFaq}
+              <button
+                onClick={() => {
+                  if (keywordInput.trim() && !faqForm.keywords.includes(keywordInput.trim())) {
+                    setFaqForm(f => ({ ...f, keywords: [...f.keywords, keywordInput.trim()] }));
+                    setKeywordInput("");
+                  }
+                  saveFaq();
+                }}
                 disabled={saving || !faqForm.question.trim() || !faqForm.answer.trim()}
                 className="px-8 py-2.5 bg-tertiary text-white rounded-xl font-label font-semibold shadow-card hover:bg-tertiary/90 transition-all disabled:opacity-50"
               >
