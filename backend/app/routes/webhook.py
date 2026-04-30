@@ -12,13 +12,19 @@ _STOP_WORDS = frozenset({"stop", "unsubscribe", "cancel", "quit", "end", "optout
 
 
 def _get_tenant_id_for_meta_number(phone_number_id: str, db) -> str | None:
-    result = db.table("phone_numbers").select("tenant_id").eq("meta_phone_number_id", phone_number_id).maybe_single().execute()
-    return (result.data or {}).get("tenant_id")
+    try:
+        result = db.table("phone_numbers").select("tenant_id").eq("meta_phone_number_id", phone_number_id).maybe_single().execute()
+        return (result.data or {}).get("tenant_id") if result else None
+    except Exception:
+        return None
 
 
 def _get_tenant_id_for_twilio_number(number: str, db) -> str | None:
-    result = db.table("phone_numbers").select("tenant_id").eq("number", number).maybe_single().execute()
-    return (result.data or {}).get("tenant_id")
+    try:
+        result = db.table("phone_numbers").select("tenant_id").eq("number", number).maybe_single().execute()
+        return (result.data or {}).get("tenant_id") if result else None
+    except Exception:
+        return None
 
 
 def _handle_opt_out(phone: str, db) -> bool:
