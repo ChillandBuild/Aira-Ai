@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import io
 from uuid import UUID
@@ -125,19 +126,19 @@ async def process_document(document_id: UUID, tenant_id: str, file_content: byte
     db = get_supabase()
     
     try:
-        # 1. Extract
-        text = extract_text_from_file(file_content, filename, mime_type)
+        # 1. Extract (blocking I/O — run in thread)
+        text = await asyncio.to_thread(extract_text_from_file, file_content, filename, mime_type)
         if not text:
             raise ValueError("No text extracted from file")
-            
+
         # 2. Chunk
         chunks = chunk_text(text)
-        
+
         # 3. Embed and Store
         stored = 0
         for i, chunk in enumerate(chunks):
             try:
-                embedding = _embed_text(chunk, task_type="RETRIEVAL_DOCUMENT", title=filename)
+                embedding = await asyncio.to_thread(_embed_text, chunk, "RETRIEVAL_DOCUMENT", filename)
 
                 db.table("knowledge_chunks").insert({
                     "document_id": str(document_id),
@@ -170,7 +171,7 @@ async def process_document(document_id: UUID, tenant_id: str, file_content: byte
 async def search_knowledge(query: str, tenant_id: str, limit: int = 5) -> list[str]:
     """Search for relevant chunks."""
     try:
-        query_embedding = _embed_text(query, task_type="RETRIEVAL_QUERY")
+        query_embedding = await asyncio.to_thread(_embed_text, query, "RETRIEVAL_QUERY")
         
         # Search via RPC
         db = get_supabase()

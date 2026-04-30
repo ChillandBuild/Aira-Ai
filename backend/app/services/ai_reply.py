@@ -46,25 +46,31 @@ _prompt_cache: dict[str, tuple[float, str]] = {}
 _PROMPT_TTL = 60.0
 
 
-def _get_prompt(name: str) -> str:
-    cached = _prompt_cache.get(name)
+def _get_prompt(name: str, tenant_id: str | None = None) -> str:
+    cache_key = f"{tenant_id}:{name}" if tenant_id else name
+    cached = _prompt_cache.get(cache_key)
     now = time.monotonic()
     if cached and now - cached[0] < _PROMPT_TTL:
         return cached[1]
     try:
         db = get_supabase()
-        row = db.table("ai_prompts").select("content").eq("name", name).maybe_single().execute()
+        query = db.table("ai_prompts").select("content").eq("name", name)
+        if tenant_id:
+            query = query.eq("tenant_id", tenant_id)
+        row = query.maybe_single().execute()
         content = (row.data or {}).get("content") or FALLBACK_PROMPT
     except Exception as e:
         logger.error(f"Failed to load prompt {name}: {e}")
         content = FALLBACK_PROMPT
-    _prompt_cache[name] = (now, content)
+    _prompt_cache[cache_key] = (now, content)
     return content
 
 
 def invalidate_prompt_cache(name: str | None = None) -> None:
     if name:
-        _prompt_cache.pop(name, None)
+        keys_to_remove = [k for k in _prompt_cache if k == name or k.endswith(f":{name}")]
+        for k in keys_to_remove:
+            _prompt_cache.pop(k, None)
     else:
         _prompt_cache.clear()
 
@@ -269,7 +275,7 @@ async def generate_reply(
             logger.info(f"RAG hit for lead {lead_id} ({len(relevant_chunks)} chunks)")
 
         try:
-            system_prompt = _get_prompt(f"{channel}_reply")
+            system_prompt = _get_prompt(f"{channel}_reply", tenant_id=lead_data.get("tenant_id"))
             if context_text:
                 system_prompt += "\n\nIMPORTANT: Use the following context to answer the student's question accurately. If the answer is not in the context, do not hallucinate; instead, say you'll connect them with a counsellor." + context_text
             

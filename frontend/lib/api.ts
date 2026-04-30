@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/client";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const MAX_LEADS_LIST_LIMIT = 200;
 
-async function getAuthHeaders(): Promise<Record<string, string>> {
+export async function getAuthHeaders(): Promise<Record<string, string>> {
   const supabase = createClient();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return {};

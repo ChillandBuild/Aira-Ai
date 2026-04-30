@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { Plus, X, Pencil, Trash2, ChevronDown, PauseCircle, PlayCircle, Star } from "lucide-react";
-import { API_URL } from "@/lib/api";
+import { API_URL, getAuthHeaders } from "@/lib/api";
 
 type PhoneNumber = {
   id: string;
@@ -39,10 +39,11 @@ const STATUS_STYLES: Record<PhoneNumber["status"], string> = {
 
 const WARM_UP_TARGET = 14;
 
-async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
+  const authHeaders = await getAuthHeaders();
   const res = await fetch(`${API_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
+    headers: { "Content-Type": "application/json", ...authHeaders },
+    ...opts,
   });
   if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
   return res.json();

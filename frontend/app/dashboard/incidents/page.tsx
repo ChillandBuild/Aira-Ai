@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { API_URL } from "@/lib/api";
+import { API_URL, getAuthHeaders } from "@/lib/api";
 
 type Incident = {
   id: string;
@@ -33,9 +33,11 @@ const TYPE_BADGE: Record<string, string> = {
 
 const PAGE_SIZE = 50;
 
-async function apiFetch<T>(path: string): Promise<T> {
+async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
+  const authHeaders = await getAuthHeaders();
   const res = await fetch(`${API_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders },
+    ...opts,
   });
   if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
   return res.json();

@@ -16,6 +16,7 @@ interface KnowledgeDoc {
   status: string;
   created_at: string;
   chunk_count?: number;
+  error_message?: string;
 }
 
 export default function KnowledgePage() {
@@ -297,6 +298,9 @@ export default function KnowledgePage() {
                           <div>
                             <p className="font-semibold text-on-surface">{doc.name}</p>
                             <p className="text-xs text-on-surface-muted">{(doc.size_bytes / 1024).toFixed(1)} KB</p>
+                            {doc.status === "failed" && doc.error_message && (
+                              <p className="text-xs text-red-500 mt-0.5 max-w-xs truncate" title={doc.error_message}>{doc.error_message}</p>
+                            )}
                           </div>
                         </div>
                       </td>

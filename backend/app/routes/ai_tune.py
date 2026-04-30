@@ -40,10 +40,20 @@ class PromptUpdate(BaseModel):
     content: str
 
 
+_DEFAULT_WHATSAPP_PROMPT = "You are a helpful AI assistant. Answer customer queries accurately and warmly. Keep replies concise (2-3 sentences). Always encourage the next step."
+
+
 @router.get("/prompts")
 async def list_prompts(tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
     res = db.table("ai_prompts").select("*").eq("tenant_id", tenant_id).order("name").execute()
+    if not res.data:
+        db.table("ai_prompts").insert({
+            "name": "whatsapp_reply",
+            "content": _DEFAULT_WHATSAPP_PROMPT,
+            "tenant_id": tenant_id,
+        }).execute()
+        res = db.table("ai_prompts").select("*").eq("tenant_id", tenant_id).order("name").execute()
     return {"data": res.data or []}
 
 
