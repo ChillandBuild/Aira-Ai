@@ -30,6 +30,7 @@ export interface Message {
   channel: string;
   content: string;
   is_ai_generated: boolean;
+  reply_source?: "faq" | "knowledge" | "ai" | null;
   twilio_message_sid: string | null;
   meta_message_id?: string | null;
   media_url?: string | null;

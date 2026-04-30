@@ -260,6 +260,7 @@ async def generate_reply(
     if faq_answer:
         reply_text = faq_answer
         is_ai = False
+        reply_source = "faq"
         logger.info(f"FAQ hit for lead {lead_id}")
     else:
         # Step 2: Inject full knowledge base text if any documents are indexed
@@ -273,16 +274,18 @@ async def generate_reply(
             system_prompt = _get_prompt(f"{channel}_reply", tenant_id=lead_data.get("tenant_id"))
             if context_text:
                 system_prompt += "\n\nKNOWLEDGE BASE:\nUse the following documents to answer the user's question accurately. If the answer is not in the documents, say you will connect them with a team member.\n\n" + context_text
-            
+
             response = _reply_model.generate_content(
                 [{"role": "user", "parts": [system_prompt + "\n\nStudent message: " + message]}]
             )
             reply_text = response.text.strip()
             is_ai = True
+            reply_source = "knowledge" if context_text else "ai"
         except Exception as e:
             logger.error(f"Gemini reply failed for lead {lead_id}: {e}")
             reply_text = "Thank you for reaching out! Our counsellor will contact you shortly."
             is_ai = False
+            reply_source = "ai"
 
     # Step 3: Dispatch to the correct channel
     if channel == "instagram":
@@ -298,7 +301,8 @@ async def generate_reply(
         "channel": channel,
         "content": reply_text,
         "is_ai_generated": is_ai,
-        "tenant_id": lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000000",
+        "reply_source": reply_source,
+        "tenant_id": lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001",
         sid_field: sid,
     }).execute()
 
