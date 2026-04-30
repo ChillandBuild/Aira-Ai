@@ -12,6 +12,7 @@ export type Note = {
     sentiment?: string;
   };
   is_pinned: boolean;
+  tags?: string[];
   created_at: string;
 };
 

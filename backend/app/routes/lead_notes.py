@@ -15,12 +15,14 @@ class CreateNote(BaseModel):
     call_log_id: str | None = None
     is_pinned: bool = False
     structured: dict = {}
+    tags: list[str] = []
 
 
 class UpdateNote(BaseModel):
     content: str | None = None
     is_pinned: bool | None = None
     structured: dict | None = None
+    tags: list[str] | None = None
 
 
 @router.get("/{lead_id}")
@@ -50,6 +52,7 @@ async def create_lead_note(lead_id: UUID, payload: CreateNote, tenant_id: str = 
         "content": payload.content,
         "is_pinned": payload.is_pinned,
         "structured": payload.structured,
+        "tags": payload.tags,
     }
     if payload.caller_id is not None:
         insert_data["caller_id"] = payload.caller_id
@@ -69,6 +72,8 @@ async def update_lead_note(note_id: UUID, payload: UpdateNote, tenant_id: str = 
         updates["is_pinned"] = payload.is_pinned
     if payload.structured is not None:
         updates["structured"] = payload.structured
+    if payload.tags is not None:
+        updates["tags"] = payload.tags
     if not updates:
         raise HTTPException(status_code=400, detail="Nothing to update")
     result = db.table("lead_notes").update(updates).eq("id", str(note_id)).eq("tenant_id", tenant_id).execute()
