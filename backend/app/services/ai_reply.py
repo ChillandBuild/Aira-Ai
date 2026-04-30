@@ -257,8 +257,12 @@ async def generate_reply(
         is_ai = False
         logger.info(f"FAQ hit for lead {lead_id}")
     else:
-        # Step 2: Knowledge Base RAG search
-        relevant_chunks = await search_knowledge(message, tenant_id=lead_row.data.get("tenant_id") or "00000000-0000-0000-0000-000000000000")
+        # Step 2: Knowledge Base RAG search (optional — fails silently if table not set up)
+        try:
+            relevant_chunks = await search_knowledge(message, tenant_id=lead_row.data.get("tenant_id") or "00000000-0000-0000-0000-000000000000")
+        except Exception as rag_err:
+            logger.warning(f"RAG search skipped for lead {lead_id}: {rag_err}")
+            relevant_chunks = []
         if relevant_chunks:
             context_text = "\n\nRELEVANT CONTEXT FROM DOCUMENTS:\n" + "\n---\n".join(relevant_chunks)
             is_rag = True

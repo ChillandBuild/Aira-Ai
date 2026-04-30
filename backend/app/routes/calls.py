@@ -20,6 +20,7 @@ from app.services.voice_router import get_best_voice_number, increment_voice_cal
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+public_router = APIRouter()  # No auth — Twilio calls these directly
 
 Outcome = Literal["converted", "callback", "not_interested", "no_answer"]
 
@@ -35,7 +36,7 @@ class OutcomeUpdate(BaseModel):
     callback_time: datetime | None = None
 
 
-@router.api_route("/twiml", methods=["GET", "POST"])
+@public_router.api_route("/twiml", methods=["GET", "POST"])
 async def twiml_connect(lead_phone: str | None = None):
     dial_body = f"<Dial>{lead_phone}</Dial>" if lead_phone else ""
     xml = f'<?xml version="1.0"?><Response><Say>Connecting your call.</Say>{dial_body}</Response>'
@@ -208,7 +209,7 @@ async def _run_summarization(call_log_id: str, recording_url: str) -> None:
         logger.error(f"Summarization failed for {call_log_id}: {e}")
 
 
-@router.post("/voice-status")
+@public_router.post("/voice-status")
 async def twilio_voice_status(
     background_tasks: BackgroundTasks,
     call_log_id: str,

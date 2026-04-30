@@ -8,6 +8,7 @@ from app.dependencies.auth import get_current_user
 import os
 from app.config import settings
 from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team, media
+from app.routes.calls import public_router as calls_public_router
 
 # Configure logging
 logging.basicConfig(
@@ -58,6 +59,7 @@ _auth = [Depends(get_current_user)]
 
 # Webhook routes — no auth (Meta/Twilio call directly)
 app.include_router(webhook.router, prefix="/webhook/whatsapp", tags=["webhook"])
+app.include_router(calls_public_router, prefix="/api/v1/calls", tags=["calls-twilio"])
 # Instagram webhook disabled — Phase 2
 
 # API routes — all require auth
