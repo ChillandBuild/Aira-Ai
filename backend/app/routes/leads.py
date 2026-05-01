@@ -141,6 +141,7 @@ async def update_lead(lead_id: UUID, updates: LeadUpdate, tenant_id: str = Depen
             to_segment=updated.get("segment") or existing.data.get("segment") or "C",
             event_type="manual_update",
             metadata={"source": "dashboard"},
+            tenant_id=tenant_id,
             db=db,
         )
     sync_follow_up_jobs(
@@ -184,6 +185,7 @@ async def mark_converted(lead_id: UUID, payload: ConvertPayload | None = None, t
         to_segment="A",
         event_type="converted",
         metadata={"notes": notes} if notes else {},
+        tenant_id=tenant_id,
         db=db,
     )
     sync_follow_up_jobs(
@@ -266,6 +268,10 @@ async def send_human_message(lead_id: UUID, payload: HumanMessage, tenant_id: st
         "is_ai_generated": False,
         sid_field: sid,
     }).execute()
+    
+    # Clear needs_human_intervention flag
+    db.table("leads").update({"needs_human_intervention": False}).eq("id", str(lead_id)).execute()
+    
     return row.data[0] if row.data else {"sent": True, "sid": sid}
 
 
@@ -300,7 +306,7 @@ async def compose_new_message(payload: ComposeMessage, tenant_id: str = Depends(
             insert_data["name"] = payload.name
         new_lead = db.table("leads").insert(insert_data).execute()
         lead_id = new_lead.data[0]["id"]
-        record_stage_event(lead_id, to_segment="C", event_type="created", metadata={"source": "manual"}, db=db)
+        record_stage_event(lead_id, to_segment="C", event_type="created", metadata={"source": "manual"}, tenant_id=tenant_id, db=db)
 
     sid = await send_whatsapp(phone, content)
     if not sid:
@@ -324,6 +330,21 @@ async def compose_new_message(payload: ComposeMessage, tenant_id: str = Depends(
         "meta_message_id": sid,
     }).execute()
     return {"lead_id": lead_id, "sid": sid, "phone": phone}
+
+
+@router.delete("/{lead_id}/clear-chat")
+async def clear_chat(lead_id: UUID, tenant_id: str = Depends(get_tenant_id)):
+    """Delete all messages for a lead and reset AI to enabled. The lead itself is preserved."""
+    db = get_supabase()
+    # Verify the lead belongs to this tenant
+    lead = db.table("leads").select("id").eq("id", str(lead_id)).eq("tenant_id", tenant_id).maybe_single().execute()
+    if not lead.data:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    # Hard-delete all messages for this lead
+    db.table("messages").delete().eq("lead_id", str(lead_id)).execute()
+    # Re-enable AI so the bot picks up from a fresh start
+    db.table("leads").update({"ai_enabled": True}).eq("id", str(lead_id)).execute()
+    return {"success": True, "message": "Chat cleared"}
 
 
 @router.delete("/{lead_id}")

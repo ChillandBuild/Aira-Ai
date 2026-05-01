@@ -161,6 +161,7 @@ async def upload_leads(
                 to_segment=lead.get("segment") or "C",
                 event_type="created",
                 metadata={"source": "upload"},
+                tenant_id=lead.get("tenant_id") or tenant_id,
                 db=db,
             )
             sync_follow_up_jobs(

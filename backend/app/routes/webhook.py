@@ -129,7 +129,7 @@ async def whatsapp_webhook(
                             _handle_opt_out(phone, db)
                             continue
 
-                        existing = db.table("leads").select("id,score,segment").eq("phone", phone).eq("tenant_id", tenant_id).limit(1).execute()
+                        existing = db.table("leads").select("id,score,segment").eq("phone", phone).eq("tenant_id", tenant_id).is_("deleted_at", "null").limit(1).execute()
                         if existing.data:
                             lead_id = existing.data[0]["id"]
                         else:
@@ -141,7 +141,7 @@ async def whatsapp_webhook(
                                 "tenant_id": tenant_id,
                             }).execute()
                             lead_id = new_lead.data[0]["id"]
-                            record_stage_event(lead_id, to_segment="C", event_type="created", metadata={"source": "whatsapp"}, db=db)
+                            record_stage_event(lead_id, to_segment="C", event_type="created", metadata={"source": "whatsapp"}, tenant_id=tenant_id, db=db)
                             try:
                                 from app.services.assignment import auto_assign_lead
                                 auto_assign_lead(lead_id, tenant_id)
@@ -192,7 +192,7 @@ async def whatsapp_webhook(
         return Response(content='<?xml version="1.0" encoding="UTF-8"?><Response></Response>', media_type="text/xml")
 
     # Upsert lead
-    existing = db.table("leads").select("id,score,segment").eq("phone", phone).eq("tenant_id", tenant_id).limit(1).execute()
+    existing = db.table("leads").select("id,score,segment").eq("phone", phone).eq("tenant_id", tenant_id).is_("deleted_at", "null").limit(1).execute()
     if existing.data:
         lead_id = existing.data[0]["id"]
     else:
@@ -209,6 +209,7 @@ async def whatsapp_webhook(
             to_segment="C",
             event_type="created",
             metadata={"source": "whatsapp"},
+            tenant_id=tenant_id,
             db=db,
         )
 

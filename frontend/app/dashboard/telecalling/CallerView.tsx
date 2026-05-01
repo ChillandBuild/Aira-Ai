@@ -54,8 +54,8 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
         // load my logs
       }
 
-      // Get leads assigned to me (sorted by score desc)
-      const leads = await api.leads.list({ assigned_to: callerId || undefined, limit: 50 });
+      // Get Hot leads assigned to me (sorted by score desc)
+      const leads = await api.leads.list({ assigned_to: callerId || undefined, segment: "A", limit: 50 });
       const sorted = leads.sort((a: Lead, b: Lead) => (b.score ?? 0) - (a.score ?? 0));
       setMyLeads(sorted);
 

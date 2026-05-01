@@ -19,6 +19,7 @@ class LeadBase(BaseModel):
     segment: SegmentType = "C"
     notes: Optional[str] = None
     ai_enabled: bool = True
+    needs_human_intervention: bool = False
     converted_at: Optional[datetime] = None
 
     @field_validator("score")
@@ -36,6 +37,7 @@ class LeadUpdate(BaseModel):
     score: Optional[int] = None
     segment: Optional[SegmentType] = None
     notes: Optional[str] = None
+    needs_human_intervention: Optional[bool] = None
 
 class Lead(LeadBase):
     id: UUID

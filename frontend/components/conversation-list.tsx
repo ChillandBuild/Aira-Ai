@@ -31,7 +31,11 @@ interface Props {
 
 export function ConversationList({ leads, selectedId, onSelect }: Props) {
   const [segment, setSegment] = useState<"A" | "B" | "C" | "D" | null>(null);
-  const visible = segment ? leads.filter((l) => l.segment === segment) : leads;
+  const visible = (segment ? leads.filter((l) => l.segment === segment) : leads).sort((a, b) => {
+    if (a.needs_human_intervention && !b.needs_human_intervention) return -1;
+    if (!a.needs_human_intervention && b.needs_human_intervention) return 1;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
 
   return (
     <div className="w-80 flex-shrink-0 bg-surface border-r border-surface-mid flex flex-col h-full">
@@ -80,7 +84,10 @@ export function ConversationList({ leads, selectedId, onSelect }: Props) {
                 {timeAgo(lead.created_at)}
               </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+              {lead.needs_human_intervention && (
+                <span className="font-label text-[10px] font-semibold text-white bg-red-500 px-1.5 py-0.5 rounded">ACTION REQUIRED</span>
+              )}
               <SegmentBadge segment={lead.segment} />
               {lead.opted_out ? (
                 <span className="font-label text-[10px] font-semibold text-red-500 bg-red-50 px-1.5 py-0.5 rounded">STOP</span>

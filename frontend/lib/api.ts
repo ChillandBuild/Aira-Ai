@@ -21,6 +21,7 @@ export interface Lead {
   opted_out: boolean;
   converted_at?: string | null;
   assigned_to?: string | null;
+  needs_human_intervention?: boolean;
   created_at: string;
 }
 
@@ -350,6 +351,10 @@ export const api = {
       }),
     delete: (id: string) =>
       apiFetch<{ success: boolean; message: string }>(`/api/v1/leads/${id}`, {
+        method: "DELETE",
+      }),
+    clearChat: (id: string) =>
+      apiFetch<{ success: boolean; message: string }>(`/api/v1/leads/${id}/clear-chat`, {
         method: "DELETE",
       }),
     messages: async (id: string) => {

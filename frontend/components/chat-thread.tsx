@@ -7,7 +7,7 @@ import {
   Bot, User, CheckCircle2, Send, PowerOff, Power,
   AlertTriangle, Pencil, MessageCircle, Trash2,
   Paperclip, Mic, MicOff, FileText, Image as ImageIcon,
-  Music, Video, Download, X,
+  Music, Video, Download, X, Eraser,
 } from "lucide-react";
 
 function IgIcon({ size = 10, className = "" }: { size?: number; className?: string }) {
@@ -140,6 +140,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
   const [converting, setConverting] = useState(false);
   const [toggling, setToggling] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -196,6 +197,20 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
     } catch (err) {
       alert(err instanceof Error ? err.message : "Delete failed");
       setDeleting(false);
+    }
+  }
+
+  async function clearChat() {
+    if (!confirm(`Clear all messages with ${current.name || current.phone}? The lead profile is kept but the chat history is permanently erased and AI will be re-enabled.`)) return;
+    setClearing(true);
+    try {
+      await api.leads.clearChat(lead.id);
+      setMessages([]);
+      setCurrent((prev) => ({ ...prev, ai_enabled: true }));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Clear failed");
+    } finally {
+      setClearing(false);
     }
   }
 
@@ -421,6 +436,15 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
             <CheckCircle2 size={13} /> {converting ? "Saving…" : "Mark Converted"}
           </button>
         )}
+
+        <button
+          onClick={clearChat}
+          disabled={clearing}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-100 font-label text-xs font-semibold disabled:opacity-40 border border-orange-100"
+          title="Clear chat history (lead is kept, AI re-enabled)"
+        >
+          <Eraser size={13} /> {clearing ? "Clearing…" : "Clear Chat"}
+        </button>
 
         <button
           onClick={deleteConversation}

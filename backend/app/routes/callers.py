@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id, get_tenant_and_role
-from app.services.assignment import is_round_robin_enabled, set_round_robin_enabled
+from app.services.assignment import is_round_robin_enabled, set_round_robin_enabled, reassign_backlog
 from app.services.call_coach import coaching_tip
 
 logger = logging.getLogger(__name__)
@@ -80,6 +80,9 @@ async def update_my_status(payload: StatusToggle, ctx: dict = Depends(get_tenant
         "status": payload.status,
         "status_changed_at": now,
     }).eq("id", caller_id).execute()
+
+    if payload.status == "active":
+        reassign_backlog(caller_id, ctx["tenant_id"])
 
     return {"status": payload.status, "changed_at": now}
 

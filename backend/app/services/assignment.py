@@ -94,3 +94,46 @@ def auto_assign_lead(lead_id: str, tenant_id: str) -> str | None:
         logger.info(f"Lead {lead_id} auto-assigned to caller {chosen_id}")
 
     return chosen_id
+
+
+def reassign_backlog(caller_id: str, tenant_id: str) -> None:
+    """
+    Check for any unassigned Hot leads or flagged leads and assign them
+    to this caller when they come online (up to 20 total).
+    """
+    if not is_round_robin_enabled(tenant_id):
+        return
+
+    db = get_supabase()
+    
+    # 1. Fetch unassigned Hot leads
+    hot_res = (
+        db.table("leads")
+        .select("id")
+        .eq("tenant_id", tenant_id)
+        .is_("assigned_to", "null")
+        .eq("segment", "A")
+        .limit(10)
+        .execute()
+    )
+    
+    # 2. Fetch unassigned flagged leads
+    flagged_res = (
+        db.table("leads")
+        .select("id")
+        .eq("tenant_id", tenant_id)
+        .is_("assigned_to", "null")
+        .eq("needs_human_intervention", True)
+        .limit(10)
+        .execute()
+    )
+    
+    ids_to_assign = set()
+    for row in (hot_res.data or []):
+        ids_to_assign.add(row["id"])
+    for row in (flagged_res.data or []):
+        ids_to_assign.add(row["id"])
+        
+    if ids_to_assign:
+        db.table("leads").update({"assigned_to": caller_id}).in_("id", list(ids_to_assign)).execute()
+        logger.info(f"Reassigned {len(ids_to_assign)} backlog leads to caller {caller_id} upon coming online.")

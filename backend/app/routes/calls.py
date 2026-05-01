@@ -293,7 +293,7 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate):
     if lead_id:
         lead = (
             db.table("leads")
-            .select("segment,phone,ai_enabled,converted_at")
+            .select("segment,phone,ai_enabled,converted_at,tenant_id")
             .eq("id", str(lead_id))
             .maybe_single()
             .execute()
@@ -327,6 +327,7 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate):
                     to_segment=target_segment,
                     event_type=event_type,
                     metadata={"outcome": payload.outcome},
+                    tenant_id=lead_data.get("tenant_id"),
                     db=db,
                 )
             sync_follow_up_jobs(

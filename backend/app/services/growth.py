@@ -104,18 +104,20 @@ def record_stage_event(
     event_type: str,
     from_segment: str | None = None,
     metadata: dict[str, Any] | None = None,
+    tenant_id: str | None = None,
     db=None,
 ) -> None:
     db = db or get_supabase()
-    db.table("lead_stage_events").insert(
-        {
-            "lead_id": str(lead_id),
-            "from_segment": from_segment,
-            "to_segment": to_segment,
-            "event_type": event_type,
-            "metadata": metadata or {},
-        }
-    ).execute()
+    payload: dict[str, Any] = {
+        "lead_id": str(lead_id),
+        "from_segment": from_segment,
+        "to_segment": to_segment,
+        "event_type": event_type,
+        "metadata": metadata or {},
+    }
+    if tenant_id:
+        payload["tenant_id"] = tenant_id
+    db.table("lead_stage_events").insert(payload).execute()
 
 
 def cancel_pending_follow_ups(

@@ -9,6 +9,7 @@ from app.services.growth import record_stage_event, sync_follow_up_jobs
 from app.services.lead_scorer import score_message
 from app.services.segmentation import score_to_segment
 from app.services.knowledge_service import get_knowledge_context
+from app.services.assignment import auto_assign_lead
 
 logger = logging.getLogger(__name__)
 
@@ -237,6 +238,7 @@ async def generate_reply(
                     to_segment=new_segment,
                     event_type="segment_changed",
                     metadata={"reason": "ai_disabled_inbound"},
+                    tenant_id=lead_data.get("tenant_id"),
                     db=db,
                 )
             sync_follow_up_jobs(
@@ -281,11 +283,32 @@ async def generate_reply(
             reply_text = response.text.strip()
             is_ai = True
             reply_source = "knowledge" if context_text else "ai"
+            
+            # Check for fallback to human
+            fallback_phrases = ["counsellor", "specialist", "team member", "connect you with", "contact you shortly", "reach out to you"]
+            if any(phrase in reply_text.lower() for phrase in fallback_phrases):
+                logger.info(f"Fallback detected for lead {lead_id}, flagging for human intervention.")
+                db.table("leads").update({
+                    "needs_human_intervention": True,
+                    "ai_enabled": False
+                }).eq("id", str(lead_id)).execute()
+                
+                if not lead_data.get("assigned_to"):
+                    auto_assign_lead(str(lead_id), lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001")
+                    
         except Exception as e:
             logger.error(f"Gemini reply failed for lead {lead_id}: {e}")
             reply_text = "Thank you for reaching out! Our counsellor will contact you shortly."
             is_ai = False
             reply_source = "ai"
+            
+            # Fallback trigger
+            db.table("leads").update({
+                "needs_human_intervention": True,
+                "ai_enabled": False
+            }).eq("id", str(lead_id)).execute()
+            if not lead_data.get("assigned_to"):
+                auto_assign_lead(str(lead_id), lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001")
 
     # Step 3: Dispatch to the correct channel
     if channel == "instagram":
@@ -322,6 +345,7 @@ async def generate_reply(
                 to_segment=new_segment,
                 event_type="segment_changed",
                 metadata={"reason": f"{channel}_reply"},
+                tenant_id=lead_data.get("tenant_id"),
                 db=db,
             )
         sync_follow_up_jobs(
@@ -335,6 +359,12 @@ async def generate_reply(
         )
         logger.info(f"Lead {lead_id} scored {new_score} → segment {new_segment}")
         if new_score >= 7 and (lead_data.get("score") or 5) < 7:
+            # Voice Call Handoff trigger
+            if not lead_data.get("assigned_to"):
+                assigned_caller = auto_assign_lead(str(lead_id), lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001")
+                if assigned_caller:
+                    lead_data["assigned_to"] = assigned_caller
+            
             try:
                 from app.routes.alerts import create_alert
                 create_alert(
