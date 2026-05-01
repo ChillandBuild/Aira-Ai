@@ -13,7 +13,7 @@ import {
   Sparkles,
   BookOpen,
   Layers,
-  AlertTriangle,
+
   FileCheck,
   StickyNote,
   LogOut,
