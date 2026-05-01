@@ -5,6 +5,36 @@ from app.db.supabase import get_supabase
 logger = logging.getLogger(__name__)
 
 
+def is_round_robin_enabled(tenant_id: str) -> bool:
+    """Check app_settings for round_robin_enabled flag. Defaults to True."""
+    db = get_supabase()
+    result = (
+        db.table("app_settings")
+        .select("value")
+        .eq("tenant_id", tenant_id)
+        .eq("key", "round_robin_enabled")
+        .maybe_single()
+        .execute()
+    )
+    if not result or not result.data:
+        return True  # default: on
+    return result.data.get("value", "true").lower() != "false"
+
+
+def set_round_robin_enabled(tenant_id: str, enabled: bool) -> None:
+    """Upsert the round_robin_enabled flag in app_settings."""
+    db = get_supabase()
+    db.table("app_settings").upsert(
+        {
+            "key": "round_robin_enabled",
+            "value": "true" if enabled else "false",
+            "tenant_id": tenant_id,
+            "is_secret": False,
+        },
+        on_conflict="key",
+    ).execute()
+
+
 def get_caller_id_for_user(user_id: str, tenant_id: str) -> str | None:
     """Return callers.id for this auth user, or None if not a caller."""
     db = get_supabase()
@@ -25,8 +55,12 @@ def get_caller_id_for_user(user_id: str, tenant_id: str) -> str | None:
 def auto_assign_lead(lead_id: str, tenant_id: str) -> str | None:
     """
     Assign lead to the active caller with fewest assigned non-disqualified leads.
-    Returns the assigned caller's id, or None if no active callers exist.
+    Returns the assigned caller's id, or None if round-robin is off or no active callers.
     """
+    if not is_round_robin_enabled(tenant_id):
+        logger.info("Round-robin is OFF for tenant %s — skipping auto-assign", tenant_id)
+        return None
+
     db = get_supabase()
     callers = (
         db.table("callers")

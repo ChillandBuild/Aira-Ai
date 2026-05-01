@@ -2,9 +2,9 @@
 import { useEffect, useState } from "react";
 import {
   Phone, Star, TrendingUp, Sparkles, RefreshCw, UserPlus, X,
-  Pencil, Trash2, Eye, RotateCcw, ChevronDown, ChevronUp,
+  Pencil, Trash2, Eye, RotateCcw, ChevronDown, ChevronUp, ToggleLeft, ToggleRight,
 } from "lucide-react";
-import { api, Caller, CallLog, Lead } from "@/lib/api";
+import { api, Caller, CallLog, Lead, API_URL, getAuthHeaders } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import BriefingModal from "./components/briefing-modal";
 import LiveNotesPane from "./components/live-notes-pane";
@@ -141,6 +141,9 @@ export default function TelecallingPage() {
   // today's scheduled callbacks
   const [todayCallbacks, setTodayCallbacks] = useState<CallbackJob[]>([]);
 
+  // round-robin toggle
+  const [roundRobinEnabled, setRoundRobinEnabled] = useState<boolean | null>(null);
+  const [togglingRR, setTogglingRR] = useState(false);
 
   // ── data loading ────────────────────────────────────────────────────────────
 
@@ -151,6 +154,13 @@ export default function TelecallingPage() {
     });
     loadQueues();
     fetchTodayCallbacks().then(setTodayCallbacks).catch(() => {});
+    // load round-robin setting
+    getAuthHeaders().then((auth) =>
+      fetch(`${API_URL}/api/v1/callers/round-robin`, { headers: auth })
+        .then((r) => r.json())
+        .then((d) => setRoundRobinEnabled(d.enabled ?? true))
+        .catch(() => setRoundRobinEnabled(true))
+    );
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -366,11 +376,54 @@ export default function TelecallingPage() {
 
   // ── render ───────────────────────────────────────────────────────────────────
 
+  async function toggleRoundRobin() {
+    if (roundRobinEnabled === null) return;
+    setTogglingRR(true);
+    try {
+      const auth = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/callers/round-robin`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...auth },
+        body: JSON.stringify({ enabled: !roundRobinEnabled }),
+      });
+      if (res.ok) setRoundRobinEnabled((v) => !v);
+    } finally {
+      setTogglingRR(false);
+    }
+  }
+
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="font-display text-3xl font-bold text-tertiary">Telecalling</h1>
-        <p className="font-body text-on-surface-muted mt-1">AI-assisted caller management</p>
+      <div className="mb-8 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-display text-3xl font-bold text-tertiary">Telecalling</h1>
+          <p className="font-body text-on-surface-muted mt-1">AI-assisted caller management</p>
+        </div>
+
+        {/* Round-robin toggle — only meaningful when admin sees it */}
+        {roundRobinEnabled !== null && (
+          <button
+            onClick={toggleRoundRobin}
+            disabled={togglingRR}
+            title={roundRobinEnabled ? "Auto-assign is ON — new leads are distributed round-robin. Click to turn off." : "Auto-assign is OFF — new leads won't be assigned automatically. Click to turn on."}
+            className={`flex items-center gap-2.5 px-4 py-2.5 rounded-2xl font-label text-sm font-semibold transition-all border ${
+              roundRobinEnabled
+                ? "bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100"
+                : "bg-gray-100 text-gray-400 border-gray-200 hover:bg-gray-200"
+            } ${togglingRR ? "opacity-60 cursor-not-allowed" : ""}`}
+          >
+            {roundRobinEnabled
+              ? <ToggleRight size={18} className="text-teal-600" />
+              : <ToggleLeft size={18} className="text-gray-400" />
+            }
+            <span>
+              Auto-assign{" "}
+              <span className={roundRobinEnabled ? "text-teal-600" : "text-gray-400"}>
+                {roundRobinEnabled ? "ON" : "OFF"}
+              </span>
+            </span>
+          </button>
+        )}
       </div>
 
       {todayCallbacks.length > 0 && (

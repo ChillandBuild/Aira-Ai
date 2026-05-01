@@ -1,13 +1,14 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "@/lib/api";
 import type { Caller } from "@/lib/api";
 import { UserCheck, ChevronDown, Loader2, UserX } from "lucide-react";
+import { createPortal } from "react-dom";
 
 interface AssignButtonProps {
   leadId: string;
   currentAssignedTo: string | null | undefined;
-  onAssigned?: (callerId: string | null, callerName: string | null) => void;
+  onAssigned?: (callerId: string | null) => void;
 }
 
 export function AssignButton({ leadId, currentAssignedTo, onAssigned }: AssignButtonProps) {
@@ -17,18 +18,40 @@ export function AssignButton({ leadId, currentAssignedTo, onAssigned }: AssignBu
   const [fetchingCallers, setFetchingCallers] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [assignedId, setAssignedId] = useState(currentAssignedTo ?? null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
 
-  // Close on outside click
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // Calculate dropdown position relative to viewport (fixed positioning escapes overflow:hidden)
+  const updatePos = useCallback(() => {
+    if (!buttonRef.current) return;
+    const rect = buttonRef.current.getBoundingClientRect();
+    setDropdownPos({
+      top: rect.bottom + 6,
+      left: rect.right - 200, // align right edge with button
+      width: 200,
+    });
+  }, []);
+
+  function toggleOpen() {
+    if (!open) updatePos();
+    setOpen((o) => !o);
+    setError(null);
+  }
+
+  // Close on outside click or scroll
   useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setError(null);
-      }
+    if (!open) return;
+    function handleClose(e: MouseEvent | Event) {
+      if (e instanceof MouseEvent && buttonRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
     }
-    if (open) document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    document.addEventListener("mousedown", handleClose);
+    window.addEventListener("scroll", handleClose, true);
+    return () => {
+      document.removeEventListener("mousedown", handleClose);
+      window.removeEventListener("scroll", handleClose, true);
+    };
   }, [open]);
 
   // Fetch callers when dropdown opens (only once)
@@ -40,7 +63,7 @@ export function AssignButton({ leadId, currentAssignedTo, onAssigned }: AssignBu
       .then((data) => setCallers(data.filter((c) => c.active)))
       .catch(() => setError("Failed to load callers"))
       .finally(() => setFetchingCallers(false));
-  }, [open]);
+  }, [open, callers.length]);
 
   const assignedCaller = callers.find((c) => c.id === assignedId);
 
@@ -48,8 +71,8 @@ export function AssignButton({ leadId, currentAssignedTo, onAssigned }: AssignBu
     setLoading(true);
     setError(null);
     try {
-      const auth = await import("@/lib/api").then((m) => m.getAuthHeaders());
-      const API_URL = await import("@/lib/api").then((m) => m.API_URL);
+      const { getAuthHeaders, API_URL } = await import("@/lib/api");
+      const auth = await getAuthHeaders();
       const res = await fetch(`${API_URL}/api/v1/leads/${leadId}/assign`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...auth },
@@ -60,7 +83,7 @@ export function AssignButton({ leadId, currentAssignedTo, onAssigned }: AssignBu
         throw new Error(body.detail || `Error ${res.status}`);
       }
       setAssignedId(callerId);
-      onAssigned?.(callerId, callerName);
+      onAssigned?.(callerId);
       setOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Assign failed");
@@ -69,90 +92,94 @@ export function AssignButton({ leadId, currentAssignedTo, onAssigned }: AssignBu
     }
   }
 
+  const dropdown = open ? (
+    <div
+      style={{
+        position: "fixed",
+        top: dropdownPos.top,
+        left: Math.max(8, dropdownPos.left),
+        width: 210,
+        zIndex: 9999,
+      }}
+      className="bg-white border border-gray-200 rounded-xl shadow-2xl py-1"
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <p className="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100">
+        Assign to telecaller
+      </p>
+
+      {fetchingCallers ? (
+        <div className="flex items-center gap-2 px-4 py-3 text-xs text-gray-400">
+          <Loader2 size={12} className="animate-spin" /> Loading…
+        </div>
+      ) : callers.length === 0 ? (
+        <p className="px-4 py-3 text-xs text-gray-400">No active callers</p>
+      ) : (
+        <>
+          {/* Unassign row — only if already assigned */}
+          {assignedId && (
+            <button
+              onClick={() => assign(null, null)}
+              disabled={loading}
+              className="w-full flex items-center gap-2 px-4 py-2 text-xs text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
+            >
+              <UserX size={12} /> Unassign
+            </button>
+          )}
+
+          {/* Caller rows */}
+          {callers.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => assign(c.id, c.name)}
+              disabled={loading || c.id === assignedId}
+              className={`w-full flex items-center justify-between px-4 py-2.5 text-sm transition-colors ${
+                c.id === assignedId
+                  ? "bg-teal-50 text-teal-700 font-semibold cursor-default"
+                  : "text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                {c.id === assignedId && <span className="text-teal-500 text-xs">✓</span>}
+                {c.name}
+              </span>
+              {c.overall_score != null && (
+                <span className="text-[11px] text-gray-400">⭐ {Number(c.overall_score).toFixed(1)}</span>
+              )}
+            </button>
+          ))}
+        </>
+      )}
+
+      {loading && (
+        <div className="flex items-center gap-2 px-4 py-2 text-xs text-gray-400 border-t border-gray-100">
+          <Loader2 size={11} className="animate-spin" /> Saving…
+        </div>
+      )}
+      {error && (
+        <p className="px-4 py-2 text-xs text-red-500 border-t border-gray-100">{error}</p>
+      )}
+    </div>
+  ) : null;
+
   return (
-    <div className="relative" ref={dropdownRef}>
+    <>
       <button
-        onClick={() => { setOpen((o) => !o); setError(null); }}
-        className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg font-semibold transition-colors ${
+        ref={buttonRef}
+        onClick={toggleOpen}
+        className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg font-semibold transition-colors whitespace-nowrap ${
           assignedId
-            ? "bg-tertiary/10 text-tertiary hover:bg-tertiary/20"
-            : "bg-surface-mid text-on-surface-muted hover:bg-surface-low"
+            ? "bg-teal-50 text-teal-700 hover:bg-teal-100 ring-1 ring-teal-200"
+            : "bg-gray-100 text-gray-500 hover:bg-gray-200"
         }`}
-        title={assignedCaller ? `Assigned to ${assignedCaller.name}` : "Unassigned — click to assign"}
       >
         <UserCheck size={12} />
-        {assignedCaller ? assignedCaller.name : "Assign"}
+        {assignedCaller?.name ?? (assignedId ? "Assigned" : "Assign")}
         <ChevronDown size={10} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
-      {open && (
-        <div className="absolute right-0 top-8 z-30 bg-white border border-surface-mid rounded-xl shadow-xl min-w-[180px] py-1 animate-in fade-in slide-in-from-top-1 duration-150">
-          {/* Header */}
-          <p className="px-3 py-1.5 text-[10px] font-bold text-on-surface-muted uppercase tracking-widest border-b border-surface-mid">
-            Assign to telecaller
-          </p>
-
-          {fetchingCallers ? (
-            <div className="flex items-center gap-2 px-4 py-3 text-xs text-on-surface-muted">
-              <Loader2 size={12} className="animate-spin" />
-              Loading callers…
-            </div>
-          ) : callers.length === 0 ? (
-            <p className="px-4 py-3 text-xs text-on-surface-muted">No active callers found</p>
-          ) : (
-            <>
-              {/* Unassign option */}
-              {assignedId && (
-                <button
-                  onClick={() => assign(null, null)}
-                  disabled={loading}
-                  className="w-full flex items-center gap-2 text-left px-4 py-2 text-xs text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
-                >
-                  <UserX size={12} />
-                  Unassign
-                </button>
-              )}
-
-              {/* Caller list */}
-              {callers.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => assign(c.id, c.name)}
-                  disabled={loading || c.id === assignedId}
-                  className={`w-full flex items-center justify-between text-left px-4 py-2 text-sm transition-colors disabled:opacity-50 ${
-                    c.id === assignedId
-                      ? "bg-tertiary/5 text-tertiary font-bold cursor-default"
-                      : "text-on-surface hover:bg-surface-low"
-                  }`}
-                >
-                  <span className="flex items-center gap-2">
-                    {c.id === assignedId && <span className="text-[10px]">✓</span>}
-                    {c.name}
-                  </span>
-                  {c.overall_score != null && (
-                    <span className="text-[10px] text-on-surface-muted font-normal">
-                      ⭐ {Number(c.overall_score).toFixed(1)}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </>
-          )}
-
-          {/* Saving indicator */}
-          {loading && (
-            <div className="flex items-center gap-2 px-4 py-2 text-xs text-on-surface-muted border-t border-surface-mid">
-              <Loader2 size={11} className="animate-spin" />
-              Saving…
-            </div>
-          )}
-
-          {/* Error */}
-          {error && (
-            <p className="px-4 py-2 text-xs text-red-500 border-t border-surface-mid">{error}</p>
-          )}
-        </div>
-      )}
-    </div>
+      {/* Portal: renders outside the table so overflow:hidden can't clip it */}
+      {typeof document !== "undefined" && dropdown && createPortal(dropdown, document.body)}
+    </>
   );
 }
