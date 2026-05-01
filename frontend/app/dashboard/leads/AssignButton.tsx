@@ -67,7 +67,7 @@ export function AssignButton({ leadId, currentAssignedTo, onAssigned }: AssignBu
 
   const assignedCaller = callers.find((c) => c.id === assignedId);
 
-  async function assign(callerId: string | null, callerName: string | null) {
+  async function assign(callerId: string | null) {
     setLoading(true);
     setError(null);
     try {
@@ -119,7 +119,7 @@ export function AssignButton({ leadId, currentAssignedTo, onAssigned }: AssignBu
           {/* Unassign row — only if already assigned */}
           {assignedId && (
             <button
-              onClick={() => assign(null, null)}
+              onClick={() => assign(null)}
               disabled={loading}
               className="w-full flex items-center gap-2 px-4 py-2 text-xs text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
             >
@@ -131,7 +131,7 @@ export function AssignButton({ leadId, currentAssignedTo, onAssigned }: AssignBu
           {callers.map((c) => (
             <button
               key={c.id}
-              onClick={() => assign(c.id, c.name)}
+              onClick={() => assign(c.id)}
               disabled={loading || c.id === assignedId}
               className={`w-full flex items-center justify-between px-4 py-2.5 text-sm transition-colors ${
                 c.id === assignedId
