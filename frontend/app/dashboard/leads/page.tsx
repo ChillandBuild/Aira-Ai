@@ -313,7 +313,7 @@ export default function LeadsPage() {
         </div>
       </div>
 
-      <div className="bg-surface rounded-card shadow-card ring-1 ring-[#c4c7c7]/15 overflow-hidden">
+      <div className="bg-surface rounded-card shadow-card ring-1 ring-[#c4c7c7]/15">
         {loading ? (
           <div className="p-8 text-center font-body text-on-surface-muted">Loading…</div>
         ) : leads.length === 0 ? (

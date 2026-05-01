@@ -22,14 +22,18 @@ export function AssignButton({ leadId, currentAssignedTo, onAssigned }: AssignBu
 
   const buttonRef = useRef<HTMLButtonElement>(null);
 
-  // Calculate dropdown position relative to viewport (fixed positioning escapes overflow:hidden)
+  // Calculate dropdown position — flip upward if near bottom of viewport
   const updatePos = useCallback(() => {
     if (!buttonRef.current) return;
     const rect = buttonRef.current.getBoundingClientRect();
+    const dropdownHeight = 280; // estimated max height
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const flipUp = spaceBelow < dropdownHeight && rect.top > dropdownHeight;
+
     setDropdownPos({
-      top: rect.bottom + 6,
-      left: rect.right - 200, // align right edge with button
-      width: 200,
+      top: flipUp ? rect.top - dropdownHeight - 6 : rect.bottom + 6,
+      left: rect.right - 220,
+      width: 220,
     });
   }, []);
 
@@ -98,13 +102,14 @@ export function AssignButton({ leadId, currentAssignedTo, onAssigned }: AssignBu
         position: "fixed",
         top: dropdownPos.top,
         left: Math.max(8, dropdownPos.left),
-        width: 210,
+        width: 230,
+        maxHeight: 280,
         zIndex: 9999,
       }}
-      className="bg-white border border-gray-200 rounded-xl shadow-2xl py-1"
+      className="bg-white border border-gray-200 rounded-xl shadow-2xl py-1 overflow-y-auto"
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <p className="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100">
+      <p className="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100 sticky top-0 bg-white">
         Assign to telecaller
       </p>
 
