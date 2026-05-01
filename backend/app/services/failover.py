@@ -19,11 +19,24 @@ async def handle_quality_red(phone_number_id: str) -> None:
         logger.warning(f"handle_quality_red: no phone_number row found for id={phone_number_id}")
         return
 
+    old_number = old_row.data[0]
+    tenant_id = old_number.get("tenant_id")
+    if not tenant_id:
+        logger.warning(f"handle_quality_red: missing tenant_id for phone_number id={phone_number_id}")
+        db.table("incidents").insert({
+            "type": "quality_red",
+            "phone_number_id": phone_number_id,
+            "detail": {"phone_number_id": phone_number_id, "message": "missing_tenant_id"},
+        }).execute()
+        return
+
     standby = (
         db.table("phone_numbers")
         .select("*")
+        .eq("tenant_id", tenant_id)
         .eq("status", "active")
         .eq("role", "standby")
+        .neq("id", phone_number_id)
         .gte("warm_up_day", 14)
         .order("warm_up_day", desc=True)
         .limit(1)
@@ -34,6 +47,7 @@ async def handle_quality_red(phone_number_id: str) -> None:
         logger.warning(f"handle_quality_red: no standby available for number={phone_number_id}")
         db.table("incidents").insert({
             "type": "quality_red",
+            "tenant_id": tenant_id,
             "phone_number_id": phone_number_id,
             "detail": {"phone_number_id": phone_number_id, "message": "no_standby_available"},
         }).execute()
@@ -50,33 +64,41 @@ async def handle_quality_red(phone_number_id: str) -> None:
 
     db.table("incidents").insert({
         "type": "failover",
+        "tenant_id": tenant_id,
         "phone_number_id": phone_number_id,
         "detail": {"old_number_id": phone_number_id, "new_number_id": new_number_id},
     }).execute()
 
     db.table("incidents").insert({
         "type": "standby_promoted",
+        "tenant_id": tenant_id,
         "phone_number_id": new_number_id,
         "detail": {"old_number_id": phone_number_id, "new_number_id": new_number_id},
     }).execute()
 
-    await send_migration_notice(new_number)
+    await send_migration_notice(new_number, tenant_id)
 
 
 async def handle_quality_yellow(phone_number_id: str) -> None:
     db = get_supabase()
 
+    existing = db.table("phone_numbers").select("tenant_id").eq("id", phone_number_id).limit(1).execute()
+    tenant_id = (existing.data or [{}])[0].get("tenant_id")
+
     db.table("phone_numbers").update({"quality_rating": "yellow"}).eq("id", phone_number_id).execute()
     logger.info(f"handle_quality_yellow: marked number id={phone_number_id} as yellow")
 
-    db.table("incidents").insert({
+    incident_payload = {
         "type": "quality_yellow",
         "phone_number_id": phone_number_id,
         "detail": {},
-    }).execute()
+    }
+    if tenant_id:
+        incident_payload["tenant_id"] = tenant_id
+    db.table("incidents").insert(incident_payload).execute()
 
 
-async def send_migration_notice(new_number_row: dict) -> int:
+async def send_migration_notice(new_number_row: dict, tenant_id: str) -> int:
     from datetime import datetime, timedelta, timezone
     from app.services.meta_cloud import send_text_message
     from app.config import settings
@@ -84,15 +106,35 @@ async def send_migration_notice(new_number_row: dict) -> int:
     db = get_supabase()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
 
+    if not tenant_id:
+        logger.warning("Cannot send migration notice: missing tenant_id")
+        return 0
+
     recent_lead_ids = list({
         r["lead_id"] for r in
-        (db.table("messages").select("lead_id").gte("created_at", cutoff).execute().data or [])
+        (
+            db.table("messages")
+            .select("lead_id")
+            .eq("tenant_id", tenant_id)
+            .gte("created_at", cutoff)
+            .execute()
+            .data
+            or []
+        )
         if r.get("lead_id")
     })
     if not recent_lead_ids:
         return 0
 
-    leads = db.table("leads").select("phone").in_("id", recent_lead_ids).execute().data or []
+    leads = (
+        db.table("leads")
+        .select("phone")
+        .eq("tenant_id", tenant_id)
+        .in_("id", recent_lead_ids)
+        .execute()
+        .data
+        or []
+    )
 
     phone_number_id = new_number_row.get("meta_phone_number_id")
     access_token = settings.meta_access_token
@@ -115,6 +157,7 @@ async def send_migration_notice(new_number_row: dict) -> int:
 
     db.table("incidents").insert({
         "type": "migration_sent",
+        "tenant_id": tenant_id,
         "phone_number_id": new_number_row["id"],
         "detail": {"leads_notified": sent},
     }).execute()
