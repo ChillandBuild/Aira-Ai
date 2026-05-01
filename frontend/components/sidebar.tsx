@@ -34,7 +34,7 @@ const OWNER_NAV = [
   { href: "/dashboard/ai-tune", icon: Sparkles, label: "AI Tune" },
   { href: "/dashboard/numbers", icon: Layers, label: "Numbers" },
   { href: "/dashboard/templates", icon: FileCheck, label: "Templates" },
-  { href: "/dashboard/incidents", icon: AlertTriangle, label: "Incidents" },
+
   { href: "/dashboard/analytics", icon: BarChart2, label: "Analytics" },
   { href: "/dashboard/team", icon: Users, label: "Team" },
 ];
