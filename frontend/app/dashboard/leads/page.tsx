@@ -366,7 +366,17 @@ export default function LeadsPage() {
                   <td className="px-6 py-4 font-label text-xs text-on-surface-muted">{timeAgo(lead.created_at)}</td>
                   {role === "owner" && (
                     <td className="px-6 py-4">
-                      <AssignButton leadId={lead.id} currentAssignedTo={lead.assigned_to} />
+                      <AssignButton
+                        leadId={lead.id}
+                        currentAssignedTo={lead.assigned_to}
+                        onAssigned={(callerId) =>
+                          setLeads((prev) =>
+                            prev.map((l) =>
+                              l.id === lead.id ? { ...l, assigned_to: callerId } : l
+                            )
+                          )
+                        }
+                      />
                     </td>
                   )}
                 </tr>
