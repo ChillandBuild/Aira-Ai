@@ -98,6 +98,7 @@ export default function BackgroundAnimation() {
 
     window.addEventListener("resize", resize);
     resize();
+    animate();
 
     return () => {
       window.removeEventListener("resize", resize);
