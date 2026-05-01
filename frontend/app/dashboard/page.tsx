@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api, Lead, AnalyticsOverview } from "@/lib/api";
 import {
   MessageSquare,
@@ -12,6 +13,7 @@ import {
   Send as SendIcon,
 } from "lucide-react";
 import Link from "next/link";
+import { useAuthRole } from "./contexts/AuthRoleContext";
 
 const SEGMENT_CONFIG: Record<"A" | "B" | "C" | "D", { label: string; tone: string; bar: string; bg: string }> = {
   A: { label: "Hot", tone: "text-emerald-700", bar: "bg-emerald-500", bg: "bg-emerald-50" },
@@ -193,18 +195,28 @@ function TodaySnapshot({ overview }: { overview: AnalyticsOverview | null }) {
 
 
 export default function DashboardPage() {
+  const { role, loading: roleLoading } = useAuthRole();
+  const router = useRouter();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Redirect callers to their profile page
   useEffect(() => {
+    if (!roleLoading && role === "caller") {
+      router.replace("/dashboard/profile");
+    }
+  }, [role, roleLoading, router]);
+
+  useEffect(() => {
+    if (role === "caller") return; // skip fetching admin data for callers
     Promise.all([api.leads.list({ limit: 200 }), api.analytics.overview().catch(() => null)])
       .then(([l, o]) => {
         setLeads(l);
         setOverview(o);
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [role]);
 
   const total = leads.length;
   const segA = leads.filter((l) => l.segment === "A").length;

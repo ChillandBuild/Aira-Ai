@@ -40,8 +40,8 @@ const OWNER_NAV = [
 ];
 
 const CALLER_NAV = [
-  { href: "/dashboard/telecalling", icon: Phone, label: "Telecalling" },
   { href: "/dashboard/profile", icon: Users, label: "My Profile" },
+  { href: "/dashboard/telecalling", icon: Phone, label: "Telecalling" },
   { href: "/dashboard/notes", icon: StickyNote, label: "Notes" },
   { href: "/dashboard/conversations", icon: MessageSquare, label: "Conversations" },
 ];
