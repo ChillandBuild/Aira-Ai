@@ -47,6 +47,21 @@ export interface Caller {
   phone: string | null;
   overall_score: number;
   active: boolean;
+  status?: "active" | "idle";
+  status_changed_at?: string;
+}
+
+export interface CallerStats {
+  calls_today: number;
+  calls_this_week: number;
+  conversion_rate_week: number;
+  avg_duration_seconds: number | null;
+  pending_hot_leads: number;
+  overall_score: number;
+  name: string;
+  phone: string;
+  status: string;
+  caller_id: string;
 }
 
 export interface CallLog {
@@ -279,9 +294,10 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
 
 export const api = {
   leads: {
-    list: async (params?: { segment?: string; limit?: number; skip?: number }) => {
+    list: async (params?: { segment?: string; limit?: number; skip?: number; assigned_to?: string }) => {
       const qs = new URLSearchParams();
       if (params?.segment) qs.set("segment", params.segment);
+      if (params?.assigned_to) qs.set("assigned_to", params.assigned_to);
       if (typeof params?.limit === "number" && Number.isFinite(params.limit)) {
         const normalizedLimit = Math.min(Math.max(Math.trunc(params.limit), 1), MAX_LEADS_LIST_LIMIT);
         qs.set("limit", String(normalizedLimit));
@@ -370,6 +386,17 @@ export const api = {
     },
     coaching: (id: string) =>
       apiFetch<{ caller_id: string; tip: string }>(`/api/v1/callers/${id}/coaching`),
+    myStatus: () =>
+      apiFetch<{ status: string; caller_id: string | null }>(`/api/v1/callers/my-status`),
+    setMyStatus: (status: "active" | "idle") =>
+      apiFetch<{ status: string; changed_at: string }>(`/api/v1/callers/my-status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      }),
+    myStats: () =>
+      apiFetch<CallerStats>(`/api/v1/callers/my-stats`),
+    statusSummary: (id: string) =>
+      apiFetch<{ active_minutes_today: number; idle_minutes_today: number; current_status: string; since: string }>(`/api/v1/callers/${id}/status-summary`),
   },
   calls: {
     initiate: (target: { leadId?: string; phone?: string }, callerId?: string) =>

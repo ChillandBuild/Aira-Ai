@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s http://127.0.0.1:8000/health)",
+      "Bash(curl -s http://127.0.0.1:8000/docs -o /dev/null -w \"docs page: HTTP %{http_code}\\\\n\")",
+      "Bash(git status)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git branch*)",
+      "Bash(git stash*)",
+      "Bash(find * -type f*)",
+      "Bash(ls*)",
+      "Bash(grep*)",
+      "Bash(cat*)",
+      "Bash(wc*)",
+      "Bash(mkdir -p*)",
+      "Bash(cd frontend && npm run build*)",
+      "Bash(cd frontend && npm run lint*)",
+      "Bash(cd frontend && npx tsc*)",
+      "Bash(cd backend && python -m pytest*)",
+      "Bash(cd backend && python -c*)",
+      "Bash(uvicorn app.main:app*)",
+      "Bash(curl -s http://127.0.0.1:8000/api/v1/*)",
+      "mcp__claude_ai_Supabase__list_migrations"
+    ]
+  }
+}

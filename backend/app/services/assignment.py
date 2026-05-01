@@ -67,6 +67,7 @@ def auto_assign_lead(lead_id: str, tenant_id: str) -> str | None:
         .select("id")
         .eq("tenant_id", tenant_id)
         .eq("active", True)
+        .eq("status", "active")
         .execute()
     )
     if not callers.data:

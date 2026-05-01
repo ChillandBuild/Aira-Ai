@@ -35,6 +35,7 @@ class AssignPayload(BaseModel):
 @router.get("/", response_model=PaginatedResponse)
 async def list_leads(
     segment: str | None = Query(None, pattern="^[ABCD]$"),
+    assigned_to: str | None = Query(None),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
     ctx: dict = Depends(get_tenant_and_role),
@@ -45,7 +46,9 @@ async def list_leads(
     query = db.table("leads").select("*", count="exact").eq("tenant_id", tenant_id).is_("deleted_at", "null")
     if segment:
         query = query.eq("segment", segment)
-    if ctx.get("role") == "caller" and ctx.get("caller_id"):
+    if assigned_to:
+        query = query.eq("assigned_to", assigned_to)
+    elif ctx.get("role") == "caller" and ctx.get("caller_id"):
         query = query.eq("assigned_to", ctx["caller_id"])
     result = query.order("score", desc=True).range(offset, offset + limit - 1).execute()
     return PaginatedResponse(

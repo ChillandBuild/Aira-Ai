@@ -161,3 +161,28 @@ async def mark_callback_done(job_id: str, tenant_id: str = Depends(get_tenant_id
     db = get_supabase()
     db.table("follow_up_jobs").update({"status": "sent"}).eq("id", job_id).eq("tenant_id", tenant_id).execute()
     return {"success": True}
+
+
+@router.get("/callbacks/today-completed")
+async def today_completed_callbacks(tenant_id: str = Depends(get_tenant_id)):
+    """Return callbacks that were marked as done today."""
+    db = get_supabase()
+    now = datetime.now(timezone.utc)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    day_end = now.replace(hour=23, minute=59, second=59, microsecond=0).isoformat()
+
+    jobs = db.table("follow_up_jobs").select(
+        "id,lead_id,scheduled_for,message_preview,status"
+    ).eq("tenant_id", tenant_id).eq("cadence", "callback").eq("status", "sent").gte(
+        "scheduled_for", day_start
+    ).lte("scheduled_for", day_end).order("scheduled_for").execute()
+
+    result = []
+    for job in (jobs.data or []):
+        lead = db.table("leads").select("id,name,phone,segment").eq(
+            "id", job["lead_id"]
+        ).eq("tenant_id", tenant_id).maybe_single().execute()
+        result.append({**job, "lead": lead.data or {}})
+
+    return {"data": result}
+
