@@ -72,6 +72,7 @@ function LogoutButton() {
 }
 
 export function Sidebar() {
+
   const pathname = usePathname();
   const [role, setRole] = useState<"owner" | "caller" | null>(null);
 
@@ -142,6 +143,7 @@ export function Sidebar() {
           );
         })}
       </nav>
+
 
       {/* Bottom section */}
       <div className="px-3 pb-4 space-y-0.5">

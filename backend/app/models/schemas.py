@@ -122,3 +122,21 @@ class PaginatedResponse(BaseModel):
 # --- Lead with messages (for conversation view) ---
 class LeadWithMessages(Lead):
     messages: list[Message] = []
+
+# --- Employee Todo Models ---
+from datetime import date as date_type
+
+class TodoBase(BaseModel):
+    todo_date: date_type
+    content: str
+    is_completed: bool = False
+
+class TodoCreate(TodoBase):
+    pass
+
+class Todo(TodoBase):
+    id: UUID
+    user_id: UUID
+    created_at: datetime
+    updated_at: datetime
+    model_config = {"from_attributes": True}
