@@ -59,7 +59,7 @@ _auth = [Depends(get_current_user)]
 
 # Webhook routes — no auth (Meta/Twilio call directly)
 app.include_router(webhook.router, prefix="/webhook/whatsapp", tags=["webhook"])
-app.include_router(calls_public_router, prefix="/api/v1/calls", tags=["calls-twilio"])
+app.include_router(calls_public_router, prefix="/api/v1/calls", tags=["calls-telecmi"])
 # Instagram webhook disabled — Phase 2
 
 # API routes — all require auth

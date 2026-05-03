@@ -12,7 +12,7 @@ router = APIRouter()
 class CreateVoiceNumber(BaseModel):
     number: str
     display_name: str
-    provider: str = "twilio"
+    provider: str = "telecmi"
     is_primary: bool = False
 
 

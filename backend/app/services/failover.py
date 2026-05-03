@@ -62,6 +62,19 @@ async def handle_quality_red(phone_number_id: str) -> None:
     db.table("phone_numbers").update({"role": "standby", "status": "restricted"}).eq("id", phone_number_id).execute()
     logger.info(f"handle_quality_red: demoted old primary id={phone_number_id} to standby/restricted")
 
+    # ── Update the "sticky note" so the AI sends from the new number ──
+    new_meta_id = new_number.get("meta_phone_number_id")
+    if new_meta_id:
+        db.table("app_settings").upsert(
+            {"key": "meta_phone_number_id", "value": new_meta_id, "tenant_id": tenant_id, "is_secret": False},
+            on_conflict="key",
+        ).execute()
+        logger.info(f"handle_quality_red: updated app_settings meta_phone_number_id to {new_meta_id}")
+
+        # Clear the in-memory cache so the new value is used immediately
+        from app.config_dynamic import invalidate_cache
+        invalidate_cache("meta_phone_number_id")
+
     db.table("incidents").insert({
         "type": "failover",
         "tenant_id": tenant_id,
