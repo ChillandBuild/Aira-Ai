@@ -611,7 +611,39 @@ export const api = {
     acknowledge: (id: string) =>
       apiFetch<{ success: boolean }>(`/api/v1/alerts/${id}/acknowledge`, { method: "PATCH" }),
   },
+  todos: {
+    list: async (params?: { start_date?: string; end_date?: string }) => {
+      const qs = new URLSearchParams();
+      if (params?.start_date) qs.set("start_date", params.start_date);
+      if (params?.end_date) qs.set("end_date", params.end_date);
+      return apiFetch<Todo[]>(`/api/v1/todos/?${qs}`);
+    },
+    create: (data: { todo_date: string; content: string }) =>
+      apiFetch<Todo>(`/api/v1/todos/`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    update: (id: string, data: { is_completed?: boolean; content?: string }) =>
+      apiFetch<Todo>(`/api/v1/todos/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    delete: (id: string) =>
+      apiFetch<{ success: boolean }>(`/api/v1/todos/${id}`, {
+        method: "DELETE",
+      }),
+  },
 };
+
+export interface Todo {
+  id: string;
+  user_id: string;
+  todo_date: string;
+  content: string;
+  is_completed: boolean;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface HotLeadAlert {
   id: string;
