@@ -2,13 +2,11 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Literal
-from urllib.parse import quote
 from uuid import UUID
 import httpx
 from fastapi import Depends, Query
-from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Response
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 from pydantic import BaseModel
-from twilio.rest import Client as TwilioClient
 from app.config import settings
 from app.config_dynamic import get_setting
 from app.db.supabase import get_supabase
@@ -16,11 +14,12 @@ from app.dependencies.tenant import get_tenant_id
 from app.services.call_scorer import score_from_outcome, recompute_caller_score
 from app.services.call_summarizer import transcribe_recording, summarize_call
 from app.services.growth import record_stage_event, sync_follow_up_jobs
+from app.services.telecmi_client import initiate_click2call
 from app.services.voice_router import get_best_voice_number, increment_voice_call_count
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-public_router = APIRouter()  # No auth — Twilio calls these directly
+public_router = APIRouter()  # No auth — TeleCMI calls these directly
 
 Outcome = Literal["converted", "callback", "not_interested", "no_answer"]
 
@@ -36,21 +35,12 @@ class OutcomeUpdate(BaseModel):
     callback_time: datetime | None = None
 
 
-@public_router.api_route("/twiml", methods=["GET", "POST"])
-async def twiml_connect(lead_phone: str | None = None):
-    dial_body = f"<Dial>{lead_phone}</Dial>" if lead_phone else ""
-    xml = f'<?xml version="1.0"?><Response><Say>Connecting your call.</Say>{dial_body}</Response>'
-    return Response(content=xml, media_type="application/xml")
-
-
 @router.post("/initiate")
 async def initiate_call(payload: InitiateCall, tenant_id: str = Depends(get_tenant_id)):
-    twilio_sid = get_setting("twilio_account_sid") or settings.twilio_account_sid
-    twilio_token = get_setting("twilio_auth_token") or settings.twilio_auth_token
-    if not twilio_sid or not twilio_token:
-        raise HTTPException(status_code=400, detail="Twilio credentials not configured. Set them in Settings.")
-    if not settings.public_base_url:
-        raise HTTPException(status_code=400, detail="PUBLIC_BASE_URL not configured")
+    telecmi_user_id = get_setting("telecmi_user_id") or settings.telecmi_user_id
+    telecmi_secret = get_setting("telecmi_secret") or settings.telecmi_secret
+    if not telecmi_user_id or not telecmi_secret:
+        raise HTTPException(status_code=400, detail="TeleCMI credentials not configured. Set them in Settings.")
 
     if not payload.lead_id and not payload.phone:
         raise HTTPException(status_code=400, detail="Provide either lead_id or phone")
@@ -96,57 +86,153 @@ async def initiate_call(payload: InitiateCall, tenant_id: str = Depends(get_tena
     }).execute()
     call_log_id = log_insert.data[0]["id"]
 
-    base_url = settings.public_base_url.rstrip("/")
-    status_cb = f"{base_url}/api/v1/calls/voice-status?call_log_id={call_log_id}"
-    twiml_url = f"{base_url}/api/v1/calls/twiml?lead_phone={quote(lead_phone or '')}"
-
     try:
-        client = TwilioClient(twilio_sid, twilio_token)
-        call = client.calls.create(
-            to=caller_phone,
-            from_=best_number["number"],
-            url=twiml_url,
-            status_callback=status_cb,
-            status_callback_event=["completed"],
-            record=True,
+        # TeleCMI click-to-call: rings the caller first, then bridges to the lead
+        telecmi_callerid = get_setting("telecmi_callerid") or settings.telecmi_callerid or best_number["number"]
+        result = await initiate_click2call(
+            user_id=telecmi_user_id,
+            secret=telecmi_secret,
+            to=lead_phone,
+            callerid=telecmi_callerid,
+            extra_params={"call_log_id": call_log_id},
         )
+        request_id = result.get("request_id", "")
     except Exception as e:
-        logger.error(f"Twilio call failed: {e}")
+        logger.error(f"TeleCMI call failed: {e}")
         db.table("call_logs").update({"status": "failed"}).eq("id", call_log_id).execute()
-        raise HTTPException(status_code=502, detail=f"Twilio call failed: {e}")
+        raise HTTPException(status_code=502, detail=f"TeleCMI call failed: {e}")
 
-    db.table("call_logs").update({"call_sid": call.sid}).eq("id", call_log_id).execute()
+    db.table("call_logs").update({"call_sid": request_id}).eq("id", call_log_id).execute()
     await increment_voice_call_count(best_number["id"])
     return {
         "call_log_id": call_log_id,
-        "call_sid": call.sid,
-        "status": call.status,
+        "call_sid": request_id,
+        "status": "initiated",
         "lead_id": matched_lead_id,
         "lead_name": matched_lead_name,
     }
 
 
-async def _download_recording_with_retry(
-    call_log_id: str,
-    recording_url: str,
-    twilio_sid: str,
-    twilio_token: str,
-    max_attempts: int = 5,
-    initial_delay: int = 12,
-) -> str | None:
-    """Download Twilio recording MP3 with exponential retry. Returns Supabase public URL or None."""
-    recording_mp3 = recording_url if recording_url.endswith(".mp3") else f"{recording_url}.mp3"
+# ── TeleCMI CDR Webhook ──────────────────────────────────────────────
+# TeleCMI sends JSON CDR to this endpoint after a call completes.
+# Configure this URL in your TeleCMI dashboard → SETTINGS → WEBHOOKS.
+# URL: https://YOUR-RENDER-URL.onrender.com/api/v1/calls/telecmi-cdr
+
+@public_router.post("/telecmi-cdr")
+async def telecmi_cdr(request: Request, background_tasks: BackgroundTasks):
+    """
+    Receive Call Detail Record (CDR) from TeleCMI.
+
+    TeleCMI CDR fields:
+      - request_id: matches the call we initiated
+      - status: "answered" or "missed"
+      - answeredsec: call duration in seconds (only for answered)
+      - hangup_reason: "recv_bye", "sent_bye", "recv_cancel", "sent_reject"
+      - filename: recording filename (e.g., "16506305548176941220057791_2222223.mp3")
+      - leg: "a" (caller) or "b" (lead)
+      - direction: "outbound"
+    """
+    cdr = await request.json()
+    logger.info(f"TeleCMI CDR received: {cdr}")
+
+    request_id = cdr.get("request_id")
+    status = cdr.get("status")
+    leg = cdr.get("leg")
+
+    # We only care about Leg B (the lead side) for final status
+    # Leg A is the caller/agent side — we skip it
+    if leg == "a":
+        return {"ok": True}
+
+    if not request_id:
+        logger.warning("TeleCMI CDR missing request_id, ignoring")
+        return {"ok": True}
+
     db = get_supabase()
 
-    for attempt in range(1, max_attempts + 1):
-        delay = initial_delay * attempt
-        logger.info(f"Recording attempt {attempt}/{max_attempts} for {call_log_id} — waiting {delay}s")
+    # Find the call_log by the request_id stored in call_sid
+    log_row = (
+        db.table("call_logs")
+        .select("id,caller_id,lead_id")
+        .eq("call_sid", request_id)
+        .maybe_single()
+        .execute()
+    )
+    if not log_row.data:
+        logger.warning(f"TeleCMI CDR: no call_log found for request_id={request_id}")
+        return {"ok": True}
+
+    call_log_id = log_row.data["id"]
+    updates: dict = {}
+
+    if status == "answered":
+        updates["status"] = "completed"
+        answered_sec = cdr.get("answeredsec")
+        if answered_sec is not None:
+            try:
+                updates["duration_seconds"] = int(answered_sec)
+            except (ValueError, TypeError):
+                pass
+    elif status == "missed":
+        hangup_reason = cdr.get("hangup_reason", "")
+        if hangup_reason in ("recv_cancel", "sent_reject"):
+            updates["status"] = "no_answer"
+            updates["outcome"] = "no_answer"
+        else:
+            updates["status"] = "failed"
+    else:
+        updates["status"] = "in_progress"
+
+    # Handle recording if present
+    recording_filename = cdr.get("filename")
+    if recording_filename:
+        recording_base_url = get_setting("telecmi_recording_base_url") or ""
+        if recording_base_url:
+            full_url = f"{recording_base_url.rstrip('/')}/{recording_filename}"
+            updates["recording_url"] = full_url
+            background_tasks.add_task(_process_telecmi_recording, call_log_id, full_url)
+
+    if updates:
+        db.table("call_logs").update(updates).eq("id", call_log_id).execute()
+
+    # Recompute caller score on terminal statuses
+    if updates.get("status") in ("completed", "no_answer"):
+        row = log_row.data
+        score = score_from_outcome(updates.get("outcome"), updates.get("duration_seconds"))
+        db.table("call_logs").update({"score": score}).eq("id", call_log_id).execute()
+        if row.get("caller_id"):
+            recompute_caller_score(row["caller_id"], db)
+
+    return {"ok": True}
+
+
+# ── TeleCMI Live Events Webhook ───────────────────────────────────────
+# Optional: receive real-time call status events (started, answered, hangup)
+
+@public_router.post("/telecmi-events")
+async def telecmi_live_events(request: Request):
+    """Receive live call events from TeleCMI (optional — for real-time UI updates)."""
+    event = await request.json()
+    logger.info(f"TeleCMI event: status={event.get('status')}, request_id={event.get('request_id')}")
+    # Can be used for real-time call status updates in the future
+    return {"ok": True}
+
+
+# ── Recording Processing ─────────────────────────────────────────────
+
+async def _process_telecmi_recording(call_log_id: str, recording_url: str) -> None:
+    """Download TeleCMI recording and run AI summarization."""
+    db = get_supabase()
+
+    for attempt in range(1, 4):
+        delay = 10 * attempt
+        logger.info(f"Recording download attempt {attempt}/3 for {call_log_id} — waiting {delay}s")
         await asyncio.sleep(delay)
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
-                resp = await client.get(recording_mp3, auth=(twilio_sid, twilio_token))
+                resp = await client.get(recording_url)
                 if resp.status_code == 404:
-                    logger.warning(f"Recording not ready yet (attempt {attempt}): {recording_mp3}")
+                    logger.warning(f"Recording not ready yet (attempt {attempt}): {recording_url}")
                     continue
                 resp.raise_for_status()
                 audio_bytes = resp.content
@@ -160,26 +246,15 @@ async def _download_recording_with_retry(
             public_url = db.storage.from_("call-recordings").get_public_url(storage_path)
             db.table("call_logs").update({"recording_url": public_url}).eq("id", call_log_id).execute()
             logger.info(f"Recording saved for {call_log_id}: {public_url}")
-            return public_url
+
+            # Run AI summarization
+            await _run_summarization(call_log_id, public_url)
+            return
 
         except Exception as e:
             logger.error(f"Recording attempt {attempt} failed for {call_log_id}: {e}")
 
-    logger.error(f"All {max_attempts} recording attempts failed for {call_log_id}")
-    return None
-
-
-async def _process_call_recording(
-    call_log_id: str,
-    recording_url: str,
-    twilio_sid: str,
-    twilio_token: str,
-) -> None:
-    """Download recording then run AI summarization."""
-    public_url = await _download_recording_with_retry(call_log_id, recording_url, twilio_sid, twilio_token)
-    if not public_url:
-        return
-    await _run_summarization(call_log_id, public_url)
+    logger.error(f"All recording attempts failed for {call_log_id}")
 
 
 async def _run_summarization(call_log_id: str, recording_url: str) -> None:
@@ -209,62 +284,7 @@ async def _run_summarization(call_log_id: str, recording_url: str) -> None:
         logger.error(f"Summarization failed for {call_log_id}: {e}")
 
 
-@public_router.post("/voice-status")
-async def twilio_voice_status(
-    background_tasks: BackgroundTasks,
-    call_log_id: str,
-    CallSid: str | None = Form(None),
-    CallStatus: str | None = Form(None),
-    CallDuration: str | None = Form(None),
-    RecordingUrl: str | None = Form(None),
-):
-    Status = CallStatus
-    Duration = CallDuration
-    db = get_supabase()
-    updates: dict = {}
-
-    if Status == "completed":
-        updates["status"] = "completed"
-    elif Status == "no-answer":
-        updates["status"] = "no_answer"
-        updates["outcome"] = "no_answer"
-    elif Status in ("busy", "failed", "canceled"):
-        updates["status"] = "failed"
-    else:
-        updates["status"] = "in_progress"
-
-    if Duration:
-        try:
-            updates["duration_seconds"] = int(Duration)
-        except ValueError:
-            pass
-
-    if RecordingUrl:
-        twilio_sid = get_setting("twilio_account_sid") or settings.twilio_account_sid or ""
-        twilio_token = get_setting("twilio_auth_token") or settings.twilio_auth_token or ""
-        background_tasks.add_task(
-            _process_call_recording, call_log_id, RecordingUrl, twilio_sid, twilio_token
-        )
-
-    if updates:
-        db.table("call_logs").update(updates).eq("id", call_log_id).execute()
-
-    if updates.get("status") in ("completed", "no_answer"):
-        log_row = (
-            db.table("call_logs")
-            .select("caller_id,outcome,duration_seconds")
-            .eq("id", call_log_id)
-            .maybe_single()
-            .execute()
-        )
-        row = log_row.data or {}
-        score = score_from_outcome(row.get("outcome"), row.get("duration_seconds"))
-        db.table("call_logs").update({"score": score}).eq("id", call_log_id).execute()
-        if row.get("caller_id"):
-            recompute_caller_score(row["caller_id"], db)
-
-    return Response(content="", media_type="text/xml")
-
+# ── Outcome & Other Endpoints (unchanged) ────────────────────────────
 
 @router.patch("/{call_log_id}/outcome")
 async def set_outcome(call_log_id: str, payload: OutcomeUpdate):
