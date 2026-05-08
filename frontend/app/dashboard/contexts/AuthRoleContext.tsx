@@ -19,6 +19,7 @@ export function AuthRoleProvider({ children }: { children: ReactNode }) {
     getAuthHeaders()
       .then(async (auth) => {
         const res = await fetch(`${API_URL}/api/v1/team/me`, { headers: auth });
+        if (!res.ok) throw new Error(`team/me ${res.status}`);
         const d = await res.json();
         setRole(d.role as "owner" | "caller");
         setCallerId(d.caller_id);

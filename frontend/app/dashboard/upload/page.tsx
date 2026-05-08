@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef } from "react";
 import { Upload, FileText, Check, AlertTriangle, ChevronRight, RotateCcw } from "lucide-react";
-import { API_URL } from "@/lib/api";
+import { API_URL, getAuthHeaders } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -120,9 +120,10 @@ export default function UploadPage() {
 
     setParseLoading(true);
     try {
+      const auth = await getAuthHeaders();
       const fd = new FormData();
       fd.append("file", f);
-      const res = await fetch(`${API_URL}/api/v1/upload/parse`, { method: "POST", body: fd });
+      const res = await fetch(`${API_URL}/api/v1/upload/parse`, { method: "POST", body: fd, headers: auth });
       if (!res.ok) throw new Error(await res.text());
       const data: ParsedData = await res.json();
       setParsedData(data);
@@ -138,9 +139,10 @@ export default function UploadPage() {
     setOptInValidation(null);
     setOptInLoading(true);
     try {
+      const auth = await getAuthHeaders();
       const res = await fetch(`${API_URL}/api/v1/upload/validate-optin`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...auth },
         body: JSON.stringify({ opt_in_source: value }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -184,9 +186,10 @@ export default function UploadPage() {
         drip_days: scheduleType === "drip" && dripDays ? parseInt(dripDays, 10) : undefined,
       };
 
+      const auth = await getAuthHeaders();
       const res = await fetch(`${API_URL}/api/v1/upload/bulk-send`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...auth },
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(await res.text());
