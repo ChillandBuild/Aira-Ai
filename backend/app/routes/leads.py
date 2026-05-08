@@ -213,7 +213,7 @@ async def toggle_ai(lead_id: UUID, payload: AiToggle, tenant_id: str = Depends(g
     )
     if not existing.data:
         raise HTTPException(status_code=404, detail="Lead not found")
-    result = db.table("leads").update({"ai_enabled": payload.enabled}).eq("id", str(lead_id)).eq("tenant_id", tenant_id).execute()
+    result = db.table("leads").update({"ai_enabled": payload.enabled}).eq("id", str(lead_id)).eq("tenant_id", tenant_id).select("*").execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Lead not found")
     updated = result.data[0]
