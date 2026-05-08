@@ -37,6 +37,15 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Gemini transcription + AI call summary | ✅ Built — call_summarizer.py + BackgroundTasks |
 | Notes page (/dashboard/notes) | ✅ Built — lead search, notes CRUD, AI summary cards, audio player |
 | Message Templates page | ✅ Built — dashboard/templates/ |
+| Knowledge base (full-text injection, no embeddings) | ✅ Built — services/knowledge_service.py, full_text col on knowledge_documents |
+| Reply source badge (FAQ / Knowledge Base / AI) | ✅ Built — messages.reply_source, chat-thread.tsx |
+| Callback scheduler (Live Notes modal + Today's Callbacks) | ✅ Built — follow_up_jobs cadence=callback, telecalling/components/ |
+| Telecaller multi-tenancy (role-based access + lead assignment) | ✅ Built — migration 025, services/assignment.py, AuthRoleContext, sidebar gating |
+| Hot lead alert system (score ≥7, 5-min escalation, in-app banner) | ✅ Built — migration 026, routes/alerts.py, ai_reply.py trigger, hot-lead-alert-banner.tsx |
+| Lead assignment (manual admin + round-robin auto on new lead) | ✅ Built — PATCH /api/v1/leads/{id}/assign + auto_assign_lead() in webhook |
+| Team management page | ✅ Built — dashboard/team/, routes/team.py |
+| Onboarding flow | ✅ Built — dashboard/onboarding/, routes/onboarding.py |
+| App settings page | ✅ Built — dashboard/settings/, routes/app_settings.py |
 
 ## Hard Invariants — Never Break
 1. **FAQ-first**: ai_reply.py checks Redis BEFORE any Gemini call
@@ -81,8 +90,11 @@ Each agent gets only its relevant context file — not the full CLAUDE.md.
 - AI: Gemini (not Claude) — 2.5-pro for complex/scoring, 2.0-flash for FAQ classify
 
 ## Known Tech Debt
-- webhook_instagram.py registered in main.py — disable route
+- webhook_instagram.py exists but route is NOT registered in main.py — safe, leave disabled
 - Analytics page shows ad metrics — repurpose to service metrics (WA + telecalling + funnel)
+- Sidebar makes a duplicate /team/me call independent of AuthRoleContext — consolidate to useAuthRole()
+- AdminView.tsx in telecalling has N+1 sequential fetches per caller — replace with Promise.allSettled
+- services/growth.py + services/scheduled_tasks.py — verify wired to Celery or remove if dead
 - AI Tune label may need rename to clarify it tunes WA auto-reply prompts only
 
 ## Key File Locations
