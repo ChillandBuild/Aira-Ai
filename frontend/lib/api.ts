@@ -278,19 +278,31 @@ export interface FunnelAnalytics {
 
 async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const authHeaders = await getAuthHeaders();
-  const res = await fetch(`${API_URL}${path}`, {
-    ...opts,
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders,
-      ...(opts.headers as Record<string, string> ?? {}),
-    },
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: "Request failed" }));
-    throw new Error(err.detail || "Request failed");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const res = await fetch(`${API_URL}${path}`, {
+      ...opts,
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders,
+        ...(opts.headers as Record<string, string> ?? {}),
+      },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Request failed" }));
+      throw new Error(err.detail || "Request failed");
+    }
+    return res.json();
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Request timed out — server took too long to respond");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json();
 }
 
 export const api = {

@@ -5,7 +5,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 genai.configure(api_key=settings.gemini_api_key)
-_scorer_model = genai.GenerativeModel("gemini-2.5-flash")
+_scorer_model = genai.GenerativeModel("gemini-2.0-flash")
 
 SCORING_PROMPT = """You are a lead scoring assistant for a B2B sales team.
 
@@ -23,10 +23,7 @@ Reply with ONLY a single integer between 1 and 10. No explanation."""
 async def score_message(message: str, current_score: int = 5) -> int:
     try:
         prompt = SCORING_PROMPT.format(current_score=current_score, message=message)
-        response = _scorer_model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(thinking_config={"thinking_budget": 0}),
-        )
+        response = _scorer_model.generate_content(prompt)
         score = int(response.text.strip())
         return max(1, min(10, score))
     except Exception as e:
