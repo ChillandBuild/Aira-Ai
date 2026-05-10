@@ -11,7 +11,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-TELECMI_BASE_URL = "https://rest.telecmi.com/v2/click2call"
+TELECMI_BASE_URL = "https://piopiy.telecmi.com/v1/adminConnect"
 
 
 async def initiate_click2call(
@@ -28,22 +28,17 @@ async def initiate_click2call(
     Initiate a click-to-call via TeleCMI.
 
     Flow:
-      1. TeleCMI rings the `callerid` (your telecaller) first.
-      2. Once the telecaller picks up, TeleCMI bridges the call to `to` (the lead).
+      1. TeleCMI rings the agent (`user_id` / `agent_id`) first.
+      2. Once the agent picks up, TeleCMI bridges the call to `to` (the lead).
 
     Returns the TeleCMI response dict, e.g.:
         {"code": 200, "msg": "Call initiated", "request_id": "..."}
     """
     payload = {
-        "appid": user_id,
-        "app_secret": secret,
-        "user_id": user_id,
-        "secret": secret,
-        "to": int(_normalize_phone(to)),
-        "callerid": int(_normalize_phone(callerid)),
-        "webrtc": webrtc,
-        "followme": followme,
-        "extra_params": extra_params or {"aira": "true"},
+        "agent_id": user_id,
+        "token": secret,
+        "to": _normalize_phone(to),
+        "custom": "aira_ai_call"
     }
 
     logger.info(f"TeleCMI click2call: to={to}, callerid={callerid}")
