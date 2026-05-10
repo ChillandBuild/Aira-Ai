@@ -24,14 +24,15 @@ def get_me(ctx: dict = Depends(get_tenant_and_role)):
         .select("id, name, phone, overall_score")
         .eq("user_id", ctx["user_id"])
         .eq("tenant_id", ctx["tenant_id"])
-        .maybe_single()
+        .limit(1)
         .execute()
     )
+    profile = caller.data[0] if caller and caller.data else None
     return {
         "tenant_id": ctx["tenant_id"],
         "role": ctx["role"],
         "caller_id": ctx.get("caller_id"),
-        "caller_profile": caller.data if caller else None,
+        "caller_profile": profile,
     }
 
 

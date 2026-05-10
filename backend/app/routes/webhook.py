@@ -129,9 +129,16 @@ async def whatsapp_webhook(
                             _handle_opt_out(phone, db)
                             continue
 
-                        existing = db.table("leads").select("id,score,segment").eq("phone", phone).eq("tenant_id", tenant_id).is_("deleted_at", "null").limit(1).execute()
+                        existing = db.table("leads").select("id,score,segment,deleted_at,ai_enabled").eq("phone", phone).eq("tenant_id", tenant_id).limit(1).execute()
                         if existing.data:
                             lead_id = existing.data[0]["id"]
+                            if existing.data[0].get("deleted_at"):
+                                db.table("leads").update({
+                                    "deleted_at": None,
+                                    "ai_enabled": True,
+                                    "needs_human_intervention": False,
+                                }).eq("id", lead_id).execute()
+                                logger.info(f"Restored soft-deleted lead {lead_id} on inbound message")
                         else:
                             new_lead = db.table("leads").insert({
                                 "phone": phone,

@@ -1,11 +1,11 @@
 import logging
-import google.generativeai as genai
+from groq import Groq
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-genai.configure(api_key=settings.gemini_api_key)
-_scorer_model = genai.GenerativeModel("gemini-1.5-flash")
+_client = Groq(api_key=settings.groq_api_key) if settings.groq_api_key else None
+_SCORER_MODEL = "llama-3.1-8b-instant"
 
 SCORING_PROMPT = """You are a lead scoring assistant for a B2B sales team.
 
@@ -20,11 +20,20 @@ Message: "{message}"
 
 Reply with ONLY a single integer between 1 and 10. No explanation."""
 
+
 async def score_message(message: str, current_score: int = 5) -> int:
+    if not _client:
+        logger.warning("GROQ_API_KEY not configured — skipping scoring")
+        return current_score
     try:
         prompt = SCORING_PROMPT.format(current_score=current_score, message=message)
-        response = _scorer_model.generate_content(prompt)
-        score = int(response.text.strip())
+        response = _client.chat.completions.create(
+            model=_SCORER_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+            max_tokens=4,
+        )
+        score = int(response.choices[0].message.content.strip())
         return max(1, min(10, score))
     except Exception as e:
         logger.error(f"Scoring failed: {e}")

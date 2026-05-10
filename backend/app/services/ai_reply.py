@@ -1,9 +1,8 @@
 import logging
 import time
 import httpx
-import google.generativeai as genai
+from groq import Groq
 from app.config import settings
-from app.config_dynamic import get_setting
 from app.db.supabase import get_supabase
 from app.services.growth import record_stage_event, sync_follow_up_jobs
 from app.services.lead_scorer import score_message
@@ -13,19 +12,20 @@ from app.services.assignment import auto_assign_lead
 
 logger = logging.getLogger(__name__)
 
-_gemini_configured = False
+_groq_client = Groq(api_key=settings.groq_api_key) if settings.groq_api_key else None
+_REPLY_MODEL = "llama-3.3-70b-versatile"
 
 
-def _ensure_gemini():
-    global _gemini_configured
-    if not _gemini_configured:
-        key = get_setting("gemini_api_key") or settings.gemini_api_key
-        if key:
-            genai.configure(api_key=key)
-            _gemini_configured = True
-
-
-_reply_model = genai.GenerativeModel("gemini-1.5-flash")
+def _groq_complete(prompt: str, max_tokens: int = 300) -> str:
+    if not _groq_client:
+        raise RuntimeError("GROQ_API_KEY not configured")
+    response = _groq_client.chat.completions.create(
+        model=_REPLY_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.4,
+        max_tokens=max_tokens,
+    )
+    return response.choices[0].message.content.strip()
 
 FALLBACK_PROMPT = """You are an AI assistant for an education consultancy. Your job is to help
 prospective students with queries about college admissions, courses, fees, and visits.
@@ -189,8 +189,7 @@ Be warm, specific, and low-pressure.
 Reference the lead's interest naturally and end with one clear next step.
 Do not use markdown or quotes."""
     try:
-        response = _reply_model.generate_content(prompt)
-        text = response.text.strip()
+        text = _groq_complete(prompt, max_tokens=120)
         return text[:280] if len(text) > 280 else text
     except Exception as e:
         logger.error(f"Re-engagement copy failed for lead {lead_id}: {e}")
@@ -277,10 +276,8 @@ async def generate_reply(
             if context_text:
                 system_prompt += "\n\nKNOWLEDGE BASE:\nUse the following documents to answer the user's question accurately. If the answer is not in the documents, say you will connect them with a team member.\n\n" + context_text
 
-            response = _reply_model.generate_content(
-                [{"role": "user", "parts": [system_prompt + "\n\nStudent message: " + message]}]
-            )
-            reply_text = response.text.strip()
+            full_prompt = system_prompt + "\n\nLead message: " + message
+            reply_text = _groq_complete(full_prompt, max_tokens=300)
             is_ai = True
             reply_source = "knowledge" if context_text else "ai"
         except Exception as e:

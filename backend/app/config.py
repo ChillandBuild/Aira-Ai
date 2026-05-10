@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     supabase_url: str
     supabase_service_key: str
     gemini_api_key: str | None = None
+    groq_api_key: str | None = None
     twilio_account_sid: str | None = None
     twilio_auth_token: str | None = None
     twilio_whatsapp_number: str = "whatsapp:+14155238886"
