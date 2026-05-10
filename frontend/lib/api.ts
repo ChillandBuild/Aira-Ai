@@ -299,6 +299,9 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
     if (err instanceof DOMException && err.name === "AbortError") {
       throw new Error("Request timed out — server took too long to respond");
     }
+    if (err instanceof TypeError && err.message.toLowerCase().includes("fetch")) {
+      throw new Error("Cannot reach server — it may be restarting. Try again in 30 seconds.");
+    }
     throw err;
   } finally {
     clearTimeout(timer);
