@@ -35,10 +35,12 @@ async def initiate_click2call(
         {"code": 200, "msg": "Call initiated", "request_id": "..."}
     """
     payload = {
+        "appid": user_id,
+        "app_secret": secret,
         "user_id": user_id,
         "secret": secret,
-        "to": _normalize_phone(to),
-        "callerid": _normalize_phone(callerid),
+        "to": int(_normalize_phone(to)),
+        "callerid": int(_normalize_phone(callerid)),
         "webrtc": webrtc,
         "followme": followme,
         "extra_params": extra_params or {"aira": "true"},
