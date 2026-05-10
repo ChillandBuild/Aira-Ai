@@ -25,7 +25,7 @@ def _ensure_gemini():
             _gemini_configured = True
 
 
-_reply_model = genai.GenerativeModel("gemini-2.5-flash-lite")
+_reply_model = genai.GenerativeModel("gemini-1.5-flash")
 
 FALLBACK_PROMPT = """You are an AI assistant for an education consultancy. Your job is to help
 prospective students with queries about college admissions, courses, fees, and visits.
@@ -283,32 +283,11 @@ async def generate_reply(
             reply_text = response.text.strip()
             is_ai = True
             reply_source = "knowledge" if context_text else "ai"
-            
-            # Check for fallback to human
-            fallback_phrases = ["counsellor", "specialist", "team member", "connect you with", "contact you shortly", "reach out to you"]
-            if any(phrase in reply_text.lower() for phrase in fallback_phrases):
-                logger.info(f"Fallback detected for lead {lead_id}, flagging for human intervention.")
-                db.table("leads").update({
-                    "needs_human_intervention": True,
-                    "ai_enabled": False
-                }).eq("id", str(lead_id)).execute()
-                
-                if not lead_data.get("assigned_to"):
-                    auto_assign_lead(str(lead_id), lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001")
-                    
         except Exception as e:
             logger.error(f"Gemini reply failed for lead {lead_id}: {e}")
-            reply_text = "Thank you for reaching out! Our counsellor will contact you shortly."
+            reply_text = "Thank you for reaching out! We'll get back to you shortly."
             is_ai = False
             reply_source = "ai"
-            
-            # Fallback trigger
-            db.table("leads").update({
-                "needs_human_intervention": True,
-                "ai_enabled": False
-            }).eq("id", str(lead_id)).execute()
-            if not lead_data.get("assigned_to"):
-                auto_assign_lead(str(lead_id), lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001")
 
     # Step 3: Dispatch to the correct channel
     if channel == "instagram":
