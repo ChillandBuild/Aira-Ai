@@ -64,14 +64,15 @@ const SECTIONS: SectionDef[] = [
   },
   {
     id: "voice",
-    label: "Voice Calling (Twilio)",
+    label: "Voice Calling (TeleCMI)",
     icon: Phone,
     color: "#d97706",
     bg: "#fef3c7",
-    description: "Twilio credentials for click-to-call telecalling.",
+    description: "TeleCMI credentials for click-to-call telecalling.",
     fields: [
-      { key: "twilio_account_sid", label: "Account SID", secret: false },
-      { key: "twilio_auth_token", label: "Auth Token", secret: true },
+      { key: "telecmi_user_id", label: "Agent ID", secret: false },
+      { key: "telecmi_secret", label: "App Secret", secret: true },
+      { key: "telecmi_callerid", label: "Caller ID (DID number shown to leads)", secret: false },
     ],
   },
   {
@@ -83,6 +84,7 @@ const SECTIONS: SectionDef[] = [
     description: "Gemini AI for auto-reply, lead scoring, and call summarisation.",
     fields: [
       { key: "gemini_api_key", label: "Gemini API Key", secret: true },
+      { key: "groq_api_key", label: "Groq API Key (call transcription)", secret: true },
       { key: "faq_match_threshold", label: "FAQ Match Threshold (0–1)", secret: false },
     ],
     toggles: [

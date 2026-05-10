@@ -120,68 +120,54 @@ async def initiate_call(payload: InitiateCall, tenant_id: str = Depends(get_tena
 
 @public_router.post("/telecmi-cdr")
 async def telecmi_cdr(request: Request, background_tasks: BackgroundTasks):
-    """
-    Receive Call Detail Record (CDR) from TeleCMI.
-
-    TeleCMI CDR fields:
-      - request_id: matches the call we initiated
-      - status: "answered" or "missed"
-      - answeredsec: call duration in seconds (only for answered)
-      - hangup_reason: "recv_bye", "sent_bye", "recv_cancel", "sent_reject"
-      - filename: recording filename (e.g., "16506305548176941220057791_2222223.mp3")
-      - leg: "a" (caller) or "b" (lead)
-      - direction: "outbound"
-    """
+    """Receive Call Detail Record (CDR) from TeleCMI."""
     cdr = await request.json()
     logger.info(f"TeleCMI CDR received: {cdr}")
 
-    request_id = cdr.get("request_id")
     status = cdr.get("status")
-    leg = cdr.get("leg")
 
-    # We only care about Leg B (the lead side) for final status
-    # Leg A is the caller/agent side — we skip it
-    if leg == "a":
+    # TeleCMI sends separate CDRs for user_missed / user_answered (agent leg).
+    # We only process outbound CDRs with a call_log_id embedded in custom.
+    if status == "user_missed":
+        logger.info("TeleCMI CDR: agent missed the call, skipping")
         return {"ok": True}
 
-    if not request_id:
-        logger.warning("TeleCMI CDR missing request_id, ignoring")
+    # We embed call_log_id in the `custom` field when initiating the call.
+    call_log_id = cdr.get("custom")
+    if not call_log_id or call_log_id == "aira_ai_call":
+        logger.warning(f"TeleCMI CDR missing call_log_id in custom field, ignoring: {cdr}")
         return {"ok": True}
 
     db = get_supabase()
 
-    # Find the call_log by the request_id stored in call_sid
     log_row = (
         db.table("call_logs")
         .select("id,caller_id,lead_id")
-        .eq("call_sid", request_id)
+        .eq("id", call_log_id)
         .maybe_single()
         .execute()
     )
     if not log_row.data:
-        logger.warning(f"TeleCMI CDR: no call_log found for request_id={request_id}")
+        logger.warning(f"TeleCMI CDR: no call_log found for id={call_log_id}")
         return {"ok": True}
 
     call_log_id = log_row.data["id"]
     updates: dict = {}
 
+    # TeleCMI final CDR statuses: "answered", "missed", "user_missed"
     if status == "answered":
         updates["status"] = "completed"
-        answered_sec = cdr.get("answeredsec")
+        answered_sec = cdr.get("answeredsec") or cdr.get("bilsec")
         if answered_sec is not None:
             try:
                 updates["duration_seconds"] = int(answered_sec)
             except (ValueError, TypeError):
                 pass
-    elif status == "missed":
-        hangup_reason = cdr.get("hangup_reason", "")
-        if hangup_reason in ("recv_cancel", "sent_reject"):
-            updates["status"] = "no_answer"
-            updates["outcome"] = "no_answer"
-        else:
-            updates["status"] = "failed"
+    elif status in ("missed", "no_answer"):
+        updates["status"] = "no_answer"
+        updates["outcome"] = "no_answer"
     else:
-        updates["status"] = "in_progress"
+        updates["status"] = "failed"
 
     # Handle recording if present
     recording_filename = cdr.get("filename")

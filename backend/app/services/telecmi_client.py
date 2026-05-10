@@ -34,11 +34,12 @@ async def initiate_click2call(
     Returns the TeleCMI response dict, e.g.:
         {"code": 200, "msg": "Call initiated", "request_id": "..."}
     """
+    call_log_id = (extra_params or {}).get("call_log_id", "aira_ai_call")
     payload = {
         "agent_id": user_id,
         "token": secret,
         "to": _normalize_phone(to),
-        "custom": "aira_ai_call"
+        "custom": str(call_log_id),
     }
 
     logger.info(f"TeleCMI click2call: to={to}, callerid={callerid}")
