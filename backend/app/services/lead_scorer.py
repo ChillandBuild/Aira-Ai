@@ -5,13 +5,13 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 genai.configure(api_key=settings.gemini_api_key)
-_scorer_model = genai.GenerativeModel("gemini-2.5-flash-lite")
+_scorer_model = genai.GenerativeModel("gemini-2.5-flash")
 
-SCORING_PROMPT = """You are a lead scoring assistant for an education consultancy.
+SCORING_PROMPT = """You are a lead scoring assistant for a B2B sales team.
 
-Score this WhatsApp message from a prospective student (1-10 integer):
-- 9-10: High intent — mentioned college visit, specific course, asked for fees/admission date
-- 7-8: Warm — asking detailed questions, comparing options, multiple messages
+Score this WhatsApp message from a prospect (1-10 integer):
+- 9-10: High intent — asked for pricing, demo, or ready to buy
+- 7-8: Warm — asking detailed questions, comparing options, multiple follow-ups
 - 5-6: Neutral — general inquiry, first contact
 - 1-4: Low — no reply, said not interested, irrelevant message
 
@@ -21,13 +21,14 @@ Message: "{message}"
 Reply with ONLY a single integer between 1 and 10. No explanation."""
 
 async def score_message(message: str, current_score: int = 5) -> int:
-    """Score a lead message using Gemini Flash. Returns integer 1-10."""
     try:
         prompt = SCORING_PROMPT.format(current_score=current_score, message=message)
-        response = _scorer_model.generate_content(prompt)
-        score_text = response.text.strip()
-        score = int(score_text)
-        return max(1, min(10, score))  # clamp to 1-10
+        response = _scorer_model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(thinking_config={"thinking_budget": 0}),
+        )
+        score = int(response.text.strip())
+        return max(1, min(10, score))
     except Exception as e:
         logger.error(f"Scoring failed: {e}")
-        return current_score  # fallback to current score on error
+        return current_score
