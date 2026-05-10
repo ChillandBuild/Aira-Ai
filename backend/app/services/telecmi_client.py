@@ -51,7 +51,7 @@ async def initiate_click2call(
         resp.raise_for_status()
         data = resp.json()
 
-    logger.info(f"TeleCMI response: code={data.get('code')}, request_id={data.get('request_id')}")
+    logger.info(f"TeleCMI response: {data}")
     return data
 
 
