@@ -5,7 +5,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 genai.configure(api_key=settings.gemini_api_key)
-_scorer_model = genai.GenerativeModel("gemini-2.5-flash")
+_scorer_model = genai.GenerativeModel("gemini-3.1-flash-lite")
 
 SCORING_PROMPT = """You are a lead scoring assistant for a B2B sales team.
 
