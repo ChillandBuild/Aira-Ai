@@ -1,8 +1,7 @@
 import json
 import logging
-import re
 from typing import Literal
-import google.generativeai as genai
+from groq import Groq
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.config import settings
@@ -13,20 +12,20 @@ from app.services.ai_reply import invalidate_prompt_cache
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-genai.configure(api_key=settings.gemini_api_key)
-_tune_model = genai.GenerativeModel("gemini-2.5-pro")
+_client = Groq(api_key=settings.groq_api_key) if settings.groq_api_key else None
+_TUNE_MODEL = "llama-3.3-70b-versatile"
 
 META_PROMPT = """You are a prompt-engineering coach. Below is the current SYSTEM PROMPT
-used by a WhatsApp AI assistant for an education consultancy, followed by transcripts of
-CONVERSATIONS that successfully closed (student converted).
+used by a WhatsApp AI assistant for a B2B sales team, followed by transcripts of
+CONVERSATIONS that successfully closed (lead converted).
 
 Analyse the winning tone, pacing, phrasing, and next-step hooks. Suggest 2 to 3 concrete,
 SHORT additions or tweaks to the system prompt that would make new replies better mimic
 the winning patterns. Do NOT rewrite the whole prompt. Each suggestion must be a standalone
 sentence or short paragraph that can be appended to the existing prompt as-is.
 
-Return STRICT JSON, no prose, no markdown fences:
-[{"suggestion":"...","rationale":"..."}, ...]
+Return STRICT JSON only with the shape:
+{{"suggestions": [{{"suggestion": "...", "rationale": "..."}}, ...]}}
 
 === CURRENT SYSTEM PROMPT ===
 {prompt}
@@ -108,26 +107,35 @@ async def analyze(for_prompt: str = "whatsapp_reply", limit: int = 5, tenant_id:
     if not transcripts:
         raise HTTPException(status_code=400, detail="Converted leads have no message history.")
 
+    if not _client:
+        raise HTTPException(status_code=503, detail="GROQ_API_KEY not configured")
+
     meta = (
         META_PROMPT
         .replace("{prompt}", active_prompt)
         .replace("{conversations}", "\n\n".join(transcripts))
     )
     try:
-        resp = _tune_model.generate_content([{"role": "user", "parts": [meta]}])
-        text = (resp.text or "").strip()
+        resp = _client.chat.completions.create(
+            model=_TUNE_MODEL,
+            messages=[{"role": "user", "content": meta}],
+            response_format={"type": "json_object"},
+            temperature=0.4,
+            max_tokens=1000,
+        )
+        text = (resp.choices[0].message.content or "").strip()
     except Exception as e:
-        logger.error(f"Gemini analyze failed: {e}")
-        raise HTTPException(status_code=502, detail=f"Gemini call failed: {e}")
+        logger.error(f"Groq analyze failed: {e}")
+        raise HTTPException(status_code=502, detail=f"LLM call failed: {e}")
 
-    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.MULTILINE).strip()
     try:
-        items = json.loads(text)
+        parsed = json.loads(text)
+        items = parsed.get("suggestions") if isinstance(parsed, dict) else parsed
         if not isinstance(items, list):
-            raise ValueError("expected a JSON list")
+            raise ValueError("expected a JSON list under 'suggestions'")
     except Exception as e:
-        logger.error(f"Failed to parse Gemini JSON: {e}\nText: {text[:500]}")
-        raise HTTPException(status_code=502, detail=f"Gemini returned non-JSON: {text[:200]}")
+        logger.error(f"Failed to parse LLM JSON: {e}\nText: {text[:500]}")
+        raise HTTPException(status_code=502, detail=f"LLM returned non-JSON: {text[:200]}")
 
     inserted: list[dict] = []
     for it in items:

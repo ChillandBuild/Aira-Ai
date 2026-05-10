@@ -1,14 +1,14 @@
 import logging
-import google.generativeai as genai
+from groq import Groq
 from app.config import settings
 from app.db.supabase import get_supabase
 
 logger = logging.getLogger(__name__)
 
-genai.configure(api_key=settings.gemini_api_key)
-_model = genai.GenerativeModel("gemini-2.0-flash")
+_client = Groq(api_key=settings.groq_api_key) if settings.groq_api_key else None
+_MODEL = "llama-3.3-70b-versatile"
 
-COACH_PROMPT = """You are a sales coach for education-consultancy telecallers.
+COACH_PROMPT = """You are a sales coach for B2B telecallers.
 Given a caller's recent call stats, return ONE short actionable coaching tip (max 25 words).
 Focus on concrete phrases they can use on their next call. No preamble, no markdown.
 """
@@ -47,11 +47,16 @@ async def coaching_tip(caller_id: str) -> str:
         .execute()
     )
     summary = _summarize_logs(logs.data or [])
+    if not _client:
+        return "Keep calls under 3 minutes and always end with: 'Can I schedule a quick demo?'"
     try:
-        response = _model.generate_content(
-            [{"role": "user", "parts": [COACH_PROMPT + "\n\nCaller stats: " + summary]}]
+        response = _client.chat.completions.create(
+            model=_MODEL,
+            messages=[{"role": "user", "content": COACH_PROMPT + "\n\nCaller stats: " + summary}],
+            temperature=0.5,
+            max_tokens=80,
         )
-        return response.text.strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
         logger.error(f"Coaching tip failed for caller {caller_id}: {e}")
-        return "Keep calls under 3 minutes and always end with: 'Can I schedule your campus visit?'"
+        return "Keep calls under 3 minutes and always end with: 'Can I schedule a quick demo?'"

@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import logging
 import io
 from uuid import UUID
@@ -6,24 +7,16 @@ import pdfplumber
 from docx import Document as DocxDocument
 from pptx import Presentation
 import pandas as pd
-import google.generativeai as genai
+from groq import Groq
 from app.db.supabase import get_supabase
 from app.config import settings
-from app.config_dynamic import get_setting
 
 logger = logging.getLogger(__name__)
 
 _MAX_TEXT_CHARS = 50_000
 
-
-def _gemini_api_key() -> str:
-    return get_setting("gemini_api_key") or settings.gemini_api_key or ""
-
-
-def _ensure_gemini():
-    key = _gemini_api_key()
-    if key:
-        genai.configure(api_key=key)
+_groq_client = Groq(api_key=settings.groq_api_key) if settings.groq_api_key else None
+_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 
 def extract_text_from_file(file_content: bytes, filename: str, mime_type: str) -> str:
@@ -54,13 +47,22 @@ def extract_text_from_file(file_content: bytes, filename: str, mime_type: str) -
             text = df.to_string()
 
         elif mime_type.startswith("image/"):
-            _ensure_gemini()
-            model = genai.GenerativeModel("gemini-2.0-flash")
-            response = model.generate_content([
-                "Extract all text from this image. Return only the extracted text.",
-                {"mime_type": mime_type, "data": file_content},
-            ])
-            text = response.text
+            if not _groq_client:
+                raise ValueError("GROQ_API_KEY not configured — cannot extract text from images")
+            b64 = base64.b64encode(file_content).decode("utf-8")
+            response = _groq_client.chat.completions.create(
+                model=_VISION_MODEL,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Extract all text from this image. Return only the extracted text, no commentary."},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64}"}},
+                    ],
+                }],
+                temperature=0.0,
+                max_tokens=4000,
+            )
+            text = (response.choices[0].message.content or "").strip()
 
         else:
             try:
