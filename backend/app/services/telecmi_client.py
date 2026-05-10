@@ -52,6 +52,10 @@ async def initiate_click2call(
         data = resp.json()
 
     logger.info(f"TeleCMI response: {data}")
+    if data.get("code") != 200:
+        error_msg = data.get("msg", "Unknown TeleCMI error")
+        raise RuntimeError(f"TeleCMI error: {error_msg}")
+    
     return data
 
 
