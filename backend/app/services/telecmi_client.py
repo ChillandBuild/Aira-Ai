@@ -11,7 +11,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-TELECMI_BASE_URL = "https://rest.telecmi.com/v2/webrtc/click2call"
+TELECMI_BASE_URL = "https://rest.telecmi.com/v2/click2call"
 
 
 async def initiate_click2call(
