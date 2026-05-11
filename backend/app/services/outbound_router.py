@@ -7,19 +7,19 @@ logger = logging.getLogger(__name__)
 _TIER_DAILY_LIMITS: dict[int, int] = {1: 1_000, 2: 10_000, 3: 100_000}
 
 
-async def get_best_number(tenant_id: str | None = None) -> dict | None:
+async def get_best_number() -> dict | None:
     db = get_supabase()
-    query = (
+    rows = (
         db.table("phone_numbers")
         .select("*")
         .eq("status", "active")
         .neq("quality_rating", "red")
         .gte("warm_up_day", 14)
         .eq("paused_outbound", False)
+        .execute()
+        .data
+        or []
     )
-    if tenant_id:
-        query = query.eq("tenant_id", tenant_id)
-    rows = query.execute().data or []
     if not rows:
         logger.warning("No healthy outbound numbers available")
         return None

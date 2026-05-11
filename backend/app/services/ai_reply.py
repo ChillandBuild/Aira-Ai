@@ -110,33 +110,24 @@ def get_last_send_error() -> str | None:
     return _LAST_SEND_ERROR
 
 
-async def send_whatsapp(to_phone: str, message: str, tenant_id: str | None = None) -> str | None:
-    """Send via the best available number for the tenant. Returns message ID or None."""
+async def send_whatsapp(to_phone: str, message: str) -> str | None:
+    """Send a WhatsApp message via Meta Cloud API. Returns message ID or None on failure."""
     global _LAST_SEND_ERROR
     try:
-        from app.services.outbound_router import get_best_number, increment_send_count
-        from app.services.provider_dispatch import send_text
-        number_row = await get_best_number(tenant_id=tenant_id)
-        if not number_row:
-            # fallback: direct meta_cloud with env-var credentials
-            from app.services.meta_cloud import send_text_message
-            data = await send_text_message(to_number=to_phone, text=message)
-            mid = (data.get("messages") or [{}])[0].get("id")
-            _LAST_SEND_ERROR = None
-            return mid
-        mid = await send_text(number_row, to_phone, message)
-        if mid:
-            await increment_send_count(number_row["id"])
+        from app.services.meta_cloud import send_text_message
+        data = await send_text_message(to_number=to_phone, text=message)
+        mid = (data.get("messages") or [{}])[0].get("id")
+        logger.info(f"Meta sent to {to_phone}: id={mid}")
         _LAST_SEND_ERROR = None
-        logger.info("Sent to %s via provider=%s id=%s", to_phone, number_row.get("provider"), mid)
         return mid
     except Exception as e:
         err_msg = str(e)
+        # Surface Meta's actual error body so the UI can show it
         from fastapi import HTTPException as _HTTP
         if isinstance(e, _HTTP):
             err_msg = str(e.detail)[:500]
         _LAST_SEND_ERROR = err_msg
-        logger.error("send_whatsapp failed to %s: %s", to_phone, err_msg)
+        logger.error(f"Meta send failed to {to_phone}: {err_msg}")
         return None
 
 def send_instagram(ig_user_id: str, message: str) -> str | None:
@@ -209,7 +200,6 @@ async def generate_reply(
     phone: str | None = None,
     channel: str = "whatsapp",
     ig_user_id: str | None = None,
-    tenant_id: str | None = None,
 ) -> None:
     """
     Core pipeline:
@@ -300,7 +290,7 @@ async def generate_reply(
     if channel == "instagram":
         sid = send_instagram(ig_user_id, reply_text) if ig_user_id else None
     else:
-        sid = await send_whatsapp(phone, reply_text, tenant_id=lead_data.get("tenant_id") or tenant_id) if phone else None
+        sid = await send_whatsapp(phone, reply_text) if phone else None
 
     # Step 4: Store outbound message
     sid_field = "meta_message_id" if channel == "whatsapp" else "twilio_message_sid"

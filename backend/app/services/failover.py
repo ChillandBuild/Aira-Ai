@@ -113,7 +113,8 @@ async def handle_quality_yellow(phone_number_id: str) -> None:
 
 async def send_migration_notice(new_number_row: dict, tenant_id: str) -> int:
     from datetime import datetime, timedelta, timezone
-    from app.services.provider_dispatch import send_text
+    from app.services.meta_cloud import send_text_message
+    from app.config import settings
 
     db = get_supabase()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
@@ -148,17 +149,20 @@ async def send_migration_notice(new_number_row: dict, tenant_id: str) -> int:
         or []
     )
 
-    if not new_number_row.get("meta_phone_number_id"):
-        logger.warning("Cannot send migration notice: new number missing meta_phone_number_id")
+    phone_number_id = new_number_row.get("meta_phone_number_id")
+    access_token = settings.meta_access_token
+    if not phone_number_id or not access_token:
+        logger.warning("Cannot send migration notice: missing meta credentials")
         return 0
 
     sent = 0
     for lead in leads:
         try:
-            await send_text(
-                number_row=new_number_row,
+            await send_text_message(
                 to_number=lead["phone"],
                 text="Hi! We've moved to a new WhatsApp number. Please save this contact and reply here to continue our conversation.",
+                phone_number_id=phone_number_id,
+                access_token=access_token,
             )
             sent += 1
         except Exception as e:

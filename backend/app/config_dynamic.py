@@ -9,7 +9,6 @@ _CACHE: dict[str, tuple[float, Optional[str]]] = {}
 _TTL = 60.0
 
 _ENV_MAP = {
-    "bulkwise_api_token": "BULKWISE_API_TOKEN",
     "meta_access_token": "META_ACCESS_TOKEN",
     "meta_phone_number_id": "META_PHONE_NUMBER_ID",
     "meta_webhook_verify_token": "META_WEBHOOK_VERIFY_TOKEN",
