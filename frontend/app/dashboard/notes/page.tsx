@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import {
@@ -243,7 +244,7 @@ export default function NotesPage() {
       setAddContent(""); setAddPinned(false); setAddTags([]);
       await refreshNotes();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to add note");
+      toast.error(err instanceof Error ? err.message : "Failed to add note");
     } finally { setAdding(false); }
   }
 
@@ -254,7 +255,7 @@ export default function NotesPage() {
       setEditingId(null);
       await refreshNotes();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Update failed");
+      toast.error(err instanceof Error ? err.message : "Update failed");
     } finally { setSaving(false); }
   }
 
@@ -264,7 +265,7 @@ export default function NotesPage() {
       await api.notes.delete(noteId);
       await refreshNotes();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Delete failed");
+      toast.error(err instanceof Error ? err.message : "Delete failed");
     }
   }
 

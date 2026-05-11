@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Bricolage_Grotesque, DM_Sans, Syne } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 const bricolage = Bricolage_Grotesque({
@@ -36,6 +37,7 @@ export default function RootLayout({
     <html lang="en" className={`${bricolage.variable} ${dmSans.variable} ${syne.variable}`}>
       <body className="antialiased">
         {children}
+        <Toaster position="top-right" richColors closeButton />
         <SpeedInsights />
       </body>
     </html>

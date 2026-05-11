@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 "use client";
 import { useEffect, useState } from "react";
 import { api, Lead, SegmentTemplate, BroadcastResult } from "@/lib/api";
@@ -19,7 +20,7 @@ function NameCell({ lead, onUpdate }: { lead: Lead; onUpdate: (l: Lead) => void 
       const updated = await api.leads.update(lead.id, { name: trimmed });
       onUpdate(updated);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Rename failed");
+      toast.error(err instanceof Error ? err.message : "Rename failed");
       setValue(lead.name || "");
     }
   }
@@ -221,7 +222,7 @@ export default function LeadsPage() {
       const result = await api.segments.broadcast(tab);
       setLastResult(result);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Broadcast failed");
+      toast.error(err instanceof Error ? err.message : "Broadcast failed");
     } finally {
       setBroadcasting(false);
     }

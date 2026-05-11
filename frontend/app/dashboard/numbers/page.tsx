@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { Plus, X, Pencil, Trash2, ChevronDown, PauseCircle, PlayCircle, Star } from "lucide-react";
@@ -197,7 +198,7 @@ export default function NumbersPage() {
       setAddDisplayName("");
       setAddMetaId("");
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to add number");
+      toast.error(err instanceof Error ? err.message : "Failed to add number");
     } finally {
       setAdding(false);
     }
@@ -208,7 +209,7 @@ export default function NumbersPage() {
       await numbersApi.update(id, { role: "primary" });
       await reload();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Update failed");
+      toast.error(err instanceof Error ? err.message : "Update failed");
     }
   }
 
@@ -217,7 +218,7 @@ export default function NumbersPage() {
       await numbersApi.update(num.id, { paused_outbound: !num.paused_outbound });
       await reload();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Update failed");
+      toast.error(err instanceof Error ? err.message : "Update failed");
     }
   }
 
@@ -234,7 +235,7 @@ export default function NumbersPage() {
       await reload();
       setEditingId(null);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Rename failed");
+      toast.error(err instanceof Error ? err.message : "Rename failed");
     } finally {
       setSaving(false);
     }
@@ -246,7 +247,7 @@ export default function NumbersPage() {
       await numbersApi.remove(id);
       await reload();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Delete failed");
+      toast.error(err instanceof Error ? err.message : "Delete failed");
     }
   }
 

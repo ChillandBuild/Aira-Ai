@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { Phone, Eye, RefreshCw, ChevronDown } from "lucide-react";
@@ -103,26 +104,26 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       await api.callers.setMyStatus(next);
       setMyStatus(next);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to update status");
+      toast.error(err instanceof Error ? err.message : "Failed to update status");
     } finally {
       setTogglingStatus(false);
     }
   }
 
   async function executeDial(leadId: string, lead: Lead) {
-    if (!myCaller) { alert("Caller profile not found"); return; }
+    if (!myCaller) { toast.error("Caller profile not found"); return; }
     setDialing(leadId);
     try {
       const res = await api.calls.initiate({ leadId }, myCaller.id);
       setActiveCallCtx({ leadId: res.lead_id ?? leadId, name: res.lead_name ?? lead.name, phone: lead.phone });
 
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Call failed");
+      toast.error(err instanceof Error ? err.message : "Call failed");
     } finally { setDialing(null); }
   }
 
   function openBriefing(lead: Lead) {
-    if (!myCaller) { alert("Caller profile not found"); return; }
+    if (!myCaller) { toast.error("Caller profile not found"); return; }
     setBriefingLead(lead);
   }
 
@@ -142,7 +143,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       setManualPhone("");
 
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Call failed");
+      toast.error(err instanceof Error ? err.message : "Call failed");
     } finally { setManualDialing(false); }
   }
 
@@ -156,7 +157,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
         setCompletedCallbacks((prev) => [{ ...cb, status: "sent" }, ...prev]);
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to mark done");
+      toast.error(err instanceof Error ? err.message : "Failed to mark done");
     }
   }
 

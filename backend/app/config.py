@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     exotel_virtual_number: str | None = None
     exotel_subdomain: str = "api.exotel.com"
     public_base_url: str | None = None
+    bulkwise_api_token: str | None = None
     meta_page_token: str | None = None
     meta_verify_token: str | None = None
     meta_ig_user_id: str | None = None

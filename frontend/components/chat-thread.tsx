@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { api, Lead, Message } from "@/lib/api";
@@ -173,7 +174,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
       const updated = await api.leads.update(lead.id, { name: trimmed });
       setCurrent(updated);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Rename failed");
+      toast.error(err instanceof Error ? err.message : "Rename failed");
     }
   }
 
@@ -184,7 +185,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
       const updated = await api.leads.convert(lead.id);
       setCurrent(updated);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed");
+      toast.error(err instanceof Error ? err.message : "Failed");
     } finally { setConverting(false); }
   }
 
@@ -195,7 +196,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
       await api.leads.delete(lead.id);
       onDeleted?.(lead.id);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Delete failed");
+      toast.error(err instanceof Error ? err.message : "Delete failed");
       setDeleting(false);
     }
   }
@@ -208,7 +209,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
       setMessages([]);
       setCurrent((prev) => ({ ...prev, ai_enabled: true }));
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Clear failed");
+      toast.error(err instanceof Error ? err.message : "Clear failed");
     } finally {
       setClearing(false);
     }
@@ -220,7 +221,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
       const updated = await api.leads.toggleAI(lead.id, !current.ai_enabled);
       setCurrent(updated);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Toggle failed");
+      toast.error(err instanceof Error ? err.message : "Toggle failed");
     } finally { setToggling(false); }
   }
 
@@ -285,7 +286,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
       setMediaRecorder(recorder);
       setIsRecording(true);
     } catch {
-      alert("Microphone access denied. Please allow microphone access in your browser settings.");
+      toast.error("Microphone access denied — please allow access in browser settings");
     }
   }
 

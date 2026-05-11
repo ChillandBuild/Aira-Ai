@@ -60,8 +60,8 @@ async def initiate_call(payload: InitiateCall, tenant_id: str = Depends(get_tena
     else:
         lead_phone = payload.phone
         # try to find a lead by phone so live notes can be linked
-        match = db.table("leads").select("id,name").eq("phone", lead_phone).maybe_single().execute()
-        if match.data:
+        match = db.table("leads").select("id,name").eq("phone", lead_phone).eq("tenant_id", tenant_id).maybe_single().execute()
+        if match and match.data:
             matched_lead_id = match.data["id"]
             matched_lead_name = match.data.get("name")
 
@@ -129,7 +129,14 @@ async def telecmi_cdr(request: Request, background_tasks: BackgroundTasks):
     # TeleCMI sends separate CDRs for user_missed / user_answered (agent leg).
     # We only process outbound CDRs with a call_log_id embedded in custom.
     if status == "user_missed":
-        logger.info("TeleCMI CDR: agent missed the call, skipping")
+        logger.info("TeleCMI CDR: agent missed the call, updating call log")
+        call_log_id = cdr.get("custom")
+        if call_log_id and call_log_id != "aira_ai_call":
+            db = get_supabase()
+            db.table("call_logs").update({
+                "status": "missed",
+                "outcome": "no_answer",
+            }).eq("id", call_log_id).execute()
         return {"ok": True}
 
     # We embed call_log_id in the `custom` field when initiating the call.

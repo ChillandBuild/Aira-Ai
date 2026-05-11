@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import {
@@ -102,7 +103,7 @@ export default function AdminView() {
       setCallers(rows);
       setNewName(""); setNewPhone(""); setShowAddForm(false);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to add caller");
+      toast.error(err instanceof Error ? err.message : "Failed to add caller");
     } finally { setAdding(false); }
   }
 
@@ -121,7 +122,7 @@ export default function AdminView() {
       setCallers(rows);
       setEditingId(null);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Update failed");
+      toast.error(err instanceof Error ? err.message : "Update failed");
     } finally { setSaving(false); }
   }
 
@@ -133,7 +134,7 @@ export default function AdminView() {
       const rows = await api.callers.list();
       setCallers(rows);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Delete failed");
+      toast.error(err instanceof Error ? err.message : "Delete failed");
     }
   }
 
@@ -149,7 +150,7 @@ export default function AdminView() {
       });
       setRoundRobinEnabled(!roundRobinEnabled);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Toggle failed");
+      toast.error(err instanceof Error ? err.message : "Toggle failed");
     } finally { setTogglingRR(false); }
   }
 
@@ -159,9 +160,9 @@ export default function AdminView() {
     try {
       await api.calls.initiate({ phone: manualPhone.trim() }, selectedCallerId);
       setManualPhone("");
-      alert("Call initiated!");
+      toast.success("Call initiated!");
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Call failed");
+      toast.error(err instanceof Error ? err.message : "Call failed");
     } finally { setManualDialing(false); }
   }
 

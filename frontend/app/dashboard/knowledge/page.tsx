@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 "use client";
 import { useEffect, useState } from "react";
 import { 
@@ -89,7 +90,7 @@ export default function KnowledgePage() {
       setIsModalOpen(false);
       loadData();
     } catch {
-      alert("Failed to save FAQ");
+      toast.error("Failed to save FAQ");
     } finally {
       setSaving(false);
     }
@@ -101,7 +102,7 @@ export default function KnowledgePage() {
       await api.knowledge.remove(id);
       loadData();
     } catch {
-      alert("Delete failed");
+      toast.error("Delete failed");
     }
   }
 
@@ -128,7 +129,7 @@ export default function KnowledgePage() {
       await api.knowledge.deleteDocument(id);
       loadDocuments();
     } catch {
-      alert("Delete failed");
+      toast.error("Delete failed");
     }
   }
 

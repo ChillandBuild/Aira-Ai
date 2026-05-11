@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 "use client";
 import { useState } from "react";
 import { X, FileText } from "lucide-react";
@@ -58,7 +59,7 @@ export default function LiveNotesPane({ ctx, onClose }: Props) {
         onClose();
       }, 1200);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to save note");
+      toast.error(err instanceof Error ? err.message : "Failed to save note");
     } finally {
       setSaving(false);
     }
