@@ -1,5 +1,5 @@
-import { toast } from "sonner";
 "use client";
+import { toast } from "sonner";
 import { useEffect, useState, useCallback } from "react";
 import {
   Phone, Star, UserPlus, X, Pencil, Trash2,
