@@ -58,9 +58,13 @@ async def initiate_click2call(
 
 
 def _normalize_phone(phone: str) -> str:
-    """Strip spaces/dashes and ensure the number is digits-only (with country code)."""
+    """Return a 10-digit Indian mobile number as expected by TeleCMI CHUB India.
+
+    TeleCMI India cluster expects bare 10-digit numbers (e.g. 6369781582),
+    NOT the +91 / 91 prefixed form.
+    """
     cleaned = phone.replace(" ", "").replace("-", "").replace("+", "")
-    # If it doesn't start with a country code, assume India (91)
-    if len(cleaned) == 10:
-        cleaned = f"91{cleaned}"
+    # Strip India country code prefix if present
+    if cleaned.startswith("91") and len(cleaned) == 12:
+        cleaned = cleaned[2:]  # strip leading "91"
     return cleaned
