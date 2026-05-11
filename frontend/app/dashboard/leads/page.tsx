@@ -1,5 +1,5 @@
-import { toast } from "sonner";
 "use client";
+import { toast } from "sonner";
 import { useEffect, useState } from "react";
 import { api, Lead, SegmentTemplate, BroadcastResult } from "@/lib/api";
 import { SegmentBadge } from "@/components/segment-badge";
