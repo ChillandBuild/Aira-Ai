@@ -1,5 +1,5 @@
-import { toast } from "sonner";
 "use client";
+import { toast } from "sonner";
 import { useEffect, useRef, useState } from "react";
 import { api, Lead, Message } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
