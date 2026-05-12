@@ -40,7 +40,7 @@ def _make_db(state_row=None, booking_row=None):
 @pytest.mark.asyncio
 async def test_detect_booking_intent_positive():
     from app.services.booking_flow import detect_booking_intent
-    for msg in ["YES", "yes please", "BOOK", "i want to book", "interested"]:
+    for msg in ["BOOK", "i want to book", "register", "enroll", "புக்"]:
         assert await detect_booking_intent(msg) is True
 
 

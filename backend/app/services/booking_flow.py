@@ -29,9 +29,8 @@ _STATE_TO_FIELD = {
 }
 
 _INTENT_KEYWORDS = frozenset({
-    "yes", "book", "booking", "yes please", "i want", "interested",
-    "confirm", "register", "enroll", "proceed", "ok", "okay", "sure",
-    "ஆமாம்", "வேணும்", "புக்",
+    "book", "booking", "register", "enroll",
+    "புக்", "வேணும்", "பதிவு",
 })
 
 BOOKING_AMOUNT_PAISE = 50000
@@ -108,6 +107,19 @@ async def send_whatsapp_text(phone: str, text: str) -> None:
 
 
 def _create_draft_booking(lead_id: str, tenant_id: str, db) -> dict:
+    # Check for an existing non-cancelled booking to prevent duplicates on concurrent messages
+    existing = (
+        db.table("bookings")
+        .select("id, booking_ref, amount_paise")
+        .eq("lead_id", lead_id)
+        .eq("tenant_id", tenant_id)
+        .neq("status", "cancelled")
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if existing.data:
+        return existing.data[0]
     result = db.table("bookings").insert({
         "lead_id": lead_id,
         "tenant_id": tenant_id,
@@ -118,11 +130,17 @@ def _create_draft_booking(lead_id: str, tenant_id: str, db) -> dict:
     return result.data[0]
 
 
-async def start_booking_flow(lead_id: str, tenant_id: str, phone: str, db=None) -> None:
+async def start_booking_flow(
+    lead_id: str,
+    tenant_id: str,
+    phone: str,
+    db=None,
+    existing_state: dict | None = None,
+) -> None:
     db = db or get_supabase()
     booking = _create_draft_booking(lead_id, tenant_id, db)
     state = {
-        "id": None,
+        "id": (existing_state or {}).get("id"),
         "lead_id": lead_id,
         "tenant_id": tenant_id,
         "flow_name": "booking",
@@ -233,6 +251,17 @@ def confirm_booking(
     """Mark booking confirmed. Returns (phone, booking_ref, devotee_name) or None."""
     db = db or get_supabase()
     from datetime import datetime, timezone
+
+    # Idempotency: skip if already confirmed
+    existing = (
+        db.table("bookings")
+        .select("status")
+        .eq("id", booking_id)
+        .maybe_single()
+        .execute()
+    )
+    if not existing.data or existing.data.get("status") == "confirmed":
+        return None
 
     now_iso = datetime.now(timezone.utc).isoformat()
     db.table("bookings").update({

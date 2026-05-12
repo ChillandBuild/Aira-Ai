@@ -188,10 +188,11 @@ async def whatsapp_webhook(
                                 if conv_state["state"] in active_states:
                                     await advance_state(state=conv_state, message=body, phone=phone, db=db)
                                 else:
-                                    from app.services.ai_reply import generate_reply
-                                    await generate_reply(lead_id=lead_id, message=body, phone=phone)
                                     if conv_state["state"] == "idle" and await detect_booking_intent(body):
-                                        await start_booking_flow(lead_id, tenant_id, phone, db)
+                                        await start_booking_flow(lead_id, tenant_id, phone, db, existing_state=conv_state)
+                                    else:
+                                        from app.services.ai_reply import generate_reply
+                                        await generate_reply(lead_id=lead_id, message=body, phone=phone)
                             except Exception as e:
                                 logger.error(f"Reply routing failed for lead {lead_id}: {e}")
 
