@@ -96,6 +96,7 @@ Each agent gets only its relevant context file — not the full CLAUDE.md.
 - AdminView.tsx in telecalling has N+1 sequential fetches per caller — replace with Promise.allSettled
 - services/growth.py + services/scheduled_tasks.py — verify wired to Celery or remove if dead
 - AI Tune label may need rename to clarify it tunes WA auto-reply prompts only
+- **RLS DISABLED on 19 tables** (confirmed 2026-05-13 via Supabase MCP): faqs, callers, app_settings, follow_up_jobs, phone_numbers, incidents, lead_notes, voice_numbers, message_templates, tenants, tenant_users, hot_lead_alerts, conversations, call_logs, ad_campaigns, segment_templates, ai_prompts, ai_tune_suggestions, lead_stage_events — anyone with anon key can read/write these. Fix before production scale: enable RLS + add tenant-scoped policies per table. Do NOT enable RLS without policies or all access breaks.
 
 ## Key File Locations
 | File | Purpose |
