@@ -1,5 +1,6 @@
 # backend/app/services/booking_flow.py
 import logging
+import re
 from typing import Any
 
 from app.db.supabase import get_supabase
@@ -38,7 +39,9 @@ BOOKING_AMOUNT_PAISE = 50000
 
 async def detect_booking_intent(message: str) -> bool:
     text = message.strip().lower()
-    return any(kw in text for kw in _INTENT_KEYWORDS)
+    # Use token split to avoid substring matches (e.g. "book" in "facebook")
+    tokens = set(re.findall(r"[\w஀-௿]+", text))
+    return bool(tokens & _INTENT_KEYWORDS)
 
 
 def get_or_create_state(lead_id: str, tenant_id: str, db=None) -> dict:
@@ -214,6 +217,8 @@ async def _send_payment_link(state: dict, phone: str, db) -> None:
 
     except Exception as e:
         logger.error(f"Payment link generation failed for booking {booking_id}: {e}")
+        state["state"] = "awaiting_payment"
+        _upsert_state(state, db)
         await send_whatsapp_text(
             phone=phone,
             text="🙏 We have received your details! Our team will send you the payment link shortly.",
