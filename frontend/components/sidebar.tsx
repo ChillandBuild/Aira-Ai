@@ -17,6 +17,7 @@ import {
   FileCheck,
   StickyNote,
   LogOut,
+  Bot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AiraLogo } from "./logo";
@@ -34,7 +35,7 @@ const OWNER_NAV = [
   { href: "/dashboard/ai-tune", icon: Sparkles, label: "AI Tune" },
   { href: "/dashboard/numbers", icon: Layers, label: "Numbers" },
   { href: "/dashboard/templates", icon: FileCheck, label: "Templates" },
-
+  { href: "/dashboard/bot-manager", icon: Bot, label: "Bot Manager" },
   { href: "/dashboard/analytics", icon: BarChart2, label: "Analytics" },
   { href: "/dashboard/team", icon: Users, label: "Team" },
 ];

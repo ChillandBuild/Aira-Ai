@@ -14,13 +14,13 @@ class CreateTemplate(BaseModel):
     name: str
     category: str
     language: str = "en"
-    body_text: str
+    components: list
 
 
 @router.get("/")
 async def list_templates(tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
-    result = db.table("message_templates").select("*").eq("tenant_id", tenant_id).order("submitted_at", desc=True).execute()
+    result = db.table("meta_templates").select("*").eq("tenant_id", tenant_id).order("created_at", desc=True).execute()
     return {"data": result.data or []}
 
 
@@ -34,7 +34,7 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
     waba_id = get_setting("meta_phone_number_id")
 
     db = get_supabase()
-    existing = db.table("message_templates").select("id").eq("name", name).eq("tenant_id", tenant_id).maybe_single().execute()
+    existing = db.table("meta_templates").select("id").eq("name", name).eq("tenant_id", tenant_id).maybe_single().execute()
     if existing.data:
         raise HTTPException(status_code=409, detail=f"Template '{name}' already exists")
 
@@ -47,7 +47,7 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
                 name=name,
                 category=category,
                 language=payload.language,
-                body_text=payload.body_text,
+                components=payload.components,
             )
             meta_template_id = str(meta_response.get("id", ""))
         except Exception:
@@ -55,11 +55,11 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
     else:
         logger.info(f"No WABA ID configured — saving template '{name}' locally as PENDING")
 
-    result = db.table("message_templates").insert({
+    result = db.table("meta_templates").insert({
         "name": name,
         "category": category,
         "language": payload.language,
-        "body_text": payload.body_text,
+        "components": payload.components,
         "status": status,
         "meta_template_id": meta_template_id,
         "tenant_id": tenant_id,
@@ -71,7 +71,7 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
 @router.delete("/{template_id}")
 async def delete_template(template_id: str, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
-    db.table("message_templates").delete().eq("id", template_id).eq("tenant_id", tenant_id).execute()
+    db.table("meta_templates").delete().eq("id", template_id).eq("tenant_id", tenant_id).execute()
     return {"deleted": True}
 
 
@@ -95,6 +95,6 @@ async def template_status_webhook(payload: dict):
                 updates["rejection_reason"] = reason
             if new_status == "APPROVED":
                 updates["approved_at"] = "now()"
-            db.table("message_templates").update(updates).eq("meta_template_id", meta_id).execute()
+            db.table("meta_templates").update(updates).eq("meta_template_id", meta_id).execute()
             logger.info(f"Template {meta_id} status → {new_status}")
     return {"status": "ok"}

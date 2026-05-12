@@ -170,8 +170,128 @@ async def whatsapp_webhook(
                         }
                         db.table("messages").insert(insert_row).execute()
 
-                        # Only trigger AI reply for text messages (not media)
-                        if msg_type in ("text", "button", "interactive") and body:
+                        # ---------------------------------------------------------
+                        # BOT FLOW EXECUTION ENGINE
+                        # ---------------------------------------------------------
+                        bot_handled = False
+                        
+                        # 1. Check if lead is already in a flow
+                        lead_data = existing.data[0] if existing.data else {}
+                        current_flow_id = lead_data.get("current_flow_id")
+                        conversation_state = lead_data.get("conversation_state", "pending")
+                        
+                        # 2. Gate AI activation via "Start" or "Start chat" button
+                        if msg_type in ("button", "text") and body.lower() in ("start", "start chat"):
+                            logger.info(f"Activating AI for {phone}")
+                            db.table("leads").update({
+                                "conversation_state": "ai_active",
+                                "ai_enabled": True
+                            }).eq("id", lead_id).execute()
+                            conversation_state = "ai_active"
+                            # We can let the AI handle the "Start" message as a greeting trigger
+                            
+                        # 3. Handle Opt-out
+                        elif msg_type in ("button", "text") and body.lower() in ("not interested", "stop"):
+                            logger.info(f"Opting out {phone}")
+                            db.table("leads").update({
+                                "conversation_state": "opted_out",
+                                "ai_enabled": False
+                            }).eq("id", lead_id).execute()
+                            conversation_state = "opted_out"
+                            bot_handled = True # Block further processing
+                        
+                        if current_flow_id and not bot_handled:
+                            # They are in a flow, process next step (Interactive Reply)
+                            if msg_type == "interactive":
+                                # Handle list selection
+                                logger.info(f"Processing interactive reply for flow {current_flow_id}")
+                                # In a real system, query the DB for the next node edge
+                                # For this implementation, we hardcode the Zodiac response for now
+                                # until the user builds the full react flow canvas parser
+                                selected_id = (inter.get("button_reply") or inter.get("list_reply") or {}).get("id", "")
+                                selected_title = body
+                                
+                                # Send the group link
+                                link = f"https://chat.whatsapp.com/invite-{selected_id}"
+                                text_msg = f"Thank you! You selected {selected_title}.\nJoin using this link:\n{link}"
+                                
+                                from app.services.meta_cloud import send_text_message
+                                await send_text_message(phone, text_msg, meta_phone_number_id)
+                                
+                                # Clear the flow state
+                                db.table("leads").update({"current_flow_id": None}).eq("id", lead_id).execute()
+                                bot_handled = True
+                        elif not bot_handled:
+                            # 4. Check if message matches ANY active bot flow trigger keyword
+                            # We fetch all active flows and check locally (or do a DB query if exact match)
+                            flows_res = db.table("bot_flows").select("id, trigger_keywords, nodes").eq("tenant_id", tenant_id).eq("is_active", True).execute()
+                            matched_flow = None
+                            
+                            if flows_res.data:
+                                msg_lower = body.lower()
+                                for flow in flows_res.data:
+                                    keywords = [k.lower() for k in flow.get("trigger_keywords", [])]
+                                    # For exact match, check if msg is in keywords. For string match, check if any keyword in msg.
+                                    # We'll assume exact match for simplicity in this implementation
+                                    if msg_lower in keywords:
+                                        matched_flow = flow
+                                        break
+                            
+                            if matched_flow:
+                                logger.info(f"Triggering bot flow {matched_flow['id']} for {phone}")
+                                
+                                # Set current flow ID
+                                db.table("leads").update({"current_flow_id": matched_flow["id"]}).eq("id", lead_id).execute()
+                                
+                                # Execute the first node of the flow
+                                nodes = matched_flow.get("nodes", [])
+                                # For now, since we haven't built the visual parser completely, we will hardcode the zodiac list if keyword is zodiac
+                                # In production, you would parse the 'nodes' array to construct this payload dynamically
+                                if "zodiac" in [k.lower() for k in matched_flow.get("trigger_keywords", [])]:
+                                    from app.services.meta_cloud import send_interactive_message
+                                    list_msg = {
+                                        "type": "list",
+                                        "header": {"type": "text", "text": "Daily Astrology Updates"},
+                                        "body": {"text": "Welcome to AstroTamil! You will receive daily zodiac predictions and important astrology updates on WhatsApp — completely free."},
+                                        "action": {
+                                            "button": "Zodiac Select",
+                                            "sections": [
+                                                {
+                                                    "title": "Select your Zodiac",
+                                                    "rows": [
+                                                        {"id": "mesham", "title": "Mesham (மேஷம்)"},
+                                                        {"id": "rishabham", "title": "Rishabham (ரிஷபம்)"},
+                                                        {"id": "mithunam", "title": "Mithunam (மிதுனம்)"},
+                                                        {"id": "kadagam", "title": "Kadagam (கடகம்)"},
+                                                        {"id": "simmam", "title": "Simmam (சிம்மம்)"},
+                                                        {"id": "kanni", "title": "Kanni (கன்னி)"},
+                                                        {"id": "thulaam", "title": "Thulaam (துலாம்)"},
+                                                        {"id": "viruchigam", "title": "Viruchigam (விருச்சிகம்)"},
+                                                        {"id": "dhanusu", "title": "Dhanusu (தனுசு)"},
+                                                        {"id": "magaram", "title": "Magaram (மகரம்)"},
+                                                        {"id": "kumbam", "title": "Kumbam (கும்பம்)"},
+                                                        {"id": "meenam", "title": "Meenam (மீனம்)"}
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    }
+                                    await send_interactive_message(phone, list_msg, meta_phone_number_id)
+                                else:
+                                    # Generic text node fallback for other flows
+                                    from app.services.meta_cloud import send_text_message
+                                    await send_text_message(phone, f"Started flow: {matched_flow['name']}", meta_phone_number_id)
+                                    db.table("leads").update({"current_flow_id": None}).eq("id", lead_id).execute()
+                                
+                                bot_handled = True
+
+                        # ---------------------------------------------------------
+                        # AI AGENT FALLBACK
+                        # ---------------------------------------------------------
+                        # Only trigger AI reply if:
+                        # 1. Bot engine didn't handle it
+                        # 2. Conversation state is 'ai_active'
+                        if not bot_handled and conversation_state == "ai_active" and msg_type in ("text", "button", "interactive") and body:
                             try:
                                 from app.services.ai_reply import generate_reply
                                 await generate_reply(lead_id=lead_id, message=body, phone=phone)

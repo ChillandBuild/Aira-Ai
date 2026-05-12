@@ -210,12 +210,52 @@ async def send_template_message(
     return data
 
 
+async def send_interactive_message(
+    to_number: str,
+    interactive_obj: dict,
+    phone_number_id: Optional[str] = None,
+    access_token: Optional[str] = None,
+) -> dict:
+    """
+    Send an interactive message (e.g. List or Reply Buttons) via Meta Cloud API.
+    interactive_obj must follow the exact structure required by Meta.
+    Example for list:
+    {
+      "type": "list",
+      "header": {"type": "text", "text": "Header text"},
+      "body": {"text": "Body text"},
+      "footer": {"text": "Footer text"},
+      "action": {
+        "button": "Select",
+        "sections": [...]
+      }
+    }
+    """
+    pid, tok = _creds(phone_number_id, access_token)
+    url = f"{_GRAPH_BASE}/{pid}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_number,
+        "type": "interactive",
+        "interactive": interactive_obj,
+    }
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(url, json=payload, headers={"Authorization": f"Bearer {tok}"})
+    if not resp.is_success:
+        logger.error("send_interactive_message failed: %s %s", resp.status_code, resp.text)
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    data = resp.json()
+    logger.info("Meta interactive message sent to %s", to_number)
+    return data
+
+
+
 async def submit_template(
     waba_id: str,
     name: str,
     category: str,
     language: str,
-    body_text: str,
+    components: list,
     access_token: Optional[str] = None,
 ) -> dict:
     _, tok = _creds("placeholder", access_token)
@@ -223,8 +263,9 @@ async def submit_template(
     payload = {
         "name": name,
         "category": category.upper(),
+        "allow_category_change": True,
         "language": language,
-        "components": [{"type": "BODY", "text": body_text}],
+        "components": components,
     }
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.post(url, json=payload, headers={"Authorization": f"Bearer {tok}"})
