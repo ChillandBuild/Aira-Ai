@@ -40,6 +40,9 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Template submission to Meta API | ✅ Built — uses meta_waba_id (1190331789463566), WABA ID in app_settings |
 | Template approval webhook (Meta → dashboard) | ✅ Built — POST /api/v1/templates/webhook-status (public, no auth) |
 | Manual template sync | ✅ Built — POST /api/v1/templates/{id}/sync → polls Meta API |
+| Template Quick Reply buttons | ✅ Built — up to 3 buttons per template, submitted to Meta as QUICK_REPLY components |
+| Template view modal | ✅ Built — click row to see full body, rejection reason, Meta ID |
+| Template example values auto-inject | ✅ Built — {{N}} variables get examples automatically, prevents Meta auto-rejection |
 | Knowledge base (full-text injection, no embeddings) | ✅ Built — services/knowledge_service.py, full_text col on knowledge_documents |
 | Reply source badge (FAQ / Knowledge Base / AI) | ✅ Built — messages.reply_source, chat-thread.tsx |
 | Callback scheduler (Live Notes modal + Today's Callbacks) | ✅ Built — follow_up_jobs cadence=callback, telecalling/components/ |
@@ -49,12 +52,14 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Team management page | ✅ Built — dashboard/team/, routes/team.py |
 | Onboarding flow | ✅ Built — dashboard/onboarding/, routes/onboarding.py |
 | App settings page | ✅ Built — dashboard/settings/, routes/app_settings.py |
-| Homam V1 campaign prep | ✅ Built — migration 028, seed_homam_faqs.py, seed_homam_prompt.py, 8 Homam FAQs loaded |
+| Homam V1 campaign prep | ✅ Built — migration 028, seed_homam_faqs.py, seed_homam_prompt.py, 8 Homam FAQs + Homam AI prompt loaded |
 | Bookings table + auto-reference (GPH-YYYY-NNNN) | ✅ Built — migration 029, trigger generate_booking_ref() |
 | Lead conversation state machine | ✅ Built — migration 030, lead_conversation_state table, booking_flow.py |
 | V2 WhatsApp booking automation | ✅ Built — guided data collection (name→rasi→nakshatram→gotram→address) → Razorpay payment link → auto-confirm |
 | Razorpay payment service | ✅ Built — services/payment_razorpay.py, HMAC webhook verification |
 | Admin bookings dashboard | ✅ Built — dashboard/bookings/, status cards + filter tabs + table |
+| CSV Indian number auto-format | ✅ Built — 10-digit numbers starting with 6/7/8/9 auto-prefixed +91 in upload.py |
+| Opt-out expanded | ✅ Built — "not interested", "no thanks", "வேண்டாம்" + Tamil phrases added to _STOP_WORDS |
 
 ## Hard Invariants — Never Break
 1. **FAQ-first**: ai_reply.py checks FAQ table BEFORE any Groq/LLM call
@@ -126,6 +131,10 @@ Each agent gets only its relevant context file — not the full CLAUDE.md.
 - **Meta webhook signature not verified** on both webhook.py (inbound WA messages) and templates.py (template status updates) — no `X-Hub-Signature-256` check. Low risk while single-tenant; must fix before multi-tenant public launch.
 - Razorpay payment links have no idempotency key — if httpx call succeeds at Razorpay but times out before response, retry creates a duplicate link. Add `X-Razorpay-Idempotency-Key: {booking_id}` header.
 - Booking flow: no Twilio path — `webhook.py` only routes booking flow for Meta Cloud API inbound messages; the Twilio fallback branch (lines 183+) still calls `generate_reply` directly. If Twilio is used as inbound channel, booking flow is bypassed.
+- **phone_numbers table has placeholder data** — real Indian numbers (+91 90473 70380 ID:639558505904219 and +91 90427 81088 ID:876085862249417) not yet added to Numbers page pool. Both are at Tier 1 (1,000/day). Need tier upgrade before June 2 broadcast.
+- **Numbers page auto-failover NOT implemented** — failover.py has handle_quality_red() but standby auto-promotion on RED quality is not wired. Decided approach: auto-switch when primary quality = RED (Option B). Backend work still needed.
+- **Booking automation amount not updated** — BOOKING_AMOUNT_PAISE = 50000 (₹500 flat). Homam pricing is ₹499+GST (individual) or ₹419+GST (family). Need booking_type step + dynamic pricing.
+- **Bulk send distributes via single best number** — outbound_router.py picks one number per broadcast. For 15k sends, need to split across 2 numbers (7,500 each). Not yet built.
 
 ## Key File Locations
 | File | Purpose |
