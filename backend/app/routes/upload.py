@@ -21,15 +21,32 @@ PHONE_RE = re.compile(r"[^\d+]")
 def _normalize_phone(raw: str) -> str | None:
     if not raw:
         return None
-    cleaned = PHONE_RE.sub("", raw.strip())
-    if not cleaned:
+    digits_only = PHONE_RE.sub("", raw.strip())
+    if not digits_only:
         return None
-    if not cleaned.startswith("+"):
-        cleaned = "+" + cleaned.lstrip("+")
-    digits = cleaned.lstrip("+")
-    if len(digits) < 8 or len(digits) > 15:
+
+    # Strip + and leading zeros
+    digits_only = digits_only.lstrip("+").lstrip("0")
+
+    # Indian 10-digit mobile: starts with 6/7/8/9, auto-add +91
+    if len(digits_only) == 10 and digits_only[0] in "6789":
+        return f"+91{digits_only}"
+
+    # Already has 91 prefix (12 digits): 919876543210 → +919876543210
+    if len(digits_only) == 12 and digits_only.startswith("91") and digits_only[2] in "6789":
+        return f"+{digits_only}"
+
+    # Has explicit + or other country code — keep as-is
+    if raw.strip().startswith("+"):
+        result = f"+{digits_only}"
+        if 8 <= len(digits_only) <= 15:
+            return result
         return None
-    return cleaned
+
+    # Fallback: add + and validate length
+    if 8 <= len(digits_only) <= 15:
+        return f"+{digits_only}"
+    return None
 
 
 def _clean_text(value: str | None) -> str | None:
