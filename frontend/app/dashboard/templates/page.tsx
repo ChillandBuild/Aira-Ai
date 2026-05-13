@@ -88,6 +88,7 @@ export default function TemplatesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [viewTemplate, setViewTemplate] = useState<Template | null>(null);
 
   // Form state
   const [title, setTitle] = useState("");
@@ -232,7 +233,7 @@ export default function TemplatesPage() {
                 const sc = STATUS_CONFIG[t.status] ?? STATUS_CONFIG.PENDING;
                 const catOption = CATEGORY_OPTIONS.find(c => c.value === t.category);
                 return (
-                  <tr key={t.id} className="hover:bg-surface-subtle transition-colors">
+                  <tr key={t.id} className="hover:bg-surface-subtle transition-colors cursor-pointer" onClick={() => setViewTemplate(t)}>
                     <td className="px-4 py-3">
                       <p className="font-label font-semibold text-ink text-sm">{t.name}</p>
                     </td>
@@ -259,7 +260,7 @@ export default function TemplatesPage() {
                         {new Date(t.submitted_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                       </p>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
                         {t.status === "APPROVED" ? (
                           <button
@@ -291,6 +292,79 @@ export default function TemplatesPage() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ── View Template Modal ────────────────────────────────────────────── */}
+      {viewTemplate && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-card-hover w-full max-w-lg p-6">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <p className="font-body text-xs text-ink-muted mb-1">Template Name</p>
+                <h2 className="font-mono font-semibold text-ink text-sm">{viewTemplate.name}</h2>
+              </div>
+              <button
+                onClick={() => setViewTemplate(null)}
+                className="p-1.5 rounded-xl hover:bg-surface-subtle text-ink-muted"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Status + category row */}
+              <div className="flex items-center gap-3">
+                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${STATUS_CONFIG[viewTemplate.status]?.badgeClass ?? "bg-gray-100 text-gray-500"}`}>
+                  {(() => { const sc = STATUS_CONFIG[viewTemplate.status]; return sc ? <sc.icon size={10} /> : null; })()}
+                  {STATUS_CONFIG[viewTemplate.status]?.label ?? viewTemplate.status}
+                </span>
+                <span className="font-body text-xs text-ink-secondary">
+                  {CATEGORY_OPTIONS.find(c => c.value === viewTemplate.category)?.label ?? viewTemplate.category}
+                </span>
+                <span className="font-body text-xs text-ink-muted ml-auto">
+                  {new Date(viewTemplate.submitted_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                </span>
+              </div>
+
+              {/* Full message body */}
+              <div>
+                <p className="font-body text-xs text-ink-muted mb-1.5">Message Body</p>
+                <div className="bg-[#ECE5DD] rounded-2xl p-4">
+                  <div className="bg-white rounded-2xl rounded-tl-none px-3 py-2 max-w-[90%] shadow-sm">
+                    <p className="font-body text-sm text-[#111B21] whitespace-pre-wrap break-words">
+                      {viewTemplate.body_text}
+                    </p>
+                    <p className="font-body text-[10px] text-gray-400 text-right mt-1">
+                      {new Date(viewTemplate.submitted_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })} ✓✓
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Rejection reason */}
+              {viewTemplate.rejection_reason && (
+                <div className="p-3 rounded-2xl bg-red-50 border border-red-100">
+                  <p className="font-body text-xs text-red-700">
+                    <span className="font-semibold">Rejection reason:</span> {viewTemplate.rejection_reason}
+                  </p>
+                </div>
+              )}
+
+              {/* Meta ID */}
+              <div>
+                <p className="font-body text-xs text-ink-muted mb-1">Meta Template ID</p>
+                <p className="font-mono text-xs text-ink-secondary">{viewTemplate.id}</p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setViewTemplate(null)}
+              className="w-full mt-5 py-2 rounded-2xl bg-surface-subtle hover:bg-border-subtle text-sm font-medium text-ink-secondary transition-colors"
+            >
+              Close
+            </button>
+          </div>
         </div>
       )}
 
