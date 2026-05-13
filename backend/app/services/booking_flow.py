@@ -44,16 +44,32 @@ async def detect_booking_intent(message: str) -> bool:
 
 
 def get_or_create_state(lead_id: str, tenant_id: str, db=None) -> dict:
+    """Fetch the conversation state for a lead, or return a fresh idle state.
+
+    Uses .limit(1) instead of .maybe_single() to avoid the HTTP 406 error
+    that Supabase raises when no row exists and .single() / .maybe_single()
+    is used on an empty result set.
+    """
     db = db or get_supabase()
-    row = (
-        db.table("lead_conversation_state")
-        .select("*")
-        .eq("lead_id", lead_id)
-        .maybe_single()
-        .execute()
-    )
-    if row.data:
-        return row.data
+    try:
+        response = (
+            db.table("lead_conversation_state")
+            .select("*")
+            .eq("lead_id", lead_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as e:
+        logger.warning(f"lead_conversation_state query failed for lead {lead_id}: {e}. Defaulting to idle state.")
+        response = None
+
+    # Guard: response may be None if the query itself raised, or data may be
+    # an empty list when the lead has no state row yet — both are handled safely.
+    if response and response.data:
+        return response.data[0]
+
+    # No existing state — return a fresh idle state dict (not persisted yet).
+    logger.info(f"No conversation state found for lead {lead_id}. Initialising idle state.")
     return {
         "id": None,
         "lead_id": lead_id,
