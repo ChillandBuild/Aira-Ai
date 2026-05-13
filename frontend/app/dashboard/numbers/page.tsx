@@ -95,7 +95,7 @@ function ActionMenu({
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  const canSetPrimary = num.role === "standby" && num.status === "active";
+  const canSetPrimary = num.role !== "primary" && num.role !== "archived";
 
   return (
     <div ref={ref} className="relative">
