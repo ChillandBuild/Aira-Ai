@@ -75,13 +75,11 @@ const numbersApi = {
 
 function ActionMenu({
   num,
-  activeCount,
   onSetPrimary,
   onTogglePause,
   onRename,
 }: {
   num: PhoneNumber;
-  activeCount: number;
   onSetPrimary: () => void;
   onTogglePause: () => void;
   onRename: () => void;
@@ -387,7 +385,6 @@ export default function NumbersPage() {
                           <div className="flex items-center gap-1">
                             <ActionMenu
                               num={num}
-                              activeCount={activeCount}
                               onSetPrimary={() => handleSetPrimary(num.id)}
                               onTogglePause={() => handleTogglePause(num)}
                               onRename={() => startRename(num)}
