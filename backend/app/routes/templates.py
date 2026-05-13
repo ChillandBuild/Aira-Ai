@@ -4,10 +4,15 @@ from pydantic import BaseModel
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id
 from app.services.meta_cloud import submit_template
+try:
+    from app.services.meta_cloud import get_template_status
+except ImportError:
+    async def get_template_status(*args, **kwargs): return None
 from app.config_dynamic import get_setting
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+public_router = APIRouter()  # No auth — Meta calls these endpoints directly
 
 
 class CreateTemplate(BaseModel):
@@ -31,7 +36,7 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
     if category not in ("MARKETING", "UTILITY", "AUTHENTICATION"):
         raise HTTPException(status_code=400, detail="Invalid category")
 
-    waba_id = get_setting("meta_phone_number_id")
+    waba_id = get_setting("meta_waba_id")  # Fixed: was meta_phone_number_id
 
     db = get_supabase()
     existing = db.table("message_templates").select("id").eq("name", name).eq("tenant_id", tenant_id).maybe_single().execute()
@@ -50,10 +55,10 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
                 body_text=payload.body_text,
             )
             meta_template_id = str(meta_response.get("id", ""))
-        except Exception:
-            logger.warning(f"Meta template submission failed for {name}, saved as PENDING")
+        except Exception as e:
+            logger.warning(f"Meta template submission failed for {name}: {e}, saved as PENDING")
     else:
-        logger.info(f"No WABA ID configured — saving template '{name}' locally as PENDING")
+        logger.info(f"No meta_waba_id configured — saving template '{name}' locally as PENDING")
 
     result = db.table("message_templates").insert({
         "name": name,
@@ -75,9 +80,37 @@ async def delete_template(template_id: str, tenant_id: str = Depends(get_tenant_
     return {"deleted": True}
 
 
-@router.post("/webhook-status")
+@router.post("/{template_id}/sync")
+async def sync_template_status(template_id: str, tenant_id: str = Depends(get_tenant_id)):
+    """Pull current status from Meta API and update the local record."""
+    db = get_supabase()
+    row = db.table("message_templates").select("name,meta_template_id").eq("id", template_id).eq("tenant_id", tenant_id).maybe_single().execute()
+    if not row.data:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    waba_id = get_setting("meta_waba_id")
+    if not waba_id:
+        raise HTTPException(status_code=400, detail="meta_waba_id not configured in Settings")
+
+    meta_info = await get_template_status(waba_id=waba_id, template_name=row.data["name"])
+    if not meta_info:
+        return {"synced": False, "detail": "Template not found on Meta"}
+
+    new_status = meta_info.get("status", "PENDING").upper()
+    updates: dict = {"status": new_status}
+    if new_status == "APPROVED":
+        updates["approved_at"] = "now()"
+    if meta_info.get("rejected_reason"):
+        updates["rejection_reason"] = meta_info["rejected_reason"]
+
+    db.table("message_templates").update(updates).eq("id", template_id).execute()
+    updated = db.table("message_templates").select("*").eq("id", template_id).maybe_single().execute()
+    return updated.data
+
+
+@public_router.post("/webhook-status")
 async def template_status_webhook(payload: dict):
-    """Meta calls this when template status changes (APPROVED/REJECTED)."""
+    """Meta calls this when template status changes (APPROVED/REJECTED). No auth."""
     entry = payload.get("entry", [])
     for e in entry:
         for change in e.get("changes", []):
