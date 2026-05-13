@@ -19,7 +19,7 @@ async def test_create_template_uses_waba_id_not_phone_number_id():
         return {"id": "meta-123"}
 
     mock_db = MagicMock()
-    mock_db.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value.data = None
+    mock_db.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = []
     mock_db.table.return_value.insert.return_value.execute.return_value.data = [{
         "id": "row-1", "name": "test_template", "category": "UTILITY",
         "language": "en", "body_text": "Hello {{1}}", "status": "PENDING",

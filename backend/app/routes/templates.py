@@ -36,7 +36,7 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
     waba_id = get_setting("meta_waba_id")  # Fixed: was meta_phone_number_id
 
     db = get_supabase()
-    existing = db.table("message_templates").select("id").eq("name", name).eq("tenant_id", tenant_id).maybe_single().execute()
+    existing = db.table("message_templates").select("id").eq("name", name).eq("tenant_id", tenant_id).limit(1).execute()
     if existing.data:
         raise HTTPException(status_code=409, detail=f"Template '{name}' already exists")
 
@@ -81,7 +81,7 @@ async def delete_template(template_id: str, tenant_id: str = Depends(get_tenant_
 async def sync_template_status(template_id: str, tenant_id: str = Depends(get_tenant_id)):
     """Pull current status from Meta API and update the local record."""
     db = get_supabase()
-    row = db.table("message_templates").select("name,meta_template_id").eq("id", template_id).eq("tenant_id", tenant_id).maybe_single().execute()
+    row = db.table("message_templates").select("name,meta_template_id").eq("id", template_id).eq("tenant_id", tenant_id).limit(1).execute()
     if not row.data:
         raise HTTPException(status_code=404, detail="Template not found")
 
@@ -89,7 +89,7 @@ async def sync_template_status(template_id: str, tenant_id: str = Depends(get_te
     if not waba_id:
         raise HTTPException(status_code=400, detail="meta_waba_id not configured in Settings")
 
-    meta_info = await get_template_status(waba_id=waba_id, template_name=row.data["name"])
+    meta_info = await get_template_status(waba_id=waba_id, template_name=row.data[0]["name"])
     if not meta_info:
         return {"synced": False, "detail": "Template not found on Meta"}
 
@@ -101,8 +101,8 @@ async def sync_template_status(template_id: str, tenant_id: str = Depends(get_te
         updates["rejection_reason"] = meta_info["rejected_reason"]
 
     db.table("message_templates").update(updates).eq("id", template_id).execute()
-    updated = db.table("message_templates").select("*").eq("id", template_id).maybe_single().execute()
-    return updated.data
+    updated = db.table("message_templates").select("*").eq("id", template_id).limit(1).execute()
+    return updated.data[0] if updated.data else None
 
 
 @public_router.post("/webhook-status")
