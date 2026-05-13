@@ -4,11 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id
-from app.services.meta_cloud import submit_template
-try:
-    from app.services.meta_cloud import get_template_status
-except ImportError:
-    async def get_template_status(*args, **kwargs): return None
+from app.services.meta_cloud import submit_template, get_template_status
 from app.config_dynamic import get_setting
 
 logger = logging.getLogger(__name__)

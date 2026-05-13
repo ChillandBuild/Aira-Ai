@@ -49,3 +49,52 @@ def test_webhook_status_is_on_public_router():
         f"webhook-status not found in public_router paths: {public_paths}"
     assert "/webhook-status" not in auth_paths, \
         f"webhook-status must NOT be in auth-gated router: {auth_paths}"
+
+
+# ── get_template_status ───────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_get_template_status_returns_status():
+    """get_template_status fetches template status from Meta API."""
+    from app.services.meta_cloud import get_template_status
+
+    mock_response = MagicMock()
+    mock_response.is_success = True
+    mock_response.json.return_value = {
+        "data": [{"name": "my_template", "status": "APPROVED", "id": "meta-123"}]
+    }
+
+    with patch("httpx.AsyncClient") as MockClient:
+        instance = MockClient.return_value.__aenter__.return_value
+        instance.get = AsyncMock(return_value=mock_response)
+
+        with patch("app.services.meta_cloud.get_setting", return_value="test_token"):
+            result = await get_template_status(
+                waba_id="1190331789463566",
+                template_name="my_template",
+            )
+
+    assert result is not None
+    assert result["status"] == "APPROVED"
+
+
+@pytest.mark.asyncio
+async def test_get_template_status_returns_none_when_not_found():
+    """get_template_status returns None when Meta has no matching template."""
+    from app.services.meta_cloud import get_template_status
+
+    mock_response = MagicMock()
+    mock_response.is_success = True
+    mock_response.json.return_value = {"data": []}
+
+    with patch("httpx.AsyncClient") as MockClient:
+        instance = MockClient.return_value.__aenter__.return_value
+        instance.get = AsyncMock(return_value=mock_response)
+
+        with patch("app.services.meta_cloud.get_setting", return_value="test_token"):
+            result = await get_template_status(
+                waba_id="1190331789463566",
+                template_name="nonexistent_template",
+            )
+
+    assert result is None
