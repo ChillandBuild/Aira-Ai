@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { Upload, FileText, Check, AlertTriangle, ChevronRight, RotateCcw } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
