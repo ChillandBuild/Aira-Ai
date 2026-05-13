@@ -8,7 +8,11 @@ from app.services.failover import update_number_quality, handle_quality_red, han
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-_STOP_WORDS = frozenset({"stop", "unsubscribe", "cancel", "quit", "end", "optout", "opt out", "opt-out"})
+_STOP_WORDS = frozenset({
+    "stop", "unsubscribe", "cancel", "quit", "end", "optout", "opt out", "opt-out",
+    "not interested", "no thanks", "remove me", "dont send", "don't send",
+    "ஆர்வமில்லை", "வேண்டாம்", "வேண்டாம்",
+})
 
 
 def _get_tenant_id_for_meta_number(phone_number_id: str, db) -> str | None:
