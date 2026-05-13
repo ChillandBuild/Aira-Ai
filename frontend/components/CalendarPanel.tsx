@@ -35,6 +35,7 @@ export function CalendarPanel({ isOpen, onClose }: CalendarPanelProps) {
   }, []);
 
   // Fetch todos for current month
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (isOpen) {
       fetchTodos();
