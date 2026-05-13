@@ -14,7 +14,7 @@ async def test_create_template_uses_waba_id_not_phone_number_id():
 
     captured_waba_id = []
 
-    async def mock_submit(waba_id, name, category, language, body_text):
+    async def mock_submit(waba_id, name, category, language, body_text, buttons=None):
         captured_waba_id.append(waba_id)
         return {"id": "meta-123"}
 

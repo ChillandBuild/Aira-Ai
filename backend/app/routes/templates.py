@@ -17,6 +17,7 @@ class CreateTemplate(BaseModel):
     category: str
     language: str = "en"
     body_text: str
+    buttons: list[str] | None = None  # Optional quick reply button labels
 
 
 @router.get("/")
@@ -50,6 +51,7 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
                 category=category,
                 language=payload.language,
                 body_text=payload.body_text,
+                buttons=payload.buttons or None,
             )
             meta_template_id = str(meta_response.get("id", ""))
         except Exception as e:

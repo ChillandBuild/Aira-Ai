@@ -88,14 +88,26 @@ export default function TemplatesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [viewTemplate, setViewTemplate] = useState<Template | null>(null);
 
   // Form state
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<"MARKETING" | "UTILITY" | "AUTHENTICATION">("UTILITY");
   const [language, setLanguage] = useState("en");
   const [bodyText, setBodyText] = useState("");
+  const [buttons, setButtons] = useState<string[]>([]);
 
   const generatedName = toTemplateName(title);
+
+  function addButton() {
+    if (buttons.length < 3) setButtons(prev => [...prev, ""]);
+  }
+  function updateButton(index: number, value: string) {
+    setButtons(prev => prev.map((b, i) => i === index ? value.slice(0, 25) : b));
+  }
+  function removeButton(index: number) {
+    setButtons(prev => prev.filter((_, i) => i !== index));
+  }
 
   async function load() {
     setLoading(true);
@@ -114,6 +126,7 @@ export default function TemplatesPage() {
 
   function resetModal() {
     setTitle(""); setBodyText(""); setCategory("UTILITY"); setLanguage("en");
+    setButtons([]);
     setError(null); setShowModal(false);
   }
 
@@ -124,7 +137,13 @@ export default function TemplatesPage() {
     try {
       await apiFetch("/api/v1/templates/", {
         method: "POST",
-        body: JSON.stringify({ name: generatedName, category, language, body_text: bodyText.trim() }),
+        body: JSON.stringify({
+          name: generatedName,
+          category,
+          language,
+          body_text: bodyText.trim(),
+          buttons: buttons.filter(b => b.trim()).length > 0 ? buttons.filter(b => b.trim()) : undefined,
+        }),
       });
       resetModal();
       await load();
@@ -232,7 +251,7 @@ export default function TemplatesPage() {
                 const sc = STATUS_CONFIG[t.status] ?? STATUS_CONFIG.PENDING;
                 const catOption = CATEGORY_OPTIONS.find(c => c.value === t.category);
                 return (
-                  <tr key={t.id} className="hover:bg-surface-subtle transition-colors">
+                  <tr key={t.id} className="hover:bg-surface-subtle transition-colors cursor-pointer" onClick={() => setViewTemplate(t)}>
                     <td className="px-4 py-3">
                       <p className="font-label font-semibold text-ink text-sm">{t.name}</p>
                     </td>
@@ -259,7 +278,7 @@ export default function TemplatesPage() {
                         {new Date(t.submitted_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                       </p>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
                         {t.status === "APPROVED" ? (
                           <button
@@ -291,6 +310,79 @@ export default function TemplatesPage() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ── View Template Modal ────────────────────────────────────────────── */}
+      {viewTemplate && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-card-hover w-full max-w-lg p-6">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <p className="font-body text-xs text-ink-muted mb-1">Template Name</p>
+                <h2 className="font-mono font-semibold text-ink text-sm">{viewTemplate.name}</h2>
+              </div>
+              <button
+                onClick={() => setViewTemplate(null)}
+                className="p-1.5 rounded-xl hover:bg-surface-subtle text-ink-muted"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Status + category row */}
+              <div className="flex items-center gap-3">
+                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${STATUS_CONFIG[viewTemplate.status]?.badgeClass ?? "bg-gray-100 text-gray-500"}`}>
+                  {(() => { const sc = STATUS_CONFIG[viewTemplate.status]; return sc ? <sc.icon size={10} /> : null; })()}
+                  {STATUS_CONFIG[viewTemplate.status]?.label ?? viewTemplate.status}
+                </span>
+                <span className="font-body text-xs text-ink-secondary">
+                  {CATEGORY_OPTIONS.find(c => c.value === viewTemplate.category)?.label ?? viewTemplate.category}
+                </span>
+                <span className="font-body text-xs text-ink-muted ml-auto">
+                  {new Date(viewTemplate.submitted_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                </span>
+              </div>
+
+              {/* Full message body */}
+              <div>
+                <p className="font-body text-xs text-ink-muted mb-1.5">Message Body</p>
+                <div className="bg-[#ECE5DD] rounded-2xl p-4">
+                  <div className="bg-white rounded-2xl rounded-tl-none px-3 py-2 max-w-[90%] shadow-sm">
+                    <p className="font-body text-sm text-[#111B21] whitespace-pre-wrap break-words">
+                      {viewTemplate.body_text}
+                    </p>
+                    <p className="font-body text-[10px] text-gray-400 text-right mt-1">
+                      {new Date(viewTemplate.submitted_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })} ✓✓
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Rejection reason */}
+              {viewTemplate.rejection_reason && (
+                <div className="p-3 rounded-2xl bg-red-50 border border-red-100">
+                  <p className="font-body text-xs text-red-700">
+                    <span className="font-semibold">Rejection reason:</span> {viewTemplate.rejection_reason}
+                  </p>
+                </div>
+              )}
+
+              {/* Meta ID */}
+              <div>
+                <p className="font-body text-xs text-ink-muted mb-1">Meta Template ID</p>
+                <p className="font-mono text-xs text-ink-secondary">{viewTemplate.id}</p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setViewTemplate(null)}
+              className="w-full mt-5 py-2 rounded-2xl bg-surface-subtle hover:bg-border-subtle text-sm font-medium text-ink-secondary transition-colors"
+            >
+              Close
+            </button>
+          </div>
         </div>
       )}
 
@@ -382,6 +474,54 @@ export default function TemplatesPage() {
                     Use {"{{1}}"}, {"{{2}}"} etc. for personalised values like name, date.
                   </p>
                 </div>
+
+                {/* Quick Reply Buttons */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="font-body text-sm font-medium text-ink">
+                      Quick Reply Buttons <span className="text-ink-muted font-normal">(optional, max 3)</span>
+                    </label>
+                    {buttons.length < 3 && (
+                      <button
+                        type="button"
+                        onClick={addButton}
+                        className="text-xs text-primary hover:underline font-medium"
+                      >
+                        + Add button
+                      </button>
+                    )}
+                  </div>
+                  {buttons.length === 0 && (
+                    <p className="font-body text-xs text-ink-muted">
+                      Add buttons like &quot;Book Now&quot; or &quot;Not Interested&quot; so users can reply with one tap.
+                    </p>
+                  )}
+                  <div className="space-y-2">
+                    {buttons.map((btn, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <input
+                          value={btn}
+                          onChange={e => updateButton(i, e.target.value)}
+                          placeholder={i === 0 ? "Book Now" : i === buttons.length - 1 && i > 0 ? "வேண்டாம் (Not Interested)" : "Button text"}
+                          maxLength={25}
+                          className="input flex-1 text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeButton(i)}
+                          className="p-1.5 rounded-lg hover:bg-red-50 text-ink-muted hover:text-red-500 transition-colors flex-shrink-0"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  {buttons.length > 0 && (
+                    <p className="font-body text-xs text-ink-muted mt-1">
+                      Tip: Add &quot;வேண்டாம்&quot; or &quot;Not Interested&quot; as the last button so users can opt out with one tap.
+                    </p>
+                  )}
+                </div>
               </div>
 
               {/* Right: Live Preview */}
@@ -398,6 +538,15 @@ export default function TemplatesPage() {
                     </p>
                     <p className="font-body text-[10px] text-gray-400 text-right mt-1">12:00 PM ✓✓</p>
                   </div>
+                  {buttons.filter(b => b.trim()).length > 0 && (
+                    <div className="mt-2 space-y-1.5">
+                      {buttons.filter(b => b.trim()).map((btn, i) => (
+                        <div key={i} className="bg-white rounded-xl px-3 py-2 text-center text-sm text-blue-600 font-medium border border-white/50 shadow-sm">
+                          {btn}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <p className="font-body text-xs text-ink-muted mt-2">
                   This is how your message will look on WhatsApp.

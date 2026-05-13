@@ -79,14 +79,12 @@ function ActionMenu({
   onSetPrimary,
   onTogglePause,
   onRename,
-  onDelete,
 }: {
   num: PhoneNumber;
   activeCount: number;
   onSetPrimary: () => void;
   onTogglePause: () => void;
   onRename: () => void;
-  onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -99,7 +97,6 @@ function ActionMenu({
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  const isLastActive = activeCount === 1 && num.status === "active";
   const canSetPrimary = num.role === "standby" && num.status === "active";
 
   return (
@@ -137,16 +134,6 @@ function ActionMenu({
           >
             <Pencil size={12} className="text-on-surface-muted" />
             Rename
-          </button>
-          <div className="my-1 border-t border-surface-mid" />
-          <button
-            onClick={() => { if (!isLastActive) { setOpen(false); onDelete(); } }}
-            disabled={isLastActive}
-            title={isLastActive ? "Cannot delete last active number" : undefined}
-            className="w-full flex items-center gap-2 px-3 py-2 font-label text-xs hover:bg-red-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-red-500"
-          >
-            <Trash2 size={12} />
-            Delete
           </button>
         </div>
       )}
@@ -397,14 +384,23 @@ export default function NumbersPage() {
                       </td>
                       <td className="py-3">
                         {!isEditing && (
-                          <ActionMenu
-                            num={num}
-                            activeCount={activeCount}
-                            onSetPrimary={() => handleSetPrimary(num.id)}
-                            onTogglePause={() => handleTogglePause(num)}
-                            onRename={() => startRename(num)}
-                            onDelete={() => handleDelete(num.id)}
-                          />
+                          <div className="flex items-center gap-1">
+                            <ActionMenu
+                              num={num}
+                              activeCount={activeCount}
+                              onSetPrimary={() => handleSetPrimary(num.id)}
+                              onTogglePause={() => handleTogglePause(num)}
+                              onRename={() => startRename(num)}
+                            />
+                            <button
+                              onClick={() => handleDelete(num.id)}
+                              disabled={activeCount === 1 && num.status === "active"}
+                              title={activeCount === 1 && num.status === "active" ? "Cannot delete last active number" : undefined}
+                              className="p-1.5 rounded-lg hover:bg-red-50 text-ink-muted hover:text-red-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
