@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
@@ -99,7 +100,7 @@ async def sync_template_status(template_id: str, tenant_id: str = Depends(get_te
     new_status = meta_info.get("status", "PENDING").upper()
     updates: dict = {"status": new_status}
     if new_status == "APPROVED":
-        updates["approved_at"] = "now()"
+        updates["approved_at"] = datetime.now(timezone.utc).isoformat()
     if meta_info.get("rejected_reason"):
         updates["rejection_reason"] = meta_info["rejected_reason"]
 
@@ -127,7 +128,7 @@ async def template_status_webhook(payload: dict):
             if reason:
                 updates["rejection_reason"] = reason
             if new_status == "APPROVED":
-                updates["approved_at"] = "now()"
+                updates["approved_at"] = datetime.now(timezone.utc).isoformat()
             db.table("message_templates").update(updates).eq("meta_template_id", meta_id).execute()
             logger.info(f"Template {meta_id} status → {new_status}")
     return {"status": "ok"}
