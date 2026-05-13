@@ -80,6 +80,7 @@ app.include_router(incidents.router, prefix="/api/v1/incidents", tags=["incident
 app.include_router(lead_notes.router, prefix="/api/v1/lead-notes", tags=["lead-notes"], dependencies=_auth)
 app.include_router(voice_numbers.router, prefix="/api/v1/voice-numbers", tags=["voice-numbers"], dependencies=_auth)
 app.include_router(app_settings.router, prefix="/api/v1/settings", tags=["settings"], dependencies=_auth)
+app.include_router(templates.public_router, prefix="/api/v1/templates", tags=["templates-webhook"])
 app.include_router(templates.router, prefix="/api/v1/templates", tags=["templates"], dependencies=_auth)
 app.include_router(onboarding.router, prefix="/api/v1/onboarding", tags=["onboarding"], dependencies=_auth)
 app.include_router(team.router, prefix="/api/v1/team", tags=["team"], dependencies=_auth)

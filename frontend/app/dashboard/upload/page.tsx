@@ -1,5 +1,6 @@
 "use client";
 import { useState, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { Upload, FileText, Check, AlertTriangle, ChevronRight, RotateCcw } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
@@ -84,7 +85,8 @@ export default function UploadPage() {
   const [optInValidation, setOptInValidation] = useState<OptInValidation | null>(null);
   const [optInLoading, setOptInLoading] = useState(false);
 
-  const [templateName, setTemplateName] = useState("");
+  const searchParams = useSearchParams();
+  const [templateName, setTemplateName] = useState(searchParams.get("template") ?? "");
   const [scheduleType, setScheduleType] = useState<ScheduleType>("now");
   const [scheduleAt, setScheduleAt] = useState("");
   const [dripDays, setDripDays] = useState("");

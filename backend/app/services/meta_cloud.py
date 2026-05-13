@@ -254,3 +254,27 @@ async def get_number_quality(
         "quality_rating": data.get("quality_rating", "UNKNOWN"),
         "messaging_tier": _TIER_MAP.get(data.get("messaging_limit_tier", ""), 0),
     }
+
+
+async def get_template_status(
+    waba_id: str,
+    template_name: str,
+    access_token: Optional[str] = None,
+) -> dict | None:
+    """
+    Fetch current template status from Meta.
+    Returns the first matching template dict or None if not found.
+    """
+    _, tok = _creds("placeholder", access_token)
+    url = f"{_GRAPH_BASE}/{waba_id}/message_templates"
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.get(
+            url,
+            params={"name": template_name, "fields": "name,status,rejected_reason"},
+            headers={"Authorization": f"Bearer {tok}"},
+        )
+    if not resp.is_success:
+        logger.error("get_template_status failed: %s %s", resp.status_code, resp.text)
+        return None
+    data = resp.json().get("data", [])
+    return data[0] if data else None
