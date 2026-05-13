@@ -210,6 +210,17 @@ async def send_template_message(
     return data
 
 
+def _extract_variable_examples(body_text: str) -> list[str]:
+    """Return placeholder example values for every {{N}} variable in the body."""
+    import re
+    indices = sorted(set(int(m) for m in re.findall(r"\{\{(\d+)\}\}", body_text)))
+    examples = ["Sample text"] * len(indices)
+    # Use a descriptive placeholder for {{1}} which is almost always the customer name
+    if indices and indices[0] == 1:
+        examples[0] = "Rajan Kumar"
+    return examples
+
+
 async def submit_template(
     waba_id: str,
     name: str,
@@ -220,11 +231,17 @@ async def submit_template(
 ) -> dict:
     _, tok = _creds("placeholder", access_token)
     url = f"{_GRAPH_BASE}/{waba_id}/message_templates"
+
+    body_component: dict = {"type": "BODY", "text": body_text}
+    examples = _extract_variable_examples(body_text)
+    if examples:
+        body_component["example"] = {"body_text": [examples]}
+
     payload = {
         "name": name,
         "category": category.upper(),
         "language": language,
-        "components": [{"type": "BODY", "text": body_text}],
+        "components": [body_component],
     }
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.post(url, json=payload, headers={"Authorization": f"Bearer {tok}"})
