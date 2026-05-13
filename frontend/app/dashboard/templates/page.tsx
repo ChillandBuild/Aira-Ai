@@ -95,8 +95,19 @@ export default function TemplatesPage() {
   const [category, setCategory] = useState<"MARKETING" | "UTILITY" | "AUTHENTICATION">("UTILITY");
   const [language, setLanguage] = useState("en");
   const [bodyText, setBodyText] = useState("");
+  const [buttons, setButtons] = useState<string[]>([]);
 
   const generatedName = toTemplateName(title);
+
+  function addButton() {
+    if (buttons.length < 3) setButtons(prev => [...prev, ""]);
+  }
+  function updateButton(index: number, value: string) {
+    setButtons(prev => prev.map((b, i) => i === index ? value.slice(0, 25) : b));
+  }
+  function removeButton(index: number) {
+    setButtons(prev => prev.filter((_, i) => i !== index));
+  }
 
   async function load() {
     setLoading(true);
@@ -115,6 +126,7 @@ export default function TemplatesPage() {
 
   function resetModal() {
     setTitle(""); setBodyText(""); setCategory("UTILITY"); setLanguage("en");
+    setButtons([]);
     setError(null); setShowModal(false);
   }
 
@@ -125,7 +137,13 @@ export default function TemplatesPage() {
     try {
       await apiFetch("/api/v1/templates/", {
         method: "POST",
-        body: JSON.stringify({ name: generatedName, category, language, body_text: bodyText.trim() }),
+        body: JSON.stringify({
+          name: generatedName,
+          category,
+          language,
+          body_text: bodyText.trim(),
+          buttons: buttons.filter(b => b.trim()).length > 0 ? buttons.filter(b => b.trim()) : undefined,
+        }),
       });
       resetModal();
       await load();
@@ -456,6 +474,54 @@ export default function TemplatesPage() {
                     Use {"{{1}}"}, {"{{2}}"} etc. for personalised values like name, date.
                   </p>
                 </div>
+
+                {/* Quick Reply Buttons */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="font-body text-sm font-medium text-ink">
+                      Quick Reply Buttons <span className="text-ink-muted font-normal">(optional, max 3)</span>
+                    </label>
+                    {buttons.length < 3 && (
+                      <button
+                        type="button"
+                        onClick={addButton}
+                        className="text-xs text-primary hover:underline font-medium"
+                      >
+                        + Add button
+                      </button>
+                    )}
+                  </div>
+                  {buttons.length === 0 && (
+                    <p className="font-body text-xs text-ink-muted">
+                      Add buttons like &quot;Book Now&quot; or &quot;Not Interested&quot; so users can reply with one tap.
+                    </p>
+                  )}
+                  <div className="space-y-2">
+                    {buttons.map((btn, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <input
+                          value={btn}
+                          onChange={e => updateButton(i, e.target.value)}
+                          placeholder={i === 0 ? "Book Now" : i === buttons.length - 1 && i > 0 ? "வேண்டாம் (Not Interested)" : "Button text"}
+                          maxLength={25}
+                          className="input flex-1 text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeButton(i)}
+                          className="p-1.5 rounded-lg hover:bg-red-50 text-ink-muted hover:text-red-500 transition-colors flex-shrink-0"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  {buttons.length > 0 && (
+                    <p className="font-body text-xs text-ink-muted mt-1">
+                      Tip: Add &quot;வேண்டாம்&quot; or &quot;Not Interested&quot; as the last button so users can opt out with one tap.
+                    </p>
+                  )}
+                </div>
               </div>
 
               {/* Right: Live Preview */}
@@ -472,6 +538,15 @@ export default function TemplatesPage() {
                     </p>
                     <p className="font-body text-[10px] text-gray-400 text-right mt-1">12:00 PM ✓✓</p>
                   </div>
+                  {buttons.filter(b => b.trim()).length > 0 && (
+                    <div className="mt-2 space-y-1.5">
+                      {buttons.filter(b => b.trim()).map((btn, i) => (
+                        <div key={i} className="bg-white rounded-xl px-3 py-2 text-center text-sm text-blue-600 font-medium border border-white/50 shadow-sm">
+                          {btn}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <p className="font-body text-xs text-ink-muted mt-2">
                   This is how your message will look on WhatsApp.

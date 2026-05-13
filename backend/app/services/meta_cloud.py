@@ -227,6 +227,7 @@ async def submit_template(
     category: str,
     language: str,
     body_text: str,
+    buttons: list[str] | None = None,  # Quick reply button labels
     access_token: Optional[str] = None,
 ) -> dict:
     _, tok = _creds("placeholder", access_token)
@@ -237,11 +238,23 @@ async def submit_template(
     if examples:
         body_component["example"] = {"body_text": [examples]}
 
+    components: list[dict] = [body_component]
+
+    if buttons:
+        # Meta allows max 3 quick reply buttons
+        components.append({
+            "type": "BUTTONS",
+            "buttons": [
+                {"type": "QUICK_REPLY", "text": btn[:25]}  # Max 25 chars per button
+                for btn in buttons[:3]
+            ],
+        })
+
     payload = {
         "name": name,
         "category": category.upper(),
         "language": language,
-        "components": [body_component],
+        "components": components,
     }
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.post(url, json=payload, headers={"Authorization": f"Bearer {tok}"})
