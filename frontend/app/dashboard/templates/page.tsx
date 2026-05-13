@@ -65,11 +65,7 @@ function toTemplateName(title: string): string {
 }
 
 function renderPreview(text: string): string {
-  return text
-    .replace(/\{\{1\}\}/g, "[Variable 1]")
-    .replace(/\{\{2\}\}/g, "[Variable 2]")
-    .replace(/\{\{3\}\}/g, "[Variable 3]")
-    .replace(/\{\{(\d+)\}\}/g, "[Variable $1]");
+  return text.replace(/\{\{(\d+)\}\}/g, "[Variable $1]");
 }
 
 async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
@@ -103,11 +99,15 @@ export default function TemplatesPage() {
 
   async function load() {
     setLoading(true);
+    setError(null);
     try {
       const data = await apiFetch<{ data: Template[] }>("/api/v1/templates/");
       setTemplates(data.data);
-    } catch { /* silent */ }
-    finally { setLoading(false); }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load templates");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
@@ -137,8 +137,12 @@ export default function TemplatesPage() {
 
   async function handleDelete(id: string) {
     if (!confirm("Delete this template?")) return;
-    await apiFetch(`/api/v1/templates/${id}`, { method: "DELETE" });
-    await load();
+    try {
+      await apiFetch(`/api/v1/templates/${id}`, { method: "DELETE" });
+      setTemplates(prev => prev.filter(t => t.id !== id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete template. Please try again.");
+    }
   }
 
   async function handleSync(id: string) {
