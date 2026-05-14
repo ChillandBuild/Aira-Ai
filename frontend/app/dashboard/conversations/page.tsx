@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { api, getAuthHeaders, API_URL, Lead } from "@/lib/api";
+import { getAuthHeaders, API_URL, Lead } from "@/lib/api";
 import { ConversationList } from "@/components/conversation-list";
 import { ChatThread } from "@/components/chat-thread";
 import { MessageSquare } from "lucide-react";
