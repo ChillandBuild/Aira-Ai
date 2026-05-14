@@ -1,9 +1,9 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { api, Lead } from "@/lib/api";
 import { SegmentBadge } from "./segment-badge";
 import { timeAgo, formatPhone, cn } from "@/lib/utils";
-import { MessageCircle, Trash2 } from "lucide-react";
+import { MessageCircle, Trash2, MoreVertical } from "lucide-react";
 import { toast } from "sonner";
 
 type ConversationLead = Lead & { last_reply_at?: string };
@@ -37,6 +37,19 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
   const [segment, setSegment] = useState<"A" | "B" | "C" | "D" | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const visible = (segment ? leads.filter((l) => l.segment === segment) : leads).sort((a, b) => {
     if (a.needs_human_intervention && !b.needs_human_intervention) return -1;
@@ -53,6 +66,7 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
       await Promise.all(Array.from(selectedIds).map((id) => api.leads.delete(id)));
       onDeleted?.(Array.from(selectedIds));
       setSelectedIds(new Set());
+      setSelectionMode(false);
       toast.success("Conversations deleted");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete some conversations");
@@ -69,20 +83,64 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
     setSelectedIds(next);
   }
 
+  function cancelSelection() {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }
+
   return (
     <div className="w-80 flex-shrink-0 bg-surface border-r border-surface-mid flex flex-col h-full">
-      <div className="px-5 py-4 border-b border-surface-mid">
+      <div className="px-5 py-4 border-b border-surface-mid relative">
         <div className="flex items-center justify-between">
-          <h2 className="font-display text-base font-bold text-tertiary">Conversations</h2>
-          {selectedIds.size > 0 && (
-            <button
-              onClick={handleDeleteSelected}
-              disabled={isDeleting}
-              className="flex items-center gap-1 text-red-600 hover:text-red-700 disabled:opacity-50 text-xs font-semibold"
-            >
-              <Trash2 size={12} />
-              {isDeleting ? "..." : "Delete"}
-            </button>
+          {selectionMode ? (
+            <div className="flex items-center justify-between w-full">
+              <span className="font-display text-sm font-semibold text-tertiary">
+                {selectedIds.size} selected
+              </span>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={cancelSelection}
+                  className="text-xs font-semibold text-on-surface-muted hover:text-on-surface"
+                >
+                  Cancel
+                </button>
+                {selectedIds.size > 0 && (
+                  <button
+                    onClick={handleDeleteSelected}
+                    disabled={isDeleting}
+                    className="flex items-center gap-1 text-red-600 hover:text-red-700 disabled:opacity-50 text-xs font-semibold"
+                  >
+                    <Trash2 size={12} />
+                    {isDeleting ? "..." : "Delete"}
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <>
+              <h2 className="font-display text-base font-bold text-tertiary">Conversations</h2>
+              <div className="relative" ref={menuRef}>
+                <button
+                  onClick={() => setMenuOpen(!menuOpen)}
+                  className="p-1 rounded-md hover:bg-surface-low text-on-surface-muted hover:text-on-surface transition-colors"
+                >
+                  <MoreVertical size={16} />
+                </button>
+                {menuOpen && (
+                  <div className="absolute right-0 top-full mt-1 w-36 bg-surface border border-surface-mid rounded-lg shadow-lg overflow-hidden z-10 py-1">
+                    <button
+                      onClick={() => {
+                        setSelectionMode(true);
+                        setMenuOpen(false);
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-on-surface hover:bg-surface-low transition-colors"
+                    >
+                      Select chats
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
         <p className="font-label text-xs text-on-surface-muted">{visible.length} leads</p>
@@ -113,14 +171,16 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
               selectedId === lead.id && "bg-surface-low"
             )}
           >
-            <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
-              <input
-                type="checkbox"
-                checked={selectedIds.has(lead.id)}
-                onChange={(e) => toggleSelect(lead.id, e as unknown as React.MouseEvent)}
-                className="cursor-pointer"
-              />
-            </div>
+            {selectionMode && (
+              <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(lead.id)}
+                  onChange={(e) => toggleSelect(lead.id, e as unknown as React.MouseEvent)}
+                  className="cursor-pointer"
+                />
+              </div>
+            )}
             <div className="flex-1 min-w-0">
               <div className="flex items-start justify-between gap-2 mb-1">
                 <div className="flex items-center gap-1.5 min-w-0">
