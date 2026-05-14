@@ -28,7 +28,17 @@ export default function ConversationsPage() {
 
   return (
     <div className="-m-8 h-screen flex">
-      <ConversationList leads={leads} selectedId={selected?.id ?? null} onSelect={setSelected} />
+      <ConversationList
+        leads={leads}
+        selectedId={selected?.id ?? null}
+        onSelect={setSelected}
+        onDeleted={(deletedIds) => {
+          setLeads((prev) => prev.filter((l) => !deletedIds.includes(l.id)));
+          if (selected && deletedIds.includes(selected.id)) {
+            setSelected(null);
+          }
+        }}
+      />
       {selected ? (
         <ChatThread
           lead={selected}
