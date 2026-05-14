@@ -1,19 +1,27 @@
 "use client";
 import { useEffect, useState } from "react";
-import { api, Lead } from "@/lib/api";
+import { api, getAuthHeaders, API_URL, Lead } from "@/lib/api";
 import { ConversationList } from "@/components/conversation-list";
 import { ChatThread } from "@/components/chat-thread";
 import { MessageSquare } from "lucide-react";
+
+async function fetchConversations(): Promise<Lead[]> {
+  const auth = await getAuthHeaders();
+  const res = await fetch(`${API_URL}/api/v1/conversations?limit=50`, { headers: auth });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.leads ?? [];
+}
 
 export default function ConversationsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selected, setSelected] = useState<Lead | null>(null);
 
   useEffect(() => {
-    api.leads.list({ limit: 100 }).then(setLeads);
+    fetchConversations().then(setLeads);
     const interval = setInterval(() => {
-      api.leads.list({ limit: 100 }).then(setLeads);
-    }, 15000);
+      fetchConversations().then(setLeads);
+    }, 20000);
     return () => clearInterval(interval);
   }, []);
 

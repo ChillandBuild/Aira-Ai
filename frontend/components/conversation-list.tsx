@@ -34,7 +34,9 @@ export function ConversationList({ leads, selectedId, onSelect }: Props) {
   const visible = (segment ? leads.filter((l) => l.segment === segment) : leads).sort((a, b) => {
     if (a.needs_human_intervention && !b.needs_human_intervention) return -1;
     if (!a.needs_human_intervention && b.needs_human_intervention) return 1;
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    const aTime = (a as any).last_reply_at || a.created_at;
+    const bTime = (b as any).last_reply_at || b.created_at;
+    return new Date(bTime).getTime() - new Date(aTime).getTime();
   });
 
   return (
@@ -81,7 +83,7 @@ export function ConversationList({ leads, selectedId, onSelect }: Props) {
                 </span>
               </div>
               <span className="font-label text-[10px] text-on-surface-muted shrink-0">
-                {timeAgo(lead.created_at)}
+                {timeAgo((lead as any).last_reply_at || lead.created_at)}
               </span>
             </div>
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
