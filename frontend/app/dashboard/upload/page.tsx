@@ -457,7 +457,7 @@ export default function UploadPage() {
               )}
               {!templatesLoading && templatesError && (
                 <p className="font-label text-sm text-red-600 mt-2">
-                  Failed to load templates. <button onClick={() => setTemplatesLoading(false)} className="underline">Retry</button>
+                  Failed to load templates. <button onClick={() => { setTemplatesError(false); setTemplatesLoading(false); }} className="underline">Retry</button>
                 </p>
               )}
               {!templatesLoading && !templatesError && templates.length === 0 && (
