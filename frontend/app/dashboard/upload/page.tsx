@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { Upload, FileText, Check, AlertTriangle, ChevronRight, RotateCcw, MessageSquare } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
@@ -96,21 +97,26 @@ export default function UploadPage() {
   const [sendResult, setSendResult] = useState<SendResult | null>(null);
 
   const [templates, setTemplates] = useState<{id: string; name: string; category: string}[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templatesError, setTemplatesError] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (currentStep === 4 && templates.length === 0) {
+    if (currentStep === 4 && templates.length === 0 && !templatesLoading) {
+      setTemplatesLoading(true);
+      setTemplatesError(false);
       getAuthHeaders().then(auth => {
         fetch(`${API_URL}/api/v1/templates`, { headers: auth })
           .then(r => r.json())
           .then((data: {id: string; name: string; status: string; category: string}[]) => {
             setTemplates((data || []).filter(t => t.status === "APPROVED"));
           })
-          .catch(() => {});
+          .catch(() => setTemplatesError(true))
+          .finally(() => setTemplatesLoading(false));
       });
     }
-  }, [currentStep]);
+  }, [currentStep, templates.length, templatesLoading]);
 
   function resetAll() {
     setCurrentStep(1);
@@ -125,6 +131,8 @@ export default function UploadPage() {
     setDripDays("");
     setSendError(null);
     setSendResult(null);
+    setTemplatesLoading(false);
+    setTemplatesError(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -428,10 +436,11 @@ export default function UploadPage() {
             </div>
 
             <div>
-              <label className="block font-label text-sm font-semibold text-on-surface uppercase tracking-widest mb-2">
+              <label htmlFor="template-select" className="block font-label text-sm font-semibold text-on-surface uppercase tracking-widest mb-2">
                 Template Name
               </label>
               <select
+                id="template-select"
                 value={templateName}
                 onChange={(e) => setTemplateName(e.target.value)}
                 className={inputCls}
@@ -443,9 +452,17 @@ export default function UploadPage() {
                   </option>
                 ))}
               </select>
-              {templates.length === 0 && (
+              {templatesLoading && (
+                <p className="font-label text-sm text-on-surface-muted mt-2">Loading templates…</p>
+              )}
+              {!templatesLoading && templatesError && (
+                <p className="font-label text-sm text-red-600 mt-2">
+                  Failed to load templates. <button onClick={() => setTemplatesLoading(false)} className="underline">Retry</button>
+                </p>
+              )}
+              {!templatesLoading && !templatesError && templates.length === 0 && (
                 <p className="font-label text-sm text-amber-600 mt-2">
-                  No approved templates yet. <a href="/dashboard/templates" className="underline">Create one →</a>
+                  No approved templates yet. <Link href="/dashboard/templates" className="underline">Create one →</Link>
                 </p>
               )}
             </div>
@@ -609,13 +626,13 @@ export default function UploadPage() {
             </dl>
 
             <div className="flex items-center gap-3">
-              <a
+              <Link
                 href="/dashboard/conversations"
                 className="flex items-center gap-2 px-5 py-2.5 bg-tertiary text-white rounded-xl font-label text-sm font-semibold hover:bg-tertiary/90 transition-colors"
               >
                 <MessageSquare size={14} />
                 View Conversations
-              </a>
+              </Link>
               <button
                 onClick={resetAll}
                 className="flex items-center gap-2 px-5 py-2.5 bg-surface-low text-on-surface rounded-xl font-label text-sm font-semibold hover:bg-surface-mid transition-colors"
