@@ -344,11 +344,20 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             "score": 5,
             "segment": "C",
             "tenant_id": tenant_id,
-            "opt_in_source": _clean_text(lead.opt_in_source) or "imported",
+            # opt_in_source intentionally excluded — set below only for new leads
         })
 
     if upsert_rows:
         db.table("leads").upsert(upsert_rows, on_conflict="phone").execute()
+        # Set opt_in_source only for leads that don't have one yet (new leads)
+        batch_opt_in_source = _clean_text(eligible[0].opt_in_source) if eligible else "imported"
+        batch_phones = [r["phone"] for r in upsert_rows]
+        db.table("leads") \
+            .update({"opt_in_source": batch_opt_in_source or "imported"}) \
+            .in_("phone", batch_phones) \
+            .eq("tenant_id", tenant_id) \
+            .is_("opt_in_source", "null") \
+            .execute()
 
     all_phones = [_normalize_phone(l.phone or "") for l in eligible if _normalize_phone(l.phone or "")]
     lead_rows = db.table("leads").select("id,phone").in_("phone", all_phones).eq("tenant_id", tenant_id).execute()
@@ -380,15 +389,18 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             sent += 1
             lead_id = phone_to_lead_id.get(phone)
             if lead_id:
-                db.table("messages").insert({
-                    "lead_id": lead_id,
-                    "tenant_id": tenant_id,
-                    "direction": "outbound",
-                    "channel": "whatsapp",
-                    "content": f"[Template: {body.template_name}]",
-                    "is_ai_generated": False,
-                    "reply_source": "template_broadcast",
-                }).execute()
+                try:
+                    db.table("messages").insert({
+                        "lead_id": lead_id,
+                        "tenant_id": tenant_id,
+                        "direction": "outbound",
+                        "channel": "whatsapp",
+                        "content": f"[Template: {body.template_name}]",
+                        "is_ai_generated": False,
+                        "reply_source": "template_broadcast",
+                    }).execute()
+                except Exception as db_err:
+                    logger.error(f"messages insert failed for {phone}: {db_err}")
         except Exception as e:
             logger.error(f"Bulk-send failed for {phone}: {e}")
             failed += 1
