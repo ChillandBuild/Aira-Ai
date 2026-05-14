@@ -1,7 +1,7 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import { Upload, FileText, Check, AlertTriangle, ChevronRight, RotateCcw } from "lucide-react";
+import { Upload, FileText, Check, AlertTriangle, ChevronRight, RotateCcw, MessageSquare } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -57,7 +57,7 @@ function StepIndicator({ current }: { current: number }) {
               >
                 {done ? <Check size={14} /> : step}
               </div>
-              <span className={`font-label text-[10px] whitespace-nowrap ${active ? "text-tertiary font-semibold" : "text-on-surface-muted"}`}>
+              <span className={`font-label text-xs whitespace-nowrap ${active ? "text-tertiary font-semibold" : "text-on-surface-muted"}`}>
                 {label}
               </span>
             </div>
@@ -95,7 +95,22 @@ export default function UploadPage() {
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendResult, setSendResult] = useState<SendResult | null>(null);
 
+  const [templates, setTemplates] = useState<{id: string; name: string; category: string}[]>([]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (currentStep === 4 && templates.length === 0) {
+      getAuthHeaders().then(auth => {
+        fetch(`${API_URL}/api/v1/templates`, { headers: auth })
+          .then(r => r.json())
+          .then((data: {id: string; name: string; status: string; category: string}[]) => {
+            setTemplates((data || []).filter(t => t.status === "APPROVED"));
+          })
+          .catch(() => {});
+      });
+    }
+  }, [currentStep]);
 
   function resetAll() {
     setCurrentStep(1);
@@ -211,38 +226,35 @@ export default function UploadPage() {
     <div>
       <div className="mb-8">
         <h1 className="font-display text-3xl font-bold text-tertiary">Bulk Contact Upload</h1>
-        <p className="font-body text-on-surface-muted mt-1">Import contacts and send a WhatsApp campaign in six steps.</p>
+        <p className="font-body text-base text-on-surface-muted mt-1">Import contacts and send a WhatsApp campaign in six steps.</p>
       </div>
 
-      <div className="bg-surface rounded-card p-8 shadow-card ring-1 ring-[#c4c7c7]/15 max-w-3xl">
+      <div className="bg-surface rounded-card p-10 shadow-card ring-1 ring-[#c4c7c7]/15 max-w-3xl">
         <StepIndicator current={currentStep} />
 
         {/* ── Step 1: Upload CSV ─────────────────────────────────────────── */}
         {currentStep === 1 && (
           <div className="space-y-6">
             <div>
-              <h2 className="font-display text-lg font-bold text-tertiary mb-1">Upload your CSV</h2>
-              <p className="font-body text-sm text-on-surface-muted">We&apos;ll detect column mappings automatically.</p>
+              <h2 className="font-display text-xl font-bold text-tertiary mb-1">Upload your CSV</h2>
+              <p className="font-body text-base text-on-surface-muted">We&apos;ll detect column mappings automatically.</p>
             </div>
 
-            <label className="flex flex-col items-center justify-center gap-3 p-10 bg-surface-low rounded-2xl border-2 border-dashed border-surface-mid cursor-pointer hover:border-tertiary transition-colors">
-              <FileText size={32} className="text-on-surface-muted" />
-              <div className="text-center">
-                <p className="font-body text-sm text-on-surface font-semibold">{csvFile?.name ?? "Choose a CSV file"}</p>
-                <p className="font-label text-xs text-on-surface-muted mt-0.5">Click to browse</p>
+            <label className="flex flex-col items-center justify-center gap-4 p-16 bg-surface-low rounded-2xl border-2 border-dashed border-surface-mid cursor-pointer hover:border-tertiary hover:bg-tertiary/5 transition-all group">
+              <div className="w-16 h-16 rounded-2xl bg-tertiary/10 flex items-center justify-center group-hover:bg-tertiary/20 transition-colors">
+                <FileText size={28} className="text-tertiary" />
               </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".csv"
-                className="hidden"
-                onChange={handleFileSelect}
-              />
+              <div className="text-center">
+                <p className="font-body text-base font-semibold text-on-surface">{csvFile?.name ?? "Drop your CSV here"}</p>
+                <p className="font-label text-sm text-on-surface-muted mt-1">or click to browse · .csv files only</p>
+                {csvFile && <p className="font-label text-xs text-tertiary mt-1">{(csvFile.size / 1024).toFixed(1)} KB</p>}
+              </div>
+              <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleFileSelect} />
             </label>
 
-            {parseLoading && <p className="font-body text-sm text-on-surface-muted">Parsing file…</p>}
+            {parseLoading && <p className="font-body text-base text-on-surface-muted">Parsing file…</p>}
             {parseError && (
-              <div className="flex items-start gap-2 p-3 bg-red-50 text-red-700 rounded-xl font-body text-sm">
+              <div className="flex items-start gap-2 p-3 bg-red-50 text-red-700 rounded-xl font-body text-base">
                 <AlertTriangle size={15} className="mt-0.5 shrink-0" />
                 {parseError}
               </div>
@@ -251,22 +263,22 @@ export default function UploadPage() {
             {parsedData && (
               <div className="space-y-3 p-4 bg-surface-low rounded-xl">
                 <div className="flex items-center justify-between">
-                  <span className="font-label text-xs text-on-surface-muted uppercase tracking-widest">Total rows</span>
+                  <span className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Total rows</span>
                   <span className="font-label text-sm font-semibold text-on-surface">{parsedData.total_rows.toLocaleString()}</span>
                 </div>
                 {parsedData.duplicate_count > 0 && (
                   <div className="flex items-center justify-between">
-                    <span className="font-label text-xs text-on-surface-muted uppercase tracking-widest">Duplicates</span>
+                    <span className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Duplicates</span>
                     <span className="font-label text-sm font-semibold text-amber-700">{parsedData.duplicate_count} already in system</span>
                   </div>
                 )}
                 <div className="flex items-start justify-between">
-                  <span className="font-label text-xs text-on-surface-muted uppercase tracking-widest">Detected columns</span>
-                  <span className="font-label text-xs text-on-surface text-right max-w-xs">{parsedData.columns.join(", ")}</span>
+                  <span className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Detected columns</span>
+                  <span className="font-label text-sm text-on-surface text-right max-w-xs">{parsedData.columns.join(", ")}</span>
                 </div>
                 <div className="flex items-start justify-between">
-                  <span className="font-label text-xs text-on-surface-muted uppercase tracking-widest">Suggested mapping</span>
-                  <div className="text-right font-label text-xs text-on-surface space-y-0.5">
+                  <span className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Suggested mapping</span>
+                  <div className="text-right font-label text-sm text-on-surface space-y-0.5">
                     {Object.entries(parsedData.suggested_mapping).map(([k, v]) => (
                       <div key={k}><span className="text-on-surface-muted">{k}:</span> {v ?? <span className="italic text-on-surface-muted">none</span>}</div>
                     ))}
@@ -291,8 +303,8 @@ export default function UploadPage() {
         {currentStep === 2 && (
           <div className="space-y-6">
             <div>
-              <h2 className="font-display text-lg font-bold text-tertiary mb-1">Opt-in Source</h2>
-              <p className="font-body text-sm text-on-surface-muted">How did these leads consent to be contacted?</p>
+              <h2 className="font-display text-xl font-bold text-tertiary mb-1">Opt-in Source</h2>
+              <p className="font-body text-base text-on-surface-muted">How did these leads consent to be contacted?</p>
             </div>
 
             <div className="space-y-2">
@@ -312,16 +324,16 @@ export default function UploadPage() {
                   />
                   <div>
                     <p className="font-label text-sm font-semibold text-on-surface">{opt.label}</p>
-                    <p className="font-body text-xs text-on-surface-muted mt-0.5">{opt.description}</p>
+                    <p className="font-body text-sm text-on-surface-muted mt-0.5">{opt.description}</p>
                   </div>
                 </label>
               ))}
             </div>
 
-            {optInLoading && <p className="font-body text-sm text-on-surface-muted">Validating…</p>}
+            {optInLoading && <p className="font-body text-base text-on-surface-muted">Validating…</p>}
 
             {optInValidation && (
-              <div className={`flex items-start gap-2 p-3 rounded-xl font-body text-sm
+              <div className={`flex items-start gap-2 p-3 rounded-xl font-body text-base
                 ${optInValidation.allowed ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
                 {optInValidation.allowed ? <Check size={15} className="mt-0.5 shrink-0" /> : <AlertTriangle size={15} className="mt-0.5 shrink-0" />}
                 <span>
@@ -352,14 +364,14 @@ export default function UploadPage() {
         {currentStep === 3 && parsedData && (
           <div className="space-y-6">
             <div>
-              <h2 className="font-display text-lg font-bold text-tertiary mb-1">Preview</h2>
-              <p className="font-body text-sm text-on-surface-muted">
+              <h2 className="font-display text-xl font-bold text-tertiary mb-1">Preview</h2>
+              <p className="font-body text-base text-on-surface-muted">
                 Showing first {parsedData.preview.length} of {parsedData.total_rows.toLocaleString()} rows.
               </p>
             </div>
 
             {parsedData.duplicate_count > 0 && (
-              <div className="flex items-center gap-2 p-3 bg-amber-50 text-amber-700 rounded-xl font-body text-sm">
+              <div className="flex items-center gap-2 p-3 bg-amber-50 text-amber-700 rounded-xl font-body text-base">
                 <AlertTriangle size={15} className="shrink-0" />
                 {parsedData.duplicate_count} duplicate{parsedData.duplicate_count !== 1 ? "s" : ""} detected — they will be skipped on import.
               </div>
@@ -411,24 +423,35 @@ export default function UploadPage() {
         {currentStep === 4 && (
           <div className="space-y-6">
             <div>
-              <h2 className="font-display text-lg font-bold text-tertiary mb-1">Template & Schedule</h2>
-              <p className="font-body text-sm text-on-surface-muted">Choose which template to send and when.</p>
+              <h2 className="font-display text-xl font-bold text-tertiary mb-1">Template & Schedule</h2>
+              <p className="font-body text-base text-on-surface-muted">Choose which template to send and when.</p>
             </div>
 
             <div>
-              <label className="block font-label text-xs font-semibold text-on-surface uppercase tracking-widest mb-2">
+              <label className="block font-label text-sm font-semibold text-on-surface uppercase tracking-widest mb-2">
                 Template Name
               </label>
-              <input
+              <select
                 value={templateName}
                 onChange={(e) => setTemplateName(e.target.value)}
-                placeholder="e.g. april_outreach_v2"
                 className={inputCls}
-              />
+              >
+                <option value="">Select a template…</option>
+                {templates.map(t => (
+                  <option key={t.id} value={t.name}>
+                    {t.name} ({t.category})
+                  </option>
+                ))}
+              </select>
+              {templates.length === 0 && (
+                <p className="font-label text-sm text-amber-600 mt-2">
+                  No approved templates yet. <a href="/dashboard/templates" className="underline">Create one →</a>
+                </p>
+              )}
             </div>
 
             <div>
-              <label className="block font-label text-xs font-semibold text-on-surface uppercase tracking-widest mb-2">
+              <label className="block font-label text-sm font-semibold text-on-surface uppercase tracking-widest mb-2">
                 Schedule
               </label>
               <div className="space-y-2">
@@ -456,7 +479,7 @@ export default function UploadPage() {
 
             {scheduleType === "scheduled" && (
               <div>
-                <label className="block font-label text-xs font-semibold text-on-surface uppercase tracking-widest mb-2">
+                <label className="block font-label text-sm font-semibold text-on-surface uppercase tracking-widest mb-2">
                   Send At
                 </label>
                 <input
@@ -470,7 +493,7 @@ export default function UploadPage() {
 
             {scheduleType === "drip" && (
               <div>
-                <label className="block font-label text-xs font-semibold text-on-surface uppercase tracking-widest mb-2">
+                <label className="block font-label text-sm font-semibold text-on-surface uppercase tracking-widest mb-2">
                   Spread over how many days?
                 </label>
                 <input
@@ -506,25 +529,25 @@ export default function UploadPage() {
         {currentStep === 5 && parsedData && (
           <div className="space-y-6">
             <div>
-              <h2 className="font-display text-lg font-bold text-tertiary mb-1">Confirm & Send</h2>
-              <p className="font-body text-sm text-on-surface-muted">Review before dispatching.</p>
+              <h2 className="font-display text-xl font-bold text-tertiary mb-1">Confirm & Send</h2>
+              <p className="font-body text-base text-on-surface-muted">Review before dispatching.</p>
             </div>
 
             <dl className="space-y-3 p-5 bg-surface-low rounded-xl ring-1 ring-[#c4c7c7]/15">
               <div className="flex justify-between">
-                <dt className="font-label text-xs text-on-surface-muted uppercase tracking-widest">Leads</dt>
+                <dt className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Leads</dt>
                 <dd className="font-label text-sm font-semibold text-on-surface">{parsedData.total_rows.toLocaleString()}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="font-label text-xs text-on-surface-muted uppercase tracking-widest">Opt-in Source</dt>
+                <dt className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Opt-in Source</dt>
                 <dd className="font-label text-sm font-semibold text-on-surface capitalize">{optInSource.replace(/_/g, " ")}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="font-label text-xs text-on-surface-muted uppercase tracking-widest">Template</dt>
+                <dt className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Template</dt>
                 <dd className="font-label text-sm font-semibold text-on-surface">{templateName}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="font-label text-xs text-on-surface-muted uppercase tracking-widest">Schedule</dt>
+                <dt className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Schedule</dt>
                 <dd className="font-label text-sm font-semibold text-on-surface capitalize">
                   {scheduleType === "now" ? "Send Immediately" : scheduleType === "scheduled" ? `At ${scheduleAt}` : `Drip over ${dripDays} days`}
                 </dd>
@@ -532,7 +555,7 @@ export default function UploadPage() {
             </dl>
 
             {sendError && (
-              <div className="flex items-start gap-2 p-3 bg-red-50 text-red-700 rounded-xl font-body text-sm">
+              <div className="flex items-start gap-2 p-3 bg-red-50 text-red-700 rounded-xl font-body text-base">
                 <AlertTriangle size={15} className="mt-0.5 shrink-0" />
                 {sendError}
               </div>
@@ -565,33 +588,42 @@ export default function UploadPage() {
                 <Check size={20} className="text-green-700" />
               </div>
               <div>
-                <h2 className="font-display text-lg font-bold text-tertiary">Campaign Queued</h2>
-                <p className="font-body text-sm text-on-surface-muted">Your messages are on their way.</p>
+                <h2 className="font-display text-xl font-bold text-tertiary">Campaign Queued</h2>
+                <p className="font-body text-base text-on-surface-muted">Your messages are on their way.</p>
               </div>
             </div>
 
             <dl className="space-y-3 p-5 bg-surface-low rounded-xl ring-1 ring-[#c4c7c7]/15">
               <div className="flex justify-between">
-                <dt className="font-label text-xs text-on-surface-muted uppercase tracking-widest">Queued</dt>
+                <dt className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Queued</dt>
                 <dd className="font-label text-sm font-semibold text-green-700">{sendResult.queued.toLocaleString()}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="font-label text-xs text-on-surface-muted uppercase tracking-widest">Rejected (no consent)</dt>
+                <dt className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Rejected (no consent)</dt>
                 <dd className="font-label text-sm font-semibold text-on-surface-muted">{sendResult.rejected.toLocaleString()}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="font-label text-xs text-on-surface-muted uppercase tracking-widest">Sender Number</dt>
+                <dt className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Sender Number</dt>
                 <dd className="font-label text-sm font-semibold text-tertiary">{sendResult.number_used}</dd>
               </div>
             </dl>
 
-            <button
-              onClick={resetAll}
-              className="flex items-center gap-2 px-5 py-2.5 bg-surface-low text-on-surface rounded-xl font-label text-sm font-semibold hover:bg-surface-mid transition-colors"
-            >
-              <RotateCcw size={14} />
-              Upload Another
-            </button>
+            <div className="flex items-center gap-3">
+              <a
+                href="/dashboard/conversations"
+                className="flex items-center gap-2 px-5 py-2.5 bg-tertiary text-white rounded-xl font-label text-sm font-semibold hover:bg-tertiary/90 transition-colors"
+              >
+                <MessageSquare size={14} />
+                View Conversations
+              </a>
+              <button
+                onClick={resetAll}
+                className="flex items-center gap-2 px-5 py-2.5 bg-surface-low text-on-surface rounded-xl font-label text-sm font-semibold hover:bg-surface-mid transition-colors"
+              >
+                <RotateCcw size={14} />
+                Upload Another
+              </button>
+            </div>
           </div>
         )}
       </div>
