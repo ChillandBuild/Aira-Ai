@@ -43,12 +43,12 @@ async def get_best_number() -> dict | None:
     return rows[0]
 
 
-async def increment_send_count(number_id: str) -> None:
+async def increment_send_count(number_id: str, delta: int = 1) -> None:
     db = get_supabase()
     # Atomic increment via Postgres function to avoid read-modify-write races.
     db.rpc(
         "increment_phone_daily_send_count",
-        {"row_id": number_id},
+        {"row_id": number_id, "delta": delta},
     ).execute()
 
 

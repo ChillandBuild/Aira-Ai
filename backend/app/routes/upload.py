@@ -344,12 +344,16 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             "score": 5,
             "segment": "C",
             "tenant_id": tenant_id,
+            "opt_in_source": _clean_text(lead.opt_in_source) or "imported",
         })
 
     if upsert_rows:
         db.table("leads").upsert(upsert_rows, on_conflict="phone").execute()
 
     all_phones = [_normalize_phone(l.phone or "") for l in eligible if _normalize_phone(l.phone or "")]
+    lead_rows = db.table("leads").select("id,phone").in_("phone", all_phones).eq("tenant_id", tenant_id).execute()
+    phone_to_lead_id = {r["phone"]: r["id"] for r in (lead_rows.data or [])}
+
     opted_out_phones: set[str] = set()
     if all_phones:
         rows = db.table("leads").select("phone").in_("phone", all_phones).eq("tenant_id", tenant_id).eq("opted_out", True).execute()
@@ -374,12 +378,23 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 phone_number_id=best_number.get("meta_phone_number_id"),
             )
             sent += 1
+            lead_id = phone_to_lead_id.get(phone)
+            if lead_id:
+                db.table("messages").insert({
+                    "lead_id": lead_id,
+                    "tenant_id": tenant_id,
+                    "direction": "outbound",
+                    "channel": "whatsapp",
+                    "content": f"[Template: {body.template_name}]",
+                    "is_ai_generated": False,
+                    "reply_source": "template_broadcast",
+                }).execute()
         except Exception as e:
             logger.error(f"Bulk-send failed for {phone}: {e}")
             failed += 1
 
     if sent > 0:
-        await increment_send_count(best_number["id"])
+        await increment_send_count(best_number["id"], delta=sent)
 
     return {
         "queued": len(upsert_rows),
