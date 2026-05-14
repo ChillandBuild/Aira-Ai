@@ -15,32 +15,26 @@ async def list_conversations(
 ):
     db = get_supabase()
 
-    msg_rows = (
-        db.table("messages")
-        .select("lead_id, created_at")
-        .eq("direction", "inbound")
-        .eq("tenant_id", tenant_id)
-        .order("created_at", desc=True)
-        .execute()
-    )
+    rpc_rows = db.rpc(
+        "get_conversation_leads",
+        {"p_tenant_id": tenant_id, "p_limit": limit, "p_offset": offset},
+    ).execute()
 
-    seen: dict[str, str] = {}
-    for row in msg_rows.data or []:
-        lid = row.get("lead_id")
-        if lid and lid not in seen:
-            seen[lid] = row["created_at"]
+    rows = rpc_rows.data or []
+    if not rows:
+        return {"leads": [], "total": 0}
 
-    ordered_ids = list(seen.keys())
-    total = len(ordered_ids)
-    page_ids = ordered_ids[offset: offset + limit]
+    total = int(rows[0].get("total", 0)) if rows else 0
+    lead_ids = [r["lead_id"] for r in rows if r.get("lead_id")]
+    last_reply_map = {r["lead_id"]: r["last_reply_at"] for r in rows if r.get("lead_id")}
 
-    if not page_ids:
-        return {"leads": [], "total": total}
+    if not lead_ids:
+        return {"leads": [], "total": 0}
 
     lead_rows = (
         db.table("leads")
         .select("*")
-        .in_("id", page_ids)
+        .in_("id", lead_ids)
         .eq("tenant_id", tenant_id)
         .neq("opted_out", True)
         .is_("deleted_at", "null")
@@ -49,10 +43,10 @@ async def list_conversations(
 
     lead_map = {l["id"]: l for l in (lead_rows.data or [])}
     leads = []
-    for lid in page_ids:
+    for lid in lead_ids:
         if lid in lead_map:
             lead = dict(lead_map[lid])
-            lead["last_reply_at"] = seen[lid]
+            lead["last_reply_at"] = last_reply_map.get(lid)
             leads.append(lead)
 
     return {"leads": leads, "total": total}

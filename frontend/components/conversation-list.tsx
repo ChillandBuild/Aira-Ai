@@ -5,6 +5,8 @@ import { SegmentBadge } from "./segment-badge";
 import { timeAgo, formatPhone, cn } from "@/lib/utils";
 import { MessageCircle } from "lucide-react";
 
+type ConversationLead = Lead & { last_reply_at?: string };
+
 function IgIcon({ size = 12, className = "" }: { size?: number; className?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -34,8 +36,8 @@ export function ConversationList({ leads, selectedId, onSelect }: Props) {
   const visible = (segment ? leads.filter((l) => l.segment === segment) : leads).sort((a, b) => {
     if (a.needs_human_intervention && !b.needs_human_intervention) return -1;
     if (!a.needs_human_intervention && b.needs_human_intervention) return 1;
-    const aTime = (a as any).last_reply_at || a.created_at;
-    const bTime = (b as any).last_reply_at || b.created_at;
+    const aTime = (a as ConversationLead).last_reply_at || a.created_at;
+    const bTime = (b as ConversationLead).last_reply_at || b.created_at;
     return new Date(bTime).getTime() - new Date(aTime).getTime();
   });
 
@@ -83,7 +85,7 @@ export function ConversationList({ leads, selectedId, onSelect }: Props) {
                 </span>
               </div>
               <span className="font-label text-[10px] text-on-surface-muted shrink-0">
-                {timeAgo((lead as any).last_reply_at || lead.created_at)}
+                {timeAgo((lead as ConversationLead).last_reply_at || lead.created_at)}
               </span>
             </div>
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
