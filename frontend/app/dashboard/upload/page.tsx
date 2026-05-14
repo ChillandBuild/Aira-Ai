@@ -44,27 +44,23 @@ const STEPS = ["Upload", "Opt-in", "Preview", "Template", "Confirm", "Done"];
 
 function StepIndicator({ current }: { current: number }) {
   return (
-    <div className="flex items-center gap-0 mb-10">
+    <div className="flex items-start w-full mb-10">
       {STEPS.map((label, i) => {
         const step = i + 1;
         const done = step < current;
         const active = step === current;
         return (
-          <div key={label} className="flex items-center">
-            <div className="flex flex-col items-center gap-1.5">
-              <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center font-label text-xs font-bold transition-colors
-                  ${done ? "bg-tertiary text-white" : active ? "bg-tertiary text-white ring-4 ring-tertiary/20" : "bg-surface-mid text-on-surface-muted"}`}
-              >
-                {done ? <Check size={14} /> : step}
-              </div>
-              <span className={`font-label text-xs whitespace-nowrap ${active ? "text-tertiary font-semibold" : "text-on-surface-muted"}`}>
-                {label}
-              </span>
-            </div>
-            {i < STEPS.length - 1 && (
-              <div className={`h-px w-10 mx-1 mb-5 ${step < current ? "bg-tertiary" : "bg-surface-mid"}`} />
+          <div key={label} className="flex-1 flex flex-col items-center relative">
+            {i > 0 && (
+              <div className={`absolute top-5 right-1/2 w-full h-0.5 -translate-y-1/2 transition-colors ${done ? "bg-tertiary" : "bg-surface-mid"}`} />
             )}
+            <div className={`relative z-10 w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all
+              ${done ? "bg-tertiary text-white" : active ? "bg-tertiary text-white ring-4 ring-tertiary/20 shadow-md" : "bg-surface text-on-surface-muted border-2 border-surface-mid"}`}>
+              {done ? <Check size={16} /> : step}
+            </div>
+            <span className={`mt-2 font-label text-xs text-center whitespace-nowrap ${active ? "text-tertiary font-semibold" : done ? "text-tertiary/50" : "text-on-surface-muted"}`}>
+              {label}
+            </span>
           </div>
         );
       })}
@@ -233,30 +229,44 @@ export default function UploadPage() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="font-display text-3xl font-bold text-tertiary">Bulk Contact Upload</h1>
-        <p className="font-body text-base text-on-surface-muted mt-1">Import contacts and send a WhatsApp campaign in six steps.</p>
+        <h1 className="font-display text-4xl font-bold text-on-surface">Bulk Contact Upload</h1>
+        <p className="font-body text-base text-on-surface-muted mt-2">Import a CSV and broadcast a WhatsApp campaign to all eligible leads.</p>
       </div>
 
-      <div className="bg-surface rounded-card p-10 shadow-card ring-1 ring-[#c4c7c7]/15 max-w-3xl">
+      <div className="bg-surface rounded-2xl p-10 shadow-lg ring-1 ring-[#c4c7c7]/20 max-w-4xl">
         <StepIndicator current={currentStep} />
 
         {/* ── Step 1: Upload CSV ─────────────────────────────────────────── */}
         {currentStep === 1 && (
           <div className="space-y-6">
             <div>
-              <h2 className="font-display text-xl font-bold text-tertiary mb-1">Upload your CSV</h2>
+              <h2 className="font-display text-2xl font-bold text-on-surface mb-1">Upload your CSV</h2>
               <p className="font-body text-base text-on-surface-muted">We&apos;ll detect column mappings automatically.</p>
             </div>
 
-            <label className="flex flex-col items-center justify-center gap-4 p-16 bg-surface-low rounded-2xl border-2 border-dashed border-surface-mid cursor-pointer hover:border-tertiary hover:bg-tertiary/5 transition-all group">
-              <div className="w-16 h-16 rounded-2xl bg-tertiary/10 flex items-center justify-center group-hover:bg-tertiary/20 transition-colors">
-                <FileText size={28} className="text-tertiary" />
+            <label className={`relative flex flex-col items-center justify-center gap-5 py-16 rounded-2xl border-2 border-dashed cursor-pointer transition-all group
+              ${csvFile ? "border-tertiary bg-tertiary/5" : "border-tertiary/30 hover:border-tertiary/70 hover:bg-tertiary/[0.04]"}`}>
+              <div className={`w-20 h-20 rounded-2xl flex items-center justify-center transition-all shadow-sm
+                ${csvFile ? "bg-tertiary text-white" : "bg-tertiary/10 text-tertiary group-hover:bg-tertiary/20"}`}>
+                {csvFile ? <Check size={36} /> : <Upload size={36} />}
               </div>
-              <div className="text-center">
-                <p className="font-body text-base font-semibold text-on-surface">{csvFile?.name ?? "Drop your CSV here"}</p>
-                <p className="font-label text-sm text-on-surface-muted mt-1">or click to browse · .csv files only</p>
-                {csvFile && <p className="font-label text-xs text-tertiary mt-1">{(csvFile.size / 1024).toFixed(1)} KB</p>}
+              <div className="text-center px-4">
+                <p className="font-display text-xl font-bold text-on-surface">
+                  {csvFile ? csvFile.name : "Drop your CSV file here"}
+                </p>
+                <p className="font-body text-sm text-on-surface-muted mt-1.5">
+                  {csvFile
+                    ? `${(csvFile.size / 1024).toFixed(1)} KB · click to change file`
+                    : "or click to browse — .csv files only · name and phone columns required"}
+                </p>
               </div>
+              {!csvFile && (
+                <div className="flex items-center gap-6 text-xs text-on-surface-muted font-label border-t border-dashed border-tertiary/20 w-full justify-center pt-4 mt-1">
+                  <span>✓ Auto-detects columns</span>
+                  <span>✓ Deduplicates existing leads</span>
+                  <span>✓ Indian numbers auto-formatted</span>
+                </div>
+              )}
               <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleFileSelect} />
             </label>
 
@@ -269,26 +279,27 @@ export default function UploadPage() {
             )}
 
             {parsedData && (
-              <div className="space-y-3 p-4 bg-surface-low rounded-xl">
-                <div className="flex items-center justify-between">
-                  <span className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Total rows</span>
-                  <span className="font-label text-sm font-semibold text-on-surface">{parsedData.total_rows.toLocaleString()}</span>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-4 bg-tertiary/5 border border-tertiary/15 rounded-xl text-center">
+                  <p className="font-display text-2xl font-bold text-tertiary">{parsedData.total_rows.toLocaleString()}</p>
+                  <p className="font-label text-xs text-on-surface-muted mt-1">Total Rows</p>
                 </div>
-                {parsedData.duplicate_count > 0 && (
-                  <div className="flex items-center justify-between">
-                    <span className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Duplicates</span>
-                    <span className="font-label text-sm font-semibold text-amber-700">{parsedData.duplicate_count} already in system</span>
-                  </div>
-                )}
-                <div className="flex items-start justify-between">
-                  <span className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Detected columns</span>
-                  <span className="font-label text-sm text-on-surface text-right max-w-xs">{parsedData.columns.join(", ")}</span>
+                <div className={`p-4 rounded-xl text-center border ${parsedData.duplicate_count > 0 ? "bg-amber-50 border-amber-200" : "bg-surface-low border-surface-mid"}`}>
+                  <p className={`font-display text-2xl font-bold ${parsedData.duplicate_count > 0 ? "text-amber-700" : "text-on-surface-muted"}`}>{parsedData.duplicate_count}</p>
+                  <p className="font-label text-xs text-on-surface-muted mt-1">Duplicates</p>
                 </div>
-                <div className="flex items-start justify-between">
-                  <span className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Suggested mapping</span>
-                  <div className="text-right font-label text-sm text-on-surface space-y-0.5">
-                    {Object.entries(parsedData.suggested_mapping).map(([k, v]) => (
-                      <div key={k}><span className="text-on-surface-muted">{k}:</span> {v ?? <span className="italic text-on-surface-muted">none</span>}</div>
+                <div className="p-4 bg-green-50 border border-green-200 rounded-xl text-center">
+                  <p className="font-display text-2xl font-bold text-green-700">{(parsedData.total_rows - parsedData.duplicate_count).toLocaleString()}</p>
+                  <p className="font-label text-xs text-on-surface-muted mt-1">New Leads</p>
+                </div>
+                <div className="col-span-3 p-3 bg-surface-low rounded-xl">
+                  <p className="font-label text-xs text-on-surface-muted mb-1.5">Columns detected</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {parsedData.columns.map(col => (
+                      <span key={col} className={`px-2 py-0.5 rounded-md text-xs font-medium
+                        ${Object.values(parsedData.suggested_mapping).includes(col) ? "bg-tertiary/10 text-tertiary" : "bg-surface-mid text-on-surface-muted"}`}>
+                        {col}
+                      </span>
                     ))}
                   </div>
                 </div>
@@ -311,7 +322,7 @@ export default function UploadPage() {
         {currentStep === 2 && (
           <div className="space-y-6">
             <div>
-              <h2 className="font-display text-xl font-bold text-tertiary mb-1">Opt-in Source</h2>
+              <h2 className="font-display text-2xl font-bold text-on-surface mb-1">Opt-in Source</h2>
               <p className="font-body text-base text-on-surface-muted">How did these leads consent to be contacted?</p>
             </div>
 
@@ -372,7 +383,7 @@ export default function UploadPage() {
         {currentStep === 3 && parsedData && (
           <div className="space-y-6">
             <div>
-              <h2 className="font-display text-xl font-bold text-tertiary mb-1">Preview</h2>
+              <h2 className="font-display text-2xl font-bold text-on-surface mb-1">Preview</h2>
               <p className="font-body text-base text-on-surface-muted">
                 Showing first {parsedData.preview.length} of {parsedData.total_rows.toLocaleString()} rows.
               </p>
@@ -431,7 +442,7 @@ export default function UploadPage() {
         {currentStep === 4 && (
           <div className="space-y-6">
             <div>
-              <h2 className="font-display text-xl font-bold text-tertiary mb-1">Template & Schedule</h2>
+              <h2 className="font-display text-2xl font-bold text-on-surface mb-1">Template & Schedule</h2>
               <p className="font-body text-base text-on-surface-muted">Choose which template to send and when.</p>
             </div>
 
@@ -546,30 +557,23 @@ export default function UploadPage() {
         {currentStep === 5 && parsedData && (
           <div className="space-y-6">
             <div>
-              <h2 className="font-display text-xl font-bold text-tertiary mb-1">Confirm & Send</h2>
+              <h2 className="font-display text-2xl font-bold text-on-surface mb-1">Confirm & Send</h2>
               <p className="font-body text-base text-on-surface-muted">Review before dispatching.</p>
             </div>
 
-            <dl className="space-y-3 p-5 bg-surface-low rounded-xl ring-1 ring-[#c4c7c7]/15">
-              <div className="flex justify-between">
-                <dt className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Leads</dt>
-                <dd className="font-label text-sm font-semibold text-on-surface">{parsedData.total_rows.toLocaleString()}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Opt-in Source</dt>
-                <dd className="font-label text-sm font-semibold text-on-surface capitalize">{optInSource.replace(/_/g, " ")}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Template</dt>
-                <dd className="font-label text-sm font-semibold text-on-surface">{templateName}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Schedule</dt>
-                <dd className="font-label text-sm font-semibold text-on-surface capitalize">
-                  {scheduleType === "now" ? "Send Immediately" : scheduleType === "scheduled" ? `At ${scheduleAt}` : `Drip over ${dripDays} days`}
-                </dd>
-              </div>
-            </dl>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: "Leads", value: parsedData.total_rows.toLocaleString() },
+                { label: "Opt-in Source", value: optInSource.replace(/_/g, " ") },
+                { label: "Template", value: templateName },
+                { label: "Schedule", value: scheduleType === "now" ? "Send Immediately" : scheduleType === "scheduled" ? `At ${scheduleAt}` : `Drip over ${dripDays} days` },
+              ].map(({ label, value }) => (
+                <div key={label} className="p-4 bg-surface-low rounded-xl border border-surface-mid">
+                  <p className="font-label text-xs text-on-surface-muted uppercase tracking-wider mb-1">{label}</p>
+                  <p className="font-body text-base font-semibold text-on-surface capitalize truncate">{value}</p>
+                </div>
+              ))}
+            </div>
 
             {sendError && (
               <div className="flex items-start gap-2 p-3 bg-red-50 text-red-700 rounded-xl font-body text-base">
@@ -605,37 +609,37 @@ export default function UploadPage() {
                 <Check size={20} className="text-green-700" />
               </div>
               <div>
-                <h2 className="font-display text-xl font-bold text-tertiary">Campaign Queued</h2>
-                <p className="font-body text-base text-on-surface-muted">Your messages are on their way.</p>
+                <h2 className="font-display text-2xl font-bold text-on-surface">Campaign sent!</h2>
+                <p className="font-body text-base text-on-surface-muted">Messages queued — replies will appear in Conversations.</p>
               </div>
             </div>
 
-            <dl className="space-y-3 p-5 bg-surface-low rounded-xl ring-1 ring-[#c4c7c7]/15">
-              <div className="flex justify-between">
-                <dt className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Queued</dt>
-                <dd className="font-label text-sm font-semibold text-green-700">{sendResult.queued.toLocaleString()}</dd>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="p-5 bg-green-50 border border-green-200 rounded-xl text-center">
+                <p className="font-display text-3xl font-bold text-green-700">{sendResult.queued.toLocaleString()}</p>
+                <p className="font-label text-xs text-green-600 mt-1 uppercase tracking-wide">Sent</p>
               </div>
-              <div className="flex justify-between">
-                <dt className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Rejected (no consent)</dt>
-                <dd className="font-label text-sm font-semibold text-on-surface-muted">{sendResult.rejected.toLocaleString()}</dd>
+              <div className="p-5 bg-surface-low border border-surface-mid rounded-xl text-center">
+                <p className="font-display text-3xl font-bold text-on-surface-muted">{sendResult.rejected.toLocaleString()}</p>
+                <p className="font-label text-xs text-on-surface-muted mt-1 uppercase tracking-wide">Rejected</p>
               </div>
-              <div className="flex justify-between">
-                <dt className="font-label text-sm text-on-surface-muted uppercase tracking-widest">Sender Number</dt>
-                <dd className="font-label text-sm font-semibold text-tertiary">{sendResult.number_used}</dd>
+              <div className="p-5 bg-tertiary/5 border border-tertiary/15 rounded-xl text-center">
+                <p className="font-display text-sm font-bold text-tertiary truncate">{sendResult.number_used}</p>
+                <p className="font-label text-xs text-on-surface-muted mt-1 uppercase tracking-wide">Sender</p>
               </div>
-            </dl>
+            </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 pt-2">
               <Link
                 href="/dashboard/conversations"
-                className="flex items-center gap-2 px-5 py-2.5 bg-tertiary text-white rounded-xl font-label text-sm font-semibold hover:bg-tertiary/90 transition-colors"
+                className="flex-1 flex items-center justify-center gap-2 px-5 py-3 bg-tertiary text-white rounded-xl font-label text-sm font-semibold hover:bg-tertiary/90 transition-colors"
               >
-                <MessageSquare size={14} />
+                <MessageSquare size={16} />
                 View Conversations
               </Link>
               <button
                 onClick={resetAll}
-                className="flex items-center gap-2 px-5 py-2.5 bg-surface-low text-on-surface rounded-xl font-label text-sm font-semibold hover:bg-surface-mid transition-colors"
+                className="flex items-center gap-2 px-5 py-3 bg-surface-low text-on-surface rounded-xl font-label text-sm font-semibold hover:bg-surface-mid transition-colors"
               >
                 <RotateCcw size={14} />
                 Upload Another
