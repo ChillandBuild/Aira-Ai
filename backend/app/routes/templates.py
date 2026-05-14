@@ -93,7 +93,7 @@ async def sync_template_status(template_id: str, tenant_id: str = Depends(get_te
 
     meta_info = await get_template_status(waba_id=waba_id, template_name=row.data[0]["name"])
     if not meta_info:
-        return {"synced": False, "detail": "Template not found on Meta"}
+        raise HTTPException(status_code=502, detail="Template not found on Meta — check WABA ID and access token in Settings")
 
     new_status = meta_info.get("status", "PENDING").upper()
     updates: dict = {"status": new_status}

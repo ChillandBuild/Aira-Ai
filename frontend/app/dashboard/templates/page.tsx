@@ -168,7 +168,9 @@ export default function TemplatesPage() {
     setSyncingId(id);
     try {
       const updated = await apiFetch<Template>(`/api/v1/templates/${id}/sync`, { method: "POST" });
-      setTemplates(prev => prev.map(t => t.id === id ? updated : t));
+      if (updated?.id) {
+        setTemplates(prev => prev.map(t => t.id === id ? updated : t));
+      }
     } catch {
       /* silent — status unchanged if sync fails */
     } finally {
