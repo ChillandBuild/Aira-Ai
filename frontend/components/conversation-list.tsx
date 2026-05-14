@@ -40,11 +40,8 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
   const [selectionMode, setSelectionMode] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [width, setWidth] = useState(320);
-  const [isResizing, setIsResizing] = useState(false);
 
   const menuRef = useRef<HTMLDivElement>(null);
-  const sidebarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -55,23 +52,6 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  useEffect(() => {
-    if (!isResizing) return;
-    const handleMouseMove = (e: MouseEvent) => {
-      if (sidebarRef.current) {
-        const left = sidebarRef.current.getBoundingClientRect().left;
-        setWidth(Math.max(260, Math.min(e.clientX - left, 800)));
-      }
-    };
-    const handleMouseUp = () => setIsResizing(false);
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isResizing]);
 
   const visible = (segment ? leads.filter((l) => l.segment === segment) : leads)
     .filter((l) => {
@@ -119,18 +99,7 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
   }
 
   return (
-    <div 
-      ref={sidebarRef}
-      style={{ width: `${width}px` }}
-      className="relative flex-shrink-0 bg-surface border-r border-surface-mid flex flex-col h-full transition-[width] duration-0"
-    >
-      <div 
-        onMouseDown={() => setIsResizing(true)}
-        className="absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-tertiary/20 z-20 group"
-      >
-        <div className="absolute top-1/2 -translate-y-1/2 right-0 w-1 h-8 rounded-full bg-surface-mid group-hover:bg-tertiary/50 transition-colors" />
-      </div>
-
+    <div className="w-[300px] flex-shrink-0 bg-surface border-r border-surface-mid flex flex-col h-full">
       <div className="px-5 py-4 border-b border-surface-mid relative">
         <div className="flex items-center justify-between">
           {selectionMode ? (
