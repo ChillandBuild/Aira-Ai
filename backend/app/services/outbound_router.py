@@ -4,14 +4,15 @@ from app.db.supabase import get_supabase
 
 logger = logging.getLogger(__name__)
 
-_TIER_DAILY_LIMITS: dict[int, int] = {1: 1_000, 2: 10_000, 3: 100_000}
+_TIER_DAILY_LIMITS: dict[int, int] = {1000: 1_000, 10000: 10_000, 100000: 100_000}
 
 
-async def get_best_number() -> dict | None:
+async def get_best_number(tenant_id: str) -> dict | None:
     db = get_supabase()
     rows = (
         db.table("phone_numbers")
         .select("*")
+        .eq("tenant_id", tenant_id)
         .eq("status", "active")
         .neq("quality_rating", "red")
         .gte("warm_up_day", 14)
@@ -27,13 +28,13 @@ async def get_best_number() -> dict | None:
     def _sort_key(row: dict) -> tuple:
         # green before yellow (alphabetically, "green" < "yellow")
         quality_rank = 0 if row.get("quality_rating", "").lower() == "green" else 1
-        tier = row.get("messaging_tier") or 1
+        tier = row.get("messaging_tier") or 1000
         ratio = (row.get("daily_send_count") or 0) / tier
         return (quality_rank, ratio)
 
     rows = [
         r for r in rows
-        if (r.get("daily_send_count") or 0) < _TIER_DAILY_LIMITS.get(r.get("messaging_tier") or 1, 1_000)
+        if (r.get("daily_send_count") or 0) < _TIER_DAILY_LIMITS.get(r.get("messaging_tier") or 1000, 1_000)
     ]
     if not rows:
         logger.warning("All outbound numbers have hit their daily tier limit")

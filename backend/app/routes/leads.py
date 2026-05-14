@@ -252,7 +252,7 @@ async def send_human_message(lead_id: UUID, payload: HumanMessage, tenant_id: st
         phone = lead.data.get("phone")
         if not phone:
             raise HTTPException(status_code=400, detail="Lead has no phone number")
-        sid = await send_whatsapp(phone, content)
+        sid = await send_whatsapp(phone, content, tenant_id=tenant_id)
 
     if not sid:
         meta_err = get_last_send_error() or "unknown error"
@@ -270,7 +270,7 @@ async def send_human_message(lead_id: UUID, payload: HumanMessage, tenant_id: st
     }).execute()
     
     # Clear needs_human_intervention flag
-    db.table("leads").update({"needs_human_intervention": False}).eq("id", str(lead_id)).execute()
+    db.table("leads").update({"needs_human_intervention": False}).eq("id", str(lead_id)).eq("tenant_id", tenant_id).execute()
     
     return row.data[0] if row.data else {"sent": True, "sid": sid}
 
@@ -308,7 +308,7 @@ async def compose_new_message(payload: ComposeMessage, tenant_id: str = Depends(
         lead_id = new_lead.data[0]["id"]
         record_stage_event(lead_id, to_segment="C", event_type="created", metadata={"source": "manual"}, tenant_id=tenant_id, db=db)
 
-    sid = await send_whatsapp(phone, content)
+    sid = await send_whatsapp(phone, content, tenant_id=tenant_id)
     if not sid:
         meta_err = get_last_send_error() or "unknown error"
         # Note: outside 24h window, freeform text fails — Meta requires templates
@@ -341,9 +341,9 @@ async def clear_chat(lead_id: UUID, tenant_id: str = Depends(get_tenant_id)):
     if not lead.data:
         raise HTTPException(status_code=404, detail="Lead not found")
     # Hard-delete all messages for this lead
-    db.table("messages").delete().eq("lead_id", str(lead_id)).execute()
+    db.table("messages").delete().eq("lead_id", str(lead_id)).eq("tenant_id", tenant_id).execute()
     # Re-enable AI so the bot picks up from a fresh start
-    db.table("leads").update({"ai_enabled": True}).eq("id", str(lead_id)).execute()
+    db.table("leads").update({"ai_enabled": True}).eq("id", str(lead_id)).eq("tenant_id", tenant_id).execute()
     return {"success": True, "message": "Chat cleared"}
 
 

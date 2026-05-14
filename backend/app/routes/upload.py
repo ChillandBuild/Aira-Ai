@@ -195,7 +195,7 @@ async def upload_leads(
     failed = 0
     if campaign_message:
         for phone in phones:
-            sid = await send_whatsapp(phone, campaign_message)
+            sid = await send_whatsapp(phone, campaign_message, tenant_id=tenant_id)
             if sid:
                 sent += 1
                 lead = db.table("leads").select("id").eq("phone", phone).limit(1).execute()
@@ -326,7 +326,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
     if not eligible:
         raise HTTPException(status_code=400, detail="No eligible leads")
 
-    best_number = await get_best_number()
+    best_number = await get_best_number(tenant_id)
     if best_number is None:
         raise HTTPException(status_code=503, detail="No healthy number available")
 
@@ -348,7 +348,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         })
 
     if upsert_rows:
-        db.table("leads").upsert(upsert_rows, on_conflict="phone").execute()
+        db.table("leads").upsert(upsert_rows, on_conflict="tenant_id,phone").execute()
         # Set opt_in_source only for leads that don't have one yet (new leads)
         batch_opt_in_source = _clean_text(eligible[0].opt_in_source) if eligible else "imported"
         batch_phones = [r["phone"] for r in upsert_rows]
@@ -385,6 +385,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 lang_code="en",
                 components=[],
                 phone_number_id=best_number.get("meta_phone_number_id"),
+                tenant_id=tenant_id,
             )
             sent += 1
             lead_id = phone_to_lead_id.get(phone)
@@ -397,7 +398,6 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                         "channel": "whatsapp",
                         "content": f"[Template: {body.template_name}]",
                         "is_ai_generated": False,
-                        "reply_source": "template_broadcast",
                     }).execute()
                 except Exception as db_err:
                     logger.error(f"messages insert failed for {phone}: {db_err}")

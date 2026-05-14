@@ -157,7 +157,7 @@ async def funnel_analytics(tenant_id: str = Depends(get_tenant_id)):
     total_leads = len(leads_all)
 
     by_segment: dict[str, int] = {"A": 0, "B": 0, "C": 0, "D": 0}
-    by_source: dict[str, int] = {"whatsapp": 0, "instagram": 0, "upload": 0}
+    by_source: dict[str, int] = {"whatsapp": 0, "instagram": 0, "upload": 0, "manual": 0}
     scores = []
     leads_this_week = 0
 

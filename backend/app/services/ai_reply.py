@@ -110,12 +110,12 @@ def get_last_send_error() -> str | None:
     return _LAST_SEND_ERROR
 
 
-async def send_whatsapp(to_phone: str, message: str) -> str | None:
+async def send_whatsapp(to_phone: str, message: str, tenant_id: str | None = None) -> str | None:
     """Send a WhatsApp message via Meta Cloud API. Returns message ID or None on failure."""
     global _LAST_SEND_ERROR
     try:
         from app.services.meta_cloud import send_text_message
-        data = await send_text_message(to_number=to_phone, text=message)
+        data = await send_text_message(to_number=to_phone, text=message, tenant_id=tenant_id)
         mid = (data.get("messages") or [{}])[0].get("id")
         logger.info(f"Meta sent to {to_phone}: id={mid}")
         _LAST_SEND_ERROR = None
@@ -290,7 +290,7 @@ async def generate_reply(
     if channel == "instagram":
         sid = send_instagram(ig_user_id, reply_text) if ig_user_id else None
     else:
-        sid = await send_whatsapp(phone, reply_text) if phone else None
+        sid = await send_whatsapp(phone, reply_text, tenant_id=lead_data.get("tenant_id")) if phone else None
 
     # Step 4: Store outbound message
     sid_field = "meta_message_id" if channel == "whatsapp" else "twilio_message_sid"

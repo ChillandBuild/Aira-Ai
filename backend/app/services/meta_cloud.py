@@ -52,9 +52,9 @@ def get_wa_type_for_mime(mime_type: str) -> str:
     return _MIME_TO_WA_TYPE.get(mime_type.lower().split(";")[0].strip(), "document")
 
 
-def _creds(phone_number_id: Optional[str], access_token: Optional[str]) -> tuple[str, str]:
-    pid = phone_number_id or get_setting("meta_phone_number_id")
-    tok = access_token or get_setting("meta_access_token")
+def _creds(phone_number_id: Optional[str], access_token: Optional[str], tenant_id: Optional[str] = None) -> tuple[str, str]:
+    pid = phone_number_id or get_setting("meta_phone_number_id", tenant_id=tenant_id)
+    tok = access_token or get_setting("meta_access_token", tenant_id=tenant_id)
     if not pid or not tok:
         raise HTTPException(status_code=400, detail="Meta credentials not configured. Set them in Settings.")
     return pid, tok
@@ -65,8 +65,9 @@ async def send_text_message(
     text: str,
     phone_number_id: Optional[str] = None,
     access_token: Optional[str] = None,
+    tenant_id: Optional[str] = None,
 ) -> dict:
-    pid, tok = _creds(phone_number_id, access_token)
+    pid, tok = _creds(phone_number_id, access_token, tenant_id)
     url = f"{_GRAPH_BASE}/{pid}/messages"
     payload = {
         "messaging_product": "whatsapp",
@@ -90,9 +91,10 @@ async def upload_media_to_meta(
     filename: str,
     phone_number_id: Optional[str] = None,
     access_token: Optional[str] = None,
+    tenant_id: Optional[str] = None,
 ) -> str:
     """Upload a file to Meta's media hosting and return the media ID."""
-    pid, tok = _creds(phone_number_id, access_token)
+    pid, tok = _creds(phone_number_id, access_token, tenant_id)
     url = f"{_GRAPH_BASE}/{pid}/media"
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(
@@ -120,12 +122,13 @@ async def send_media_message(
     caption: Optional[str] = None,
     phone_number_id: Optional[str] = None,
     access_token: Optional[str] = None,
+    tenant_id: Optional[str] = None,
 ) -> dict:
     """
     Send a media message via Meta Cloud API.
     wa_type: 'image' | 'document' | 'audio' | 'video'
     """
-    pid, tok = _creds(phone_number_id, access_token)
+    pid, tok = _creds(phone_number_id, access_token, tenant_id)
     url = f"{_GRAPH_BASE}/{pid}/messages"
 
     media_obj: dict = {"id": media_id}
@@ -153,12 +156,13 @@ async def send_media_message(
 async def download_media_from_meta(
     media_id: str,
     access_token: Optional[str] = None,
+    tenant_id: Optional[str] = None,
 ) -> tuple[bytes, str, str]:
     """
     Download media from Meta by media_id.
     Returns: (bytes, mime_type, url)
     """
-    _, tok = _creds("placeholder", access_token)
+    _, tok = _creds("placeholder", access_token, tenant_id)
     # First get the media URL
     async with httpx.AsyncClient(timeout=15.0) as client:
         info_resp = await client.get(
@@ -187,8 +191,9 @@ async def send_template_message(
     components: Optional[list] = None,
     phone_number_id: Optional[str] = None,
     access_token: Optional[str] = None,
+    tenant_id: Optional[str] = None,
 ) -> dict:
-    pid, tok = _creds(phone_number_id, access_token)
+    pid, tok = _creds(phone_number_id, access_token, tenant_id)
     url = f"{_GRAPH_BASE}/{pid}/messages"
     payload = {
         "messaging_product": "whatsapp",
@@ -229,8 +234,9 @@ async def submit_template(
     body_text: str,
     buttons: list[str] | None = None,  # Quick reply button labels
     access_token: Optional[str] = None,
+    tenant_id: Optional[str] = None,
 ) -> dict:
-    _, tok = _creds("placeholder", access_token)
+    _, tok = _creds("placeholder", access_token, tenant_id)
     url = f"{_GRAPH_BASE}/{waba_id}/message_templates"
 
     body_component: dict = {"type": "BODY", "text": body_text}
@@ -267,8 +273,9 @@ async def submit_template(
 async def get_number_quality(
     phone_number_id: Optional[str] = None,
     access_token: Optional[str] = None,
+    tenant_id: Optional[str] = None,
 ) -> dict:
-    pid, tok = _creds(phone_number_id, access_token)
+    pid, tok = _creds(phone_number_id, access_token, tenant_id)
     url = f"{_GRAPH_BASE}/{pid}"
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.get(
@@ -290,12 +297,13 @@ async def get_template_status(
     waba_id: str,
     template_name: str,
     access_token: Optional[str] = None,
+    tenant_id: Optional[str] = None,
 ) -> dict | None:
     """
     Fetch current template status from Meta.
     Returns the first matching template dict or None if not found.
     """
-    _, tok = _creds("placeholder", access_token)
+    _, tok = _creds("placeholder", access_token, tenant_id)
     url = f"{_GRAPH_BASE}/{waba_id}/message_templates"
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.get(

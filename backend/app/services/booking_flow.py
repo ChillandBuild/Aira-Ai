@@ -117,9 +117,9 @@ def _get_step_prompt(state_name: str) -> str:
     return ""
 
 
-async def send_whatsapp_text(phone: str, text: str) -> None:
+async def send_whatsapp_text(phone: str, text: str, tenant_id: str | None = None) -> None:
     from app.services.ai_reply import send_whatsapp
-    await send_whatsapp(phone, text)
+    await send_whatsapp(phone, text, tenant_id=tenant_id)
 
 
 def _create_draft_booking(lead_id: str, tenant_id: str, db) -> dict:
@@ -165,7 +165,7 @@ async def start_booking_flow(
         "booking_id": booking["id"],
     }
     _upsert_state(state, db)
-    await send_whatsapp_text(phone=phone, text=_get_step_prompt("collecting_name"))
+    await send_whatsapp_text(phone=phone, text=_get_step_prompt("collecting_name"), tenant_id=tenant_id)
     logger.info(f"Booking flow started for lead {lead_id}, booking {booking['id']}")
 
 
@@ -185,7 +185,7 @@ async def advance_state(state: dict, message: str, phone: str, db=None) -> None:
     if next_state:
         state["state"] = next_state
         _upsert_state(state, db)
-        await send_whatsapp_text(phone=phone, text=_get_step_prompt(next_state))
+        await send_whatsapp_text(phone=phone, text=_get_step_prompt(next_state), tenant_id=state.get("tenant_id"))
     else:
         await _send_payment_link(state, phone, db)
 
@@ -246,7 +246,7 @@ async def _send_payment_link(state: dict, phone: str, db) -> None:
             f"💳 Click to pay and confirm your booking:\n{payment_url}\n\n"
             f"Reference: {booking_ref}"
         )
-        await send_whatsapp_text(phone=phone, text=summary)
+        await send_whatsapp_text(phone=phone, text=summary, tenant_id=state.get("tenant_id"))
         logger.info(f"Payment link sent to {phone} for booking {booking_id}")
 
     except Exception as e:
@@ -256,6 +256,7 @@ async def _send_payment_link(state: dict, phone: str, db) -> None:
         await send_whatsapp_text(
             phone=phone,
             text="🙏 We have received your details! Our team will send you the payment link shortly.",
+            tenant_id=state.get("tenant_id"),
         )
 
 
@@ -263,8 +264,8 @@ def confirm_booking(
     booking_id: str,
     razorpay_payment_id: str,
     db=None,
-) -> tuple[str | None, str | None, str | None] | None:
-    """Mark booking confirmed. Returns (phone, booking_ref, devotee_name) or None."""
+) -> tuple[str | None, str | None, str | None, str | None] | None:
+    """Mark booking confirmed. Returns (phone, booking_ref, devotee_name, tenant_id) or None."""
     db = db or get_supabase()
     from datetime import datetime, timezone
 
@@ -293,7 +294,7 @@ def confirm_booking(
 
     booking_row = (
         db.table("bookings")
-        .select("lead_id, booking_ref, devotee_name")
+        .select("lead_id, booking_ref, devotee_name, tenant_id")
         .eq("id", booking_id)
         .maybe_single()
         .execute()
@@ -309,4 +310,9 @@ def confirm_booking(
         .execute()
     )
     phone = (lead_row.data or {}).get("phone")
-    return phone, booking_row.data.get("booking_ref"), booking_row.data.get("devotee_name")
+    return (
+        phone,
+        booking_row.data.get("booking_ref"),
+        booking_row.data.get("devotee_name"),
+        booking_row.data.get("tenant_id"),
+    )

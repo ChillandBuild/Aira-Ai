@@ -67,7 +67,7 @@ async def handle_quality_red(phone_number_id: str) -> None:
     if new_meta_id:
         db.table("app_settings").upsert(
             {"key": "meta_phone_number_id", "value": new_meta_id, "tenant_id": tenant_id, "is_secret": False},
-            on_conflict="key",
+            on_conflict="tenant_id,key",
         ).execute()
         logger.info(f"handle_quality_red: updated app_settings meta_phone_number_id to {new_meta_id}")
 

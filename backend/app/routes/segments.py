@@ -90,7 +90,7 @@ async def broadcast_to_segment(segment: str = Path(pattern="^[ABCD]$"), tenant_i
         if t["id"] not in eligible_ids:
             skipped_window += 1
             continue
-        sid = await send_whatsapp(t["phone"], message)
+        sid = await send_whatsapp(t["phone"], message, tenant_id=tenant_id)
         if sid:
             sent += 1
             db.table("messages").insert({

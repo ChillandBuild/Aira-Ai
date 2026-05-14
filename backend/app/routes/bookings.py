@@ -84,7 +84,7 @@ async def razorpay_webhook(request: Request):
 
     result = confirm_booking(booking_id, razorpay_payment_id)
     if result and result[0]:
-        phone, booking_ref, devotee_name = result
+        phone, booking_ref, devotee_name, tenant_id = result
         confirmation_msg = (
             f"🎉 *Booking Confirmed!*\n\n"
             f"🙏 Namaskaram {devotee_name or 'Devotee'},\n\n"
@@ -96,7 +96,7 @@ async def razorpay_webhook(request: Request):
             f"Thank you for your devotion. 🙏"
         )
         try:
-            await send_whatsapp(phone, confirmation_msg)
+            await send_whatsapp(phone, confirmation_msg, tenant_id=tenant_id)
         except Exception as e:
             logger.error(f"Confirmation WA send failed for {phone}: {e}")
 

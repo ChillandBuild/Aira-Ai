@@ -31,12 +31,12 @@ def _get_tenant_id_for_twilio_number(number: str, db) -> str | None:
         return None
 
 
-def _handle_opt_out(phone: str, db) -> bool:
+def _handle_opt_out(phone: str, tenant_id: str, db) -> bool:
     try:
-        lead = db.table("leads").select("id").eq("phone", phone).maybe_single().execute()
+        lead = db.table("leads").select("id").eq("phone", phone).eq("tenant_id", tenant_id).maybe_single().execute()
         if not lead.data:
             return False
-        db.table("leads").update({"opted_out": True, "ai_enabled": False}).eq("id", lead.data["id"]).execute()
+        db.table("leads").update({"opted_out": True, "ai_enabled": False}).eq("id", lead.data["id"]).eq("tenant_id", tenant_id).execute()
         logger.info(f"Lead {lead.data['id']} opted out via STOP from {phone}")
         return True
     except Exception as e:
@@ -130,7 +130,7 @@ async def whatsapp_webhook(
                         logger.info(f"Inbound Meta WhatsApp from {phone}: type={msg_type} body={body!r}")
 
                         if body and body.lower().strip() in _STOP_WORDS:
-                            _handle_opt_out(phone, db)
+                            _handle_opt_out(phone, tenant_id, db)
                             continue
 
                         existing = db.table("leads").select("id,score,segment,deleted_at,ai_enabled").eq("phone", phone).eq("tenant_id", tenant_id).limit(1).execute()
@@ -217,7 +217,7 @@ async def whatsapp_webhook(
     logger.info(f"Inbound WhatsApp from {phone}: {Body!r}")
 
     if Body and Body.lower().strip() in _STOP_WORDS:
-        _handle_opt_out(phone, db)
+        _handle_opt_out(phone, tenant_id, db)
         return Response(content='<?xml version="1.0" encoding="UTF-8"?><Response></Response>', media_type="text/xml")
 
     # Upsert lead
@@ -249,7 +249,8 @@ async def whatsapp_webhook(
         "channel": "whatsapp",
         "content": Body,
         "is_ai_generated": False,
-        "twilio_message_sid": MessageSid
+        "twilio_message_sid": MessageSid,
+        "tenant_id": tenant_id,
     }).execute()
 
     # Trigger AI reply (non-blocking, best-effort)

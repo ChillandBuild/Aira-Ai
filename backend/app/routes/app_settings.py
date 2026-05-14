@@ -23,7 +23,11 @@ async def list_settings(tenant_id: str = Depends(get_tenant_id)):
         "gemini_api_key": "gemini_api_key",
         "meta_access_token": "meta_access_token",
         "meta_phone_number_id": "meta_phone_number_id",
+        "meta_waba_id": "meta_waba_id",
         "meta_webhook_verify_token": "meta_verify_token",
+        "razorpay_key_id": "razorpay_key_id",
+        "razorpay_key_secret": "razorpay_key_secret",
+        "razorpay_webhook_secret": "razorpay_webhook_secret",
         "twilio_account_sid": "twilio_account_sid",
         "twilio_auth_token": "twilio_auth_token",
     }

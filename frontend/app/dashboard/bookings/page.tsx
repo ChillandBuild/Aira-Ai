@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { BookingTable } from "./components/BookingTable";
 import { Booking } from "./types";
+import { API_URL, getAuthHeaders } from "@/lib/api";
 
 const STATUS_FILTERS = [
   { label: "All", value: "" },
@@ -19,21 +20,35 @@ export default function BookingsPage() {
   const [statusFilter, setStatusFilter] = useState("");
 
   useEffect(() => {
-    setLoading(true);
-    const params = new URLSearchParams({ page: "1", limit: "100" });
-    if (statusFilter) params.set("status", statusFilter);
+    let cancelled = false;
 
-    fetch(`/api/v1/bookings?${params}`, {
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-    })
-      .then((r) => r.json())
-      .then((d) => {
+    async function loadBookings() {
+      setLoading(true);
+      const params = new URLSearchParams({ page: "1", limit: "100" });
+      if (statusFilter) params.set("status", statusFilter);
+
+      try {
+        const authHeaders = await getAuthHeaders();
+        const response = await fetch(`${API_URL}/api/v1/bookings?${params}`, {
+          headers: { "Content-Type": "application/json", ...authHeaders },
+        });
+        if (!response.ok) throw new Error(`Failed to load bookings: ${response.status}`);
+        const d = await response.json();
+        if (cancelled) return;
         setBookings(d.data ?? []);
         setTotal(d.total ?? 0);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+      } catch (error) {
+        if (!cancelled) console.error(error);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadBookings();
+
+    return () => {
+      cancelled = true;
+    };
   }, [statusFilter]);
 
   const confirmed = bookings.filter((b) => b.status === "confirmed").length;

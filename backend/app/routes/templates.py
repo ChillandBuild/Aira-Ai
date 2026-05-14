@@ -34,7 +34,7 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
     if category not in ("MARKETING", "UTILITY", "AUTHENTICATION"):
         raise HTTPException(status_code=400, detail="Invalid category")
 
-    waba_id = get_setting("meta_waba_id")  # Fixed: was meta_phone_number_id
+    waba_id = get_setting("meta_waba_id", tenant_id=tenant_id)  # Fixed: was meta_phone_number_id
 
     db = get_supabase()
     existing = db.table("message_templates").select("id").eq("name", name).eq("tenant_id", tenant_id).limit(1).execute()
@@ -52,6 +52,7 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
                 language=payload.language,
                 body_text=payload.body_text,
                 buttons=payload.buttons or None,
+                tenant_id=tenant_id,
             )
             meta_template_id = str(meta_response.get("id", ""))
         except Exception as e:
@@ -87,11 +88,11 @@ async def sync_template_status(template_id: str, tenant_id: str = Depends(get_te
     if not row.data:
         raise HTTPException(status_code=404, detail="Template not found")
 
-    waba_id = get_setting("meta_waba_id")
+    waba_id = get_setting("meta_waba_id", tenant_id=tenant_id)
     if not waba_id:
         raise HTTPException(status_code=400, detail="meta_waba_id not configured in Settings")
 
-    meta_info = await get_template_status(waba_id=waba_id, template_name=row.data[0]["name"])
+    meta_info = await get_template_status(waba_id=waba_id, template_name=row.data[0]["name"], tenant_id=tenant_id)
     if not meta_info:
         raise HTTPException(status_code=502, detail="Template not found on Meta — check WABA ID and access token in Settings")
 

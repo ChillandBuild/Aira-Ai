@@ -14,7 +14,7 @@ async def test_create_template_uses_waba_id_not_phone_number_id():
 
     captured_waba_id = []
 
-    async def mock_submit(waba_id, name, category, language, body_text, buttons=None):
+    async def mock_submit(waba_id, name, category, language, body_text, buttons=None, tenant_id=None):
         captured_waba_id.append(waba_id)
         return {"id": "meta-123"}
 
@@ -27,7 +27,7 @@ async def test_create_template_uses_waba_id_not_phone_number_id():
         "submitted_at": "2026-05-13T00:00:00Z", "approved_at": None, "rejection_reason": None,
     }]
 
-    with patch("app.routes.templates.get_setting", side_effect=lambda k: "waba-999" if k == "meta_waba_id" else None), \
+    with patch("app.routes.templates.get_setting", side_effect=lambda k, **kwargs: "waba-999" if k == "meta_waba_id" else None), \
          patch("app.routes.templates.get_supabase", return_value=mock_db), \
          patch("app.routes.templates.submit_template", side_effect=mock_submit):
 

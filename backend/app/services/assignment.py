@@ -31,7 +31,7 @@ def set_round_robin_enabled(tenant_id: str, enabled: bool) -> None:
             "tenant_id": tenant_id,
             "is_secret": False,
         },
-        on_conflict="key",
+        on_conflict="tenant_id,key",
     ).execute()
 
 
@@ -90,7 +90,7 @@ def auto_assign_lead(lead_id: str, tenant_id: str) -> str | None:
             chosen_id = caller["id"]
 
     if chosen_id:
-        db.table("leads").update({"assigned_to": chosen_id}).eq("id", lead_id).execute()
+        db.table("leads").update({"assigned_to": chosen_id}).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
         logger.info(f"Lead {lead_id} auto-assigned to caller {chosen_id}")
 
     return chosen_id
