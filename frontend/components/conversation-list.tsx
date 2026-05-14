@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { api, Lead } from "@/lib/api";
 import { SegmentBadge } from "./segment-badge";
 import { timeAgo, formatPhone, cn } from "@/lib/utils";
-import { MessageCircle, Trash2, MoreVertical } from "lucide-react";
+import { MessageCircle, Trash2, MoreVertical, Search } from "lucide-react";
 import { toast } from "sonner";
 
 type ConversationLead = Lead & { last_reply_at?: string };
@@ -39,7 +39,12 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [width, setWidth] = useState(320);
+  const [isResizing, setIsResizing] = useState(false);
+
   const menuRef = useRef<HTMLDivElement>(null);
+  const sidebarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -51,13 +56,38 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const visible = (segment ? leads.filter((l) => l.segment === segment) : leads).sort((a, b) => {
-    if (a.needs_human_intervention && !b.needs_human_intervention) return -1;
-    if (!a.needs_human_intervention && b.needs_human_intervention) return 1;
-    const aTime = (a as ConversationLead).last_reply_at || a.created_at;
-    const bTime = (b as ConversationLead).last_reply_at || b.created_at;
-    return new Date(bTime).getTime() - new Date(aTime).getTime();
-  });
+  useEffect(() => {
+    if (!isResizing) return;
+    const handleMouseMove = (e: MouseEvent) => {
+      if (sidebarRef.current) {
+        const left = sidebarRef.current.getBoundingClientRect().left;
+        setWidth(Math.max(260, Math.min(e.clientX - left, 800)));
+      }
+    };
+    const handleMouseUp = () => setIsResizing(false);
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizing]);
+
+  const visible = (segment ? leads.filter((l) => l.segment === segment) : leads)
+    .filter((l) => {
+      if (!searchQuery) return true;
+      const q = searchQuery.toLowerCase();
+      const name = l.name?.toLowerCase() || "";
+      const phone = l.phone?.toLowerCase() || "";
+      return name.includes(q) || phone.includes(q);
+    })
+    .sort((a, b) => {
+      if (a.needs_human_intervention && !b.needs_human_intervention) return -1;
+      if (!a.needs_human_intervention && b.needs_human_intervention) return 1;
+      const aTime = (a as ConversationLead).last_reply_at || a.created_at;
+      const bTime = (b as ConversationLead).last_reply_at || b.created_at;
+      return new Date(bTime).getTime() - new Date(aTime).getTime();
+    });
 
   async function handleDeleteSelected() {
     if (!confirm(`Delete ${selectedIds.size} conversations?`)) return;
@@ -89,7 +119,18 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
   }
 
   return (
-    <div className="w-80 flex-shrink-0 bg-surface border-r border-surface-mid flex flex-col h-full">
+    <div 
+      ref={sidebarRef}
+      style={{ width: `${width}px` }}
+      className="relative flex-shrink-0 bg-surface border-r border-surface-mid flex flex-col h-full transition-[width] duration-0"
+    >
+      <div 
+        onMouseDown={() => setIsResizing(true)}
+        className="absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-tertiary/20 z-20 group"
+      >
+        <div className="absolute top-1/2 -translate-y-1/2 right-0 w-1 h-8 rounded-full bg-surface-mid group-hover:bg-tertiary/50 transition-colors" />
+      </div>
+
       <div className="px-5 py-4 border-b border-surface-mid relative">
         <div className="flex items-center justify-between">
           {selectionMode ? (
@@ -97,10 +138,22 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
               <span className="font-display text-sm font-semibold text-tertiary">
                 {selectedIds.size} selected
               </span>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    if (selectedIds.size === visible.length && visible.length > 0) {
+                      setSelectedIds(new Set());
+                    } else {
+                      setSelectedIds(new Set(visible.map(l => l.id)));
+                    }
+                  }}
+                  className="text-[11px] font-semibold text-tertiary hover:text-tertiary/80"
+                >
+                  {selectedIds.size === visible.length && visible.length > 0 ? "Deselect All" : "Select All"}
+                </button>
                 <button
                   onClick={cancelSelection}
-                  className="text-xs font-semibold text-on-surface-muted hover:text-on-surface"
+                  className="text-[11px] font-semibold text-on-surface-muted hover:text-on-surface"
                 >
                   Cancel
                 </button>
@@ -108,7 +161,7 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
                   <button
                     onClick={handleDeleteSelected}
                     disabled={isDeleting}
-                    className="flex items-center gap-1 text-red-600 hover:text-red-700 disabled:opacity-50 text-xs font-semibold"
+                    className="flex items-center gap-1 text-red-600 hover:text-red-700 disabled:opacity-50 text-[11px] font-semibold ml-1"
                   >
                     <Trash2 size={12} />
                     {isDeleting ? "..." : "Delete"}
@@ -127,15 +180,25 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
                   <MoreVertical size={16} />
                 </button>
                 {menuOpen && (
-                  <div className="absolute right-0 top-full mt-1 w-36 bg-surface border border-surface-mid rounded-lg shadow-lg overflow-hidden z-10 py-1">
+                  <div className="absolute right-0 top-full mt-1 w-28 bg-surface border border-surface-mid rounded-lg shadow-lg overflow-hidden z-10 py-1">
                     <button
                       onClick={() => {
                         setSelectionMode(true);
                         setMenuOpen(false);
                       }}
-                      className="w-full text-left px-4 py-2 text-sm text-on-surface hover:bg-surface-low transition-colors"
+                      className="w-full text-left px-3 py-1.5 text-xs text-on-surface hover:bg-surface-low transition-colors"
                     >
                       Select chats
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectionMode(true);
+                        setSelectedIds(new Set(visible.map(l => l.id)));
+                        setMenuOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-1.5 text-xs text-on-surface hover:bg-surface-low transition-colors"
+                    >
+                      Select all
                     </button>
                   </div>
                 )}
@@ -143,8 +206,22 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
             </>
           )}
         </div>
-        <p className="font-label text-xs text-on-surface-muted">{visible.length} leads</p>
-        <div className="flex gap-1.5 mt-3 flex-wrap">
+        
+        <div className="relative mt-3 mb-3">
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-muted" />
+          <input
+            type="text"
+            placeholder="Search conversations..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-8 pr-3 py-1.5 bg-surface border border-surface-mid rounded-lg text-sm text-on-surface placeholder:text-on-surface-muted focus:outline-none focus:ring-1 focus:ring-tertiary"
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <p className="font-label text-xs text-on-surface-muted">{visible.length} leads</p>
+        </div>
+        <div className="flex gap-1.5 mt-2 flex-wrap">
           {FILTERS.map((f) => (
             <button
               key={String(f.value)}
