@@ -1,7 +1,9 @@
 import csv
 import io
+import json
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -378,6 +380,25 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         rows = db.table("leads").select("phone").in_("phone", all_phones).eq("tenant_id", tenant_id).eq("opted_out", True).execute()
         opted_out_phones = {r["phone"] for r in (rows.data or [])}
 
+    # Fetch template metadata (language, body_text) so we can send correctly
+    tpl_lang = "en"
+    tpl_body = ""
+    tpl_row = (
+        db.table("message_templates")
+        .select("language,body_text")
+        .eq("name", body.template_name)
+        .eq("tenant_id", tenant_id)
+        .limit(1)
+        .execute()
+    )
+    if tpl_row.data:
+        tpl_lang = tpl_row.data[0].get("language") or "en"
+        tpl_body = tpl_row.data[0].get("body_text") or ""
+
+    # Build variable components if template uses {{1}}, {{2}}, ...
+    import re as _re
+    has_vars = bool(_re.search(r"\{\{\d+\}\}", tpl_body))
+
     sent = 0
     failed = 0
     for lead in eligible:
@@ -389,26 +410,46 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             logger.info(f"Bulk-send skipped opted-out lead {phone}")
             continue
         try:
-            await send_template_message(
+            # Build body parameters: substitute {{1}} with the lead name if available
+            components: list[dict] = []
+            if has_vars:
+                lead_name = _clean_text(lead.name) or "Customer"
+                components = [{
+                    "type": "body",
+                    "parameters": [{"type": "text", "text": lead_name}]
+                }]
+
+            result = await send_template_message(
                 to_number=phone,
                 template_name=body.template_name,
-                lang_code="en",
-                components=[],
+                lang_code=tpl_lang,
+                components=components,
                 phone_number_id=best_number.get("meta_phone_number_id"),
                 tenant_id=tenant_id,
             )
             sent += 1
+
+            # Extract message_id from Meta response
+            meta_msg_id: str | None = None
+            try:
+                meta_msg_id = result.get("messages", [{}])[0].get("id")
+            except Exception:
+                pass
+
             lead_id = phone_to_lead_id.get(phone)
             if lead_id:
                 try:
-                    db.table("messages").insert({
+                    msg_row = {
                         "lead_id": lead_id,
                         "tenant_id": tenant_id,
                         "direction": "outbound",
                         "channel": "whatsapp",
                         "content": f"[Template: {body.template_name}]",
                         "is_ai_generated": False,
-                    }).execute()
+                    }
+                    if meta_msg_id:
+                        msg_row["meta_message_id"] = meta_msg_id
+                    db.table("messages").insert(msg_row).execute()
                 except Exception as db_err:
                     logger.error(f"messages insert failed for {phone}: {db_err}")
         except Exception as e:
@@ -418,10 +459,78 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
     if sent > 0:
         await increment_send_count(best_number["id"], delta=sent)
 
+    # ── Persist broadcast history in app_settings ─────────────────────────────
+    try:
+        history_key = "broadcast_history"
+        existing = (
+            db.table("app_settings")
+            .select("id,value")
+            .eq("tenant_id", tenant_id)
+            .eq("key", history_key)
+            .maybe_single()
+            .execute()
+        )
+        history: list[dict] = []
+        if existing and existing.data and existing.data.get("value"):
+            try:
+                history = json.loads(existing.data["value"])
+            except Exception:
+                history = []
+
+        # Determine opt-in source from the first eligible lead
+        opt_in_src = _clean_text(eligible[0].opt_in_source) if eligible else "unknown"
+
+        history.insert(0, {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "template_name": body.template_name,
+            "opt_in_source": opt_in_src or "unknown",
+            "sent": sent,
+            "failed": failed,
+            "rejected": len(rejected),
+            "total_leads": len(eligible),
+            "number_used": best_number.get("number"),
+        })
+        # Keep only the last 50 broadcast records
+        history = history[:50]
+        new_value = json.dumps(history)
+
+        if existing and existing.data:
+            db.table("app_settings").update({"value": new_value}).eq("id", existing.data["id"]).execute()
+        else:
+            db.table("app_settings").insert({
+                "tenant_id": tenant_id,
+                "key": history_key,
+                "value": new_value,
+            }).execute()
+    except Exception as hist_err:
+        logger.error(f"broadcast_history save failed: {hist_err}")
+    # ─────────────────────────────────────────────────────────────────────────
+
     return {
         "queued": len(upsert_rows),
         "sent": sent,
         "failed": failed,
         "rejected": len(rejected),
-        "number_used": best_number["number"],
+        "number_used": best_number.get("number"),
     }
+
+
+@router.get("/history")
+async def get_broadcast_history(tenant_id: str = Depends(get_tenant_id)):
+    """Return the last 50 broadcast records stored in app_settings."""
+    db = get_supabase()
+    row = (
+        db.table("app_settings")
+        .select("value")
+        .eq("tenant_id", tenant_id)
+        .eq("key", "broadcast_history")
+        .maybe_single()
+        .execute()
+    )
+    history: list[dict] = []
+    if row and row.data and row.data.get("value"):
+        try:
+            history = json.loads(row.data["value"])
+        except Exception:
+            history = []
+    return {"data": history}

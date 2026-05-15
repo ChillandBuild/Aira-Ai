@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Upload, Check, AlertTriangle, ChevronRight, RotateCcw, MessageSquare } from "lucide-react";
+import { Upload, Check, AlertTriangle, ChevronRight, RotateCcw, MessageSquare, Clock, Send } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -24,6 +24,17 @@ type OptInValidation = {
 type SendResult = {
   queued: number;
   rejected: number;
+  number_used: string;
+};
+
+type BroadcastHistoryItem = {
+  timestamp: string;
+  template_name: string;
+  opt_in_source: string;
+  sent: number;
+  failed: number;
+  rejected: number;
+  total_leads: number;
   number_used: string;
 };
 
@@ -99,7 +110,31 @@ export default function UploadPage() {
   const [primaryNumber, setPrimaryNumber] = useState<{ number: string; display_name: string } | null>(null);
   const [primaryNumberLoading, setPrimaryNumberLoading] = useState(false);
 
+  const [broadcastHistory, setBroadcastHistory] = useState<BroadcastHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch broadcast history once on mount
+  useEffect(() => {
+    setHistoryLoading(true);
+    getAuthHeaders().then(auth => {
+      fetch(`${API_URL}/api/v1/upload/history`, { headers: auth })
+        .then(r => r.json())
+        .then((res: { data: BroadcastHistoryItem[] }) => setBroadcastHistory(res.data || []))
+        .catch(() => {})
+        .finally(() => setHistoryLoading(false));
+    });
+  }, []);
+
+  function refreshHistory() {
+    getAuthHeaders().then(auth => {
+      fetch(`${API_URL}/api/v1/upload/history`, { headers: auth })
+        .then(r => r.json())
+        .then((res: { data: BroadcastHistoryItem[] }) => setBroadcastHistory(res.data || []))
+        .catch(() => {});
+    });
+  }
 
   useEffect(() => {
     if (currentStep === 4) {
@@ -237,6 +272,7 @@ export default function UploadPage() {
       const result: SendResult = await res.json();
       setSendResult(result);
       setCurrentStep(6);
+      refreshHistory();
     } catch (err) {
       setSendError(err instanceof Error ? err.message : "Send failed");
     } finally {
@@ -247,13 +283,13 @@ export default function UploadPage() {
   const inputCls = "w-full px-4 py-3 bg-surface-low rounded-xl font-body text-sm text-on-surface border-0 focus:ring-2 focus:ring-tertiary outline-none";
 
   return (
-    <div>
+    <div className="max-w-4xl">
       <div className="mb-8">
         <h1 className="font-display text-4xl font-bold text-on-surface">Bulk Contact Upload</h1>
         <p className="font-body text-base text-on-surface-muted mt-2">Import a CSV and broadcast a WhatsApp campaign to all eligible leads.</p>
       </div>
 
-      <div className="bg-surface rounded-2xl p-10 shadow-lg ring-1 ring-[#c4c7c7]/20 max-w-4xl">
+      <div className="bg-surface rounded-2xl p-10 shadow-lg ring-1 ring-[#c4c7c7]/20">
         <StepIndicator current={currentStep} />
 
         {/* ── Step 1: Upload CSV ─────────────────────────────────────────── */}
@@ -681,6 +717,75 @@ export default function UploadPage() {
                 Upload Another
               </button>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Broadcast History ───────────────────────────────────────────────── */}
+      <div className="mt-8 bg-surface border border-surface-mid rounded-2xl shadow-sm overflow-hidden">
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-surface-mid bg-surface-low">
+          <div className="w-8 h-8 rounded-lg bg-tertiary/10 flex items-center justify-center">
+            <Clock size={16} className="text-tertiary" />
+          </div>
+          <div>
+            <h2 className="font-display text-base font-bold text-on-surface">Broadcast History</h2>
+            <p className="font-body text-xs text-on-surface-muted">Last 50 campaign dispatches for your account</p>
+          </div>
+        </div>
+
+        {historyLoading ? (
+          <div className="py-12 flex items-center justify-center">
+            <div className="w-6 h-6 border-2 border-tertiary border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : broadcastHistory.length === 0 ? (
+          <div className="py-12 flex flex-col items-center justify-center gap-2 text-on-surface-muted">
+            <Send size={28} className="opacity-30" />
+            <p className="font-body text-sm">No broadcasts yet. Send your first campaign above!</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-surface-mid">
+                  <th className="px-5 py-3 text-left font-label text-xs uppercase tracking-wider text-on-surface-muted">Date & Time</th>
+                  <th className="px-5 py-3 text-left font-label text-xs uppercase tracking-wider text-on-surface-muted">Template</th>
+                  <th className="px-5 py-3 text-left font-label text-xs uppercase tracking-wider text-on-surface-muted">Opt-in Source</th>
+                  <th className="px-5 py-3 text-center font-label text-xs uppercase tracking-wider text-on-surface-muted">Sent</th>
+                  <th className="px-5 py-3 text-center font-label text-xs uppercase tracking-wider text-on-surface-muted">Failed</th>
+                  <th className="px-5 py-3 text-center font-label text-xs uppercase tracking-wider text-on-surface-muted">Rejected</th>
+                  <th className="px-5 py-3 text-left font-label text-xs uppercase tracking-wider text-on-surface-muted">Sender</th>
+                </tr>
+              </thead>
+              <tbody>
+                {broadcastHistory.map((item, i) => (
+                  <tr key={i} className={`border-b border-surface-mid last:border-0 hover:bg-surface-low/50 transition-colors ${i % 2 === 0 ? "" : "bg-surface-low/30"}` }>
+                    <td className="px-5 py-3.5 font-body text-xs text-on-surface-muted whitespace-nowrap">
+                      {new Date(item.timestamp).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <span className="font-mono text-xs bg-tertiary/10 text-tertiary px-2 py-0.5 rounded-md">{item.template_name}</span>
+                    </td>
+                    <td className="px-5 py-3.5 font-body text-xs text-on-surface capitalize">
+                      {item.opt_in_source.replace(/_/g, " ")}
+                    </td>
+                    <td className="px-5 py-3.5 text-center">
+                      <span className="inline-block min-w-[36px] px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-label text-xs font-semibold">{item.sent}</span>
+                    </td>
+                    <td className="px-5 py-3.5 text-center">
+                      <span className={`inline-block min-w-[36px] px-2 py-0.5 rounded-full font-label text-xs font-semibold ${
+                        item.failed > 0 ? "bg-red-100 text-red-700" : "bg-surface-mid text-on-surface-muted"
+                      }`}>{item.failed}</span>
+                    </td>
+                    <td className="px-5 py-3.5 text-center">
+                      <span className={`inline-block min-w-[36px] px-2 py-0.5 rounded-full font-label text-xs font-semibold ${
+                        item.rejected > 0 ? "bg-amber-100 text-amber-700" : "bg-surface-mid text-on-surface-muted"
+                      }`}>{item.rejected}</span>
+                    </td>
+                    <td className="px-5 py-3.5 font-body text-xs text-on-surface-muted">{item.number_used || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
