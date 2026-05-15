@@ -232,6 +232,8 @@ async def submit_template(
     category: str,
     language: str,
     body_text: str,
+    header_text: Optional[str] = None,
+    footer_text: Optional[str] = None,
     buttons: list[str] | None = None,  # Quick reply button labels
     access_token: Optional[str] = None,
     tenant_id: Optional[str] = None,
@@ -245,6 +247,19 @@ async def submit_template(
         body_component["example"] = {"body_text": [examples]}
 
     components: list[dict] = [body_component]
+
+    if header_text and header_text.strip():
+        components.append({
+            "type": "HEADER",
+            "format": "TEXT",
+            "text": header_text.strip()[:60]
+        })
+        
+    if footer_text and footer_text.strip():
+        components.append({
+            "type": "FOOTER",
+            "text": footer_text.strip()[:60]
+        })
 
     if buttons:
         # Meta allows max 3 quick reply buttons

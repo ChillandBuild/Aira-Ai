@@ -17,6 +17,8 @@ class CreateTemplate(BaseModel):
     category: str
     language: str = "en"
     body_text: str
+    header_text: str | None = None
+    footer_text: str | None = None
     buttons: list[str] | None = None  # Optional quick reply button labels
 
 
@@ -34,7 +36,7 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
     if category not in ("MARKETING", "UTILITY", "AUTHENTICATION"):
         raise HTTPException(status_code=400, detail="Invalid category")
 
-    waba_id = get_setting("meta_waba_id", tenant_id=tenant_id)  # Fixed: was meta_phone_number_id
+    waba_id = get_setting("meta_waba_id", tenant_id=tenant_id)
 
     db = get_supabase()
     existing = db.table("message_templates").select("id").eq("name", name).eq("tenant_id", tenant_id).limit(1).execute()
@@ -51,6 +53,8 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
                 category=category,
                 language=payload.language,
                 body_text=payload.body_text,
+                header_text=payload.header_text,
+                footer_text=payload.footer_text,
                 buttons=payload.buttons or None,
                 tenant_id=tenant_id,
             )
