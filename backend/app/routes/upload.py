@@ -162,8 +162,16 @@ async def upload_leads(
         raise HTTPException(status_code=400, detail="No valid rows found in CSV")
 
     phones = list(rows_by_phone.keys())
-    existing = db.table("leads").select("phone").in_("phone", phones).eq("tenant_id", tenant_id).execute()
+    existing = db.table("leads").select("phone").in_("phone", phones).eq("tenant_id", tenant_id).is_("deleted_at", "null").execute()
     existing_set = {r["phone"] for r in (existing.data or [])}
+
+    soft_deleted = db.table("leads").select("phone,id").in_("phone", phones).eq("tenant_id", tenant_id).not_.is_("deleted_at", "null").execute()
+    if soft_deleted.data:
+        soft_deleted_phones = [r["phone"] for r in soft_deleted.data]
+        db.table("leads").update({"deleted_at": None, "ai_enabled": True}).in_("phone", soft_deleted_phones).eq("tenant_id", tenant_id).execute()
+        for phone in soft_deleted_phones:
+            if phone in existing_set:
+                existing_set.remove(phone)
 
     to_insert = [rows_by_phone[p] for p in phones if p not in existing_set]
     inserted = 0
@@ -277,7 +285,7 @@ async def parse_csv(file: UploadFile = File(...), tenant_id: str = Depends(get_t
                 suggested_mapping[key] = col
 
     db = get_supabase()
-    existing_resp = db.table("leads").select("phone").eq("tenant_id", tenant_id).execute()
+    existing_resp = db.table("leads").select("phone").eq("tenant_id", tenant_id).is_("deleted_at", "null").execute()
     existing_phones = {r["phone"] for r in (existing_resp.data or []) if r.get("phone")}
 
     rows = list(reader)
