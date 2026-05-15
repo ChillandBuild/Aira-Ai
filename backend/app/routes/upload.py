@@ -326,11 +326,21 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
     if not eligible:
         raise HTTPException(status_code=400, detail="No eligible leads")
 
-    best_number = await get_best_number(tenant_id)
-    if best_number is None:
-        raise HTTPException(status_code=503, detail="No healthy number available")
-
     db = get_supabase()
+    
+    number_rows = (
+        db.table("phone_numbers")
+        .select("*")
+        .eq("tenant_id", tenant_id)
+        .eq("role", "primary")
+        .eq("paused_outbound", False)
+        .execute()
+        .data
+    )
+    best_number = number_rows[0] if number_rows else await get_best_number(tenant_id)
+
+    if best_number is None:
+        raise HTTPException(status_code=503, detail="No primary or healthy number available. Please set a Primary Number.")
     upsert_rows = []
     for lead in eligible:
         phone = _normalize_phone(lead.phone or "")

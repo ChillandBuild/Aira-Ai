@@ -109,8 +109,8 @@ export default function UploadPage() {
         getAuthHeaders().then(auth => {
           fetch(`${API_URL}/api/v1/templates`, { headers: auth })
             .then(r => r.json())
-            .then((data: {id: string; name: string; status: string; category: string}[]) => {
-              setTemplates((data || []).filter(t => t.status === "APPROVED"));
+            .then((res: { data: {id: string; name: string; status: string; category: string}[] }) => {
+              setTemplates((res.data || []).filter(t => t.status === "APPROVED"));
             })
             .catch(() => setTemplatesError(true))
             .finally(() => setTemplatesLoading(false));
