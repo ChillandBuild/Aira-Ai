@@ -76,6 +76,11 @@ async def update_phone_number(number_id: UUID, payload: UpdatePhoneNumber, tenan
         updates["warm_up_day"] = payload.warm_up_day
     if not updates:
         raise HTTPException(status_code=400, detail="Nothing to update")
+        
+    if payload.role == "primary":
+        # Ensure exclusive primary logic: demote all other primary numbers to standby
+        db.table("phone_numbers").update({"role": "standby"}).eq("tenant_id", tenant_id).eq("role", "primary").execute()
+        
     result = db.table("phone_numbers").update(updates).eq("id", str(number_id)).eq("tenant_id", tenant_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Phone number not found")

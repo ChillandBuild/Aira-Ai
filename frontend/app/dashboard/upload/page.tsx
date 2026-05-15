@@ -96,23 +96,42 @@ export default function UploadPage() {
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templatesError, setTemplatesError] = useState(false);
 
+  const [primaryNumber, setPrimaryNumber] = useState<{ number: string; display_name: string } | null>(null);
+  const [primaryNumberLoading, setPrimaryNumberLoading] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (currentStep === 4 && templates.length === 0 && !templatesLoading) {
-      setTemplatesLoading(true);
-      setTemplatesError(false);
-      getAuthHeaders().then(auth => {
-        fetch(`${API_URL}/api/v1/templates`, { headers: auth })
-          .then(r => r.json())
-          .then((data: {id: string; name: string; status: string; category: string}[]) => {
-            setTemplates((data || []).filter(t => t.status === "APPROVED"));
-          })
-          .catch(() => setTemplatesError(true))
-          .finally(() => setTemplatesLoading(false));
-      });
+    if (currentStep === 4) {
+      if (templates.length === 0 && !templatesLoading) {
+        setTemplatesLoading(true);
+        setTemplatesError(false);
+        getAuthHeaders().then(auth => {
+          fetch(`${API_URL}/api/v1/templates`, { headers: auth })
+            .then(r => r.json())
+            .then((data: {id: string; name: string; status: string; category: string}[]) => {
+              setTemplates((data || []).filter(t => t.status === "APPROVED"));
+            })
+            .catch(() => setTemplatesError(true))
+            .finally(() => setTemplatesLoading(false));
+        });
+      }
+
+      if (!primaryNumber && !primaryNumberLoading) {
+        setPrimaryNumberLoading(true);
+        getAuthHeaders().then(auth => {
+          fetch(`${API_URL}/api/v1/numbers`, { headers: auth })
+            .then(r => r.json())
+            .then((data: { data: { role: string; number: string; display_name: string }[] }) => {
+              const primary = (data.data || []).find(n => n.role === "primary");
+              setPrimaryNumber(primary || null);
+            })
+            .catch(() => {})
+            .finally(() => setPrimaryNumberLoading(false));
+        });
+      }
     }
-  }, [currentStep, templates.length, templatesLoading]);
+  }, [currentStep, templates.length, templatesLoading, primaryNumber, primaryNumberLoading]);
 
   function resetAll() {
     setCurrentStep(1);
@@ -129,6 +148,7 @@ export default function UploadPage() {
     setSendResult(null);
     setTemplatesLoading(false);
     setTemplatesError(false);
+    setPrimaryNumber(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -444,6 +464,22 @@ export default function UploadPage() {
             <div>
               <h2 className="font-display text-2xl font-bold text-on-surface mb-1">Template & Schedule</h2>
               <p className="font-body text-base text-on-surface-muted">Choose which template to send and when.</p>
+            </div>
+
+            <div className="bg-surface-low border border-surface-mid rounded-xl p-4 flex items-center justify-between">
+              <div>
+                <p className="font-label text-xs text-on-surface-muted uppercase tracking-wider mb-1 font-semibold">Sender Number</p>
+                {primaryNumberLoading ? (
+                  <p className="font-body text-sm text-on-surface-muted">Loading primary number...</p>
+                ) : primaryNumber ? (
+                  <p className="font-body text-base font-semibold text-on-surface">{primaryNumber.display_name} ({primaryNumber.number})</p>
+                ) : (
+                  <p className="font-body text-sm text-red-600">No primary number found! Broadcast may fail.</p>
+                )}
+              </div>
+              <Link href="/dashboard/numbers" className="px-3 py-1.5 bg-white border border-surface-mid rounded-lg font-label text-xs font-semibold text-on-surface hover:bg-surface-low transition-colors">
+                Change
+              </Link>
             </div>
 
             <div>

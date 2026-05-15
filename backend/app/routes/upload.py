@@ -289,7 +289,7 @@ async def parse_csv(file: UploadFile = File(...), tenant_id: str = Depends(get_t
         normalized = _normalize_phone(raw_phone or "")
         if normalized and normalized in existing_phones:
             duplicate_count += 1
-        if len(preview) < 3:
+        if len(preview) < 5:
             preview.append({k.strip(): v for k, v in row.items()})
 
     return {
