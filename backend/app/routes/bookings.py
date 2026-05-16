@@ -88,12 +88,10 @@ async def razorpay_webhook(request: Request):
         confirmation_msg = (
             f"🎉 *Booking Confirmed!*\n\n"
             f"🙏 Namaskaram {devotee_name or 'Devotee'},\n\n"
-            f"Your Guru Peyarchi Homam booking is confirmed.\n"
+            f"Your booking is confirmed.\n"
             f"📋 *Reference:* {booking_ref}\n\n"
-            f"✅ The homam will be performed on the auspicious day.\n"
-            f"📹 Video proof will be sent to you after the pooja.\n"
-            f"📦 Prasadam will be dispatched within 3–5 days.\n\n"
-            f"Thank you for your devotion. 🙏"
+            f"✅ We will be in touch with further details.\n\n"
+            f"Thank you. 🙏"
         )
         try:
             await send_whatsapp(phone, confirmation_msg, tenant_id=tenant_id)

@@ -19,10 +19,10 @@ type PhoneNumber = {
   created_at: string;
 };
 
-const QUALITY_DOT: Record<PhoneNumber["quality_rating"], string> = {
-  green: "🟢",
-  yellow: "🟡",
-  red: "🔴",
+const QUALITY_COLOR: Record<PhoneNumber["quality_rating"], string> = {
+  green: "bg-emerald-400",
+  yellow: "bg-amber-400",
+  red: "bg-red-400",
 };
 
 const ROLE_STYLES: Record<PhoneNumber["role"], string> = {
@@ -142,7 +142,6 @@ function ActionMenu({
 export default function NumbersPage() {
   const [numbers, setNumbers] = useState<PhoneNumber[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showArchived, setShowArchived] = useState(false);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [addNumber, setAddNumber] = useState("");
@@ -237,7 +236,7 @@ export default function NumbersPage() {
   }
 
   const activeCount = numbers.filter((n) => n.status === "active").length;
-  const visible = numbers.filter((n) => showArchived || n.status !== "archived");
+  const visible = numbers.filter((n) => n.status !== "archived");
 
   return (
     <div>
@@ -248,18 +247,7 @@ export default function NumbersPage() {
 
       <div className="bg-surface rounded-card p-8 shadow-card ring-1 ring-[#c4c7c7]/15">
         <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
-            <h2 className="font-display text-lg font-bold text-tertiary">Number Pool</h2>
-            <label className="flex items-center gap-1.5 font-label text-xs text-on-surface-muted cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={showArchived}
-                onChange={(e) => setShowArchived(e.target.checked)}
-                className="rounded"
-              />
-              Show archived
-            </label>
-          </div>
+          <h2 className="font-display text-lg font-bold text-tertiary">Number Pool</h2>
           <button
             onClick={() => setShowAddModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 transition-colors"
@@ -357,8 +345,8 @@ export default function NumbersPage() {
                           </span>
                         )}
                       </td>
-                      <td className="py-3 pr-4 text-center font-label text-sm">
-                        {QUALITY_DOT[num.quality_rating]}
+                      <td className="py-3 pr-4">
+                        <span className={`w-2 h-2 rounded-full inline-block ${QUALITY_COLOR[num.quality_rating]}`} />
                       </td>
                       <td className="py-3 pr-4 font-label text-xs text-on-surface whitespace-nowrap">
                         {num.daily_send_count.toLocaleString()} / {num.messaging_tier.toLocaleString()}

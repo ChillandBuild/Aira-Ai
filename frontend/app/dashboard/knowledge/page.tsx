@@ -430,24 +430,11 @@ export default function KnowledgePage() {
             </div>
           )}
           <div className="bg-surface rounded-card p-8 shadow-card ring-1 ring-[#c4c7c7]/15">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="font-display text-lg font-bold text-tertiary">Active Prompt</h2>
-                <p className="font-body text-sm text-on-surface-muted mt-0.5">
-                  Edit the system prompt used by the WhatsApp AI auto-reply.
-                </p>
-              </div>
-              <select
-                value={activeName}
-                onChange={(e) => setActiveName(e.target.value)}
-                className="px-3 py-1.5 rounded-lg bg-surface-low border border-surface-mid font-label text-sm"
-              >
-                {prompts.map((p) => (
-                  <option key={p.name} value={p.name}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+            <div className="mb-4">
+              <h2 className="font-display text-lg font-bold text-tertiary">Active Prompt</h2>
+              <p className="font-body text-sm text-on-surface-muted mt-0.5">
+                Edit the system prompt used by the WhatsApp AI auto-reply.
+              </p>
             </div>
             {activePrompt && (
               <p className="font-label text-sm text-on-surface-muted mb-3">
