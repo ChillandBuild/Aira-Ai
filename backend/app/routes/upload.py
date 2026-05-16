@@ -801,29 +801,39 @@ async def refresh_broadcast_metrics(tenant_id: str = Depends(get_tenant_id)):
     for record in history:
         try:
             broadcast_id = record.get("broadcast_id")
-            
-            if not broadcast_id:
-                logger.warning(f"Skipping refresh for broadcast without broadcast_id: {record.get('timestamp')}")
-                continue
-            
-            recipients = db.table("broadcast_recipients") \
-                .select("lead_id, send_status") \
-                .eq("tenant_id", tenant_id) \
-                .eq("broadcast_id", broadcast_id) \
-                .execute()
-            
-            if not recipients.data:
-                logger.warning(f"No recipients found for broadcast {broadcast_id}")
-                continue
-            
             lead_ids = []
             send_time_failed = 0
             
-            for r in (recipients.data or []):
-                if r.get("lead_id"):
-                    lead_ids.append(r["lead_id"])
-                if r.get("send_status") in ("failed", "rejected", "opted_out_skip"):
-                    send_time_failed += 1
+            if broadcast_id:
+                recipients = db.table("broadcast_recipients") \
+                    .select("lead_id, send_status") \
+                    .eq("tenant_id", tenant_id) \
+                    .eq("broadcast_id", broadcast_id) \
+                    .execute()
+                
+                for r in (recipients.data or []):
+                    if r.get("lead_id"):
+                        lead_ids.append(r["lead_id"])
+                    if r.get("send_status") in ("failed", "rejected", "opted_out_skip"):
+                        send_time_failed += 1
+            else:
+                record_time = datetime.fromisoformat(record["timestamp"])
+                time_window_start = record_time.replace(second=0, microsecond=0)
+                time_window_end = record_time.replace(second=59, microsecond=999999)
+                
+                msg_rows = db.table("messages") \
+                    .select("lead_id, delivery_status") \
+                    .eq("direction", "outbound") \
+                    .gte("created_at", time_window_start.isoformat()) \
+                    .lte("created_at", time_window_end.isoformat()) \
+                    .execute()
+                
+                lead_ids_set = set()
+                for m in (msg_rows.data or []):
+                    if m.get("lead_id"):
+                        lead_ids_set.add(m["lead_id"])
+                lead_ids = list(lead_ids_set)
+                send_time_failed = record.get("failed", 0)
             
             delivered_count = 0
             opened_count = 0
