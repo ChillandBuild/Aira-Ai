@@ -483,17 +483,19 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
     if sent > 0:
         await increment_send_count(best_number["id"], delta=sent)
 
-    # ── Persist broadcast history in app_settings ─────────────────────────────
+    # -- Persist broadcast history in app_settings --
     try:
         history_key = "broadcast_history"
+        
         existing = (
             db.table("app_settings")
-            .select("id,value")
+            .select("value")
             .eq("tenant_id", tenant_id)
             .eq("key", history_key)
             .maybe_single()
             .execute()
         )
+        
         history: list[dict] = []
         if existing and existing.data and existing.data.get("value"):
             try:
@@ -501,7 +503,6 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             except Exception:
                 history = []
 
-        # Determine opt-in source from the first eligible lead
         opt_in_src = _clean_text(eligible[0].opt_in_source) if eligible else "unknown"
 
         history.insert(0, {
@@ -516,25 +517,18 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             "csv_file_url": body.csv_file_url,
             "csv_file_name": body.csv_file_name,
         })
-        # Keep only the last 50 broadcast records
         history = history[:50]
         new_value = json.dumps(history)
 
-        if existing and existing.data:
-            db.table("app_settings") \
-                .update({"value": new_value}) \
-                .eq("tenant_id", tenant_id) \
-                .eq("key", history_key) \
-                .execute()
-        else:
-            db.table("app_settings").insert({
-                "tenant_id": tenant_id,
-                "key": history_key,
-                "value": new_value,
-            }).execute()
+        db.table("app_settings").upsert({
+            "tenant_id": tenant_id,
+            "key": history_key,
+            "value": new_value,
+        }, on_conflict="tenant_id,key").execute()
     except Exception as hist_err:
         logger.exception("broadcast_history save failed")
-    # ─────────────────────────────────────────────────────────────────────────
+    # --
+
 
     return {
         "queued": len(upsert_rows),
