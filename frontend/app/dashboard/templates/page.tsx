@@ -454,7 +454,7 @@ export default function TemplatesPage() {
                   <input
                     value={title}
                     onChange={e => setTitle(e.target.value)}
-                    placeholder="e.g. Guru Peyarchi Homam Invite"
+                    placeholder="e.g. Welcome Message"
                     className="input"
                   />
                   {generatedName && (
@@ -517,7 +517,7 @@ export default function TemplatesPage() {
                   <textarea
                     value={bodyText}
                     onChange={e => setBodyText(e.target.value)}
-                    placeholder={"🙏 Namaskaram {{1}},\n\nWe are performing the Guru Peyarchi Homam on your behalf.\n\nReply YES to book your spot. 🙏"}
+                    placeholder={"Hi {{1}},\n\nThank you for your interest. Reply YES to confirm your booking."}
                     rows={5}
                     className="input resize-y min-h-[120px]"
                   />

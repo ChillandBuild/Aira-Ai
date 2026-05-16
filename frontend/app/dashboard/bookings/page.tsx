@@ -59,7 +59,7 @@ export default function BookingsPage() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className="font-display text-3xl font-bold text-tertiary">Bookings</h1>
-        <p className="font-body text-sm text-on-surface-muted mt-1">Guru Peyarchi Homam — {total} total</p>
+        <p className="font-body text-sm text-on-surface-muted mt-1">{total} total</p>
       </div>
 
       <div className="grid grid-cols-3 gap-4">

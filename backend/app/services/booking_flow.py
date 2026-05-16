@@ -139,7 +139,7 @@ def _create_draft_booking(lead_id: str, tenant_id: str, db) -> dict:
     result = db.table("bookings").insert({
         "lead_id": lead_id,
         "tenant_id": tenant_id,
-        "event_name": "Guru Peyarchi Homam",
+        "event_name": "Booking",
         "status": "draft",
         "amount_paise": BOOKING_AMOUNT_PAISE,
     }).execute()
@@ -221,7 +221,7 @@ async def _send_payment_link(state: dict, phone: str, db) -> None:
             amount_paise=amount_paise,
             customer_name=draft.get("devotee_name", "Devotee"),
             customer_phone=phone,
-            description=f"Guru Peyarchi Homam — {draft.get('devotee_name', 'Devotee')} ({booking_ref})",
+            description=f"Booking — {draft.get('devotee_name', 'Customer')} ({booking_ref})",
         )
 
         payment_url = result["payment_link_url"]
@@ -237,7 +237,7 @@ async def _send_payment_link(state: dict, phone: str, db) -> None:
 
         summary = (
             f"🙏 Here is your booking summary:\n\n"
-            f"📿 *Event:* Guru Peyarchi Homam\n"
+            f"📋 *Reference:* {booking_ref}\n"
             f"👤 *Name:* {draft.get('devotee_name', '—')}\n"
             f"♈ *Rasi:* {draft.get('rasi', '—')}\n"
             f"⭐ *Nakshatram:* {draft.get('nakshatram', '—')}\n"
