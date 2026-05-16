@@ -4,7 +4,7 @@ import json
 import logging
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
@@ -797,35 +797,116 @@ async def refresh_broadcast_metrics(tenant_id: str = Depends(get_tenant_id)):
     
     for record in history:
         try:
-            # Get all lead IDs from the broadcast
-            # We need to query messages for this broadcast's template and timestamp
-            # Since we don't store lead_ids directly, we'll query by template name and time window
-            record_time = datetime.fromisoformat(record["timestamp"])
-            time_window_start = record_time.replace(second=0, microsecond=0)
-            time_window_end = record_time.replace(second=59, microsecond=999999)
+            broadcast_id = record.get("broadcast_id")
             
-            # Count delivered and opened messages for this broadcast
-            delivered_rows = db.table("messages") \
-                .select("id") \
-                .eq("direction", "outbound") \
-                .eq("delivery_status", "delivered") \
-                .gte("created_at", time_window_start.isoformat()) \
-                .lte("created_at", time_window_end.isoformat()) \
-                .execute()
-            delivered_count = len(delivered_rows.data or [])
+            if broadcast_id:
+                # Get all recipients for this broadcast
+                recipients = db.table("broadcast_recipients") \
+                    .select("lead_id, phone, send_status") \
+                    .eq("tenant_id", tenant_id) \
+                    .eq("broadcast_id", broadcast_id) \
+                    .execute()
+                
+                if not recipients.data:
+                    continue
+                
+                lead_ids = [r["lead_id"] for r in recipients.data if r.get("lead_id")]
+                record_time = datetime.fromisoformat(record["timestamp"])
+                window_start = (record_time - timedelta(minutes=2)).isoformat()
+                window_end = (record_time + timedelta(minutes=10)).isoformat()
+                
+                # Get delivery status from messages (within time window of broadcast)
+                msg_status_by_lead = {}
+                if lead_ids:
+                    msg_rows = db.table("messages") \
+                        .select("lead_id, delivery_status") \
+                        .in_("lead_id", lead_ids) \
+                        .eq("direction", "outbound") \
+                        .gte("created_at", window_start) \
+                        .lte("created_at", window_end) \
+                        .execute()
+                    for msg in (msg_rows.data or []):
+                        lid = msg["lead_id"]
+                        status = msg.get("delivery_status")
+                        if lid not in msg_status_by_lead:
+                            msg_status_by_lead[lid] = status
+                        else:
+                            priority = {"failed": 0, "sent": 1, "delivered": 2, "read": 3}
+                            if priority.get(status, 0) > priority.get(msg_status_by_lead[lid], 0):
+                                msg_status_by_lead[lid] = status
+                
+                # Get opted-out leads
+                opted_out_lead_ids = set()
+                if lead_ids:
+                    opted_rows = db.table("leads") \
+                        .select("id") \
+                        .in_("id", lead_ids) \
+                        .eq("opted_out", True) \
+                        .execute()
+                    for row in (opted_rows.data or []):
+                        opted_out_lead_ids.add(row["id"])
+                
+                # Recalculate all 4 metrics
+                sent_count = 0
+                delivered_count = 0
+                opened_count = 0
+                failed_count = 0
+                
+                for r in recipients.data:
+                    send_status = r.get("send_status", "")
+                    lead_id = r.get("lead_id")
+                    
+                    if send_status in ("failed", "rejected", "opted_out_skip"):
+                        failed_count += 1
+                        continue
+                    
+                    if lead_id in opted_out_lead_ids:
+                        failed_count += 1
+                        continue
+                    
+                    delivery_status = msg_status_by_lead.get(lead_id)
+                    if delivery_status == "failed":
+                        failed_count += 1
+                    elif delivery_status == "delivered":
+                        sent_count += 1
+                        delivered_count += 1
+                    elif delivery_status == "read":
+                        sent_count += 1
+                        delivered_count += 1
+                        opened_count += 1
+                    # else: in-flight (no delivery webhook yet) — not counted
+                
+                record["sent"] = sent_count
+                record["delivered"] = delivered_count
+                record["opened"] = opened_count
+                record["failed"] = failed_count
+            else:
+                # Legacy record without broadcast_id — fallback to time-window
+                record_time = datetime.fromisoformat(record["timestamp"])
+                time_window_start = record_time.replace(second=0, microsecond=0)
+                time_window_end = record_time.replace(second=59, microsecond=999999)
+                
+                delivered_rows = db.table("messages") \
+                    .select("id") \
+                    .eq("direction", "outbound") \
+                    .eq("delivery_status", "delivered") \
+                    .gte("created_at", time_window_start.isoformat()) \
+                    .lte("created_at", time_window_end.isoformat()) \
+                    .execute()
+                delivered_count = len(delivered_rows.data or [])
+                
+                opened_rows = db.table("messages") \
+                    .select("id") \
+                    .eq("direction", "outbound") \
+                    .eq("delivery_status", "read") \
+                    .gte("created_at", time_window_start.isoformat()) \
+                    .lte("created_at", time_window_end.isoformat()) \
+                    .execute()
+                opened_count = len(opened_rows.data or [])
+                
+                record["delivered"] = delivered_count
+                record["opened"] = opened_count
             
-            opened_rows = db.table("messages") \
-                .select("id") \
-                .eq("direction", "outbound") \
-                .eq("delivery_status", "read") \
-                .gte("created_at", time_window_start.isoformat()) \
-                .lte("created_at", time_window_end.isoformat()) \
-                .execute()
-            opened_count = len(opened_rows.data or [])
-            
-            # Update record with new counts
-            record["delivered"] = delivered_count
-            record["opened"] = opened_count
             refreshed_count += 1
         except Exception as e:
             logger.error(f"Failed to refresh broadcast record: {e}")
