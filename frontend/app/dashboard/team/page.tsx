@@ -116,7 +116,7 @@ export default function TeamPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
-              {members.map((m) => (
+              {members.filter((m) => m.role !== "owner").map((m) => (
                 <tr key={m.user_id} className="hover:bg-surface-subtle transition-colors">
                   <td className="px-5 py-4">
                     <p className="font-label font-semibold text-ink text-sm">{m.caller_profile?.name || "—"}</p>
