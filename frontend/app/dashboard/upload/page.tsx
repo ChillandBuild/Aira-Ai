@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Upload, Check, AlertTriangle, ChevronRight, RotateCcw, MessageSquare, Clock, Send } from "lucide-react";
+import { Upload, Check, AlertTriangle, ChevronRight, RotateCcw, MessageSquare, Clock, Send, Download } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -13,6 +13,8 @@ type ParsedData = {
   total_rows: number;
   duplicate_count: number;
   preview: Record<string, string>[];
+  csv_file_url: string | null;
+  csv_file_name: string | null;
 };
 
 type OptInValidation = {
@@ -36,6 +38,8 @@ type BroadcastHistoryItem = {
   rejected: number;
   total_leads: number;
   number_used: string;
+  csv_file_url?: string;
+  csv_file_name?: string;
 };
 
 type ScheduleType = "now" | "scheduled" | "drip";
@@ -113,6 +117,9 @@ export default function UploadPage() {
   const [broadcastHistory, setBroadcastHistory] = useState<BroadcastHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  const [csvFileUrl, setCsvFileUrl] = useState<string | null>(null);
+  const [csvFileName, setCsvFileName] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch broadcast history once on mount
@@ -173,6 +180,8 @@ export default function UploadPage() {
     setCsvFile(null);
     setParsedData(null);
     setParseError(null);
+    setCsvFileUrl(null);
+    setCsvFileName(null);
     setOptInSource("");
     setOptInValidation(null);
     setTemplateName("");
@@ -192,6 +201,8 @@ export default function UploadPage() {
     setCsvFile(f);
     setParsedData(null);
     setParseError(null);
+    setCsvFileUrl(null);
+    setCsvFileName(null);
     if (!f) return;
 
     setParseLoading(true);
@@ -203,6 +214,8 @@ export default function UploadPage() {
       if (!res.ok) throw new Error(await res.text());
       const data: ParsedData = await res.json();
       setParsedData(data);
+      setCsvFileUrl(data.csv_file_url ?? null);
+      setCsvFileName(data.csv_file_name ?? null);
     } catch (err) {
       setParseError(err instanceof Error ? err.message : "Parse failed");
     } finally {
@@ -260,6 +273,8 @@ export default function UploadPage() {
         schedule_type: scheduleType,
         schedule_at: scheduleType === "scheduled" && scheduleAt ? scheduleAt : undefined,
         drip_days: scheduleType === "drip" && dripDays ? parseInt(dripDays, 10) : undefined,
+        csv_file_url: csvFileUrl,
+        csv_file_name: csvFileName,
       };
 
       const auth = await getAuthHeaders();
@@ -444,13 +459,6 @@ export default function UploadPage() {
                 Showing first {parsedData.preview.length} of {parsedData.total_rows.toLocaleString()} rows.
               </p>
             </div>
-
-            {parsedData.duplicate_count > 0 && (
-              <div className="flex items-center gap-2 p-3 bg-amber-50 text-amber-700 rounded-xl font-body text-base">
-                <AlertTriangle size={15} className="shrink-0" />
-                {parsedData.duplicate_count} duplicate{parsedData.duplicate_count !== 1 ? "s" : ""} detected — they will be skipped on import.
-              </div>
-            )}
 
             <div className="overflow-x-auto rounded-xl ring-1 ring-[#c4c7c7]/20">
               <table className="w-full text-left text-xs">
@@ -754,6 +762,7 @@ export default function UploadPage() {
                   <th className="px-5 py-3 text-center font-label text-xs uppercase tracking-wider text-on-surface-muted">Failed</th>
                   <th className="px-5 py-3 text-center font-label text-xs uppercase tracking-wider text-on-surface-muted">Rejected</th>
                   <th className="px-5 py-3 text-left font-label text-xs uppercase tracking-wider text-on-surface-muted">Sender</th>
+                  <th className="px-5 py-3 text-center font-label text-xs uppercase tracking-wider text-on-surface-muted">CSV</th>
                 </tr>
               </thead>
               <tbody>
@@ -782,6 +791,22 @@ export default function UploadPage() {
                       }`}>{item.rejected}</span>
                     </td>
                     <td className="px-5 py-3.5 font-body text-xs text-on-surface-muted">{item.number_used || "—"}</td>
+                    <td className="px-5 py-3.5 text-center">
+                      {item.csv_file_url ? (
+                        <a
+                          href={item.csv_file_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2 py-1 bg-tertiary/10 text-tertiary rounded-md font-label text-xs font-semibold hover:bg-tertiary/20 transition-colors"
+                          download={item.csv_file_name || "broadcast.csv"}
+                        >
+                          <Download size={12} />
+                          Download
+                        </a>
+                      ) : (
+                        <span className="font-label text-xs text-on-surface-muted">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

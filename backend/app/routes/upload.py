@@ -264,6 +264,8 @@ class BulkSendRequest(BaseModel):
     schedule_type: str
     schedule_at: Optional[str] = None
     drip_days: Optional[int] = None
+    csv_file_url: Optional[str] = None
+    csv_file_name: Optional[str] = None
 
 
 @router.post("/parse")
@@ -271,7 +273,8 @@ async def parse_csv(file: UploadFile = File(...), tenant_id: str = Depends(get_t
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="File must be a .csv")
 
-    raw = (await file.read()).decode("utf-8-sig", errors="replace")
+    raw_bytes = await file.read()
+    raw = raw_bytes.decode("utf-8-sig", errors="replace")
     reader = csv.DictReader(io.StringIO(raw))
     if not reader.fieldnames:
         raise HTTPException(status_code=400, detail="CSV has no headers")
@@ -302,12 +305,25 @@ async def parse_csv(file: UploadFile = File(...), tenant_id: str = Depends(get_t
         if len(preview) < 5:
             preview.append({k.strip(): v for k, v in row.items()})
 
+    csv_file_url = None
+    csv_file_name = file.filename
+    try:
+        import uuid
+        safe_filename = file.filename.replace(" ", "_") if file.filename else "upload.csv"
+        storage_path = f"{tenant_id}/{uuid.uuid4().hex[:8]}_{safe_filename}"
+        db.storage.from_("broadcast-csvs").upload(storage_path, raw_bytes, {"content-type": "text/csv"})
+        csv_file_url = db.storage.from_("broadcast-csvs").get_public_url(storage_path)
+    except Exception as storage_err:
+        logger.exception("Failed to upload CSV to storage")
+
     return {
         "columns": columns,
         "suggested_mapping": suggested_mapping,
         "total_rows": total_rows,
         "duplicate_count": duplicate_count,
         "preview": preview,
+        "csv_file_url": csv_file_url,
+        "csv_file_name": csv_file_name,
     }
 
 
@@ -497,6 +513,8 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             "rejected": len(rejected),
             "total_leads": len(eligible),
             "number_used": best_number.get("number"),
+            "csv_file_url": body.csv_file_url,
+            "csv_file_name": body.csv_file_name,
         })
         # Keep only the last 50 broadcast records
         history = history[:50]
@@ -511,7 +529,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 "value": new_value,
             }).execute()
     except Exception as hist_err:
-        logger.error(f"broadcast_history save failed: {hist_err}")
+        logger.exception("broadcast_history save failed")
     # ─────────────────────────────────────────────────────────────────────────
 
     return {
