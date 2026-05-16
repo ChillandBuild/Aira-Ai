@@ -800,41 +800,82 @@ async def refresh_broadcast_metrics(tenant_id: str = Depends(get_tenant_id)):
     
     for record in history:
         try:
-            # Get all lead IDs from the broadcast
-            # We need to query messages for this broadcast's template and timestamp
-            # Since we don't store lead_ids directly, we'll query by template name and time window
-            record_time = datetime.fromisoformat(record["timestamp"])
-            time_window_start = record_time.replace(second=0, microsecond=0)
-            time_window_end = record_time.replace(second=59, microsecond=999999)
+            broadcast_id = record.get("broadcast_id")
+            lead_ids = []
+            send_time_failed = 0
             
-            # Count delivered and opened messages for this broadcast
-            delivered_rows = db.table("messages") \
-                .select("id") \
-                .eq("direction", "outbound") \
-                .eq("delivery_status", "delivered") \
-                .gte("created_at", time_window_start.isoformat()) \
-                .lte("created_at", time_window_end.isoformat()) \
-                .execute()
-            delivered_count = len(delivered_rows.data or [])
+            if broadcast_id:
+                recipients = db.table("broadcast_recipients") \
+                    .select("lead_id, send_status") \
+                    .eq("tenant_id", tenant_id) \
+                    .eq("broadcast_id", broadcast_id) \
+                    .execute()
+                
+                for r in (recipients.data or []):
+                    if r.get("lead_id"):
+                        lead_ids.append(r["lead_id"])
+                    if r.get("send_status") in ("failed", "rejected", "opted_out_skip"):
+                        send_time_failed += 1
+            else:
+                record_time = datetime.fromisoformat(record["timestamp"])
+                time_window_start = record_time.replace(second=0, microsecond=0)
+                time_window_end = record_time.replace(second=59, microsecond=999999)
+                
+                msg_rows = db.table("messages") \
+                    .select("lead_id, delivery_status") \
+                    .eq("direction", "outbound") \
+                    .gte("created_at", time_window_start.isoformat()) \
+                    .lte("created_at", time_window_end.isoformat()) \
+                    .execute()
+                
+                lead_ids_set = set()
+                for m in (msg_rows.data or []):
+                    if m.get("lead_id"):
+                        lead_ids_set.add(m["lead_id"])
+                lead_ids = list(lead_ids_set)
+                send_time_failed = record.get("failed", 0)
             
-            opened_rows = db.table("messages") \
-                .select("id") \
-                .eq("direction", "outbound") \
-                .eq("delivery_status", "read") \
-                .gte("created_at", time_window_start.isoformat()) \
-                .lte("created_at", time_window_end.isoformat()) \
-                .execute()
-            opened_count = len(opened_rows.data or [])
+            delivered_count = 0
+            opened_count = 0
+            delivery_failed_count = 0
             
-            # Update record with new counts
+            if lead_ids:
+                for i in range(0, len(lead_ids), 100):
+                    batch = lead_ids[i:i+100]
+                    delivered_rows = db.table("messages") \
+                        .select("id") \
+                        .in_("lead_id", batch) \
+                        .eq("direction", "outbound") \
+                        .eq("delivery_status", "delivered") \
+                        .execute()
+                    delivered_count += len(delivered_rows.data or [])
+                    
+                    opened_rows = db.table("messages") \
+                        .select("id") \
+                        .in_("lead_id", batch) \
+                        .eq("direction", "outbound") \
+                        .eq("delivery_status", "read") \
+                        .execute()
+                    opened_count += len(opened_rows.data or [])
+                    
+                    failed_rows = db.table("messages") \
+                        .select("id") \
+                        .in_("lead_id", batch) \
+                        .eq("direction", "outbound") \
+                        .eq("delivery_status", "failed") \
+                        .execute()
+                    delivery_failed_count += len(failed_rows.data or [])
+            
+            total_failed = send_time_failed + delivery_failed_count
+            
             record["delivered"] = delivered_count
             record["opened"] = opened_count
+            record["failed"] = total_failed
             refreshed_count += 1
         except Exception as e:
             logger.error(f"Failed to refresh broadcast record: {e}")
             continue
     
-    # Save updated history
     db.table("app_settings").upsert({
         "tenant_id": tenant_id,
         "key": "broadcast_history",
