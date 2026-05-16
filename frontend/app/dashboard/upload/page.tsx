@@ -26,7 +26,7 @@ type OptInValidation = {
 
 type SendResult = {
   queued: number;
-  rejected: number;
+  failed: number;
   number_used: string;
 };
 
@@ -35,8 +35,9 @@ type BroadcastHistoryItem = {
   template_name: string;
   opt_in_source: string;
   sent: number;
+  delivered: number;
+  opened: number;
   failed: number;
-  rejected: number;
   total_leads: number;
   number_used: string;
   csv_file_url?: string;
@@ -727,8 +728,8 @@ export default function UploadPage() {
                 <p className="font-label text-xs text-green-600 mt-1 uppercase tracking-wide">Sent</p>
               </div>
               <div className="p-5 bg-surface-low border border-surface-mid rounded-xl text-center">
-                <p className="font-display text-3xl font-bold text-on-surface-muted">{sendResult.rejected.toLocaleString()}</p>
-                <p className="font-label text-xs text-on-surface-muted mt-1 uppercase tracking-wide">Rejected</p>
+                <p className="font-display text-3xl font-bold text-on-surface-muted">{sendResult.failed.toLocaleString()}</p>
+                <p className="font-label text-xs text-on-surface-muted mt-1 uppercase tracking-wide">Failed</p>
               </div>
               <div className="p-5 bg-tertiary/5 border border-tertiary/15 rounded-xl text-center">
                 <p className="font-display text-sm font-bold text-tertiary truncate">{sendResult.number_used}</p>
@@ -793,10 +794,10 @@ export default function UploadPage() {
                 <tr className="border-b border-gray-100">
                   <th className="px-6 py-4 text-left font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Date & Time</th>
                   <th className="px-6 py-4 text-left font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Template</th>
-                  <th className="px-6 py-4 text-left font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Opt-in Source</th>
                   <th className="px-6 py-4 text-center font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Sent</th>
+                  <th className="px-6 py-4 text-center font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Delivered</th>
+                  <th className="px-6 py-4 text-center font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Opened</th>
                   <th className="px-6 py-4 text-center font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Failed</th>
-                  <th className="px-6 py-4 text-center font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Rejected</th>
                   <th className="px-6 py-4 text-left font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Sender</th>
                   <th className="px-6 py-4 text-center font-label text-xs font-semibold uppercase tracking-wider text-gray-500">CSV</th>
                 </tr>
@@ -819,27 +820,45 @@ export default function UploadPage() {
                         {item.template_name}
                       </span>
                     </td>
-                    <td className="px-6 py-4 font-body text-sm text-gray-600 capitalize">
-                      {item.opt_in_source.replace(/_/g, " ").replace(/\w/g, (l: string) => l.toUpperCase())}
+                    <td className="px-6 py-4 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="inline-flex items-center justify-center min-w-[32px] h-7 px-2 rounded-full bg-blue-100 text-blue-700 font-label text-xs font-semibold">
+                          {item.sent}
+                        </span>
+                        <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-blue-500 rounded-full" style={{ width: `${item.total_leads > 0 ? (item.sent / item.total_leads) * 100 : 0}%` }} />
+                        </div>
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-center">
-                      <span className="inline-flex items-center justify-center min-w-[32px] h-7 px-2 rounded-full bg-emerald-100 text-emerald-700 font-label text-xs font-semibold">
-                        {item.sent}
-                      </span>
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="inline-flex items-center justify-center min-w-[32px] h-7 px-2 rounded-full bg-emerald-100 text-emerald-700 font-label text-xs font-semibold">
+                          {item.delivered || 0}
+                        </span>
+                        <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${item.total_leads > 0 ? ((item.delivered || 0) / item.total_leads) * 100 : 0}%` }} />
+                        </div>
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-center">
-                      <span className={`inline-flex items-center justify-center min-w-[32px] h-7 px-2 rounded-full font-label text-xs font-semibold ${
-                        item.failed > 0 ? "bg-red-50 text-red-600" : "bg-gray-100 text-gray-500"
-                      }`}>
-                        {item.failed}
-                      </span>
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="inline-flex items-center justify-center min-w-[32px] h-7 px-2 rounded-full bg-amber-100 text-amber-700 font-label text-xs font-semibold">
+                          {item.opened || 0}
+                        </span>
+                        <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-amber-500 rounded-full" style={{ width: `${item.total_leads > 0 ? ((item.opened || 0) / item.total_leads) * 100 : 0}%` }} />
+                        </div>
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-center">
-                      <span className={`inline-flex items-center justify-center min-w-[32px] h-7 px-2 rounded-full font-label text-xs font-semibold ${
-                        item.rejected > 0 ? "bg-amber-50 text-amber-600" : "bg-gray-100 text-gray-500"
-                      }`}>
-                        {item.rejected}
-                      </span>
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="inline-flex items-center justify-center min-w-[32px] h-7 px-2 rounded-full bg-red-100 text-red-700 font-label text-xs font-semibold">
+                          {item.failed || 0}
+                        </span>
+                        <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-red-500 rounded-full" style={{ width: `${item.total_leads > 0 ? ((item.failed || 0) / item.total_leads) * 100 : 0}%` }} />
+                        </div>
+                      </div>
                     </td>
                     <td className="px-6 py-4 font-body text-sm text-gray-600">{item.number_used || "—"}</td>
                     <td className="px-6 py-4 text-center">

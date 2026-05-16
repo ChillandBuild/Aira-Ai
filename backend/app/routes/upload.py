@@ -483,6 +483,31 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
     if sent > 0:
         await increment_send_count(best_number["id"], delta=sent)
 
+    # Query delivery status for this broadcast batch
+    lead_ids = [phone_to_lead_id.get(p) for p in all_phones if phone_to_lead_id.get(p)]
+    delivered_count = 0
+    opened_count = 0
+    
+    if lead_ids:
+        try:
+            delivered_rows = db.table("messages") \
+                .select("id") \
+                .in_("lead_id", lead_ids) \
+                .eq("direction", "outbound") \
+                .eq("delivery_status", "delivered") \
+                .execute()
+            delivered_count = len(delivered_rows.data or [])
+            
+            opened_rows = db.table("messages") \
+                .select("id") \
+                .in_("lead_id", lead_ids) \
+                .eq("direction", "outbound") \
+                .eq("delivery_status", "read") \
+                .execute()
+            opened_count = len(opened_rows.data or [])
+        except Exception as e:
+            logger.error(f"Failed to query delivery status: {e}")
+
     # -- Persist broadcast history in app_settings --
     try:
         history_key = "broadcast_history"
@@ -504,14 +529,16 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 history = []
 
         opt_in_src = _clean_text(eligible[0].opt_in_source) if eligible else "unknown"
+        total_failed = failed + len(rejected)
 
         history.insert(0, {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "template_name": body.template_name,
             "opt_in_source": opt_in_src or "unknown",
             "sent": sent,
-            "failed": failed,
-            "rejected": len(rejected),
+            "delivered": delivered_count,
+            "opened": opened_count,
+            "failed": total_failed,
             "total_leads": len(eligible),
             "number_used": best_number.get("number"),
             "csv_file_url": body.csv_file_url,
@@ -533,8 +560,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
     return {
         "queued": len(upsert_rows),
         "sent": sent,
-        "failed": failed,
-        "rejected": len(rejected),
+        "failed": failed + len(rejected),
         "number_used": best_number.get("number"),
     }
 

@@ -200,6 +200,21 @@ async def whatsapp_webhook(
                             except Exception as e:
                                 logger.error(f"Reply routing failed for lead {lead_id}: {e}")
 
+                    # Handle message status updates (delivered, read, failed)
+                    for status_update in value.get("statuses", []):
+                        message_id = status_update.get("id")
+                        status = status_update.get("status")
+                        
+                        if message_id and status in ("delivered", "read", "failed"):
+                            try:
+                                db.table("messages") \
+                                    .update({"delivery_status": status}) \
+                                    .eq("meta_message_id", message_id) \
+                                    .execute()
+                                logger.info(f"Message {message_id} status updated to {status}")
+                            except Exception as e:
+                                logger.error(f"Failed to update message {message_id} status to {status}: {e}")
+
         return {"status": "ok"}
 
     if not From or not Body or not MessageSid:
