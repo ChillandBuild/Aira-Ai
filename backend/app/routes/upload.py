@@ -584,3 +584,73 @@ async def get_broadcast_history(tenant_id: str = Depends(get_tenant_id)):
         except Exception:
             history = []
     return {"data": history}
+
+
+@router.post("/history/refresh")
+async def refresh_broadcast_metrics(tenant_id: str = Depends(get_tenant_id)):
+    """Re-query delivery status for all broadcasts and update history."""
+    db = get_supabase()
+    
+    row = (
+        db.table("app_settings")
+        .select("value")
+        .eq("tenant_id", tenant_id)
+        .eq("key", "broadcast_history")
+        .maybe_single()
+        .execute()
+    )
+    
+    if not row or not row.data or not row.data.get("value"):
+        return {"refreshed": 0}
+    
+    try:
+        history = json.loads(row.data["value"])
+    except Exception:
+        return {"refreshed": 0}
+    
+    refreshed_count = 0
+    
+    for record in history:
+        try:
+            # Get all lead IDs from the broadcast
+            # We need to query messages for this broadcast's template and timestamp
+            # Since we don't store lead_ids directly, we'll query by template name and time window
+            record_time = datetime.fromisoformat(record["timestamp"])
+            time_window_start = record_time.replace(second=0, microsecond=0)
+            time_window_end = record_time.replace(second=59, microsecond=999999)
+            
+            # Count delivered and opened messages for this broadcast
+            delivered_rows = db.table("messages") \
+                .select("id") \
+                .eq("direction", "outbound") \
+                .eq("delivery_status", "delivered") \
+                .gte("created_at", time_window_start.isoformat()) \
+                .lte("created_at", time_window_end.isoformat()) \
+                .execute()
+            delivered_count = len(delivered_rows.data or [])
+            
+            opened_rows = db.table("messages") \
+                .select("id") \
+                .eq("direction", "outbound") \
+                .eq("delivery_status", "read") \
+                .gte("created_at", time_window_start.isoformat()) \
+                .lte("created_at", time_window_end.isoformat()) \
+                .execute()
+            opened_count = len(opened_rows.data or [])
+            
+            # Update record with new counts
+            record["delivered"] = delivered_count
+            record["opened"] = opened_count
+            refreshed_count += 1
+        except Exception as e:
+            logger.error(f"Failed to refresh broadcast record: {e}")
+            continue
+    
+    # Save updated history
+    db.table("app_settings").upsert({
+        "tenant_id": tenant_id,
+        "key": "broadcast_history",
+        "value": json.dumps(history),
+    }, on_conflict="tenant_id,key").execute()
+    
+    return {"refreshed": refreshed_count}

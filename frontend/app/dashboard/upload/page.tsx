@@ -2,8 +2,9 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Upload, Check, AlertTriangle, ChevronRight, RotateCcw, MessageSquare, Clock, Send, Download } from "lucide-react";
+import { Upload, Check, AlertTriangle, ChevronRight, RotateCcw, MessageSquare, Clock, Send, Download, CheckCircle2, Eye, XCircle } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { createClient } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -119,6 +120,38 @@ export default function UploadPage() {
   const [broadcastHistory, setBroadcastHistory] = useState<BroadcastHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"upload" | "history">("upload");
+  
+  // Supabase client for realtime updates
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+  );
+  
+  // Realtime subscription for message status updates
+  useEffect(() => {
+    if (activeTab !== "history") return;
+    
+    const channel = supabase
+      .channel("messages_status_updates")
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "messages",
+          filter: "delivery_status=in.(delivered,read,failed)",
+        },
+        () => {
+          // Auto-refresh history when message status changes
+          refreshHistory();
+        }
+      )
+      .subscribe();
+    
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [activeTab]);
 
   const [csvFileUrl, setCsvFileUrl] = useState<string | null>(null);
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
@@ -137,7 +170,19 @@ export default function UploadPage() {
     });
   }, []);
 
-  function refreshHistory() {
+  async function refreshHistory() {
+    // First call the backend refresh endpoint
+    try {
+      const auth = await getAuthHeaders();
+      await fetch(`${API_URL}/api/v1/upload/history/refresh`, { 
+        method: "POST", 
+        headers: auth 
+      });
+    } catch (e) {
+      console.error("Failed to refresh metrics:", e);
+    }
+    
+    // Then fetch the updated history
     getAuthHeaders().then(auth => {
       fetch(`${API_URL}/api/v1/upload/history`, { headers: auth })
         .then(r => r.json())
@@ -761,7 +806,7 @@ export default function UploadPage() {
       {/* Broadcast History */}
       {activeTab === "history" && (
       <div className="mt-10 bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-        <div className="bg-emerald-50/50 border-b border-emerald-100 px-6 py-5">
+        <div className="bg-emerald-50/50 border-b border-emerald-100 px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
               <Clock size={18} className="text-emerald-600" />
@@ -771,6 +816,13 @@ export default function UploadPage() {
               <p className="font-body text-sm text-gray-500">Last 50 campaign dispatches for your account</p>
             </div>
           </div>
+          <button 
+            onClick={refreshHistory}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg font-label text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <RotateCcw size={14} />
+            Refresh
+          </button>
         </div>
 
         {historyLoading ? (
@@ -788,24 +840,13 @@ export default function UploadPage() {
             </div>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="px-6 py-4 text-left font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Date & Time</th>
-                  <th className="px-6 py-4 text-left font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Template</th>
-                  <th className="px-6 py-4 text-center font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Sent</th>
-                  <th className="px-6 py-4 text-center font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Delivered</th>
-                  <th className="px-6 py-4 text-center font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Opened</th>
-                  <th className="px-6 py-4 text-center font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Failed</th>
-                  <th className="px-6 py-4 text-left font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Sender</th>
-                  <th className="px-6 py-4 text-center font-label text-xs font-semibold uppercase tracking-wider text-gray-500">CSV</th>
-                </tr>
-              </thead>
-              <tbody>
-                {broadcastHistory.map((item, i) => (
-                  <tr key={i} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors">
-                    <td className="px-6 py-4 font-body text-sm text-gray-600 whitespace-nowrap">
+          <div className="divide-y divide-gray-100">
+            {broadcastHistory.map((item, i) => (
+              <div key={i} className="py-6 first:pt-4 last:pb-4">
+                {/* Card Header */}
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <span className="font-display text-sm font-semibold text-gray-900">
                       {new Date(item.timestamp).toLocaleString("en-IN", { 
                         day: "numeric", 
                         month: "short", 
@@ -814,73 +855,116 @@ export default function UploadPage() {
                         minute: "2-digit",
                         hour12: false 
                       })}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 font-label text-xs font-medium">
-                        {item.template_name}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className="inline-flex items-center justify-center min-w-[32px] h-7 px-2 rounded-full bg-blue-100 text-blue-700 font-label text-xs font-semibold">
-                          {item.sent}
-                        </span>
-                        <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-blue-500 rounded-full" style={{ width: `${item.total_leads > 0 ? (item.sent / item.total_leads) * 100 : 0}%` }} />
-                        </div>
+                    </span>
+                    <span className="px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 font-label text-xs font-medium">
+                      {item.template_name}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="font-body text-sm text-gray-500">{item.number_used || "—"}</span>
+                    {item.csv_file_url && (
+                      <a 
+                        href={item.csv_file_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        download={item.csv_file_name || "broadcast.csv"}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-label text-xs font-medium transition-colors"
+                      >
+                        <Download size={14} />
+                        CSV
+                      </a>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Metrics Grid */}
+                <div className="grid grid-cols-4 gap-6">
+                  {/* Sent */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                        <Send size={18} className="text-blue-600" />
                       </div>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className="inline-flex items-center justify-center min-w-[32px] h-7 px-2 rounded-full bg-emerald-100 text-emerald-700 font-label text-xs font-semibold">
-                          {item.delivered || 0}
-                        </span>
-                        <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${item.total_leads > 0 ? ((item.delivered || 0) / item.total_leads) * 100 : 0}%` }} />
-                        </div>
+                      <div>
+                        <p className="font-display text-sm font-semibold text-gray-900">
+                          Sent ({Math.round((item.sent / item.total_leads) * 100)}%)
+                        </p>
+                        <p className="font-body text-xs text-gray-500">{item.sent}/{item.total_leads}</p>
                       </div>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className="inline-flex items-center justify-center min-w-[32px] h-7 px-2 rounded-full bg-amber-100 text-amber-700 font-label text-xs font-semibold">
-                          {item.opened || 0}
-                        </span>
-                        <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-amber-500 rounded-full" style={{ width: `${item.total_leads > 0 ? ((item.opened || 0) / item.total_leads) * 100 : 0}%` }} />
-                        </div>
+                    </div>
+                    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-blue-500 rounded-full transition-all duration-500" 
+                        style={{ width: `${(item.sent / item.total_leads) * 100}%` }} 
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Delivered */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-full bg-emerald-50 flex items-center justify-center shrink-0">
+                        <CheckCircle2 size={18} className="text-emerald-600" />
                       </div>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className="inline-flex items-center justify-center min-w-[32px] h-7 px-2 rounded-full bg-red-100 text-red-700 font-label text-xs font-semibold">
-                          {item.failed || 0}
-                        </span>
-                        <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-red-500 rounded-full" style={{ width: `${item.total_leads > 0 ? ((item.failed || 0) / item.total_leads) * 100 : 0}%` }} />
-                        </div>
+                      <div>
+                        <p className="font-display text-sm font-semibold text-gray-900">
+                          Delivered ({Math.round(((item.delivered || 0) / item.total_leads) * 100)}%)
+                        </p>
+                        <p className="font-body text-xs text-gray-500">{item.delivered || 0}/{item.total_leads}</p>
                       </div>
-                    </td>
-                    <td className="px-6 py-4 font-body text-sm text-gray-600">{item.number_used || "—"}</td>
-                    <td className="px-6 py-4 text-center">
-                      {item.csv_file_url ? (
-                        <a
-                          href={item.csv_file_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          download={item.csv_file_name || "broadcast.csv"}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-label text-xs font-medium transition-colors"
-                        >
-                          <Download size={14} />
-                          Download
-                        </a>
-                      ) : (
-                        <span className="font-label text-xs text-gray-400">—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-emerald-500 rounded-full transition-all duration-500" 
+                        style={{ width: `${((item.delivered || 0) / item.total_leads) * 100}%` }} 
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Opened */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-full bg-amber-50 flex items-center justify-center shrink-0">
+                        <Eye size={18} className="text-amber-600" />
+                      </div>
+                      <div>
+                        <p className="font-display text-sm font-semibold text-gray-900">
+                          Opened ({Math.round(((item.opened || 0) / item.total_leads) * 100)}%)
+                        </p>
+                        <p className="font-body text-xs text-gray-500">{item.opened || 0}/{item.total_leads}</p>
+                      </div>
+                    </div>
+                    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-amber-500 rounded-full transition-all duration-500" 
+                        style={{ width: `${((item.opened || 0) / item.total_leads) * 100}%` }} 
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Failed */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center shrink-0">
+                        <XCircle size={18} className="text-red-600" />
+                      </div>
+                      <div>
+                        <p className="font-display text-sm font-semibold text-gray-900">
+                          Failed ({Math.round(((item.failed || 0) / item.total_leads) * 100)}%)
+                        </p>
+                        <p className="font-body text-xs text-gray-500">{item.failed || 0}/{item.total_leads}</p>
+                      </div>
+                    </div>
+                    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-red-500 rounded-full transition-all duration-500" 
+                        style={{ width: `${((item.failed || 0) / item.total_leads) * 100}%` }} 
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
