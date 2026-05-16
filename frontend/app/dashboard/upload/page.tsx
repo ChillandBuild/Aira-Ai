@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Upload, Check, AlertTriangle, ChevronRight, RotateCcw, MessageSquare, Clock, Send, Download } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -116,6 +117,7 @@ export default function UploadPage() {
 
   const [broadcastHistory, setBroadcastHistory] = useState<BroadcastHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"upload" | "history">("upload");
 
   const [csvFileUrl, setCsvFileUrl] = useState<string | null>(null);
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
@@ -287,6 +289,7 @@ export default function UploadPage() {
       const result: SendResult = await res.json();
       setSendResult(result);
       setCurrentStep(6);
+      setActiveTab("history");
       refreshHistory();
     } catch (err) {
       setSendError(err instanceof Error ? err.message : "Send failed");
@@ -304,6 +307,30 @@ export default function UploadPage() {
         <p className="font-body text-base text-on-surface-muted mt-2">Import a CSV and broadcast a WhatsApp campaign to all eligible leads.</p>
       </div>
 
+      {/* Tab Navigation */}
+      <div className="flex items-center gap-1 border-b border-surface-mid mb-6">
+        <button 
+          onClick={() => setActiveTab("upload")}
+          className={cn(
+            "px-6 py-3 font-label font-semibold text-sm transition-all border-b-2",
+            activeTab === "upload" ? "border-tertiary text-tertiary" : "border-transparent text-on-surface-muted hover:text-on-surface"
+          )}
+        >
+          Broadcast Message
+        </button>
+        <button 
+          onClick={() => setActiveTab("history")}
+          className={cn(
+            "px-6 py-3 font-label font-semibold text-sm transition-all border-b-2",
+            activeTab === "history" ? "border-tertiary text-tertiary" : "border-transparent text-on-surface-muted hover:text-on-surface"
+          )}
+        >
+          Broadcast History
+        </button>
+      </div>
+
+      {/* Upload Wizard */}
+      {activeTab === "upload" && (
       <div className="bg-surface rounded-2xl p-10 shadow-lg ring-1 ring-[#c4c7c7]/20">
         <StepIndicator current={currentStep} />
 
@@ -728,8 +755,10 @@ export default function UploadPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* Broadcast History */}
+      {activeTab === "history" && (
       <div className="mt-10 bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
         <div className="bg-emerald-50/50 border-b border-emerald-100 px-6 py-5">
           <div className="flex items-center gap-3">
@@ -836,6 +865,7 @@ export default function UploadPage() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
