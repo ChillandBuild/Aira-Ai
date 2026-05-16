@@ -495,13 +495,6 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 tenant_id=tenant_id,
             )
             sent += 1
-
-            meta_msg_id: str | None = None
-            try:
-                meta_msg_id = result.get("messages", [{}])[0].get("id")
-            except Exception:
-                pass
-
             recipient_rows.append({
                 "tenant_id": tenant_id,
                 "broadcast_id": broadcast_id,
@@ -509,8 +502,13 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 "phone": phone,
                 "name": lead_name,
                 "send_status": "sent",
-                "meta_message_id": meta_msg_id,
             })
+
+            meta_msg_id: str | None = None
+            try:
+                meta_msg_id = result.get("messages", [{}])[0].get("id")
+            except Exception:
+                pass
 
             if lead_id:
                 try:
@@ -659,7 +657,6 @@ async def get_failed_csv(
     if not recipients.data:
         return {"message": "No failures detected"}
 
-    meta_message_ids = [r["meta_message_id"] for r in recipients.data if r.get("meta_message_id")]
     lead_ids = [r["lead_id"] for r in recipients.data if r.get("lead_id")]
 
     opted_out_map = {}
@@ -672,15 +669,16 @@ async def get_failed_csv(
         for row in (opted_out_rows.data or []):
             opted_out_map[row["id"]] = row.get("opted_out_at")
 
-    failed_delivery_meta_ids = set()
-    if meta_message_ids:
+    failed_delivery_leads = set()
+    if lead_ids:
         failed_msg_rows = db.table("messages") \
-            .select("meta_message_id") \
-            .in_("meta_message_id", meta_message_ids) \
+            .select("lead_id") \
+            .in_("lead_id", lead_ids) \
+            .eq("direction", "outbound") \
             .eq("delivery_status", "failed") \
             .execute()
         for row in (failed_msg_rows.data or []):
-            failed_delivery_meta_ids.add(row["meta_message_id"])
+            failed_delivery_leads.add(row["lead_id"])
 
     broadcast_timestamp = None
     try:
@@ -709,7 +707,6 @@ async def get_failed_csv(
         phone = r.get("phone", "")
         name = r.get("name") or ""
         send_status = r.get("send_status", "")
-        meta_msg_id = r.get("meta_message_id")
         lead_id = r.get("lead_id")
 
         reason = None
@@ -717,7 +714,7 @@ async def get_failed_csv(
 
         if send_status in ("failed", "rejected"):
             reason = send_status
-        elif meta_msg_id in failed_delivery_meta_ids:
+        elif lead_id in failed_delivery_leads:
             reason = "failed"
         elif lead_id in opted_out_map:
             reason = "not_interested"
@@ -810,7 +807,7 @@ async def refresh_broadcast_metrics(tenant_id: str = Depends(get_tenant_id)):
                 continue
             
             recipients = db.table("broadcast_recipients") \
-                .select("meta_message_id, send_status") \
+                .select("lead_id, send_status") \
                 .eq("tenant_id", tenant_id) \
                 .eq("broadcast_id", broadcast_id) \
                 .execute()
@@ -819,10 +816,12 @@ async def refresh_broadcast_metrics(tenant_id: str = Depends(get_tenant_id)):
                 logger.warning(f"No recipients found for broadcast {broadcast_id}")
                 continue
             
-            meta_message_ids = [r["meta_message_id"] for r in (recipients.data or []) if r.get("meta_message_id")]
+            lead_ids = []
             send_time_failed = 0
             
             for r in (recipients.data or []):
+                if r.get("lead_id"):
+                    lead_ids.append(r["lead_id"])
                 if r.get("send_status") in ("failed", "rejected", "opted_out_skip"):
                     send_time_failed += 1
             
@@ -830,26 +829,29 @@ async def refresh_broadcast_metrics(tenant_id: str = Depends(get_tenant_id)):
             opened_count = 0
             delivery_failed_count = 0
             
-            if meta_message_ids:
-                for i in range(0, len(meta_message_ids), 100):
-                    batch = meta_message_ids[i:i+100]
+            if lead_ids:
+                for i in range(0, len(lead_ids), 100):
+                    batch = lead_ids[i:i+100]
                     delivered_rows = db.table("messages") \
                         .select("id") \
-                        .in_("meta_message_id", batch) \
+                        .in_("lead_id", batch) \
+                        .eq("direction", "outbound") \
                         .eq("delivery_status", "delivered") \
                         .execute()
                     delivered_count += len(delivered_rows.data or [])
                     
                     opened_rows = db.table("messages") \
                         .select("id") \
-                        .in_("meta_message_id", batch) \
+                        .in_("lead_id", batch) \
+                        .eq("direction", "outbound") \
                         .eq("delivery_status", "read") \
                         .execute()
                     opened_count += len(opened_rows.data or [])
                     
                     failed_rows = db.table("messages") \
                         .select("id") \
-                        .in_("meta_message_id", batch) \
+                        .in_("lead_id", batch) \
+                        .eq("direction", "outbound") \
                         .eq("delivery_status", "failed") \
                         .execute()
                     delivery_failed_count += len(failed_rows.data or [])
