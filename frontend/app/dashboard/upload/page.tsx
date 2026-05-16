@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Upload, Check, AlertTriangle, ChevronRight, RotateCcw, MessageSquare, Clock, Send, Download, CheckCircle2, Eye, XCircle } from "lucide-react";
+import { Upload, Check, AlertTriangle, ChevronRight, RotateCcw, MessageSquare, Clock, Send, Download, CheckCircle2, Eye, XCircle, Calendar, Phone } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { createClient } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
@@ -347,7 +347,7 @@ export default function UploadPage() {
   const inputCls = "w-full px-4 py-3 bg-surface-low rounded-xl font-body text-sm text-on-surface border-0 focus:ring-2 focus:ring-tertiary outline-none";
 
   return (
-    <div className="max-w-4xl">
+    <div className={activeTab === "history" ? "max-w-7xl" : "max-w-4xl"}>
       <div className="mb-8">
         <h1 className="font-display text-4xl font-bold text-on-surface">Bulk Contact Upload</h1>
         <p className="font-body text-base text-on-surface-muted mt-2">Import a CSV and broadcast a WhatsApp campaign to all eligible leads.</p>
@@ -805,22 +805,22 @@ export default function UploadPage() {
 
       {/* Broadcast History */}
       {activeTab === "history" && (
-      <div className="mt-10 bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-        <div className="bg-emerald-50/50 border-b border-emerald-100 px-6 py-5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
-              <Clock size={18} className="text-emerald-600" />
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+        <div className="bg-gradient-to-r from-emerald-50 to-white border-b border-emerald-100 px-8 py-6 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center shadow-sm">
+              <Clock size={22} className="text-emerald-600" />
             </div>
             <div>
-              <h2 className="font-display text-lg font-bold text-gray-900">Broadcast History</h2>
-              <p className="font-body text-sm text-gray-500">Last 50 campaign dispatches for your account</p>
+              <h2 className="font-display text-xl font-bold text-gray-900">Broadcast History</h2>
+              <p className="font-body text-sm text-gray-500 mt-0.5">Last 50 campaign dispatches for your account</p>
             </div>
           </div>
           <button 
             onClick={refreshHistory}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg font-label text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+            className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 rounded-xl font-label text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
           >
-            <RotateCcw size={14} />
+            <RotateCcw size={15} />
             Refresh
           </button>
         </div>
@@ -842,11 +842,13 @@ export default function UploadPage() {
         ) : (
           <div className="divide-y divide-gray-100">
             {broadcastHistory.map((item, i) => (
-              <div key={i} className="py-6 first:pt-4 last:pb-4">
-                {/* Card Header */}
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-3">
-                    <span className="font-display text-sm font-semibold text-gray-900">
+              <div key={i} className="p-6 first:pt-4 last:pb-4">
+                {/* Campaign Info Bar */}
+                <div className="flex items-center gap-4 mb-5 pb-4 border-b border-gray-100">
+                  {/* Date */}
+                  <div className="flex items-center gap-2 min-w-[160px]">
+                    <Calendar size={16} className="text-gray-400 shrink-0" />
+                    <span className="font-display text-sm font-semibold text-gray-800">
                       {new Date(item.timestamp).toLocaleString("en-IN", { 
                         day: "numeric", 
                         month: "short", 
@@ -856,108 +858,118 @@ export default function UploadPage() {
                         hour12: false 
                       })}
                     </span>
-                    <span className="px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 font-label text-xs font-medium">
-                      {item.template_name}
-                    </span>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-body text-sm text-gray-500">{item.number_used || "—"}</span>
-                    {item.csv_file_url && (
-                      <a 
-                        href={item.csv_file_url} 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
-                        download={item.csv_file_name || "broadcast.csv"}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-label text-xs font-medium transition-colors"
-                      >
-                        <Download size={14} />
-                        CSV
-                      </a>
-                    )}
+                  
+                  {/* Template Badge */}
+                  <span className="px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 font-label text-xs font-semibold border border-emerald-100">
+                    {item.template_name}
+                  </span>
+                  
+                  {/* Spacer */}
+                  <div className="flex-1" />
+                  
+                  {/* Phone Number */}
+                  <div className="flex items-center gap-2">
+                    <Phone size={14} className="text-gray-400" />
+                    <span className="font-body text-sm text-gray-600 font-medium">{item.number_used || "—"}</span>
                   </div>
+                  
+                  {/* CSV Download */}
+                  {item.csv_file_url && (
+                    <a 
+                      href={item.csv_file_url} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      download={item.csv_file_name || "broadcast.csv"}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg font-label text-xs font-semibold transition-colors border border-gray-200"
+                    >
+                      <Download size={14} />
+                      Download CSV
+                    </a>
+                  )}
                 </div>
                 
-                {/* Metrics Grid */}
-                <div className="grid grid-cols-4 gap-6">
+                {/* Metrics Grid - 4 Equal Columns */}
+                <div className="grid grid-cols-4 gap-4">
                   {/* Sent */}
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                  <div className="bg-blue-50/50 rounded-xl p-4 border border-blue-100/50">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
                         <Send size={18} className="text-blue-600" />
                       </div>
-                      <div>
-                        <p className="font-display text-sm font-semibold text-gray-900">
-                          Sent ({Math.round((item.sent / item.total_leads) * 100)}%)
+                      <div className="flex-1">
+                        <p className="font-display text-base font-bold text-gray-900">
+                          Sent <span className="text-blue-600 font-semibold">({Math.round((item.sent / item.total_leads) * 100)}%)</span>
                         </p>
-                        <p className="font-body text-xs text-gray-500">{item.sent}/{item.total_leads}</p>
+                        <p className="font-body text-xs text-gray-500 mt-0.5">{item.sent} of {item.total_leads} leads</p>
                       </div>
                     </div>
-                    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="w-full h-3 bg-blue-100 rounded-full overflow-hidden">
                       <div 
-                        className="h-full bg-blue-500 rounded-full transition-all duration-500" 
+                        className="h-full bg-blue-500 rounded-full transition-all duration-700 ease-out" 
                         style={{ width: `${(item.sent / item.total_leads) * 100}%` }} 
                       />
                     </div>
                   </div>
                   
                   {/* Delivered */}
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-full bg-emerald-50 flex items-center justify-center shrink-0">
+                  <div className="bg-emerald-50/50 rounded-xl p-4 border border-emerald-100/50">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
                         <CheckCircle2 size={18} className="text-emerald-600" />
                       </div>
-                      <div>
-                        <p className="font-display text-sm font-semibold text-gray-900">
-                          Delivered ({Math.round(((item.delivered || 0) / item.total_leads) * 100)}%)
+                      <div className="flex-1">
+                        <p className="font-display text-base font-bold text-gray-900">
+                          Delivered <span className="text-emerald-600 font-semibold">({Math.round(((item.delivered || 0) / item.total_leads) * 100)}%)</span>
                         </p>
-                        <p className="font-body text-xs text-gray-500">{item.delivered || 0}/{item.total_leads}</p>
+                        <p className="font-body text-xs text-gray-500 mt-0.5">{item.delivered || 0} of {item.total_leads} leads</p>
                       </div>
                     </div>
-                    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="w-full h-3 bg-emerald-100 rounded-full overflow-hidden">
                       <div 
-                        className="h-full bg-emerald-500 rounded-full transition-all duration-500" 
+                        className="h-full bg-emerald-500 rounded-full transition-all duration-700 ease-out" 
                         style={{ width: `${((item.delivered || 0) / item.total_leads) * 100}%` }} 
                       />
                     </div>
                   </div>
                   
                   {/* Opened */}
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-full bg-amber-50 flex items-center justify-center shrink-0">
+                  <div className="bg-amber-50/50 rounded-xl p-4 border border-amber-100/50">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
                         <Eye size={18} className="text-amber-600" />
                       </div>
-                      <div>
-                        <p className="font-display text-sm font-semibold text-gray-900">
-                          Opened ({Math.round(((item.opened || 0) / item.total_leads) * 100)}%)
+                      <div className="flex-1">
+                        <p className="font-display text-base font-bold text-gray-900">
+                          Opened <span className="text-amber-600 font-semibold">({Math.round(((item.opened || 0) / item.total_leads) * 100)}%)</span>
                         </p>
-                        <p className="font-body text-xs text-gray-500">{item.opened || 0}/{item.total_leads}</p>
+                        <p className="font-body text-xs text-gray-500 mt-0.5">{item.opened || 0} of {item.total_leads} leads</p>
                       </div>
                     </div>
-                    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="w-full h-3 bg-amber-100 rounded-full overflow-hidden">
                       <div 
-                        className="h-full bg-amber-500 rounded-full transition-all duration-500" 
+                        className="h-full bg-amber-500 rounded-full transition-all duration-700 ease-out" 
                         style={{ width: `${((item.opened || 0) / item.total_leads) * 100}%` }} 
                       />
                     </div>
                   </div>
                   
                   {/* Failed */}
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center shrink-0">
+                  <div className="bg-red-50/50 rounded-xl p-4 border border-red-100/50">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
                         <XCircle size={18} className="text-red-600" />
                       </div>
-                      <div>
-                        <p className="font-display text-sm font-semibold text-gray-900">
-                          Failed ({Math.round(((item.failed || 0) / item.total_leads) * 100)}%)
+                      <div className="flex-1">
+                        <p className="font-display text-base font-bold text-gray-900">
+                          Failed <span className="text-red-600 font-semibold">({Math.round(((item.failed || 0) / item.total_leads) * 100)}%)</span>
                         </p>
-                        <p className="font-body text-xs text-gray-500">{item.failed || 0}/{item.total_leads}</p>
+                        <p className="font-body text-xs text-gray-500 mt-0.5">{item.failed || 0} of {item.total_leads} leads</p>
                       </div>
                     </div>
-                    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="w-full h-3 bg-red-100 rounded-full overflow-hidden">
                       <div 
-                        className="h-full bg-red-500 rounded-full transition-all duration-500" 
+                        className="h-full bg-red-500 rounded-full transition-all duration-700 ease-out" 
                         style={{ width: `${((item.failed || 0) / item.total_leads) * 100}%` }} 
                       />
                     </div>
