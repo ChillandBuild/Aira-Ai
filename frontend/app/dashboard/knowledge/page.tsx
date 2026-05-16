@@ -1,13 +1,14 @@
 "use client";
 import { toast } from "sonner";
 import { useEffect, useState } from "react";
-import { 
-  Search, Plus, Trash2, Edit3, CheckCircle2, XCircle, 
+import {
+  Search, Plus, Trash2, Edit3, CheckCircle2, XCircle,
   Upload, FileText, Loader2, Info, AlertCircle,
-  Database, HelpCircle
+  Database, HelpCircle, Sparkles, Save, Play
 } from "lucide-react";
-import { api, FAQ, FAQInput } from "@/lib/api";
+import { api, FAQ, FAQInput, AIPrompt } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { timeAgo } from "@/lib/utils";
 
 interface KnowledgeDoc {
   id: string;
@@ -25,8 +26,8 @@ export default function KnowledgePage() {
   const [documents, setDocuments] = useState<KnowledgeDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [tab, setTab] = useState<"faqs" | "documents">("faqs");
-  
+  const [tab, setTab] = useState<"faqs" | "documents" | "ai-tune">("faqs");
+
   // FAQ Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingFaq, setEditingFaq] = useState<FAQ | null>(null);
@@ -38,11 +39,28 @@ export default function KnowledgePage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
+  // AI Tune
+  const [prompts, setPrompts] = useState<AIPrompt[]>([]);
+  const [activeName, setActiveName] = useState<string>("whatsapp_reply");
+  const [draft, setDraft] = useState<string>("");
+  const [analyzing, setAnalyzing] = useState(false);
+  const [tuneMsg, setTuneMsg] = useState<string | null>(null);
+  const [tuneSaving, setTuneSaving] = useState(false);
+
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadDocuments, 5000); // Polling for processing status
+    const interval = setInterval(loadDocuments, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (tab === "ai-tune" && prompts.length === 0) loadPrompts();
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const cur = prompts.find((x) => x.name === activeName);
+    if (cur) setDraft(cur.content);
+  }, [activeName, prompts]);
 
   async function loadData() {
     setLoading(true);
@@ -54,7 +72,7 @@ export default function KnowledgePage() {
       setFaqs(faqData);
       setDocuments(docData);
     } catch {
-      // silent — individual functions show their own errors
+      // silent
     } finally {
       setLoading(false);
     }
@@ -67,8 +85,20 @@ export default function KnowledgePage() {
     } catch {}
   }
 
-  const filteredFaqs = faqs.filter(f => 
-    f.question.toLowerCase().includes(search.toLowerCase()) || 
+  async function loadPrompts() {
+    try {
+      const p = await api.aiTune.prompts();
+      setPrompts(p);
+      const cur = p.find((x: AIPrompt) => x.name === activeName) ?? p[0];
+      if (cur) {
+        setActiveName(cur.name);
+        setDraft(cur.content);
+      }
+    } catch {}
+  }
+
+  const filteredFaqs = faqs.filter(f =>
+    f.question.toLowerCase().includes(search.toLowerCase()) ||
     f.answer.toLowerCase().includes(search.toLowerCase()) ||
     f.keywords.some(k => k.toLowerCase().includes(search.toLowerCase()))
   );
@@ -133,6 +163,37 @@ export default function KnowledgePage() {
     }
   }
 
+  // AI Tune Handlers
+  async function savePrompt() {
+    setTuneSaving(true);
+    try {
+      await api.aiTune.updatePrompt(activeName, draft);
+      setTuneMsg("Prompt saved.");
+      await loadPrompts();
+    } catch (err) {
+      setTuneMsg(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setTuneSaving(false);
+    }
+  }
+
+  async function runAnalysis() {
+    setAnalyzing(true);
+    setTuneMsg(null);
+    try {
+      const res = await api.aiTune.analyze(activeName);
+      setTuneMsg(
+        `Analysed ${res.analyzed_leads} conversation${res.analyzed_leads === 1 ? "" : "s"} — ${res.suggestions_created} suggestion${res.suggestions_created === 1 ? "" : "s"} created.`,
+      );
+    } catch (err) {
+      setTuneMsg(err instanceof Error ? err.message : "Analysis failed");
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
+  const activePrompt = prompts.find((p) => p.name === activeName);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -143,7 +204,7 @@ export default function KnowledgePage() {
           </p>
         </div>
         {tab === "faqs" && (
-          <button 
+          <button
             onClick={() => { setEditingFaq(null); setFaqForm({ question: "", answer: "", keywords: [] }); setIsModalOpen(true); }}
             className="flex items-center gap-2 px-4 py-2.5 bg-tertiary text-white rounded-xl font-label font-semibold shadow-card hover:bg-tertiary/90 transition-all shrink-0"
           >
@@ -154,7 +215,7 @@ export default function KnowledgePage() {
 
       {/* Tabs */}
       <div className="flex items-center gap-2 border-b border-surface-mid">
-        <button 
+        <button
           onClick={() => setTab("faqs")}
           className={cn(
             "px-6 py-3 font-label font-semibold text-sm transition-all border-b-2",
@@ -165,7 +226,7 @@ export default function KnowledgePage() {
             <HelpCircle size={16} /> FAQs
           </div>
         </button>
-        <button 
+        <button
           onClick={() => setTab("documents")}
           className={cn(
             "px-6 py-3 font-label font-semibold text-sm transition-all border-b-2",
@@ -176,18 +237,31 @@ export default function KnowledgePage() {
             <Database size={16} /> Documents (RAG)
           </div>
         </button>
+        <button
+          onClick={() => setTab("ai-tune")}
+          className={cn(
+            "px-6 py-3 font-label font-semibold text-sm transition-all border-b-2",
+            tab === "ai-tune" ? "border-tertiary text-tertiary" : "border-transparent text-on-surface-muted hover:text-on-surface"
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <Sparkles size={16} /> AI Tune
+          </div>
+        </button>
       </div>
 
-      <div className="relative">
-        <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-muted" />
-        <input 
-          type="text"
-          placeholder={tab === "faqs" ? "Search FAQs..." : "Search documents..."}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-10 pr-4 py-3 rounded-xl bg-surface border border-surface-mid focus:outline-none focus:ring-2 focus:ring-tertiary font-body text-sm"
-        />
-      </div>
+      {tab !== "ai-tune" && (
+        <div className="relative">
+          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-muted" />
+          <input
+            type="text"
+            placeholder={tab === "faqs" ? "Search FAQs..." : "Search documents..."}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-10 pr-4 py-3 rounded-xl bg-surface border border-surface-mid focus:outline-none focus:ring-2 focus:ring-tertiary font-body text-sm"
+          />
+        </div>
+      )}
 
       {tab === "faqs" ? (
         <div className="grid grid-cols-1 gap-4">
@@ -219,13 +293,13 @@ export default function KnowledgePage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button 
+                    <button
                       onClick={() => { setEditingFaq(faq); setFaqForm({ question: faq.question, answer: faq.answer, keywords: faq.keywords }); setIsModalOpen(true); }}
                       className="p-2 text-on-surface-muted hover:text-tertiary hover:bg-tertiary/10 rounded-lg transition-all"
                     >
                       <Edit3 size={18} />
                     </button>
-                    <button 
+                    <button
                       onClick={() => deleteFaq(faq.id)}
                       className="p-2 text-on-surface-muted hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
                     >
@@ -237,7 +311,7 @@ export default function KnowledgePage() {
             ))
           )}
         </div>
-      ) : (
+      ) : tab === "documents" ? (
         <div className="space-y-6">
           {/* Upload Section */}
           <div className="bg-surface rounded-card p-6 border border-dashed border-tertiary/30 bg-tertiary/5 text-center space-y-4">
@@ -313,10 +387,10 @@ export default function KnowledgePage() {
                       <td className="px-6 py-4">
                         <div className={cn(
                           "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-label font-bold uppercase",
-                          doc.status === "indexed" ? "bg-green-100 text-green-700" : 
+                          doc.status === "indexed" ? "bg-green-100 text-green-700" :
                           doc.status === "processing" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
                         )}>
-                          {doc.status === "indexed" ? <CheckCircle2 size={12} /> : 
+                          {doc.status === "indexed" ? <CheckCircle2 size={12} /> :
                            doc.status === "processing" ? <Loader2 size={12} className="animate-spin" /> : <XCircle size={12} />}
                           {doc.status}
                         </div>
@@ -325,7 +399,7 @@ export default function KnowledgePage() {
                         {new Date(doc.created_at).toLocaleDateString()}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <button 
+                        <button
                           onClick={() => deleteDocument(doc.id)}
                           className="p-2 text-on-surface-muted hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
                         >
@@ -347,6 +421,65 @@ export default function KnowledgePage() {
             </p>
           </div>
         </div>
+      ) : (
+        /* AI Tune Tab */
+        <div className="space-y-4">
+          {tuneMsg && (
+            <div className="p-3 rounded-xl bg-tertiary-bg text-tertiary font-label text-sm">
+              {tuneMsg}
+            </div>
+          )}
+          <div className="bg-surface rounded-card p-8 shadow-card ring-1 ring-[#c4c7c7]/15">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="font-display text-lg font-bold text-tertiary">Active Prompt</h2>
+                <p className="font-body text-sm text-on-surface-muted mt-0.5">
+                  Edit the system prompt used by the WhatsApp AI auto-reply.
+                </p>
+              </div>
+              <select
+                value={activeName}
+                onChange={(e) => setActiveName(e.target.value)}
+                className="px-3 py-1.5 rounded-lg bg-surface-low border border-surface-mid font-label text-sm"
+              >
+                {prompts.map((p) => (
+                  <option key={p.name} value={p.name}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {activePrompt && (
+              <p className="font-label text-sm text-on-surface-muted mb-3">
+                Updated {timeAgo(activePrompt.updated_at)} — {activePrompt.content.length} chars
+              </p>
+            )}
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={18}
+              spellCheck={false}
+              className="w-full px-5 py-4 rounded-xl bg-surface-low border border-surface-mid font-mono text-base leading-7 focus:outline-none focus:ring-2 focus:ring-tertiary"
+              style={{ fontSize: "15px", lineHeight: "1.7" }}
+            />
+            <div className="mt-4 flex gap-3">
+              <button
+                onClick={savePrompt}
+                disabled={tuneSaving || draft === activePrompt?.content}
+                className="flex items-center gap-2 px-4 py-2 bg-tertiary text-white rounded-lg font-label text-sm font-semibold hover:bg-tertiary/90 disabled:opacity-40"
+              >
+                <Save size={14} /> {tuneSaving ? "Saving…" : "Save"}
+              </button>
+              <button
+                onClick={runAnalysis}
+                disabled={analyzing}
+                className="flex items-center gap-2 px-4 py-2 bg-secondary text-white rounded-lg font-label text-sm font-semibold hover:bg-secondary/90 disabled:opacity-40"
+              >
+                <Play size={14} /> {analyzing ? "Analysing…" : "Run Analysis"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* FAQ Modal */}
@@ -364,7 +497,7 @@ export default function KnowledgePage() {
             <div className="p-6 space-y-4">
               <div className="space-y-1.5">
                 <label className="font-label text-xs font-semibold text-on-surface-muted uppercase">Question</label>
-                <input 
+                <input
                   type="text"
                   value={faqForm.question}
                   onChange={e => setFaqForm({ ...faqForm, question: e.target.value })}
@@ -374,7 +507,7 @@ export default function KnowledgePage() {
               </div>
               <div className="space-y-1.5">
                 <label className="font-label text-xs font-semibold text-on-surface-muted uppercase">Answer</label>
-                <textarea 
+                <textarea
                   rows={4}
                   value={faqForm.answer}
                   onChange={e => setFaqForm({ ...faqForm, answer: e.target.value })}
@@ -393,7 +526,7 @@ export default function KnowledgePage() {
                       </button>
                     </span>
                   ))}
-                  <input 
+                  <input
                     type="text"
                     value={keywordInput}
                     onChange={e => setKeywordInput(e.target.value)}
@@ -413,7 +546,7 @@ export default function KnowledgePage() {
               </div>
             </div>
             <div className="p-6 bg-surface-low border-t border-surface-mid flex items-center justify-end gap-3">
-              <button 
+              <button
                 onClick={() => setIsModalOpen(false)}
                 className="px-6 py-2.5 rounded-xl font-label font-semibold text-on-surface-muted hover:bg-surface-mid transition-all"
               >
