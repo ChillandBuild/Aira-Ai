@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from fastapi import APIRouter, Form, Request, Response
 from app.db.supabase import get_supabase
 from app.config import settings
@@ -36,7 +37,7 @@ def _handle_opt_out(phone: str, tenant_id: str, db) -> bool:
         lead = db.table("leads").select("id").eq("phone", phone).eq("tenant_id", tenant_id).maybe_single().execute()
         if not lead.data:
             return False
-        db.table("leads").update({"opted_out": True, "ai_enabled": False}).eq("id", lead.data["id"]).eq("tenant_id", tenant_id).execute()
+        db.table("leads").update({"opted_out": True, "ai_enabled": False, "opted_out_at": datetime.now(timezone.utc)}).eq("id", lead.data["id"]).eq("tenant_id", tenant_id).execute()
         logger.info(f"Lead {lead.data['id']} opted out via STOP from {phone}")
         return True
     except Exception as e:

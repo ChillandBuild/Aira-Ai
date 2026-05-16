@@ -3,9 +3,11 @@ import io
 import json
 import logging
 import re
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id
@@ -340,6 +342,9 @@ async def validate_optin(body: OptInRequest):
 
 @router.post("/bulk-send")
 async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_id)):
+    broadcast_id = str(uuid.uuid4())
+    broadcast_timestamp = datetime.now(timezone.utc)
+
     eligible = []
     rejected = []
     for lead in body.leads:
@@ -367,6 +372,32 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
 
     if best_number is None:
         raise HTTPException(status_code=503, detail="No primary or healthy number available. Please set a Primary Number.")
+
+    # Download original CSV, add broadcast_id column, re-upload
+    if body.csv_file_url:
+        try:
+            import httpx
+            csv_resp = httpx.get(body.csv_file_url, timeout=30)
+            if csv_resp.status_code == 200:
+                raw_csv = csv_resp.text
+                csv_reader = csv.DictReader(io.StringIO(raw_csv))
+                if csv_reader.fieldnames:
+                    output = io.StringIO()
+                    new_fieldnames = list(csv_reader.fieldnames) + ["broadcast_id"]
+                    writer = csv.DictWriter(output, fieldnames=new_fieldnames)
+                    writer.writeheader()
+                    for row in csv_reader:
+                        row["broadcast_id"] = broadcast_id
+                        writer.writerow(row)
+                    modified_csv_bytes = output.getvalue().encode("utf-8")
+                    safe_filename = (body.csv_file_name or "broadcast.csv").replace(" ", "_")
+                    storage_path = f"{tenant_id}/{broadcast_id[:8]}_{safe_filename}"
+                    db.storage.from_("broadcast-csvs").upload(storage_path, modified_csv_bytes, {"content-type": "text/csv"})
+                    body.csv_file_url = db.storage.from_("broadcast-csvs").get_public_url(storage_path)
+                    logger.info(f"Modified CSV uploaded with broadcast_id column: {storage_path}")
+        except Exception as csv_err:
+            logger.error(f"Failed to add broadcast_id to CSV: {csv_err}")
+
     upsert_rows = []
     for lead in eligible:
         phone = _normalize_phone(lead.phone or "")
@@ -380,12 +411,10 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             "score": 5,
             "segment": "C",
             "tenant_id": tenant_id,
-            # opt_in_source intentionally excluded — set below only for new leads
         })
 
     if upsert_rows:
         db.table("leads").upsert(upsert_rows, on_conflict="tenant_id,phone").execute()
-        # Set opt_in_source only for leads that don't have one yet (new leads)
         batch_opt_in_source = _clean_text(eligible[0].opt_in_source) if eligible else "imported"
         batch_phones = [r["phone"] for r in upsert_rows]
         db.table("leads") \
@@ -396,15 +425,16 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             .execute()
 
     all_phones = [_normalize_phone(l.phone or "") for l in eligible if _normalize_phone(l.phone or "")]
-    lead_rows = db.table("leads").select("id,phone").in_("phone", all_phones).eq("tenant_id", tenant_id).execute()
+    lead_rows = db.table("leads").select("id,phone,name").in_("phone", all_phones).eq("tenant_id", tenant_id).execute()
     phone_to_lead_id = {r["phone"]: r["id"] for r in (lead_rows.data or [])}
+    phone_to_lead_name = {r["phone"]: r.get("name") for r in (lead_rows.data or [])}
 
     opted_out_phones: set[str] = set()
     if all_phones:
         rows = db.table("leads").select("phone").in_("phone", all_phones).eq("tenant_id", tenant_id).eq("opted_out", True).execute()
         opted_out_phones = {r["phone"] for r in (rows.data or [])}
 
-    # Fetch template metadata (language, body_text) so we can send correctly
+    # Fetch template metadata
     tpl_lang = "en"
     tpl_body = ""
     tpl_row = (
@@ -419,28 +449,41 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         tpl_lang = tpl_row.data[0].get("language") or "en"
         tpl_body = tpl_row.data[0].get("body_text") or ""
 
-    # Build variable components if template uses {{1}}, {{2}}, ...
     import re as _re
     has_vars = bool(_re.search(r"\{\{\d+\}\}", tpl_body))
 
     sent = 0
     failed = 0
+    recipient_rows = []
+
     for lead in eligible:
         phone = _normalize_phone(lead.phone or "")
         if not phone:
             continue
+
+        lead_id = phone_to_lead_id.get(phone)
+        lead_name = phone_to_lead_name.get(phone)
+
         if phone in opted_out_phones:
             failed += 1
+            recipient_rows.append({
+                "tenant_id": tenant_id,
+                "broadcast_id": broadcast_id,
+                "lead_id": lead_id,
+                "phone": phone,
+                "name": lead_name,
+                "send_status": "opted_out_skip",
+            })
             logger.info(f"Bulk-send skipped opted-out lead {phone}")
             continue
+
         try:
-            # Build body parameters: substitute {{1}} with the lead name if available
             components: list[dict] = []
             if has_vars:
-                lead_name = _clean_text(lead.name) or "Customer"
+                lead_name_for_tpl = _clean_text(lead.name) or "Customer"
                 components = [{
                     "type": "body",
-                    "parameters": [{"type": "text", "text": lead_name}]
+                    "parameters": [{"type": "text", "text": lead_name_for_tpl}]
                 }]
 
             result = await send_template_message(
@@ -452,15 +495,21 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 tenant_id=tenant_id,
             )
             sent += 1
+            recipient_rows.append({
+                "tenant_id": tenant_id,
+                "broadcast_id": broadcast_id,
+                "lead_id": lead_id,
+                "phone": phone,
+                "name": lead_name,
+                "send_status": "sent",
+            })
 
-            # Extract message_id from Meta response
             meta_msg_id: str | None = None
             try:
                 meta_msg_id = result.get("messages", [{}])[0].get("id")
             except Exception:
                 pass
 
-            lead_id = phone_to_lead_id.get(phone)
             if lead_id:
                 try:
                     msg_row = {
@@ -479,11 +528,39 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         except Exception as e:
             logger.error(f"Bulk-send failed for {phone}: {e}")
             failed += 1
+            recipient_rows.append({
+                "tenant_id": tenant_id,
+                "broadcast_id": broadcast_id,
+                "lead_id": lead_id,
+                "phone": phone,
+                "name": lead_name,
+                "send_status": "failed",
+            })
+
+    for rej_lead in rejected:
+        phone = _normalize_phone(rej_lead.phone or "")
+        lead_id = phone_to_lead_id.get(phone)
+        lead_name = phone_to_lead_name.get(phone)
+        recipient_rows.append({
+            "tenant_id": tenant_id,
+            "broadcast_id": broadcast_id,
+            "lead_id": lead_id,
+            "phone": phone,
+            "name": lead_name,
+            "send_status": "rejected",
+        })
+
+    if recipient_rows:
+        for i in range(0, len(recipient_rows), 100):
+            batch = recipient_rows[i:i+100]
+            try:
+                db.table("broadcast_recipients").insert(batch).execute()
+            except Exception as br_err:
+                logger.error(f"broadcast_recipients insert failed: {br_err}")
 
     if sent > 0:
         await increment_send_count(best_number["id"], delta=sent)
 
-    # Query delivery status for this broadcast batch
     lead_ids = [phone_to_lead_id.get(p) for p in all_phones if phone_to_lead_id.get(p)]
     delivered_count = 0
     opened_count = 0
@@ -508,10 +585,8 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         except Exception as e:
             logger.error(f"Failed to query delivery status: {e}")
 
-    # -- Persist broadcast history in app_settings --
     try:
         history_key = "broadcast_history"
-        
         existing = (
             db.table("app_settings")
             .select("value")
@@ -532,7 +607,8 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         total_failed = failed + len(rejected)
 
         history.insert(0, {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "broadcast_id": broadcast_id,
+            "timestamp": broadcast_timestamp.isoformat(),
             "template_name": body.template_name,
             "opt_in_source": opt_in_src or "unknown",
             "sent": sent,
@@ -554,15 +630,127 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         }, on_conflict="tenant_id,key").execute()
     except Exception as hist_err:
         logger.exception("broadcast_history save failed")
-    # --
-
 
     return {
         "queued": len(upsert_rows),
         "sent": sent,
         "failed": failed + len(rejected),
         "number_used": best_number.get("number"),
+        "broadcast_id": broadcast_id,
     }
+
+
+@router.get("/failed-csv")
+async def get_failed_csv(
+    broadcast_id: str = Query(..., description="Broadcast UUID to generate failed CSV for"),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    """Generate a CSV of all failed/unreached/opted-out contacts for a broadcast."""
+    db = get_supabase()
+
+    recipients = db.table("broadcast_recipients") \
+        .select("lead_id, phone, name, send_status") \
+        .eq("tenant_id", tenant_id) \
+        .eq("broadcast_id", broadcast_id) \
+        .execute()
+
+    if not recipients.data:
+        return {"message": "No failures detected"}
+
+    lead_ids = [r["lead_id"] for r in recipients.data if r.get("lead_id")]
+
+    opted_out_map = {}
+    if lead_ids:
+        opted_out_rows = db.table("leads") \
+            .select("id, opted_out_at") \
+            .in_("id", lead_ids) \
+            .eq("opted_out", True) \
+            .execute()
+        for row in (opted_out_rows.data or []):
+            opted_out_map[row["id"]] = row.get("opted_out_at")
+
+    failed_delivery_leads = set()
+    if lead_ids:
+        failed_msg_rows = db.table("messages") \
+            .select("lead_id") \
+            .in_("lead_id", lead_ids) \
+            .eq("direction", "outbound") \
+            .eq("delivery_status", "failed") \
+            .execute()
+        for row in (failed_msg_rows.data or []):
+            failed_delivery_leads.add(row["lead_id"])
+
+    broadcast_timestamp = None
+    try:
+        history_row = db.table("app_settings") \
+            .select("value") \
+            .eq("tenant_id", tenant_id) \
+            .eq("key", "broadcast_history") \
+            .maybe_single() \
+            .execute()
+        if history_row and history_row.data and history_row.data.get("value"):
+            history = json.loads(history_row.data["value"])
+            for record in history:
+                if record.get("broadcast_id") == broadcast_id:
+                    broadcast_timestamp = record.get("timestamp")
+                    break
+    except Exception:
+        pass
+
+    if not broadcast_timestamp:
+        broadcast_timestamp = datetime.now(timezone.utc).isoformat()
+
+    failed_rows = []
+    seen_phones = set()
+
+    for r in recipients.data:
+        phone = r.get("phone", "")
+        name = r.get("name") or ""
+        send_status = r.get("send_status", "")
+        lead_id = r.get("lead_id")
+
+        reason = None
+        opted_out_at = None
+
+        if send_status in ("failed", "rejected"):
+            reason = send_status
+        elif lead_id in failed_delivery_leads:
+            reason = "failed"
+        elif lead_id in opted_out_map:
+            reason = "not_interested"
+            opted_out_at = opted_out_map[lead_id]
+
+        if reason and phone not in seen_phones:
+            seen_phones.add(phone)
+            failed_rows.append({
+                "phone": phone,
+                "name": name,
+                "reason": reason,
+                "opted_out_at": opted_out_at or "",
+                "broadcast_id": broadcast_id,
+                "broadcast_timestamp": broadcast_timestamp,
+            })
+
+    if not failed_rows:
+        return {"message": "No failures detected"}
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "opted_out_at", "broadcast_id", "broadcast_timestamp"])
+    writer.writeheader()
+    for row in failed_rows:
+        writer.writerow(row)
+
+    csv_bytes = output.getvalue().encode("utf-8")
+    storage_path = f"{tenant_id}/{broadcast_id[:8]}_failed.csv"
+    try:
+        db.storage.from_("broadcast-csvs").upload(storage_path, csv_bytes, {"content-type": "text/csv"})
+        csv_url = db.storage.from_("broadcast-csvs").get_public_url(storage_path)
+        return {"failed_csv_url": csv_url, "count": len(failed_rows)}
+    except Exception as storage_err:
+        logger.error(f"Failed CSV upload failed: {storage_err}")
+        return Response(content=output.getvalue(), media_type="text/csv", headers={
+            "Content-Disposition": f"attachment; filename=failed_{broadcast_id[:8]}.csv"
+        })
 
 
 @router.get("/history")

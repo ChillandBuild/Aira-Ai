@@ -33,6 +33,7 @@ type SendResult = {
 
 type BroadcastHistoryItem = {
   timestamp: string;
+  broadcast_id?: string;
   template_name: string;
   opt_in_source: string;
   sent: number;
@@ -887,6 +888,25 @@ export default function UploadPage() {
                       Download CSV
                     </a>
                   )}
+                  
+                  {/* Failed CSV Download */}
+                  {item.failed > 0 && item.broadcast_id ? (
+                    <a 
+                      href={`${API_URL}/api/v1/upload/failed-csv?broadcast_id=${item.broadcast_id}`} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      download
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg font-label text-xs font-semibold transition-colors border border-red-200"
+                    >
+                      <AlertTriangle size={14} />
+                      Download Failed CSV
+                    </a>
+                  ) : item.failed === 0 ? (
+                    <span className="inline-flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-lg font-label text-xs font-medium border border-green-100">
+                      <CheckCircle2 size={14} />
+                      No failures detected
+                    </span>
+                  ) : null}
                 </div>
                 
                 {/* Metrics Grid - 4 Equal Columns */}
