@@ -521,7 +521,11 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         new_value = json.dumps(history)
 
         if existing and existing.data:
-            db.table("app_settings").update({"value": new_value}).eq("id", existing.data["id"]).execute()
+            db.table("app_settings") \
+                .update({"value": new_value}) \
+                .eq("tenant_id", tenant_id) \
+                .eq("key", history_key) \
+                .execute()
         else:
             db.table("app_settings").insert({
                 "tenant_id": tenant_id,
