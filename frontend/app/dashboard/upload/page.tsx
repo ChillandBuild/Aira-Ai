@@ -157,25 +157,6 @@ export default function UploadPage() {
   const [csvFileUrl, setCsvFileUrl] = useState<string | null>(null);
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
 
-  async function downloadFailedCsv(broadcastId: string) {
-    try {
-      const auth = await getAuthHeaders();
-      const res = await fetch(`${API_URL}/api/v1/upload/failed-csv?broadcast_id=${broadcastId}`, { headers: auth });
-      if (!res.ok) throw new Error("Download failed");
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `failed_${broadcastId.slice(0, 8)}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch {
-      alert("Failed to download CSV");
-    }
-  }
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch broadcast history once on mount
@@ -910,13 +891,16 @@ export default function UploadPage() {
                   
                   {/* Failed CSV Download */}
                   {item.failed > 0 && item.broadcast_id ? (
-                    <button 
-                      onClick={() => downloadFailedCsv(item.broadcast_id!)}
+                    <a 
+                      href={`${API_URL}/api/v1/upload/failed-csv?broadcast_id=${item.broadcast_id}`} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      download
                       className="inline-flex items-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg font-label text-xs font-semibold transition-colors border border-red-200"
                     >
                       <AlertTriangle size={14} />
                       Download Failed CSV
-                    </button>
+                    </a>
                   ) : item.failed === 0 ? (
                     <span className="inline-flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-lg font-label text-xs font-medium border border-green-100">
                       <CheckCircle2 size={14} />

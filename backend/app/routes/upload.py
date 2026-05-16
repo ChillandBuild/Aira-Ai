@@ -732,7 +732,7 @@ async def get_failed_csv(
             })
 
     if not failed_rows:
-        return Response(content="No failures detected", media_type="text/plain")
+        return {"message": "No failures detected"}
 
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "opted_out_at", "broadcast_id", "broadcast_timestamp"])
@@ -740,14 +740,17 @@ async def get_failed_csv(
     for row in failed_rows:
         writer.writerow(row)
 
-    csv_content = output.getvalue()
-    return Response(
-        content=csv_content,
-        media_type="text/csv",
-        headers={
+    csv_bytes = output.getvalue().encode("utf-8")
+    storage_path = f"{tenant_id}/{broadcast_id[:8]}_failed.csv"
+    try:
+        db.storage.from_("broadcast-csvs").upload(storage_path, csv_bytes, {"content-type": "text/csv"})
+        csv_url = db.storage.from_("broadcast-csvs").get_public_url(storage_path)
+        return {"failed_csv_url": csv_url, "count": len(failed_rows)}
+    except Exception as storage_err:
+        logger.error(f"Failed CSV upload failed: {storage_err}")
+        return Response(content=output.getvalue(), media_type="text/csv", headers={
             "Content-Disposition": f"attachment; filename=failed_{broadcast_id[:8]}.csv"
-        }
-    )
+        })
 
 
 @router.get("/history")
