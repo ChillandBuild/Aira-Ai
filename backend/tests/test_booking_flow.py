@@ -7,15 +7,17 @@ def _make_db(state_row=None, booking_row=None):
     db = MagicMock()
 
     state_chain = MagicMock()
-    state_chain.maybe_single.return_value.execute.return_value.data = state_row
+    # booking_flow.py uses .limit(1).execute() — returns list
+    state_chain.limit.return_value.execute.return_value.data = [state_row] if state_row else []
 
     booking_insert_result = MagicMock()
     booking_insert_result.data = [booking_row or {"id": "booking-1", "booking_ref": "GPH-2026-0001", "amount_paise": 50000}]
 
     booking_select_chain = MagicMock()
-    booking_select_chain.maybe_single.return_value.execute.return_value.data = (
-        booking_row or {"id": "booking-1", "booking_ref": "GPH-2026-0001", "amount_paise": 50000}
-    )
+    # booking selects use .limit(1) too — return list; .maybe_single() kept for confirm_booking
+    _booking_data = booking_row or {"id": "booking-1", "booking_ref": "GPH-2026-0001", "amount_paise": 50000}
+    booking_select_chain.limit.return_value.execute.return_value.data = [_booking_data]
+    booking_select_chain.maybe_single.return_value.execute.return_value.data = _booking_data
 
     def table_selector(name):
         t = MagicMock()

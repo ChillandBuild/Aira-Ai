@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id
-from app.services.meta_cloud import submit_template, get_template_status
+from app.services.meta_cloud import submit_template, get_template_status, list_all_templates
 from app.config_dynamic import get_setting
 
 logger = logging.getLogger(__name__)
@@ -110,6 +110,70 @@ async def sync_template_status(template_id: str, tenant_id: str = Depends(get_te
     db.table("message_templates").update(updates).eq("id", template_id).execute()
     updated = db.table("message_templates").select("*").eq("id", template_id).limit(1).execute()
     return updated.data[0] if updated.data else None
+
+
+@router.post("/sync-from-meta")
+async def sync_templates_from_meta(tenant_id: str = Depends(get_tenant_id)):
+    """Pull all templates from Meta and upsert into local DB. Returns added/updated counts."""
+    waba_id = get_setting("meta_waba_id")
+    if not waba_id:
+        raise HTTPException(status_code=400, detail="meta_waba_id not configured in Settings")
+
+    meta_templates = await list_all_templates(waba_id=waba_id)
+    if not meta_templates:
+        return {"added": 0, "updated": 0, "total": 0}
+
+    db = get_supabase()
+    existing_rows = db.table("message_templates").select("name,status,meta_template_id").eq("tenant_id", tenant_id).execute()
+    existing_by_name = {r["name"]: r for r in (existing_rows.data or [])}
+
+    added = 0
+    updated = 0
+
+    for t in meta_templates:
+        name = t.get("name", "")
+        status = (t.get("status") or "PENDING").upper()
+        category = (t.get("category") or "MARKETING").upper()
+        language = t.get("language", "en")
+        rejection_reason = t.get("rejected_reason") or None
+        meta_id = str(t.get("id", "")) if t.get("id") else None
+
+        # Extract body text from components
+        body_text = ""
+        for comp in (t.get("components") or []):
+            if comp.get("type") == "BODY":
+                body_text = comp.get("text", "")
+                break
+
+        if name in existing_by_name:
+            # Update status and rejection reason if changed
+            current = existing_by_name[name]
+            if current.get("status") != status or (rejection_reason and not current.get("rejection_reason")):
+                updates: dict = {"status": status}
+                if rejection_reason:
+                    updates["rejection_reason"] = rejection_reason
+                if status == "APPROVED":
+                    updates["approved_at"] = datetime.now(timezone.utc).isoformat()
+                if meta_id and not current.get("meta_template_id"):
+                    updates["meta_template_id"] = meta_id
+                db.table("message_templates").update(updates).eq("name", name).eq("tenant_id", tenant_id).execute()
+                updated += 1
+        else:
+            # Insert new template
+            db.table("message_templates").insert({
+                "name": name,
+                "category": category,
+                "language": language,
+                "body_text": body_text,
+                "status": status,
+                "meta_template_id": meta_id,
+                "rejection_reason": rejection_reason,
+                "approved_at": datetime.now(timezone.utc).isoformat() if status == "APPROVED" else None,
+                "tenant_id": tenant_id,
+            }).execute()
+            added += 1
+
+    return {"added": added, "updated": updated, "total": len(meta_templates)}
 
 
 @public_router.post("/webhook-status")

@@ -88,6 +88,7 @@ export default function TemplatesPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [viewTemplate, setViewTemplate] = useState<Template | null>(null);
@@ -132,6 +133,23 @@ export default function TemplatesPage() {
     setTitle(""); setBodyText(""); setHeaderText(""); setFooterText(""); setCategory("UTILITY"); setLanguage("en");
     setButtons([]);
     setError(null); setShowModal(false);
+  }
+
+  async function handleSyncFromMeta() {
+    setSyncing(true);
+    try {
+      const result = await apiFetch<{ added: number; updated: number; total: number }>(
+        "/api/v1/templates/sync-from-meta",
+        { method: "POST" }
+      );
+      await load();
+      // Show result inline — simple alert for now
+      alert(`Synced ${result.total} templates from Meta — ${result.added} new, ${result.updated} updated.`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
   }
 
   async function handleSubmit() {
@@ -204,6 +222,15 @@ export default function TemplatesPage() {
         </div>
         <div className="flex gap-2">
           <button onClick={load} className="btn-ghost"><RefreshCw size={14} />Refresh</button>
+          <button
+            onClick={handleSyncFromMeta}
+            disabled={syncing}
+            className="btn-ghost disabled:opacity-50"
+            title="Import all templates from Meta into the dashboard"
+          >
+            <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
+            {syncing ? "Syncing…" : "Sync from Meta"}
+          </button>
           <button onClick={() => setShowModal(true)} className="btn-primary"><Plus size={14} />New Template</button>
         </div>
       </div>

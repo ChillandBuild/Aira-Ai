@@ -331,3 +331,34 @@ async def get_template_status(
         return None
     data = resp.json().get("data", [])
     return data[0] if data else None
+
+
+async def list_all_templates(
+    waba_id: str,
+    access_token: Optional[str] = None,
+) -> list[dict]:
+    """
+    Fetch all templates from Meta for a WABA, handling pagination.
+    Returns list of template dicts with name, status, category, language, components, rejected_reason.
+    """
+    _, tok = _creds("placeholder", access_token)
+    url = f"{_GRAPH_BASE}/{waba_id}/message_templates"
+    params = {
+        "fields": "name,status,category,language,components,rejected_reason",
+        "limit": 100,
+    }
+    templates: list[dict] = []
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        while url:
+            resp = await client.get(url, params=params, headers={"Authorization": f"Bearer {tok}"})
+            if not resp.is_success:
+                logger.error("list_all_templates failed: %s %s", resp.status_code, resp.text)
+                break
+            body = resp.json()
+            templates.extend(body.get("data", []))
+            next_url = body.get("paging", {}).get("next")
+            url = next_url  # type: ignore[assignment]
+            params = {}  # params are embedded in next_url cursor
+
+    return templates
