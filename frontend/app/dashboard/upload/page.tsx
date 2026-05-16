@@ -729,82 +729,104 @@ export default function UploadPage() {
         )}
       </div>
 
-      {/* ── Broadcast History ───────────────────────────────────────────────── */}
-      <div className="mt-8 bg-surface border border-surface-mid rounded-2xl shadow-sm overflow-hidden">
-        <div className="flex items-center gap-3 px-6 py-4 border-b border-surface-mid bg-surface-low">
-          <div className="w-8 h-8 rounded-lg bg-tertiary/10 flex items-center justify-center">
-            <Clock size={16} className="text-tertiary" />
-          </div>
-          <div>
-            <h2 className="font-display text-base font-bold text-on-surface">Broadcast History</h2>
-            <p className="font-body text-xs text-on-surface-muted">Last 50 campaign dispatches for your account</p>
+      {/* Broadcast History */}
+      <div className="mt-10 bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+        <div className="bg-emerald-50/50 border-b border-emerald-100 px-6 py-5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+              <Clock size={18} className="text-emerald-600" />
+            </div>
+            <div>
+              <h2 className="font-display text-lg font-bold text-gray-900">Broadcast History</h2>
+              <p className="font-body text-sm text-gray-500">Last 50 campaign dispatches for your account</p>
+            </div>
           </div>
         </div>
 
         {historyLoading ? (
           <div className="py-12 flex items-center justify-center">
-            <div className="w-6 h-6 border-2 border-tertiary border-t-transparent rounded-full animate-spin" />
+            <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : broadcastHistory.length === 0 ? (
-          <div className="py-12 flex flex-col items-center justify-center gap-2 text-on-surface-muted">
-            <Send size={28} className="opacity-30" />
-            <p className="font-body text-sm">No broadcasts yet. Send your first campaign above!</p>
+          <div className="py-16 flex flex-col items-center justify-center gap-3">
+            <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center">
+              <Send size={24} className="text-gray-400" />
+            </div>
+            <div className="text-center">
+              <p className="font-display text-sm font-semibold text-gray-700">No broadcasts yet</p>
+              <p className="font-body text-xs text-gray-500 mt-1">Send your first campaign to see history here</p>
+            </div>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-surface-mid">
-                  <th className="px-5 py-3 text-left font-label text-xs uppercase tracking-wider text-on-surface-muted">Date & Time</th>
-                  <th className="px-5 py-3 text-left font-label text-xs uppercase tracking-wider text-on-surface-muted">Template</th>
-                  <th className="px-5 py-3 text-left font-label text-xs uppercase tracking-wider text-on-surface-muted">Opt-in Source</th>
-                  <th className="px-5 py-3 text-center font-label text-xs uppercase tracking-wider text-on-surface-muted">Sent</th>
-                  <th className="px-5 py-3 text-center font-label text-xs uppercase tracking-wider text-on-surface-muted">Failed</th>
-                  <th className="px-5 py-3 text-center font-label text-xs uppercase tracking-wider text-on-surface-muted">Rejected</th>
-                  <th className="px-5 py-3 text-left font-label text-xs uppercase tracking-wider text-on-surface-muted">Sender</th>
-                  <th className="px-5 py-3 text-center font-label text-xs uppercase tracking-wider text-on-surface-muted">CSV</th>
+                <tr className="border-b border-gray-100">
+                  <th className="px-6 py-4 text-left font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Date & Time</th>
+                  <th className="px-6 py-4 text-left font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Template</th>
+                  <th className="px-6 py-4 text-left font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Opt-in Source</th>
+                  <th className="px-6 py-4 text-center font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Sent</th>
+                  <th className="px-6 py-4 text-center font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Failed</th>
+                  <th className="px-6 py-4 text-center font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Rejected</th>
+                  <th className="px-6 py-4 text-left font-label text-xs font-semibold uppercase tracking-wider text-gray-500">Sender</th>
+                  <th className="px-6 py-4 text-center font-label text-xs font-semibold uppercase tracking-wider text-gray-500">CSV</th>
                 </tr>
               </thead>
               <tbody>
                 {broadcastHistory.map((item, i) => (
-                  <tr key={i} className={`border-b border-surface-mid last:border-0 hover:bg-surface-low/50 transition-colors ${i % 2 === 0 ? "" : "bg-surface-low/30"}` }>
-                    <td className="px-5 py-3.5 font-body text-xs text-on-surface-muted whitespace-nowrap">
-                      {new Date(item.timestamp).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+                  <tr key={i} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors">
+                    <td className="px-6 py-4 font-body text-sm text-gray-600 whitespace-nowrap">
+                      {new Date(item.timestamp).toLocaleString("en-IN", { 
+                        day: "numeric", 
+                        month: "short", 
+                        year: "numeric",
+                        hour: "2-digit", 
+                        minute: "2-digit",
+                        hour12: false 
+                      })}
                     </td>
-                    <td className="px-5 py-3.5">
-                      <span className="font-mono text-xs bg-tertiary/10 text-tertiary px-2 py-0.5 rounded-md">{item.template_name}</span>
+                    <td className="px-6 py-4">
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 font-label text-xs font-medium">
+                        {item.template_name}
+                      </span>
                     </td>
-                    <td className="px-5 py-3.5 font-body text-xs text-on-surface capitalize">
-                      {item.opt_in_source.replace(/_/g, " ")}
+                    <td className="px-6 py-4 font-body text-sm text-gray-600 capitalize">
+                      {item.opt_in_source.replace(/_/g, " ").replace(/\w/g, (l: string) => l.toUpperCase())}
                     </td>
-                    <td className="px-5 py-3.5 text-center">
-                      <span className="inline-block min-w-[36px] px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-label text-xs font-semibold">{item.sent}</span>
+                    <td className="px-6 py-4 text-center">
+                      <span className="inline-flex items-center justify-center min-w-[32px] h-7 px-2 rounded-full bg-emerald-100 text-emerald-700 font-label text-xs font-semibold">
+                        {item.sent}
+                      </span>
                     </td>
-                    <td className="px-5 py-3.5 text-center">
-                      <span className={`inline-block min-w-[36px] px-2 py-0.5 rounded-full font-label text-xs font-semibold ${
-                        item.failed > 0 ? "bg-red-100 text-red-700" : "bg-surface-mid text-on-surface-muted"
-                      }`}>{item.failed}</span>
+                    <td className="px-6 py-4 text-center">
+                      <span className={`inline-flex items-center justify-center min-w-[32px] h-7 px-2 rounded-full font-label text-xs font-semibold ${
+                        item.failed > 0 ? "bg-red-50 text-red-600" : "bg-gray-100 text-gray-500"
+                      }`}>
+                        {item.failed}
+                      </span>
                     </td>
-                    <td className="px-5 py-3.5 text-center">
-                      <span className={`inline-block min-w-[36px] px-2 py-0.5 rounded-full font-label text-xs font-semibold ${
-                        item.rejected > 0 ? "bg-amber-100 text-amber-700" : "bg-surface-mid text-on-surface-muted"
-                      }`}>{item.rejected}</span>
+                    <td className="px-6 py-4 text-center">
+                      <span className={`inline-flex items-center justify-center min-w-[32px] h-7 px-2 rounded-full font-label text-xs font-semibold ${
+                        item.rejected > 0 ? "bg-amber-50 text-amber-600" : "bg-gray-100 text-gray-500"
+                      }`}>
+                        {item.rejected}
+                      </span>
                     </td>
-                    <td className="px-5 py-3.5 font-body text-xs text-on-surface-muted">{item.number_used || "—"}</td>
-                    <td className="px-5 py-3.5 text-center">
+                    <td className="px-6 py-4 font-body text-sm text-gray-600">{item.number_used || "—"}</td>
+                    <td className="px-6 py-4 text-center">
                       {item.csv_file_url ? (
                         <a
                           href={item.csv_file_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 px-2 py-1 bg-tertiary/10 text-tertiary rounded-md font-label text-xs font-semibold hover:bg-tertiary/20 transition-colors"
                           download={item.csv_file_name || "broadcast.csv"}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-label text-xs font-medium transition-colors"
                         >
-                          <Download size={12} />
+                          <Download size={14} />
                           Download
                         </a>
                       ) : (
-                        <span className="font-label text-xs text-on-surface-muted">—</span>
+                        <span className="font-label text-xs text-gray-400">—</span>
                       )}
                     </td>
                   </tr>
