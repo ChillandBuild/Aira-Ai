@@ -567,11 +567,16 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
     
     if lead_ids:
         try:
+            window_start = (broadcast_timestamp - timedelta(minutes=2)).isoformat()
+            window_end = (broadcast_timestamp + timedelta(minutes=10)).isoformat()
+            
             delivered_rows = db.table("messages") \
                 .select("id") \
                 .in_("lead_id", lead_ids) \
                 .eq("direction", "outbound") \
                 .eq("delivery_status", "delivered") \
+                .gte("created_at", window_start) \
+                .lte("created_at", window_end) \
                 .execute()
             delivered_count = len(delivered_rows.data or [])
             
@@ -580,6 +585,8 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 .in_("lead_id", lead_ids) \
                 .eq("direction", "outbound") \
                 .eq("delivery_status", "read") \
+                .gte("created_at", window_start) \
+                .lte("created_at", window_end) \
                 .execute()
             opened_count = len(opened_rows.data or [])
         except Exception as e:
@@ -655,7 +662,7 @@ async def get_failed_csv(
         .execute()
 
     if not recipients.data:
-        return {"message": "No failures detected"}
+        return {"message": "Recipient tracking data not available for this broadcast"}
 
     lead_ids = [r["lead_id"] for r in recipients.data if r.get("lead_id")]
 
