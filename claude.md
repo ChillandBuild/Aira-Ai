@@ -20,7 +20,7 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Follow-up scheduler | ✅ Built |
 | Knowledge/FAQ base | ✅ Built |
 | AI Tune (WA auto-reply prompt tuning) | ✅ Built |
-| Analytics page | ✅ Built — needs repurpose to service metrics |
+| Analytics page | ✅ Built — WhatsApp tab (msgs, AI replies, avg reply time, top FAQs) + Telecalling tab (calls, duration, outcomes, per-caller stats) + funnel API |
 | Instagram webhook | ✅ Built — DISABLED (Phase 2, do not enable) |
 | Provider abstraction layer | ✅ Built — meta_cloud.py + wati_cloud.py |
 | MetaCloudProvider adapter | ✅ Built — services/meta_cloud.py |
@@ -60,6 +60,12 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Admin bookings dashboard | ✅ Built — dashboard/bookings/, status cards + filter tabs + table |
 | CSV Indian number auto-format | ✅ Built — 10-digit numbers starting with 6/7/8/9 auto-prefixed +91 in upload.py |
 | Opt-out expanded | ✅ Built — "not interested", "no thanks", "வேண்டாம்" + Tamil phrases added to _STOP_WORDS |
+| Multi-tenancy (app-layer) | ✅ Built — `tenant_id` on all tables, `get_tenant_and_role()` dependency on every endpoint, tenant resolved via `tenant_users` table |
+| Role-based access | ✅ Built — `owner` and `caller` roles in `tenant_users.role`; owner can invite/manage team, caller sees only assigned leads |
+| WABA onboarding (self-service) | ❌ Not built — onboarding is workspace name only; new tenants require manual env config of META_ACCESS_TOKEN + META_PHONE_NUMBER_ID + META_WABA_ID |
+| `greetings` template | ✅ APPROVED — meta_template_id 1674288843605155, MARKETING, en, usable for bulk send now |
+| `aira_connect` template | ⏳ Submitted — meta_template_id 1652761395834282, UTILITY, en_US, pending Meta approval |
+| AI prompt Tamil language mirroring | ✅ Updated 2026-05-16 — whatsapp_reply prompt detects language and replies in same language (Tamil/English) |
 
 ## Hard Invariants — Never Break
 1. **FAQ-first**: ai_reply.py checks FAQ table BEFORE any Groq/LLM call
@@ -68,7 +74,7 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 4. WhatsApp 24h session window — approved templates only outside window
 5. All segment lists: GET /api/v1/leads?segment=A&format=csv
 6. Call recordings → Supabase Storage only, never local disk
-7. Tenant RLS enforced always — one Meta Business Account per tenant
+7. Tenant isolation enforced at app layer via `get_tenant_and_role()` — one Meta Business Account per tenant. DB-level RLS not yet enabled (see Tech Debt).
 8. Bulk-send endpoint rejects leads with null opt_in_source
 9. **Booking flow states (immutable order)**: collecting_name → collecting_rasi → collecting_nakshatram → collecting_gotram → collecting_address → awaiting_payment → confirmed
 10. **Booking intent keywords** (frozenset in booking_flow.py): book, booking, register, enroll, புக், வேணும், பதிவு — intentionally narrow to avoid triggering on casual replies
@@ -115,23 +121,22 @@ Each agent gets only its relevant context file — not the full CLAUDE.md.
 ## Supabase Config (production)
 - Project ID: `tovmebyyjhvszwgvyfdm`
 - Region: ap-northeast-1
-- WABA ID in app_settings: `meta_waba_id = 1190331789463566`
+- WABA ID in app_settings: `meta_waba_id = 994218516456571` (confirmed via Meta Graph API 2026-05-16 — old value 1190331789463566 was wrong)
 - Default tenant: `00000000-0000-0000-0000-000000000001`
 
 ## Known Tech Debt
 - webhook_instagram.py exists but route is NOT registered in main.py — safe, leave disabled
-- Analytics page shows ad metrics — repurpose to service metrics (WA + telecalling + funnel)
 - Sidebar makes a duplicate /team/me call independent of AuthRoleContext — consolidate to useAuthRole()
 - AdminView.tsx in telecalling has N+1 sequential fetches per caller — replace with Promise.allSettled
 - services/growth.py + services/scheduled_tasks.py — verify wired to Celery or remove if dead
 - AI Tune label may need rename to clarify it tunes WA auto-reply prompts only
 - ai_reply.py `FALLBACK_PROMPT` still mentions "education consultancy" — update to match actual client's business before going live
 - ai_reply.py docstring says "call Gemini for reply" on line 207 — wrong, it calls Groq. Update comment.
-- **RLS DISABLED on 19 tables** (confirmed 2026-05-13 via Supabase MCP): faqs, callers, app_settings, follow_up_jobs, phone_numbers, incidents, lead_notes, voice_numbers, message_templates, tenants, tenant_users, hot_lead_alerts, conversations, call_logs, ad_campaigns, segment_templates, ai_prompts, ai_tune_suggestions, lead_stage_events — anyone with anon key can read/write these. Fix before production scale: enable RLS + add tenant-scoped policies per table. Do NOT enable RLS without policies or all access breaks.
+- **RLS DISABLED on 18 tables** (confirmed 2026-05-16): faqs, callers, app_settings, follow_up_jobs, phone_numbers, incidents, lead_notes, voice_numbers, message_templates, tenants, tenant_users, hot_lead_alerts, conversations, call_logs, ad_campaigns, segment_templates, ai_prompts, ai_tune_suggestions — only `employee_todos` has RLS. All other tables rely on app-layer `eq("tenant_id",...)` filtering only. Fix before multi-tenant public launch: enable RLS + tenant-scoped policies. Do NOT enable RLS without policies or all access breaks.
 - **Meta webhook signature not verified** on both webhook.py (inbound WA messages) and templates.py (template status updates) — no `X-Hub-Signature-256` check. Low risk while single-tenant; must fix before multi-tenant public launch.
 - Razorpay payment links have no idempotency key — if httpx call succeeds at Razorpay but times out before response, retry creates a duplicate link. Add `X-Razorpay-Idempotency-Key: {booking_id}` header.
 - Booking flow: no Twilio path — `webhook.py` only routes booking flow for Meta Cloud API inbound messages; the Twilio fallback branch (lines 183+) still calls `generate_reply` directly. If Twilio is used as inbound channel, booking flow is bypassed.
-- **phone_numbers table has placeholder data** — real Indian numbers (+91 90473 70380 ID:639558505904219 and +91 90427 81088 ID:876085862249417) not yet added to Numbers page pool. Both are at Tier 1 (1,000/day). Need tier upgrade before June 2 broadcast.
+- **Astro AI number is TIER_250** — Meta confirmed messaging_limit_tier=TIER_250 (250 unique recipients/day), not 1,000. DB corrected via migration 035. Need sustained sends + quality to auto-upgrade to TIER_1000 before June broadcast. Old archived numbers (639558505904219, 876085862249417) have wrong/duplicate meta_phone_number_id — do not use.
 - **Numbers page auto-failover NOT implemented** — failover.py has handle_quality_red() but standby auto-promotion on RED quality is not wired. Decided approach: auto-switch when primary quality = RED (Option B). Backend work still needed.
 - **Booking automation amount not updated** — BOOKING_AMOUNT_PAISE = 50000 (₹500 flat). Homam pricing is ₹499+GST (individual) or ₹419+GST (family). Need booking_type step + dynamic pricing.
 - **Bulk send distributes via single best number** — outbound_router.py picks one number per broadcast. For 15k sends, need to split across 2 numbers (7,500 each). Not yet built.
@@ -164,6 +169,11 @@ Each agent gets only its relevant context file — not the full CLAUDE.md.
 | 028 | opt_in_source fix for uploaded leads → offline_event |
 | 029 | bookings table + GPH-YYYY-NNNN auto-reference trigger |
 | 030 | lead_conversation_state table (booking flow state machine) |
+| 031 | RPC increment_phone_daily_send_count with delta |
+| 032 | fn_get_conversation_leads |
+| 033 | tenant contract fixes |
+| 034 | seed tenant app_settings |
+| 035 | phone_numbers messaging_tier constraint adds 250; Astro AI number set to 250 |
 
 ## Response Style
 - One sentence per progress update while working
