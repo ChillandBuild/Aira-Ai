@@ -413,6 +413,21 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             "tenant_id": tenant_id,
         })
 
+    for lead in rejected:
+        phone = _normalize_phone(lead.phone or "")
+        if not phone:
+            continue
+        existing = [r for r in upsert_rows if r["phone"] == phone]
+        if not existing:
+            upsert_rows.append({
+                "phone": phone,
+                "name": _clean_text(lead.name),
+                "source": "upload",
+                "score": 5,
+                "segment": "C",
+                "tenant_id": tenant_id,
+            })
+
     if upsert_rows:
         db.table("leads").upsert(upsert_rows, on_conflict="tenant_id,phone").execute()
         batch_opt_in_source = _clean_text(eligible[0].opt_in_source) if eligible else "imported"
@@ -539,7 +554,11 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
 
     for rej_lead in rejected:
         phone = _normalize_phone(rej_lead.phone or "")
+        if not phone:
+            continue
         lead_id = phone_to_lead_id.get(phone)
+        if not lead_id:
+            continue
         lead_name = phone_to_lead_name.get(phone)
         recipient_rows.append({
             "tenant_id": tenant_id,
