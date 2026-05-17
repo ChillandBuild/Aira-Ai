@@ -1,0 +1,63 @@
+# RuFlo V3 Runtime Configuration — Aira AI
+# Stack: FastAPI + Next.js 14 + Supabase + Groq + Meta Cloud API
+
+version: "3.0.0"
+
+project:
+  name: aira-ai
+  stack:
+    backend: fastapi
+    frontend: nextjs-14
+    database: supabase-postgres
+    ai: groq-llama-3.3-70b
+    whatsapp: meta-cloud-api
+    payments: razorpay
+  customAgents:
+    - .claude/agents/aira/webhook-debugger.md
+    - .claude/agents/aira/tenant-auditor.md
+    - .claude/agents/aira/migration-writer.md
+    - .claude/agents/aira/lead-scorer-tuner.md
+
+swarm:
+  topology: hierarchical-mesh
+  maxAgents: 8
+  autoScale: false
+  coordinationStrategy: consensus
+  defaultPattern: 3-layer-feature
+  parallelPatterns:
+    3-layer-feature:
+      agents: [migration-writer, dev-backend-api, coder]
+      description: "schema + route + frontend page in parallel"
+
+memory:
+  backend: hybrid
+  enableHNSW: true
+  persistPath: .claude-flow/data
+  cacheSize: 100
+  # ADR-049: Self-Learning Memory
+  learningBridge:
+    enabled: true
+    sonaMode: balanced
+    confidenceDecayRate: 0.005
+    accessBoostAmount: 0.03
+    consolidationThreshold: 10
+  memoryGraph:
+    enabled: true
+    pageRankDamping: 0.85
+    maxNodes: 5000
+    similarityThreshold: 0.8
+  agentScopes:
+    enabled: true
+    defaultScope: project
+
+neural:
+  enabled: true
+  modelPath: .claude-flow/neural
+
+hooks:
+  enabled: true
+  autoExecute: true
+
+mcp:
+  autoStart: false
+  port: 3000
