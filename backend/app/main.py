@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Aira AI backend starting up...")
     logger.info(f"Supabase: {settings.supabase_url}")
-    logger.info(f"Twilio number: {settings.twilio_whatsapp_number}")
+    logger.info("Voice: TeleCMI")
     yield
     logger.info("Aira AI backend shutting down.")
 

@@ -21,8 +21,6 @@ async def status():
     faq_row = db.table("faqs").select("id", count="exact").eq("active", True).execute()
 
     return {
-        "twilio_number": settings.twilio_whatsapp_number or None,
-        "exotel_virtual_number": settings.exotel_virtual_number or None,
         "has_meta": bool(settings.meta_page_token),
         "has_gemini": bool(settings.gemini_api_key),
         "supabase_url": settings.supabase_url,

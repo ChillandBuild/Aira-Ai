@@ -28,8 +28,6 @@ async def list_settings(tenant_id: str = Depends(get_tenant_id)):
         "razorpay_key_id": "razorpay_key_id",
         "razorpay_key_secret": "razorpay_key_secret",
         "razorpay_webhook_secret": "razorpay_webhook_secret",
-        "twilio_account_sid": "twilio_account_sid",
-        "twilio_auth_token": "twilio_auth_token",
     }
     for row in rows:
         db_value = row["value"]

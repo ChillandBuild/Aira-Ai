@@ -23,3 +23,19 @@ build/
 .claude/worktrees/
 .env.example
 backend/.env*
+
+# Ruflo runtime (auto-regenerated, never commit)
+.swarm/
+ruvector.db
+.claude/memory.db
+.claude-flow/daemon.pid
+.claude-flow/daemon-state.json
+.claude-flow/logs/
+.claude-flow/metrics/
+.claude-flow/data/
+.claude-flow/security/
+
+# Build / test cache
+frontend/test-results/
+*.tsbuildinfo
+test_leads.csv

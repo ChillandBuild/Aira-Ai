@@ -141,8 +141,6 @@ export interface AnalyzeResult {
 }
 
 export interface SystemStatus {
-  twilio_number: string | null;
-  exotel_virtual_number: string | null;
   has_meta: boolean;
   has_gemini: boolean;
   supabase_url: string;

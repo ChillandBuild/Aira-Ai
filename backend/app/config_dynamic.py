@@ -14,8 +14,6 @@ _ENV_MAP = {
     "meta_phone_number_id": "META_PHONE_NUMBER_ID",
     "meta_waba_id": "META_WABA_ID",
     "meta_webhook_verify_token": "META_WEBHOOK_VERIFY_TOKEN",
-    "twilio_account_sid": "TWILIO_ACCOUNT_SID",
-    "twilio_auth_token": "TWILIO_AUTH_TOKEN",
     "telecmi_user_id": "TELECMI_USER_ID",
     "telecmi_secret": "TELECMI_SECRET",
     "telecmi_callerid": "TELECMI_CALLERID",
