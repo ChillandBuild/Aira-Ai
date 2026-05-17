@@ -846,49 +846,56 @@ export default function UploadPage() {
       {/* Broadcast History */}
       {activeTab === "history" && (
       <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-        <div className="bg-gradient-to-r from-emerald-50 to-white border-b border-emerald-100 px-8 py-6 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center shadow-sm">
-              <Clock size={22} className="text-emerald-600" />
+        <div className="bg-gradient-to-r from-emerald-50 to-white border-b border-emerald-100 px-8 py-5">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center shadow-sm">
+                <Clock size={22} className="text-emerald-600" />
+              </div>
+              <div>
+                <h2 className="font-display text-xl font-bold text-gray-900">Broadcast History</h2>
+                <p className="font-body text-sm text-gray-500 mt-0.5">Last 50 campaign dispatches for your account</p>
+              </div>
             </div>
-            <div>
-              <h2 className="font-display text-xl font-bold text-gray-900">Broadcast History</h2>
-              <p className="font-body text-sm text-gray-500 mt-0.5">Last 50 campaign dispatches for your account</p>
-            </div>
+            {!historyLoading && broadcastHistory.length > 0 && (
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search…"
+                    value={historySearch}
+                    onChange={(e) => setHistorySearch(e.target.value)}
+                    className="w-44 pl-9 pr-3 py-2 font-body text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-300 transition-all"
+                  />
+                </div>
+                <div className="flex bg-white border border-gray-200 rounded-lg overflow-hidden">
+                  {(["all", "failures", "clean"] as const).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setHistoryStatusFilter(f)}
+                      className={cn(
+                        "px-3 py-2 font-label text-xs font-semibold transition-all",
+                        historyStatusFilter === f
+                          ? "bg-emerald-500 text-white"
+                          : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                      )}
+                    >
+                      {f === "all" ? "All" : f === "failures" ? "Failures" : "Clean"}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={refreshHistory}
+                  className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg font-label text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
+                >
+                  <RotateCcw size={14} />
+                  Refresh
+                </button>
+              </div>
+            )}
           </div>
-          <button 
-            onClick={refreshHistory}
-            className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 rounded-xl font-label text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
-          >
-            <RotateCcw size={15} />
-            Refresh
-          </button>
         </div>
-
-        {/* Search & Filter Bar */}
-        {!historyLoading && broadcastHistory.length > 0 && (
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1 max-w-xs">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search template, number…"
-                value={historySearch}
-                onChange={(e) => setHistorySearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 font-body text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-300 transition-all"
-              />
-            </div>
-            <select
-              value={historyStatusFilter}
-              onChange={(e) => setHistoryStatusFilter(e.target.value as "all" | "failures" | "clean")}
-              className="py-2 pl-3 pr-8 font-body text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-300 transition-all appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20fill%3D%22none%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22m2%204%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:12px] bg-[right_10px_center] bg-no-repeat"
-            >
-              <option value="all">All Broadcasts</option>
-              <option value="failures">With Failures</option>
-              <option value="clean">No Failures</option>
-            </select>
-          </div>
-        )}
 
         {historyLoading ? (
           <div className="py-12 flex items-center justify-center">
@@ -981,21 +988,21 @@ export default function UploadPage() {
                 </div>
                 
                 {/* Metrics Grid - 4 Equal Columns */}
-                <div className="grid grid-cols-4 gap-4">
+                <div className="grid grid-cols-4 gap-3">
                   {/* Sent */}
-                  <div className="bg-blue-50/50 rounded-xl p-4 border border-blue-100/50">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-                        <Send size={18} className="text-blue-600" />
+                  <div className="bg-blue-50/50 rounded-xl p-3 border border-blue-100/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                        <Send size={16} className="text-blue-600" />
                       </div>
                       <div className="flex-1">
-                        <p className="font-display text-base font-bold text-gray-900">
+                        <p className="font-display text-sm font-bold text-gray-900">
                           Sent <span className="text-blue-600 font-semibold">({Math.round((item.sent / item.total_leads) * 100)}%)</span>
                         </p>
-                        <p className="font-body text-xs text-gray-500 mt-0.5">{item.sent} of {item.total_leads} leads</p>
+                        <p className="font-body text-[11px] text-gray-500 mt-0.5">{item.sent} of {item.total_leads} leads</p>
                       </div>
                     </div>
-                    <div className="w-full h-3 bg-blue-100 rounded-full overflow-hidden">
+                    <div className="w-full h-2 bg-blue-100 rounded-full overflow-hidden">
                       <div 
                         className="h-full bg-blue-500 rounded-full transition-all duration-700 ease-out" 
                         style={{ width: `${(item.sent / item.total_leads) * 100}%` }} 
@@ -1004,19 +1011,19 @@ export default function UploadPage() {
                   </div>
                   
                   {/* Delivered */}
-                  <div className="bg-emerald-50/50 rounded-xl p-4 border border-emerald-100/50">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
-                        <CheckCircle2 size={18} className="text-emerald-600" />
+                  <div className="bg-emerald-50/50 rounded-xl p-3 border border-emerald-100/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
+                        <CheckCircle2 size={16} className="text-emerald-600" />
                       </div>
                       <div className="flex-1">
-                        <p className="font-display text-base font-bold text-gray-900">
+                        <p className="font-display text-sm font-bold text-gray-900">
                           Delivered <span className="text-emerald-600 font-semibold">({Math.round(((item.delivered || 0) / item.total_leads) * 100)}%)</span>
                         </p>
-                        <p className="font-body text-xs text-gray-500 mt-0.5">{item.delivered || 0} of {item.total_leads} leads</p>
+                        <p className="font-body text-[11px] text-gray-500 mt-0.5">{item.delivered || 0} of {item.total_leads} leads</p>
                       </div>
                     </div>
-                    <div className="w-full h-3 bg-emerald-100 rounded-full overflow-hidden">
+                    <div className="w-full h-2 bg-emerald-100 rounded-full overflow-hidden">
                       <div 
                         className="h-full bg-emerald-500 rounded-full transition-all duration-700 ease-out" 
                         style={{ width: `${((item.delivered || 0) / item.total_leads) * 100}%` }} 
@@ -1025,19 +1032,19 @@ export default function UploadPage() {
                   </div>
                   
                   {/* Opened */}
-                  <div className="bg-amber-50/50 rounded-xl p-4 border border-amber-100/50">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
-                        <Eye size={18} className="text-amber-600" />
+                  <div className="bg-amber-50/50 rounded-xl p-3 border border-amber-100/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                        <Eye size={16} className="text-amber-600" />
                       </div>
                       <div className="flex-1">
-                        <p className="font-display text-base font-bold text-gray-900">
+                        <p className="font-display text-sm font-bold text-gray-900">
                           Opened <span className="text-amber-600 font-semibold">({Math.round(((item.opened || 0) / item.total_leads) * 100)}%)</span>
                         </p>
-                        <p className="font-body text-xs text-gray-500 mt-0.5">{item.opened || 0} of {item.total_leads} leads</p>
+                        <p className="font-body text-[11px] text-gray-500 mt-0.5">{item.opened || 0} of {item.total_leads} leads</p>
                       </div>
                     </div>
-                    <div className="w-full h-3 bg-amber-100 rounded-full overflow-hidden">
+                    <div className="w-full h-2 bg-amber-100 rounded-full overflow-hidden">
                       <div 
                         className="h-full bg-amber-500 rounded-full transition-all duration-700 ease-out" 
                         style={{ width: `${((item.opened || 0) / item.total_leads) * 100}%` }} 
@@ -1046,19 +1053,19 @@ export default function UploadPage() {
                   </div>
                   
                   {/* Failed */}
-                  <div className="bg-red-50/50 rounded-xl p-4 border border-red-100/50">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
-                        <XCircle size={18} className="text-red-600" />
+                  <div className="bg-red-50/50 rounded-xl p-3 border border-red-100/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                        <XCircle size={16} className="text-red-600" />
                       </div>
                       <div className="flex-1">
-                        <p className="font-display text-base font-bold text-gray-900">
+                        <p className="font-display text-sm font-bold text-gray-900">
                           Failed <span className="text-red-600 font-semibold">({Math.round(((item.failed || 0) / item.total_leads) * 100)}%)</span>
                         </p>
-                        <p className="font-body text-xs text-gray-500 mt-0.5">{item.failed || 0} of {item.total_leads} leads</p>
+                        <p className="font-body text-[11px] text-gray-500 mt-0.5">{item.failed || 0} of {item.total_leads} leads</p>
                       </div>
                     </div>
-                    <div className="w-full h-3 bg-red-100 rounded-full overflow-hidden">
+                    <div className="w-full h-2 bg-red-100 rounded-full overflow-hidden">
                       <div 
                         className="h-full bg-red-500 rounded-full transition-all duration-700 ease-out" 
                         style={{ width: `${((item.failed || 0) / item.total_leads) * 100}%` }} 
