@@ -306,7 +306,7 @@ export default function NotesPage() {
               className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-surface border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary"
             />
           </div>
-          <div className="space-y-2 max-h-[calc(100vh-220px)] overflow-y-auto pr-1">
+          <div className="space-y-2 max-h-[calc(100vh-220px)] overflow-y-auto px-1 py-1">
             {sortedLeads.length === 0 && (
               <p className="font-body text-sm text-on-surface-muted px-2">No leads found.</p>
             )}

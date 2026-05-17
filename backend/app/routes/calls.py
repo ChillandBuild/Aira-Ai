@@ -67,6 +67,21 @@ async def initiate_call(payload: InitiateCall, ctx: dict = Depends(get_tenant_an
         if match and match.data:
             matched_lead_id = match.data["id"]
             matched_lead_name = match.data.get("name")
+        else:
+            # auto-create a minimal lead so notes can always be saved
+            try:
+                new_lead = db.table("leads").insert({
+                    "phone": lead_phone,
+                    "source": "manual_dial",
+                    "score": 5,
+                    "segment": "C",
+                    "tenant_id": tenant_id,
+                }).execute()
+                if new_lead.data:
+                    matched_lead_id = new_lead.data[0]["id"]
+                    matched_lead_name = None
+            except Exception as e:
+                logger.warning(f"Auto-create lead failed for {lead_phone}: {e}")
 
     # Owners can call directly without a caller record; telecallers require their phone
     if role != "owner":

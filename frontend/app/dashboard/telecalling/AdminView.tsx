@@ -251,7 +251,9 @@ export default function AdminView() {
       </div>
 
       {activeCallCtx && (
-        <LiveNotesPane ctx={activeCallCtx} onClose={() => setActiveCallCtx(null)} />
+        <div className="mt-6">
+          <LiveNotesPane ctx={activeCallCtx} onClose={() => setActiveCallCtx(null)} />
+        </div>
       )}
     </div>
   );
