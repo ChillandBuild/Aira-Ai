@@ -43,7 +43,7 @@ async def leads_with_activity(ctx: dict = Depends(get_tenant_and_role)):
 
     query = (
         db.table("leads")
-        .select("id, name, phone, score, segment, assigned_to")
+        .select("id, name, phone, score, segment, assigned_to, created_at")
         .in_("id", lead_ids)
         .eq("tenant_id", tenant_id)
         .is_("deleted_at", "null")

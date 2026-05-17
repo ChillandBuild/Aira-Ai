@@ -225,8 +225,8 @@ export default function NotesPage() {
   });
 
   const sortedLeads = [...filtered].sort((a, b) => {
-    const ta = lastCalledMap[a.id] ?? a.created_at;
-    const tb = lastCalledMap[b.id] ?? b.created_at;
+    const ta = lastCalledMap[a.id] ?? a.created_at ?? "";
+    const tb = lastCalledMap[b.id] ?? b.created_at ?? "";
     return tb.localeCompare(ta);
   });
 
