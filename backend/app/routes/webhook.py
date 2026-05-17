@@ -52,7 +52,7 @@ async def _handle_opt_out(phone: str, tenant_id: str, db) -> bool:
         if not lead.data:
             return False
         lead_id = lead.data["id"]
-        db.table("leads").update({"opted_out": True, "ai_enabled": False, "opted_out_at": datetime.now(timezone.utc)}).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
+        db.table("leads").update({"opted_out": True, "ai_enabled": False, "opted_out_at": datetime.now(timezone.utc).isoformat()}).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
         logger.info(f"Lead {lead_id} opted out from {phone}")
         # Send a polite acknowledgment — one-time, no further AI replies
         try:
