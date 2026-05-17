@@ -198,10 +198,25 @@ export default function NotesPage() {
   }, [selected]);
 
   async function loadLeads() {
-    const res = await api.notes.leadsWithActivity();
-    const all = res.data || [];
-    setLeads(all as Lead[]);
-    if (all.length) api.calls.recentByLeads(all.map((l) => l.id)).then(setLastCalledMap).catch(() => {});
+    try {
+      const res = await api.notes.leadsWithActivity();
+      const all = (res.data || []) as Lead[];
+      setLeads(all);
+      if (all.length) api.calls.recentByLeads(all.map((l) => l.id)).then(setLastCalledMap).catch(() => {});
+    } catch {
+      // fallback: load all leads if endpoint not available
+      try {
+        const [a, b, c, d] = await Promise.all([
+          api.leads.list({ segment: "A", limit: 50 }),
+          api.leads.list({ segment: "B", limit: 50 }),
+          api.leads.list({ segment: "C", limit: 50 }),
+          api.leads.list({ segment: "D", limit: 50 }),
+        ]);
+        const all = [...a, ...b, ...c, ...d];
+        setLeads(all);
+        if (all.length) api.calls.recentByLeads(all.map((l) => l.id)).then(setLastCalledMap).catch(() => {});
+      } catch { /* silent */ }
+    }
   }
 
   const filtered = leads.filter((l) => {
