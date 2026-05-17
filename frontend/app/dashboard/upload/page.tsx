@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Upload, Check, AlertTriangle, ChevronRight, RotateCcw, MessageSquare, Clock, Send, Download, CheckCircle2, Eye, XCircle, Calendar, Phone, Search, Filter } from "lucide-react";
+import { Upload, Check, AlertTriangle, ChevronRight, RotateCcw, MessageSquare, Clock, Send, Download, CheckCircle2, Eye, XCircle, Calendar, Phone } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { createClient } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
@@ -120,20 +120,7 @@ export default function UploadPage() {
 
   const [broadcastHistory, setBroadcastHistory] = useState<BroadcastHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [historySearch, setHistorySearch] = useState("");
-  const [historyStatusFilter, setHistoryStatusFilter] = useState<"all" | "failures" | "clean">("all");
   const [activeTab, setActiveTab] = useState<"upload" | "history">("upload");
-
-  const filteredHistory = broadcastHistory.filter(item => {
-    const s = historySearch.toLowerCase();
-    const matchesSearch = !s ||
-      item.template_name.toLowerCase().includes(s) ||
-      (item.number_used || "").toLowerCase().includes(s);
-    const matchesFilter = historyStatusFilter === "all" ||
-      (historyStatusFilter === "failures" && item.failed > 0) ||
-      (historyStatusFilter === "clean" && item.failed === 0);
-    return matchesSearch && matchesFilter;
-  });
   
   // Supabase client for realtime updates
   const supabase = createClient(
@@ -858,31 +845,6 @@ export default function UploadPage() {
           </button>
         </div>
 
-        {/* Search & Filter Bar */}
-        {!historyLoading && broadcastHistory.length > 0 && (
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1 max-w-xs">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search template, number…"
-                value={historySearch}
-                onChange={(e) => setHistorySearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 font-body text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-300 transition-all"
-              />
-            </div>
-            <select
-              value={historyStatusFilter}
-              onChange={(e) => setHistoryStatusFilter(e.target.value as "all" | "failures" | "clean")}
-              className="py-2 pl-3 pr-8 font-body text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-300 transition-all appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20fill%3D%22none%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22m2%204%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:12px] bg-[right_10px_center] bg-no-repeat"
-            >
-              <option value="all">All Broadcasts</option>
-              <option value="failures">With Failures</option>
-              <option value="clean">No Failures</option>
-            </select>
-          </div>
-        )}
-
         {historyLoading ? (
           <div className="py-12 flex items-center justify-center">
             <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
@@ -897,19 +859,9 @@ export default function UploadPage() {
               <p className="font-body text-xs text-gray-500 mt-1">Send your first campaign to see history here</p>
             </div>
           </div>
-        ) : filteredHistory.length === 0 ? (
-          <div className="py-16 flex flex-col items-center justify-center gap-3">
-            <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center">
-              <Search size={24} className="text-gray-400" />
-            </div>
-            <div className="text-center">
-              <p className="font-display text-sm font-semibold text-gray-700">No matches found</p>
-              <p className="font-body text-xs text-gray-500 mt-1">Try a different search or filter</p>
-            </div>
-          </div>
         ) : (
           <div className="divide-y divide-gray-100">
-            {filteredHistory.map((item, i) => (
+            {broadcastHistory.map((item, i) => (
               <div key={i} className="p-6 first:pt-4 last:pb-4">
                 {/* Campaign Info Bar */}
                 <div className="flex items-center gap-4 mb-5 pb-4 border-b border-gray-100">
