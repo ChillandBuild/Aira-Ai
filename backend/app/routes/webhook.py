@@ -233,11 +233,17 @@ async def whatsapp_webhook(
                         
                         if message_id and status in ("delivered", "read", "failed"):
                             try:
-                                db.table("messages") \
+                                updated = db.table("messages") \
                                     .update({"delivery_status": status}) \
                                     .eq("meta_message_id", message_id) \
                                     .execute()
                                 logger.info(f"Message {message_id} status updated to {status}")
+                                # Mark lead as undeliverable so it's hidden from active views
+                                if status == "failed" and updated.data:
+                                    failed_lead_id = updated.data[0].get("lead_id")
+                                    if failed_lead_id:
+                                        db.table("leads").update({"whatsapp_undeliverable": True}) \
+                                            .eq("id", failed_lead_id).execute()
                             except Exception as e:
                                 logger.error(f"Failed to update message {message_id} status to {status}: {e}")
 

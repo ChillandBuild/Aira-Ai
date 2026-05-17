@@ -47,6 +47,8 @@ async def leads_with_activity(ctx: dict = Depends(get_tenant_and_role)):
         .in_("id", lead_ids)
         .eq("tenant_id", tenant_id)
         .is_("deleted_at", "null")
+        .neq("opted_out", True)
+        .neq("whatsapp_undeliverable", True)
     )
     if ctx.get("role") == "caller" and ctx.get("caller_id"):
         query = query.eq("assigned_to", ctx["caller_id"])

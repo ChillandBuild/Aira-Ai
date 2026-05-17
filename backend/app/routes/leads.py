@@ -43,7 +43,11 @@ async def list_leads(
     db = get_supabase()
     tenant_id = ctx["tenant_id"]
     offset = (page - 1) * limit
-    query = db.table("leads").select("*", count="exact").eq("tenant_id", tenant_id).is_("deleted_at", "null")
+    query = (db.table("leads").select("*", count="exact")
+             .eq("tenant_id", tenant_id)
+             .is_("deleted_at", "null")
+             .neq("opted_out", True)
+             .neq("whatsapp_undeliverable", True))
     if segment:
         query = query.eq("segment", segment)
     if assigned_to:
