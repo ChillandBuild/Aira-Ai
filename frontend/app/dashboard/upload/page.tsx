@@ -914,7 +914,7 @@ export default function UploadPage() {
                       onClick={() => downloadFailedCsv(item.broadcast_id!)}
                       className="inline-flex items-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg font-label text-xs font-semibold transition-colors border border-red-200"
                     >
-                      <AlertTriangle size={14} />
+                      <Download size={14} />
                       Download Failed CSV
                     </button>
                   ) : item.failed === 0 ? (
