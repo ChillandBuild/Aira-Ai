@@ -14,6 +14,7 @@ class InvitePayload(BaseModel):
     password: str
     name: str | None = None
     phone: str | None = None
+    telecmi_agent_id: str | None = None
 
 
 @router.get("/me")
@@ -113,13 +114,16 @@ async def invite_member(payload: InvitePayload, ctx: dict = Depends(get_tenant_a
             .execute()
         )
         if not caller_existing.data:
-            db.table("callers").insert({
+            caller_row = {
                 "tenant_id": ctx["tenant_id"],
                 "user_id": invited_user_id,
                 "name": payload.name or payload.email.split("@")[0],
                 "phone": payload.phone,
                 "active": True,
-            }).execute()
+            }
+            if payload.telecmi_agent_id:
+                caller_row["telecmi_agent_id"] = payload.telecmi_agent_id
+            db.table("callers").insert(caller_row).execute()
     except Exception as e:
         logger.error(f"tenant_users/callers insert failed: {e}")
         raise HTTPException(status_code=500, detail=f"User created but assignment failed: {e}")

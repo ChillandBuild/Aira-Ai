@@ -11,6 +11,7 @@ export default function TeamPage() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [telecmiAgentId, setTelecmiAgentId] = useState("");
   const [inviting, setInviting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,8 +33,8 @@ export default function TeamPage() {
     setInviting(true);
     setError(null);
     try {
-      await api.team.invite(email.trim(), password.trim(), name.trim() || undefined, phone.trim() || undefined);
-      setEmail(""); setPassword(""); setName(""); setPhone("");
+      await api.team.invite(email.trim(), password.trim(), name.trim() || undefined, phone.trim() || undefined, telecmiAgentId.trim() || undefined);
+      setEmail(""); setPassword(""); setName(""); setPhone(""); setTelecmiAgentId("");
       setShowInvite(false);
       await load();
     } catch (err) {
@@ -86,6 +87,10 @@ export default function TeamPage() {
               <div>
                 <label className="font-body text-sm font-medium text-ink mb-1.5 block">Phone</label>
                 <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="input" placeholder="+919876543210" />
+              </div>
+              <div>
+                <label className="font-body text-sm font-medium text-ink mb-1.5 block">TeleCMI Agent ID</label>
+                <input type="text" value={telecmiAgentId} onChange={(e) => setTelecmiAgentId(e.target.value)} className="input" placeholder="e.g. 1001" />
               </div>
               <div className="flex gap-2 pt-2">
                 <button type="button" onClick={() => { setShowInvite(false); setError(null); }} className="btn-ghost flex-1">Cancel</button>

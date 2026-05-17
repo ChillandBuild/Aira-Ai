@@ -614,10 +614,10 @@ export const api = {
   team: {
     me: () => apiFetch<MyProfile>("/api/v1/team/me"),
     list: () => apiFetch<{ data: TeamMember[] }>("/api/v1/team/"),
-    invite: (email: string, password: string, name?: string, phone?: string) =>
+    invite: (email: string, password: string, name?: string, phone?: string, telecmiAgentId?: string) =>
       apiFetch<{ invited: boolean; email: string; user_id: string }>("/api/v1/team/invite", {
         method: "POST",
-        body: JSON.stringify({ email, password, name, phone }),
+        body: JSON.stringify({ email, password, name, phone, telecmi_agent_id: telecmiAgentId }),
       }),
     remove: (userId: string) =>
       apiFetch<{ removed: boolean }>(`/api/v1/team/${userId}`, { method: "DELETE" }),

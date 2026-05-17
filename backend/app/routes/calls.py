@@ -84,14 +84,20 @@ async def initiate_call(payload: InitiateCall, ctx: dict = Depends(get_tenant_an
                 logger.warning(f"Auto-create lead failed for {lead_phone}: {e}")
 
     # Owners can call directly without a caller record; telecallers require their phone
+    caller_telecmi_agent_id: str | None = None
     if role != "owner":
         caller_phone: str | None = None
         if payload.caller_id:
-            caller = db.table("callers").select("phone").eq("id", str(payload.caller_id)).eq("tenant_id", tenant_id).maybe_single().execute()
+            caller = db.table("callers").select("phone,telecmi_agent_id").eq("id", str(payload.caller_id)).eq("tenant_id", tenant_id).maybe_single().execute()
             if caller.data:
                 caller_phone = caller.data.get("phone")
+                caller_telecmi_agent_id = caller.data.get("telecmi_agent_id") or None
         if not caller_phone:
             raise HTTPException(status_code=400, detail="Caller has no phone number configured")
+    elif payload.caller_id:
+        caller = db.table("callers").select("telecmi_agent_id").eq("id", str(payload.caller_id)).eq("tenant_id", tenant_id).maybe_single().execute()
+        if caller.data:
+            caller_telecmi_agent_id = caller.data.get("telecmi_agent_id") or None
 
     best_number = await get_best_voice_number()
     if not best_number:
@@ -108,8 +114,10 @@ async def initiate_call(payload: InitiateCall, ctx: dict = Depends(get_tenant_an
     try:
         # TeleCMI click-to-call: rings the caller first, then bridges to the lead
         telecmi_callerid = get_setting("telecmi_callerid") or settings.telecmi_callerid or best_number["number"]
+        # Use caller's own TeleCMI agent ID if set, otherwise fall back to global
+        effective_agent_id = caller_telecmi_agent_id or telecmi_user_id
         result = await initiate_click2call(
-            user_id=telecmi_user_id,
+            user_id=effective_agent_id,
             secret=telecmi_secret,
             to=lead_phone,
             callerid=telecmi_callerid,
