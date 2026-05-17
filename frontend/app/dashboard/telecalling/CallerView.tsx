@@ -56,12 +56,14 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
 
   const loadData = useCallback(async () => {
     try {
-      const callers = await api.callers.list();
+      const [callers, leads] = await Promise.all([
+        api.callers.list(),
+        api.leads.list({ assigned_to: callerId || undefined, limit: 50 }),
+      ]);
       const me = callers.find((c: Caller) => c.id === callerId) || null;
       setMyCaller(me);
       if (me) setMyStatus((me.status as "active" | "idle") || "active");
 
-      const leads = await api.leads.list({ assigned_to: callerId || undefined, limit: 50 });
       const sorted = leads.sort((a: Lead, b: Lead) => (b.score ?? 0) - (a.score ?? 0));
       setMyLeads(sorted);
 

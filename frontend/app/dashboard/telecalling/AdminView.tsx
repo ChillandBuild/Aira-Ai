@@ -41,30 +41,18 @@ export default function AdminView() {
 
   const loadData = useCallback(async () => {
     try {
-      const rows = await api.callers.list();
-      setCallers(rows);
-
       const auth = await getAuthHeaders();
-      const rrRes = await fetch(`${API_URL}/api/v1/callers/round-robin`, { headers: auth });
-      const rrData = await rrRes.json();
-      setRoundRobinEnabled(rrData.enabled ?? true);
-
-      // Top 5 leads by score across all segments
-      const leads = await api.leads.list({ limit: 5 });
+      const [rows, rrRes, leads, stats] = await Promise.all([
+        api.callers.list(),
+        fetch(`${API_URL}/api/v1/callers/round-robin`, { headers: auth }).then(r => r.json()),
+        api.leads.list({ limit: 5 }),
+        api.calls.statsToday().catch(() => ({ calls_today: 0, conversions_today: 0 })),
+      ]);
+      setCallers(rows);
+      setRoundRobinEnabled(rrRes.enabled ?? true);
       setTopLeads(leads);
-
-      let calls = 0, conversions = 0;
-      for (const caller of rows) {
-        try {
-          const logs = await api.callers.logs(caller.id);
-          const today = new Date(); today.setHours(0, 0, 0, 0);
-          const todayLogs = logs.filter((l) => new Date(l.created_at) >= today);
-          calls += todayLogs.length;
-          conversions += todayLogs.filter((l) => l.outcome === "converted").length;
-        } catch { /* skip */ }
-      }
-      setTotalCallsToday(calls);
-      setTotalConversionsToday(conversions);
+      setTotalCallsToday(stats.calls_today);
+      setTotalConversionsToday(stats.conversions_today);
     } catch (err) {
       console.error("AdminView load error:", err);
     }

@@ -432,6 +432,8 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify({ outcome, callback_time: callbackTime ?? null }),
       }),
+    statsToday: () =>
+      apiFetch<{ calls_today: number; conversions_today: number }>(`/api/v1/calls/stats-today`),
     recentByLeads: (leadIds: string[]) =>
       apiFetch<Record<string, string>>(
         `/api/v1/calls/recent-by-leads?lead_ids=${leadIds.slice(0, 50).join(",")}`,

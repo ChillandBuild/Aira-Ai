@@ -394,6 +394,19 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate):
     }
 
 
+@router.get("/stats-today")
+async def stats_today(ctx: dict = Depends(get_tenant_and_role)):
+    from datetime import datetime, timezone
+    db = get_supabase()
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    result = db.table("call_logs").select("id,outcome").eq("tenant_id", ctx["tenant_id"]).gte("created_at", today).execute()
+    logs = result.data or []
+    return {
+        "calls_today": len(logs),
+        "conversions_today": sum(1 for l in logs if l.get("outcome") == "converted"),
+    }
+
+
 @router.get("/recent-by-leads")
 async def recent_by_leads(lead_ids: str = Query(..., description="Comma-separated lead UUIDs, max 50")):
     ids = [i.strip() for i in lead_ids.split(",") if i.strip()][:50]
