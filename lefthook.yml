@@ -1,0 +1,31 @@
+# Lefthook — Aira AI cross-platform git hooks
+# Works on ANY platform: Claude Code, Cursor, Windsurf, OpenCode, Codex
+# Fires before every git commit regardless of which AI tool made the edits
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: frontend-typecheck
+      glob: "frontend/**/*.{ts,tsx}"
+      run: cd frontend && npx tsc --noEmit --pretty false
+      fail_text: "TypeScript errors — fix before committing"
+
+    - name: backend-syntax
+      glob: "backend/app/**/*.py"
+      run: python -m py_compile {staged_files}
+      fail_text: "Python syntax error — fix before committing"
+
+    - name: tenant-audit
+      glob: "backend/app/routes/*.py"
+      run: |
+        for f in {staged_files}; do
+          if ! grep -q "tenant_id" "$f"; then
+            echo "⚠ TENANT AUDIT: $f has no tenant_id — verify isolation"
+          fi
+        done
+
+pre-push:
+  jobs:
+    - name: full-typecheck
+      run: cd frontend && npx tsc --noEmit
+      fail_text: "TypeScript errors block push — fix first"
