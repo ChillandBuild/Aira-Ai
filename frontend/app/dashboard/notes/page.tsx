@@ -312,7 +312,7 @@ export default function NotesPage() {
             )}
             {sortedLeads.map((lead) => (
               <button key={lead.id} onClick={() => setSelected(lead)}
-                className={`w-full text-left p-4 rounded-xl transition-all ${selected?.id === lead.id ? "bg-tertiary-bg ring-2 ring-tertiary" : "bg-surface hover:bg-surface-low ring-1 ring-[#c4c7c7]/15"}`}
+                className={`w-full text-left p-4 rounded-xl transition-all ${selected?.id === lead.id ? "bg-primary/5 ring-2 ring-primary/30" : "bg-surface hover:bg-surface-low ring-1 ring-[#c4c7c7]/15"}`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
