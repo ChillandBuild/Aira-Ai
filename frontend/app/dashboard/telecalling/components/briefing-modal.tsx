@@ -5,10 +5,10 @@ import type { Lead } from "@/lib/api";
 import type { NotesResponse, Note } from "../types";
 
 const BRIEFING_TAGS = [
-  "Confirm campus visit",
-  "Discuss fees",
   "Schedule callback",
-  "Send brochure",
+  "Send pricing",
+  "Send proposal",
+  "Follow up",
 ];
 
 function StructuredFields({ data }: { data: Note["structured"] }) {

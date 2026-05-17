@@ -1,13 +1,13 @@
 "use client";
 import { toast } from "sonner";
 import { useEffect, useState, useCallback } from "react";
-import { Phone, Eye, RefreshCw, ChevronDown } from "lucide-react";
+import { Phone, Eye, RefreshCw, ChevronDown, StickyNote, Check } from "lucide-react";
 import { api, Caller, Lead } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import BriefingModal from "./components/briefing-modal";
 import LiveNotesPane from "./components/live-notes-pane";
 import NotesHistoryModal from "./components/notes-history-modal";
-import { fetchNotes, fetchTodayCallbacks, fetchTodayCompletedCallbacks, markCallbackDone } from "./lib/notes-api";
+import { fetchNotes, fetchTodayCallbacks, fetchTodayCompletedCallbacks, markCallbackDone, saveNote } from "./lib/notes-api";
 import type { ActiveCallCtx, CallbackJob, NotesResponse } from "./types";
 
 
@@ -32,6 +32,11 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   const [manualPhone, setManualPhone] = useState("");
   const [manualDialing, setManualDialing] = useState(false);
 
+  // quick-note per lead
+  const [quickNoteLeadId, setQuickNoteLeadId] = useState<string | null>(null);
+  const [quickNoteContent, setQuickNoteContent] = useState("");
+  const [quickNoteSaving, setQuickNoteSaving] = useState(false);
+
   // modals
   const [briefingLead, setBriefingLead] = useState<Lead | null>(null);
   const [briefingNotes, setBriefingNotes] = useState<NotesResponse | null>(null);
@@ -44,37 +49,38 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
 
 
 
+  const loadCallbacks = useCallback(() => {
+    fetchTodayCallbacks().then(setTodayCallbacks).catch(() => {});
+    fetchTodayCompletedCallbacks().then(setCompletedCallbacks).catch(() => {});
+  }, []);
+
   const loadData = useCallback(async () => {
     try {
-      // Get my caller profile
       const callers = await api.callers.list();
       const me = callers.find((c: Caller) => c.id === callerId) || null;
       setMyCaller(me);
-      if (me) {
-        setMyStatus((me.status as "active" | "idle") || "active");
-        // load my logs
-      }
+      if (me) setMyStatus((me.status as "active" | "idle") || "active");
 
-      // Get Hot leads assigned to me (sorted by score desc)
       const leads = await api.leads.list({ assigned_to: callerId || undefined, segment: "A", limit: 50 });
       const sorted = leads.sort((a: Lead, b: Lead) => (b.score ?? 0) - (a.score ?? 0));
       setMyLeads(sorted);
 
-      // last-called map
       const ids = sorted.map((l: Lead) => l.id).filter(Boolean);
-      if (ids.length) {
-        api.calls.recentByLeads(ids).then(setLastCalledMap).catch(() => {});
-      }
+      if (ids.length) api.calls.recentByLeads(ids).then(setLastCalledMap).catch(() => {});
 
-      // Callbacks
-      fetchTodayCallbacks().then(setTodayCallbacks).catch(() => {});
-      fetchTodayCompletedCallbacks().then(setCompletedCallbacks).catch(() => {});
+      loadCallbacks();
     } catch (err) {
       console.error("CallerView load error:", err);
     }
-  }, [callerId]);
+  }, [callerId, loadCallbacks]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // auto-refresh callbacks every 5 minutes
+  useEffect(() => {
+    const id = setInterval(loadCallbacks, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [loadCallbacks]);
 
   // Modal data fetching
   useEffect(() => {
@@ -145,6 +151,19 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Call failed");
     } finally { setManualDialing(false); }
+  }
+
+  async function saveQuickNote(leadId: string) {
+    if (!quickNoteContent.trim()) return;
+    setQuickNoteSaving(true);
+    try {
+      await saveNote(leadId, quickNoteContent.trim(), false);
+      setQuickNoteLeadId(null);
+      setQuickNoteContent("");
+      toast.success("Note saved");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save note");
+    } finally { setQuickNoteSaving(false); }
   }
 
   async function handleMarkDone(jobId: string) {
@@ -258,8 +277,8 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
           ) : (
             <div className="space-y-3">
               {myLeads.map((lead) => (
-                <div key={lead.id} className="p-4 bg-surface-low rounded-xl hover:bg-surface-mid transition-colors">
-                  <div className="flex items-center justify-between gap-3">
+                <div key={lead.id} className="bg-surface-low rounded-xl transition-colors">
+                  <div className="flex items-center justify-between gap-3 p-4">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="font-body text-sm font-semibold text-on-surface truncate">{lead.name || formatPhone(lead.phone)}</p>
@@ -273,6 +292,13 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                       )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => { setQuickNoteLeadId(quickNoteLeadId === lead.id ? null : lead.id); setQuickNoteContent(""); }}
+                        className={`p-2 rounded-lg transition-colors ${quickNoteLeadId === lead.id ? "bg-tertiary/10 text-tertiary" : "hover:bg-surface-mid text-on-surface-muted"}`}
+                        title="Add note"
+                      >
+                        <StickyNote size={14} />
+                      </button>
                       <button onClick={() => setViewingLead(lead)} className="p-2 rounded-lg hover:bg-surface-mid transition-colors text-on-surface-muted" title="View notes">
                         <Eye size={14} />
                       </button>
@@ -286,6 +312,26 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                       </button>
                     </div>
                   </div>
+                  {quickNoteLeadId === lead.id && (
+                    <div className="px-4 pb-4 flex gap-2 items-start border-t border-surface-mid pt-3">
+                      <textarea
+                        autoFocus
+                        value={quickNoteContent}
+                        onChange={(e) => setQuickNoteContent(e.target.value)}
+                        placeholder="Quick note before calling…"
+                        rows={2}
+                        className="flex-1 px-3 py-2 rounded-lg bg-surface border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary resize-none"
+                      />
+                      <button
+                        onClick={() => saveQuickNote(lead.id)}
+                        disabled={quickNoteSaving || !quickNoteContent.trim()}
+                        className="p-2 bg-tertiary text-white rounded-lg hover:bg-tertiary/90 disabled:opacity-50 transition-colors"
+                        title="Save note"
+                      >
+                        {quickNoteSaving ? <RefreshCw size={13} className="animate-spin" /> : <Check size={13} />}
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

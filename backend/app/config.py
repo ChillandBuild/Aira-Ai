@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     meta_phone_number_id: str | None = None
     redis_url: str = "redis://localhost:6379/0"
 
-    model_config = {"env_file": ".env", "case_sensitive": False}
+    model_config = {"env_file": ".env", "case_sensitive": False, "extra": "ignore"}
 
 
 settings = Settings()

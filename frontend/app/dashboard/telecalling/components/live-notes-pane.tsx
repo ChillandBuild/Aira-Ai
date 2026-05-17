@@ -1,7 +1,7 @@
 "use client";
 import { toast } from "sonner";
 import { useState } from "react";
-import { X, FileText } from "lucide-react";
+import { X, FileText, CalendarClock } from "lucide-react";
 import type { ActiveCallCtx } from "../types";
 import { createCallback, saveNote } from "../lib/notes-api";
 
@@ -9,9 +9,11 @@ const LIVE_NOTE_TAGS = [
   "Meeting scheduled",
   "Not interested",
   "Call back later",
-  "Discussed fees",
-  "Campus visit planned",
+  "Discussed pricing",
+  "Demo planned",
   "Needs more info",
+  "Send proposal",
+  "Hot lead",
 ];
 
 type Props = {
@@ -26,7 +28,7 @@ export default function LiveNotesPane({ ctx, onClose }: Props) {
   const [pinned, setPinned] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showCallbackPicker, setShowCallbackPicker] = useState(false);
   const [callbackAt, setCallbackAt] = useState("");
 
   const canSave = !!ctx.leadId && content.trim().length > 0;
@@ -34,10 +36,7 @@ export default function LiveNotesPane({ ctx, onClose }: Props) {
   function appendTag(tag: string) {
     setContent((prev) => (prev.trim() ? `${prev.trim()}\n${tag}` : tag));
     if (CALLBACK_TAGS.has(tag)) {
-      setShowDatePicker(true);
-    } else {
-      setShowDatePicker(false);
-      setCallbackAt("");
+      setShowCallbackPicker(true);
     }
   }
 
@@ -52,7 +51,7 @@ export default function LiveNotesPane({ ctx, onClose }: Props) {
       setContent("");
       setPinned(false);
       setCallbackAt("");
-      setShowDatePicker(false);
+      setShowCallbackPicker(false);
       setSavedFlash(true);
       setTimeout(() => {
         setSavedFlash(false);
@@ -109,18 +108,32 @@ export default function LiveNotesPane({ ctx, onClose }: Props) {
         ))}
       </div>
 
-      {showDatePicker && (
-        <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl mb-4">
-          <p className="text-xs font-semibold text-amber-800 mb-1.5">Schedule callback</p>
-          <input
-            type="datetime-local"
-            value={callbackAt}
-            onChange={(e) => setCallbackAt(e.target.value)}
-            min={new Date().toISOString().slice(0, 16)}
-            className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-          />
-        </div>
-      )}
+      {/* callback scheduler — always accessible */}
+      <div className="mb-4">
+        <button
+          type="button"
+          onClick={() => { setShowCallbackPicker((v) => !v); if (showCallbackPicker) setCallbackAt(""); }}
+          className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${
+            showCallbackPicker
+              ? "bg-amber-100 text-amber-800 border border-amber-300"
+              : "bg-surface-low text-on-surface-muted hover:text-on-surface border border-surface-mid"
+          }`}
+        >
+          <CalendarClock size={12} />
+          {showCallbackPicker ? "Remove callback" : "Schedule callback"}
+        </button>
+        {showCallbackPicker && (
+          <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+            <input
+              type="datetime-local"
+              value={callbackAt}
+              onChange={(e) => setCallbackAt(e.target.value)}
+              min={new Date().toISOString().slice(0, 16)}
+              className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+            />
+          </div>
+        )}
+      </div>
 
       {/* textarea */}
       <textarea
