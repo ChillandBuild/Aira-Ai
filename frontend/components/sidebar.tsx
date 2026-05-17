@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useAuthRole } from "@/app/dashboard/contexts/AuthRoleContext";
 import {
   LayoutDashboard,
   MessageSquare,
@@ -20,7 +20,6 @@ import {
 import { cn } from "@/lib/utils";
 import { AiraLogo } from "./logo";
 import { createClient } from "@/lib/supabase/client";
-import { api } from "@/lib/api";
 
 const OWNER_NAV = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Overview" },
@@ -70,13 +69,15 @@ function LogoutButton() {
 }
 
 export function Sidebar() {
-
   const pathname = usePathname();
-  const [role, setRole] = useState<"owner" | "caller" | null>(null);
+  const { role, loading: roleLoading } = useAuthRole();
 
-  useEffect(() => {
-    api.team.me().then((me) => setRole(me.role)).catch(() => setRole("owner"));
-  }, []);
+  // Render an empty shell until role is known — prevents any nav flash
+  if (roleLoading) {
+    return (
+      <aside className="fixed left-0 top-0 h-full w-[220px] bg-white z-20 shadow-sidebar border-r border-border-subtle" />
+    );
+  }
 
   const activeNav = role === "caller" ? CALLER_NAV : OWNER_NAV;
 

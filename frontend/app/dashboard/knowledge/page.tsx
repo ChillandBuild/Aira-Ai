@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import {
   Search, Plus, Trash2, Edit3, CheckCircle2, XCircle,
   Upload, FileText, Loader2, Info, AlertCircle,
-  Database, HelpCircle, Sparkles, Save, Play
+  Database, HelpCircle, Sparkles, Save
 } from "lucide-react";
 import { api, FAQ, FAQInput, AIPrompt } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -43,7 +43,6 @@ export default function KnowledgePage() {
   const [prompts, setPrompts] = useState<AIPrompt[]>([]);
   const [activeName, setActiveName] = useState<string>("whatsapp_reply");
   const [draft, setDraft] = useState<string>("");
-  const [analyzing, setAnalyzing] = useState(false);
   const [tuneMsg, setTuneMsg] = useState<string | null>(null);
   const [tuneSaving, setTuneSaving] = useState(false);
 
@@ -174,21 +173,6 @@ export default function KnowledgePage() {
       setTuneMsg(err instanceof Error ? err.message : "Save failed");
     } finally {
       setTuneSaving(false);
-    }
-  }
-
-  async function runAnalysis() {
-    setAnalyzing(true);
-    setTuneMsg(null);
-    try {
-      const res = await api.aiTune.analyze(activeName);
-      setTuneMsg(
-        `Analysed ${res.analyzed_leads} conversation${res.analyzed_leads === 1 ? "" : "s"} — ${res.suggestions_created} suggestion${res.suggestions_created === 1 ? "" : "s"} created.`,
-      );
-    } catch (err) {
-      setTuneMsg(err instanceof Error ? err.message : "Analysis failed");
-    } finally {
-      setAnalyzing(false);
     }
   }
 
@@ -456,13 +440,6 @@ export default function KnowledgePage() {
                 className="flex items-center gap-2 px-4 py-2 bg-tertiary text-white rounded-lg font-label text-sm font-semibold hover:bg-tertiary/90 disabled:opacity-40"
               >
                 <Save size={14} /> {tuneSaving ? "Saving…" : "Save"}
-              </button>
-              <button
-                onClick={runAnalysis}
-                disabled={analyzing}
-                className="flex items-center gap-2 px-4 py-2 bg-secondary text-white rounded-lg font-label text-sm font-semibold hover:bg-secondary/90 disabled:opacity-40"
-              >
-                <Play size={14} /> {analyzing ? "Analysing…" : "Run Analysis"}
               </button>
             </div>
           </div>

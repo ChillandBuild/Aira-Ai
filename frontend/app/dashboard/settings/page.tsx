@@ -82,10 +82,9 @@ const SECTIONS: SectionDef[] = [
     icon: Sparkles,
     color: "#7c3aed",
     bg: "#ede9fe",
-    description: "Gemini AI for auto-reply, lead scoring, and call summarisation.",
+    description: "Groq powers WhatsApp auto-reply, lead scoring, call summaries, and AI coaching.",
     fields: [
-      { key: "gemini_api_key", label: "Gemini API Key", secret: true },
-      { key: "groq_api_key", label: "Groq API Key (call transcription)", secret: true },
+      { key: "groq_api_key", label: "Groq API Key", secret: true },
       { key: "faq_match_threshold", label: "FAQ Match Threshold (0–1)", secret: false },
     ],
     toggles: [

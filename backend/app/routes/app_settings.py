@@ -20,7 +20,6 @@ async def list_settings(tenant_id: str = Depends(get_tenant_id)):
     rows = result.data or []
     settings = []
     _ENV_ATTRS = {
-        "gemini_api_key": "gemini_api_key",
         "meta_access_token": "meta_access_token",
         "meta_phone_number_id": "meta_phone_number_id",
         "meta_waba_id": "meta_waba_id",

@@ -134,5 +134,5 @@ def remove_member(user_id: str, ctx: dict = Depends(get_tenant_and_role)):
         raise HTTPException(status_code=403, detail="Only owners can remove members")
     db = get_supabase()
     db.table("tenant_users").delete().eq("user_id", user_id).eq("tenant_id", ctx["tenant_id"]).execute()
-    db.table("callers").update({"active": False}).eq("user_id", user_id).eq("tenant_id", ctx["tenant_id"]).execute()
+    db.table("callers").delete().eq("user_id", user_id).eq("tenant_id", ctx["tenant_id"]).execute()
     return {"removed": True}
