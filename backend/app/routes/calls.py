@@ -114,8 +114,10 @@ async def initiate_call(payload: InitiateCall, ctx: dict = Depends(get_tenant_an
     try:
         # TeleCMI click-to-call: rings the caller first, then bridges to the lead
         telecmi_callerid = get_setting("telecmi_callerid") or settings.telecmi_callerid or best_number["number"]
-        # Use caller's own TeleCMI agent ID if set, otherwise fall back to global
+        # Caller's own agent ID takes priority; admin direct calls fall back to global setting
         effective_agent_id = caller_telecmi_agent_id or telecmi_user_id
+        if not effective_agent_id:
+            raise HTTPException(status_code=400, detail="No TeleCMI Agent ID found. Assign one from the Team page.")
         result = await initiate_click2call(
             user_id=effective_agent_id,
             secret=telecmi_secret,

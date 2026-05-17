@@ -20,6 +20,7 @@ class CreateCaller(BaseModel):
 class UpdateCaller(BaseModel):
     name: str | None = None
     phone: str | None = None
+    telecmi_agent_id: str | None = None
 
 
 class RoundRobinToggle(BaseModel):
@@ -256,6 +257,8 @@ async def update_caller(caller_id: UUID, payload: UpdateCaller, tenant_id: str =
         updates["name"] = payload.name.strip()
     if payload.phone is not None:
         updates["phone"] = payload.phone.strip()
+    if payload.telecmi_agent_id is not None:
+        updates["telecmi_agent_id"] = payload.telecmi_agent_id.strip() or None
     if not updates:
         raise HTTPException(status_code=400, detail="Nothing to update")
     result = db.table("callers").update(updates).eq("id", str(caller_id)).eq("tenant_id", tenant_id).execute()

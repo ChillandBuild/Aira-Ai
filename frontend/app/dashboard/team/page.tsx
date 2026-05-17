@@ -1,7 +1,58 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Trash2, UserPlus, Phone } from "lucide-react";
+import { Trash2, UserPlus, Phone, Pencil, Check, X } from "lucide-react";
 import { api, TeamMember } from "@/lib/api";
+
+function AgentIdCell({ callerId, initial }: { callerId: string; initial: string | null }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(initial ?? "");
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await api.callers.update(callerId, { telecmi_agent_id: value.trim() || null });
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1">
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+          className="w-28 px-2 py-1 text-xs border border-border-subtle rounded-lg font-body focus:outline-none focus:ring-1 focus:ring-primary"
+          placeholder="e.g. 1001"
+        />
+        <button onClick={save} disabled={saving} className="p-1 rounded text-green-600 hover:bg-green-50">
+          <Check size={13} />
+        </button>
+        <button onClick={() => { setValue(initial ?? ""); setEditing(false); }} className="p-1 rounded text-ink-muted hover:bg-surface-subtle">
+          <X size={13} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 group">
+      <span className={`font-body text-sm ${value ? "text-ink" : "text-ink-muted"}`}>
+        {value || "—"}
+      </span>
+      <button
+        onClick={() => setEditing(true)}
+        className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-surface-subtle text-ink-muted transition-opacity"
+      >
+        <Pencil size={11} />
+      </button>
+    </div>
+  );
+}
 
 export default function TeamPage() {
   const [members, setMembers] = useState<TeamMember[]>([]);
@@ -90,7 +141,7 @@ export default function TeamPage() {
               </div>
               <div>
                 <label className="font-body text-sm font-medium text-ink mb-1.5 block">TeleCMI Agent ID</label>
-                <input type="text" value={telecmiAgentId} onChange={(e) => setTelecmiAgentId(e.target.value)} className="input" placeholder="e.g. 1001" />
+                <input type="text" value={telecmiAgentId} onChange={(e) => setTelecmiAgentId(e.target.value)} className="input" placeholder="e.g. 102_33335739" />
               </div>
               <div className="flex gap-2 pt-2">
                 <button type="button" onClick={() => { setShowInvite(false); setError(null); }} className="btn-ghost flex-1">Cancel</button>
@@ -115,7 +166,7 @@ export default function TeamPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border-subtle">
-                {["Member", "Role", "Score", "Phone", ""].map((h) => (
+                {["Member", "Role", "Score", "Phone", "Agent ID", ""].map((h) => (
                   <th key={h} className="px-5 py-3 text-left stat-label">{h}</th>
                 ))}
               </tr>
@@ -137,6 +188,14 @@ export default function TeamPage() {
                     <span className="font-body text-sm text-ink-muted flex items-center gap-1">
                       {m.caller_profile?.phone ? <><Phone size={12} />{m.caller_profile.phone}</> : "—"}
                     </span>
+                  </td>
+                  <td className="px-5 py-4">
+                    {m.caller_profile?.id ? (
+                      <AgentIdCell
+                        callerId={m.caller_profile.id}
+                        initial={m.caller_profile.telecmi_agent_id ?? null}
+                      />
+                    ) : "—"}
                   </td>
                   <td className="px-5 py-4">
                     {m.role !== "owner" && (

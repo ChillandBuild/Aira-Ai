@@ -236,6 +236,7 @@ export interface TeamMember {
     phone: string | null;
     overall_score: number | null;
     active: boolean;
+    telecmi_agent_id: string | null;
   } | null;
 }
 
@@ -387,7 +388,7 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ name, phone }),
       }),
-    update: (id: string, data: { name?: string; phone?: string }) =>
+    update: (id: string, data: { name?: string; phone?: string; telecmi_agent_id?: string | null }) =>
       apiFetch<Caller>(`/api/v1/callers/${id}`, {
         method: "PATCH",
         body: JSON.stringify(data),

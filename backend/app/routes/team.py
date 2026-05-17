@@ -53,7 +53,7 @@ def list_team(ctx: dict = Depends(get_tenant_and_role)):
     if user_ids:
         caller_rows = (
             db.table("callers")
-            .select("user_id, id, name, phone, overall_score, active")
+            .select("user_id, id, name, phone, overall_score, active, telecmi_agent_id")
             .in_("user_id", user_ids)
             .eq("tenant_id", ctx["tenant_id"])
             .execute()
