@@ -1,7 +1,6 @@
 "use client";
 import { useState } from "react";
 import { Sidebar } from "@/components/sidebar";
-import { HotLeadAlertBanner } from "@/components/hot-lead-alert-banner";
 import { AuthRoleProvider } from "./contexts/AuthRoleContext";
 import { CalendarPanel } from "@/components/CalendarPanel";
 import { Calendar } from "lucide-react";
@@ -12,7 +11,6 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthRoleProvider>
       <div className="flex min-h-screen bg-background">
-        <HotLeadAlertBanner />
         <Sidebar />
 
         <main className="ml-[220px] flex-1 min-h-screen">

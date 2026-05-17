@@ -8,11 +8,12 @@ import { createPortal } from "react-dom";
 interface AssignButtonProps {
   leadId: string;
   currentAssignedTo: string | null | undefined;
+  callers?: Caller[];
   onAssigned?: (callerId: string | null) => void;
 }
 
-export function AssignButton({ leadId, currentAssignedTo, onAssigned }: AssignButtonProps) {
-  const [callers, setCallers] = useState<Caller[]>([]);
+export function AssignButton({ leadId, currentAssignedTo, callers: callersProp, onAssigned }: AssignButtonProps) {
+  const [callers, setCallers] = useState<Caller[]>(callersProp ?? []);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fetchingCallers, setFetchingCallers] = useState(false);
@@ -58,7 +59,12 @@ export function AssignButton({ leadId, currentAssignedTo, onAssigned }: AssignBu
     };
   }, [open]);
 
-  // Fetch callers when dropdown opens (only once)
+  // Sync if parent passes updated callers list
+  useEffect(() => {
+    if (callersProp) setCallers(callersProp);
+  }, [callersProp]);
+
+  // Fetch callers on dropdown open only if not pre-loaded
   useEffect(() => {
     if (!open || callers.length > 0) return;
     setFetchingCallers(true);

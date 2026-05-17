@@ -1,7 +1,7 @@
 "use client";
 import { toast } from "sonner";
 import { useEffect, useState } from "react";
-import { api, Lead, SegmentTemplate, BroadcastResult } from "@/lib/api";
+import { api, Lead, Caller, SegmentTemplate, BroadcastResult } from "@/lib/api";
 import { SegmentBadge } from "@/components/segment-badge";
 import { Download, Send, Save, Pencil, Plus, X, Loader2, Phone } from "lucide-react";
 import { timeAgo, formatPhone } from "@/lib/utils";
@@ -211,6 +211,11 @@ export default function LeadsPage() {
   const [broadcasting, setBroadcasting] = useState(false);
   const [lastResult, setLastResult] = useState<BroadcastResult | null>(null);
   const [composing, setComposing] = useState(false);
+  const [callers, setCallers] = useState<Caller[]>([]);
+
+  useEffect(() => {
+    api.callers.list().then((data: Caller[]) => setCallers(data.filter((c) => c.active))).catch(() => {});
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -400,6 +405,7 @@ export default function LeadsPage() {
                         <AssignButton
                           leadId={lead.id}
                           currentAssignedTo={lead.assigned_to}
+                          callers={callers}
                           onAssigned={(callerId) =>
                             setLeads((prev) =>
                               prev.map((l) =>

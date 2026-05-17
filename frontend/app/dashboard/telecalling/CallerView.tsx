@@ -61,7 +61,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       setMyCaller(me);
       if (me) setMyStatus((me.status as "active" | "idle") || "active");
 
-      const leads = await api.leads.list({ assigned_to: callerId || undefined, segment: "A", limit: 50 });
+      const leads = await api.leads.list({ assigned_to: callerId || undefined, limit: 50 });
       const sorted = leads.sort((a: Lead, b: Lead) => (b.score ?? 0) - (a.score ?? 0));
       setMyLeads(sorted);
 
