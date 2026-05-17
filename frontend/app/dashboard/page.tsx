@@ -11,6 +11,7 @@ import {
   ArrowUpRight,
   Inbox,
   Send as SendIcon,
+  RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
 import { useAuthRole } from "./contexts/AuthRoleContext";
@@ -217,6 +218,15 @@ export default function DashboardPage() {
       })
       .finally(() => setLoading(false));
   }, [role]);
+
+  // Prevent flash of admin content for callers while role loads or redirect fires
+  if (roleLoading || role === "caller") {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <RefreshCw size={24} className="animate-spin text-primary" />
+      </div>
+    );
+  }
 
   const total = leads.length;
   const segA = leads.filter((l) => l.segment === "A").length;

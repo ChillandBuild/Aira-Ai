@@ -1,7 +1,7 @@
 import logging
 from fastapi import APIRouter, Depends, Query
 from app.db.supabase import get_supabase
-from app.dependencies.tenant import get_tenant_id
+from app.dependencies.tenant import get_tenant_and_role
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -11,9 +11,10 @@ router = APIRouter()
 async def list_conversations(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    tenant_id: str = Depends(get_tenant_id),
+    ctx: dict = Depends(get_tenant_and_role),
 ):
     db = get_supabase()
+    tenant_id = ctx["tenant_id"]
 
     rpc_rows = db.rpc(
         "get_conversation_leads",
@@ -31,15 +32,20 @@ async def list_conversations(
     if not lead_ids:
         return {"leads": [], "total": 0}
 
-    lead_rows = (
+    lead_query = (
         db.table("leads")
         .select("*")
         .in_("id", lead_ids)
         .eq("tenant_id", tenant_id)
         .neq("opted_out", True)
         .is_("deleted_at", "null")
-        .execute()
     )
+
+    # Callers only see conversations for their assigned leads
+    if ctx.get("role") == "caller" and ctx.get("caller_id"):
+        lead_query = lead_query.eq("assigned_to", ctx["caller_id"])
+
+    lead_rows = lead_query.execute()
 
     lead_map = {l["id"]: l for l in (lead_rows.data or [])}
     leads = []

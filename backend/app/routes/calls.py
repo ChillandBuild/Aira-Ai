@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from app.config import settings
 from app.config_dynamic import get_setting
 from app.db.supabase import get_supabase
-from app.dependencies.tenant import get_tenant_id
+from app.dependencies.tenant import get_tenant_id, get_tenant_and_role
 from app.services.call_scorer import score_from_outcome, recompute_caller_score
 from app.services.call_summarizer import transcribe_recording, summarize_call
 from app.services.growth import record_stage_event, sync_follow_up_jobs
@@ -36,7 +36,10 @@ class OutcomeUpdate(BaseModel):
 
 
 @router.post("/initiate")
-async def initiate_call(payload: InitiateCall, tenant_id: str = Depends(get_tenant_id)):
+async def initiate_call(payload: InitiateCall, ctx: dict = Depends(get_tenant_and_role)):
+    tenant_id = ctx["tenant_id"]
+    role = ctx.get("role")
+
     telecmi_user_id = get_setting("telecmi_user_id") or settings.telecmi_user_id
     telecmi_secret = get_setting("telecmi_secret") or settings.telecmi_secret
     if not telecmi_user_id or not telecmi_secret:
@@ -65,14 +68,15 @@ async def initiate_call(payload: InitiateCall, tenant_id: str = Depends(get_tena
             matched_lead_id = match.data["id"]
             matched_lead_name = match.data.get("name")
 
-    caller_phone: str | None = None
-    if payload.caller_id:
-        caller = db.table("callers").select("phone").eq("id", str(payload.caller_id)).eq("tenant_id", tenant_id).maybe_single().execute()
-        if caller.data:
-            caller_phone = caller.data.get("phone")
-
-    if not caller_phone:
-        raise HTTPException(status_code=400, detail="Caller has no phone number configured")
+    # Owners can call directly without a caller record; telecallers require their phone
+    if role != "owner":
+        caller_phone: str | None = None
+        if payload.caller_id:
+            caller = db.table("callers").select("phone").eq("id", str(payload.caller_id)).eq("tenant_id", tenant_id).maybe_single().execute()
+            if caller.data:
+                caller_phone = caller.data.get("phone")
+        if not caller_phone:
+            raise HTTPException(status_code=400, detail="Caller has no phone number configured")
 
     best_number = await get_best_voice_number()
     if not best_number:

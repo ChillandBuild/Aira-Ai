@@ -73,6 +73,7 @@ const SECTIONS: SectionDef[] = [
       { key: "telecmi_user_id", label: "Agent ID", secret: false },
       { key: "telecmi_secret", label: "App Secret", secret: true },
       { key: "telecmi_callerid", label: "Caller ID (DID number shown to leads)", secret: false },
+      { key: "admin_phone", label: "Admin Mobile (used when admin calls a lead)", secret: false },
     ],
   },
   {
