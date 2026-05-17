@@ -1,0 +1,5 @@
+Read AI_RULES.md in the project root before doing anything. It has the full stack, invariants, file locations, and agent patterns.
+
+Stack summary: FastAPI + Next.js 14 + Supabase + Groq + Meta Cloud API.
+Every route needs tenant_id. Migrations start at 036. No Gemini.
+No trailing summaries. Code over prose.
