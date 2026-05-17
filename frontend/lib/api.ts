@@ -440,6 +440,10 @@ export const api = {
       apiFetch<{ deleted: boolean }>(`/api/v1/calls/${callLogId}`, { method: "DELETE" }),
   },
   notes: {
+    leadsWithActivity: () =>
+      apiFetch<{ data: { id: string; name: string | null; phone: string; score: number; segment: string; assigned_to: string | null }[] }>(
+        `/api/v1/lead-notes/leads-with-activity`
+      ),
     update: (noteId: string, data: { content?: string; is_pinned?: boolean; tags?: string[] }) =>
       apiFetch<{ id: string; content: string; is_pinned: boolean; tags: string[] }>(
         `/api/v1/lead-notes/note/${noteId}`,

@@ -198,14 +198,9 @@ export default function NotesPage() {
   }, [selected]);
 
   async function loadLeads() {
-    const [a, b, c, d] = await Promise.all([
-      api.leads.list({ segment: "A", limit: 50 }),
-      api.leads.list({ segment: "B", limit: 50 }),
-      api.leads.list({ segment: "C", limit: 50 }),
-      api.leads.list({ segment: "D", limit: 50 }),
-    ]);
-    const all = [...a, ...b, ...c, ...d];
-    setLeads(all);
+    const res = await api.notes.leadsWithActivity();
+    const all = res.data || [];
+    setLeads(all as Lead[]);
     if (all.length) api.calls.recentByLeads(all.map((l) => l.id)).then(setLastCalledMap).catch(() => {});
   }
 

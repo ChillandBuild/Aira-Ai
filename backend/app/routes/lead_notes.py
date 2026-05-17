@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
-from app.dependencies.tenant import get_tenant_id
+from app.dependencies.tenant import get_tenant_id, get_tenant_and_role
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -23,6 +23,36 @@ class UpdateNote(BaseModel):
     is_pinned: bool | None = None
     structured: dict | None = None
     tags: list[str] | None = None
+
+
+@router.get("/leads-with-activity")
+async def leads_with_activity(ctx: dict = Depends(get_tenant_and_role)):
+    """Returns leads that have at least one note or call log. Callers only see their assigned leads."""
+    db = get_supabase()
+    tenant_id = ctx["tenant_id"]
+
+    notes_res = db.table("lead_notes").select("lead_id").eq("tenant_id", tenant_id).execute()
+    calls_res = db.table("call_logs").select("lead_id").eq("tenant_id", tenant_id).not_.is_("lead_id", "null").execute()
+
+    lead_ids = list(
+        {r["lead_id"] for r in (notes_res.data or [])} |
+        {r["lead_id"] for r in (calls_res.data or []) if r.get("lead_id")}
+    )
+    if not lead_ids:
+        return {"data": []}
+
+    query = (
+        db.table("leads")
+        .select("id, name, phone, score, segment, assigned_to")
+        .in_("id", lead_ids)
+        .eq("tenant_id", tenant_id)
+        .is_("deleted_at", "null")
+    )
+    if ctx.get("role") == "caller" and ctx.get("caller_id"):
+        query = query.eq("assigned_to", ctx["caller_id"])
+
+    result = query.order("score", desc=True).execute()
+    return {"data": result.data or []}
 
 
 @router.get("/{lead_id}")
