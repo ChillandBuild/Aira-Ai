@@ -9,11 +9,25 @@ from app.services.failover import update_number_quality, handle_quality_red, han
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# Exact-match opt-out phrases (short replies)
 _STOP_WORDS = frozenset({
     "stop", "unsubscribe", "cancel", "quit", "end", "optout", "opt out", "opt-out",
-    "not interested", "no thanks", "remove me", "dont send", "don't send",
-    "ஆர்வமில்லை", "வேண்டாம்", "வேண்டாம்",
+    "not interested", "no thanks", "remove me", "dont send", "don't send", "no",
+    "ஆர்வமில்லை", "ஆர்வம் இல்லை", "வேண்டாம்", "வேண்டாம்", "நோ", "வேண்டாம் நன்றி",
 })
+
+# Phrases that signal opt-out even when embedded in a longer message
+_OPT_OUT_PHRASES = (
+    "not interested", "no thanks", "dont contact", "don't contact", "remove me",
+    "ஆர்வம் இல்லை", "ஆர்வமில்லை", "வேண்டாம்",
+)
+
+
+def _is_opt_out(body: str) -> bool:
+    normalized = body.lower().strip()
+    if normalized in _STOP_WORDS:
+        return True
+    return any(phrase in normalized for phrase in _OPT_OUT_PHRASES)
 
 
 def _get_tenant_id_for_meta_number(phone_number_id: str, db) -> str | None:
@@ -32,13 +46,24 @@ def _get_tenant_id_for_twilio_number(number: str, db) -> str | None:
         return None
 
 
-def _handle_opt_out(phone: str, tenant_id: str, db) -> bool:
+async def _handle_opt_out(phone: str, tenant_id: str, db) -> bool:
     try:
         lead = db.table("leads").select("id").eq("phone", phone).eq("tenant_id", tenant_id).maybe_single().execute()
         if not lead.data:
             return False
-        db.table("leads").update({"opted_out": True, "ai_enabled": False, "opted_out_at": datetime.now(timezone.utc)}).eq("id", lead.data["id"]).eq("tenant_id", tenant_id).execute()
-        logger.info(f"Lead {lead.data['id']} opted out via STOP from {phone}")
+        lead_id = lead.data["id"]
+        db.table("leads").update({"opted_out": True, "ai_enabled": False, "opted_out_at": datetime.now(timezone.utc)}).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
+        logger.info(f"Lead {lead_id} opted out from {phone}")
+        # Send a polite acknowledgment — one-time, no further AI replies
+        try:
+            from app.services.meta_cloud import send_text_message
+            await send_text_message(
+                to_number=phone,
+                text="நன்றி! உங்கள் விருப்பத்தை மதிக்கிறோம். இனிமேல் நாங்கள் உங்களை தொடர்பு கொள்ள மாட்டோம். 🙏\n\n(Thank you! We respect your preference and will not contact you further.)",
+                tenant_id=tenant_id,
+            )
+        except Exception as e:
+            logger.warning(f"Opt-out reply failed for {phone}: {e}")
         return True
     except Exception as e:
         logger.error(f"opt-out DB update failed for {phone}: {e}")
@@ -130,8 +155,8 @@ async def whatsapp_webhook(
 
                         logger.info(f"Inbound Meta WhatsApp from {phone}: type={msg_type} body={body!r}")
 
-                        if body and body.lower().strip() in _STOP_WORDS:
-                            _handle_opt_out(phone, tenant_id, db)
+                        if body and _is_opt_out(body):
+                            await _handle_opt_out(phone, tenant_id, db)
                             continue
 
                         existing = db.table("leads").select("id,score,segment,deleted_at,ai_enabled").eq("phone", phone).eq("tenant_id", tenant_id).limit(1).execute()
@@ -232,8 +257,8 @@ async def whatsapp_webhook(
         tenant_id = "00000000-0000-0000-0000-000000000001"
     logger.info(f"Inbound WhatsApp from {phone}: {Body!r}")
 
-    if Body and Body.lower().strip() in _STOP_WORDS:
-        _handle_opt_out(phone, tenant_id, db)
+    if Body and _is_opt_out(Body):
+        await _handle_opt_out(phone, tenant_id, db)
         return Response(content='<?xml version="1.0" encoding="UTF-8"?><Response></Response>', media_type="text/xml")
 
     # Upsert lead

@@ -681,7 +681,47 @@ async def get_failed_csv(
         .execute()
 
     if not recipients.data:
-        return {"message": "Recipient tracking data not available for this broadcast"}
+        # Fallback for broadcasts sent before migration 038 (no broadcast_recipients rows)
+        # Look up the broadcast timestamp from history and find failed messages in that window
+        try:
+            history_row = db.table("app_settings") \
+                .select("value") \
+                .eq("tenant_id", tenant_id) \
+                .eq("key", "broadcast_history") \
+                .maybe_single() \
+                .execute()
+            broadcast_ts = None
+            if history_row and history_row.data:
+                history = json.loads(history_row.data["value"] or "[]")
+                for record in history:
+                    if record.get("broadcast_id") == broadcast_id:
+                        broadcast_ts = record.get("timestamp")
+                        break
+            if broadcast_ts:
+                # Get outbound messages sent within 10 minutes of broadcast start with failed delivery
+                from datetime import timedelta
+                ts_dt = datetime.fromisoformat(broadcast_ts.replace("Z", "+00:00"))
+                window_end = (ts_dt + timedelta(minutes=10)).isoformat()
+                failed_msgs = db.table("messages") \
+                    .select("lead_id, created_at") \
+                    .eq("tenant_id", tenant_id) \
+                    .eq("direction", "outbound") \
+                    .eq("delivery_status", "failed") \
+                    .gte("created_at", broadcast_ts) \
+                    .lte("created_at", window_end) \
+                    .execute()
+                if failed_msgs.data:
+                    lead_ids_fb = [r["lead_id"] for r in failed_msgs.data if r.get("lead_id")]
+                    leads_fb = db.table("leads").select("id,phone,name").in_("id", lead_ids_fb).eq("tenant_id", tenant_id).execute()
+                    output = io.StringIO()
+                    writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "opted_out_at", "broadcast_id", "broadcast_timestamp"])
+                    writer.writeheader()
+                    for lead in (leads_fb.data or []):
+                        writer.writerow({"phone": lead.get("phone", ""), "name": lead.get("name", ""), "reason": "failed", "opted_out_at": "", "broadcast_id": broadcast_id, "broadcast_timestamp": broadcast_ts})
+                    return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=failed_{broadcast_id[:8]}.csv"})
+        except Exception as e:
+            logger.warning(f"Fallback failed-csv lookup failed: {e}")
+        return Response(content='{"message": "No tracking data available for this broadcast"}', media_type="application/json", status_code=404)
 
     lead_ids = [r["lead_id"] for r in recipients.data if r.get("lead_id")]
 
@@ -758,7 +798,7 @@ async def get_failed_csv(
             })
 
     if not failed_rows:
-        return Response(content="No failures detected", media_type="text/plain")
+        return Response(content='{"message": "No failures detected for this broadcast"}', media_type="application/json", status_code=404)
 
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "opted_out_at", "broadcast_id", "broadcast_timestamp"])

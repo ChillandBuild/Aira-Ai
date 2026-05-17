@@ -272,7 +272,13 @@ async def generate_reply(
             if context_text:
                 system_prompt += "\n\nKNOWLEDGE BASE:\nUse the following documents to answer the user's question accurately. If the answer is not in the documents, say you will connect them with a team member.\n\n" + context_text
 
-            full_prompt = system_prompt + "\n\nLead message: " + message
+            full_prompt = (
+                system_prompt
+                + "\n\nIMPORTANT: Always reply in the SAME language the user wrote in. "
+                "If they write in Tamil, reply in Tamil. If they write in English, reply in English. "
+                "Never switch language unless the user switches first."
+                + "\n\nLead message: " + message
+            )
             reply_text = _groq_complete(full_prompt, max_tokens=300)
             is_ai = True
             reply_source = "knowledge" if context_text else "ai"

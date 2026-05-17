@@ -1,4 +1,5 @@
 "use client";
+import { toast } from "sonner";
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -175,6 +176,12 @@ export default function UploadPage() {
       const auth = await getAuthHeaders();
       const res = await fetch(`${API_URL}/api/v1/upload/failed-csv?broadcast_id=${broadcastId}`, { headers: auth });
       if (!res.ok) throw new Error("Download failed");
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("text/csv")) {
+        const body = await res.json().catch(() => ({}));
+        toast.error(body.message || "No failure data available for this broadcast.");
+        return;
+      }
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -185,7 +192,7 @@ export default function UploadPage() {
       a.remove();
       window.URL.revokeObjectURL(url);
     } catch {
-      alert("Failed to download CSV");
+      toast.error("Failed to download CSV");
     }
   }
 
