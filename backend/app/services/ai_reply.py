@@ -196,6 +196,7 @@ async def generate_reply(
     phone: str | None = None,
     channel: str = "whatsapp",
     ig_user_id: str | None = None,
+    context_block: str | None = None,
 ) -> None:
     """
     Core pipeline:
@@ -220,7 +221,10 @@ async def generate_reply(
         # Still rescore so the admin sees segment updates even while handling manually
         try:
             current_score = lead_data.get("score", 5)
-            new_score = await score_message(message, current_score)
+            from app.services.lead_scorer import score_with_safety_net
+            new_score = await score_with_safety_net(
+                message, current_score, context_block or "", db, str(lead_id)
+            )
             new_segment = score_to_segment(new_score)
             db.table("leads").update({
                 "score": new_score,
@@ -307,10 +311,13 @@ async def generate_reply(
         sid_field: sid,
     }).execute()
 
-    # Step 5: Re-score lead and update segment
+    # Step 5: Re-score lead and update segment (with D-segment safety net)
     try:
         current_score = lead_data.get("score", 5)
-        new_score = await score_message(message, current_score)
+        from app.services.lead_scorer import score_with_safety_net
+        new_score = await score_with_safety_net(
+            message, current_score, context_block or "", db, str(lead_id)
+        )
         new_segment = score_to_segment(new_score)
         db.table("leads").update({
             "score": new_score,

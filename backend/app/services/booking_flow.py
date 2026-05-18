@@ -49,7 +49,13 @@ def get_or_create_state(lead_id: str, tenant_id: str, db=None) -> dict:
     Uses .limit(1) instead of .maybe_single() to avoid the HTTP 406 error
     that Supabase raises when no row exists and .single() / .maybe_single()
     is used on an empty result set.
+    
+    Also checks for inactivity gaps:
+    - >1hr: triggers auto-compaction (fire-and-forget)
+    - >6hr: session reset (flow state → idle, summary retained) + re-engagement message
     """
+    from datetime import datetime, timezone, timedelta
+    
     db = db or get_supabase()
     try:
         response = (
@@ -66,7 +72,52 @@ def get_or_create_state(lead_id: str, tenant_id: str, db=None) -> dict:
     # Guard: response may be None if the query itself raised, or data may be
     # an empty list when the lead has no state row yet — both are handled safely.
     if response and response.data:
-        return response.data[0]
+        state = response.data[0]
+        
+        # Check inactivity gap
+        last_activity = state.get("last_activity_at")
+        if last_activity:
+            try:
+                last_dt = datetime.fromisoformat(last_activity.replace("Z", "+00:00"))
+                now_dt = datetime.now(timezone.utc)
+                gap = now_dt - last_dt
+                
+                # Auto-compact if gap > 1 hour (fire-and-forget)
+                if gap > timedelta(hours=1):
+                    import asyncio
+                    try:
+                        from app.services.conversation_compactor import compact_conversation
+                        asyncio.create_task(compact_conversation(lead_id, tenant_id, db, mode="rolling"))
+                        logger.info(f"Auto-compaction triggered for lead {lead_id} after {gap} inactivity")
+                    except Exception as compact_err:
+                        logger.error(f"Auto-compaction failed for lead {lead_id}: {compact_err}")
+                
+                # Session reset if gap > 6 hours
+                if gap > timedelta(hours=6):
+                    state["state"] = "idle"
+                    logger.info(f"Session reset for lead {lead_id} after {gap} inactivity — summary retained for context")
+                    
+                    # Send re-engagement message
+                    try:
+                        phone = (
+                            db.table("leads")
+                            .select("phone")
+                            .eq("id", lead_id)
+                            .maybe_single()
+                            .execute()
+                        )
+                        phone_number = (phone.data or {}).get("phone")
+                        if phone_number:
+                            reengagement_msg = "🙏 Welcome back! How can I help you continue?"
+                            import asyncio
+                            asyncio.create_task(send_whatsapp_text(phone=phone_number, text=reengagement_msg, tenant_id=tenant_id))
+                            logger.info(f"Re-engagement message sent to lead {lead_id}")
+                    except Exception as reeng_err:
+                        logger.error(f"Re-engagement message failed for lead {lead_id}: {reeng_err}")
+            except Exception as parse_err:
+                logger.warning(f"Failed to parse last_activity_at for lead {lead_id}: {parse_err}")
+        
+        return state
 
     # No existing state — return a fresh idle state dict (not persisted yet).
     logger.info(f"No conversation state found for lead {lead_id}. Initialising idle state.")

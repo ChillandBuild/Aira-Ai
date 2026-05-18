@@ -374,3 +374,15 @@ async def get_lead_call_logs(lead_id: UUID, tenant_id: str = Depends(get_tenant_
         .execute()
     )
     return {"data": result.data or []}
+
+
+@router.post("/{lead_id}/compact")
+async def manual_compact(lead_id: UUID, tenant_id: str = Depends(get_tenant_id)):
+    """Manually trigger conversation compaction for debugging/admin purposes."""
+    db = get_supabase()
+    try:
+        from app.services.conversation_compactor import compact_conversation
+        summary = await compact_conversation(str(lead_id), tenant_id, db, mode="rolling")
+        return {"summary": summary, "status": "compacted"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Compaction failed: {str(e)}")

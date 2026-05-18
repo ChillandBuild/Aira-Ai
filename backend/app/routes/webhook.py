@@ -200,16 +200,36 @@ async def whatsapp_webhook(
                         }
                         db.table("messages").insert(insert_row).execute()
 
+                        # Update conversation state counters
+                        from app.services.booking_flow import get_or_create_state
+                        from datetime import datetime, timezone
+                        conv_state = get_or_create_state(lead_id, tenant_id, db)
+                        new_count = (conv_state.get("message_count") or 0) + 1
+
+                        db.table("lead_conversation_state").update({
+                            "message_count": new_count,
+                            "last_activity_at": datetime.now(timezone.utc).isoformat(),
+                        }).eq("lead_id", lead_id).execute()
+
+                        # Check if compaction needed (threshold: 10)
+                        if new_count >= 10:
+                            try:
+                                from app.services.conversation_compactor import compact_conversation
+                                await compact_conversation(lead_id, tenant_id, db, mode="rolling")
+                            except Exception as compact_err:
+                                logger.error(f"Compaction failed for lead {lead_id}: {compact_err}")
+
                         # Only trigger AI reply for text messages (not media)
                         if msg_type in ("text", "button", "interactive") and body:
                             try:
                                 from app.services.booking_flow import (
-                                    get_or_create_state,
                                     advance_state,
                                     detect_booking_intent,
                                     start_booking_flow,
                                 )
-                                conv_state = get_or_create_state(lead_id, tenant_id, db)
+                                from app.services.context_builder import build_scorer_context
+                                context_block = build_scorer_context(lead_id, db)
+
                                 active_states = {
                                     "collecting_name", "collecting_rasi",
                                     "collecting_nakshatram", "collecting_gotram",
@@ -222,7 +242,7 @@ async def whatsapp_webhook(
                                         await start_booking_flow(lead_id, tenant_id, phone, db, existing_state=conv_state)
                                     else:
                                         from app.services.ai_reply import generate_reply
-                                        await generate_reply(lead_id=lead_id, message=body, phone=phone)
+                                        await generate_reply(lead_id=lead_id, message=body, phone=phone, context_block=context_block)
                             except Exception as e:
                                 logger.error(f"Reply routing failed for lead {lead_id}: {e}")
 
