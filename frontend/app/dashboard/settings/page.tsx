@@ -62,7 +62,6 @@ const SECTIONS: SectionDef[] = [
     fields: [
       { key: "telecmi_secret", label: "App Secret", secret: true, required: true },
       { key: "telecmi_callerid", label: "Caller ID (DID shown to leads)", secret: false, required: false, hint: "The outbound number leads see when you call them" },
-      { key: "telecmi_user_id", label: "Admin Agent ID", secret: false, required: false, hint: "Your TeleCMI Agent ID — used as fallback when a caller has no individual Agent ID" },
     ],
   },
   {

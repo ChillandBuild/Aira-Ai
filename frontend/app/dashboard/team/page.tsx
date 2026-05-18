@@ -3,7 +3,17 @@ import { useEffect, useState } from "react";
 import { Trash2, UserPlus, Phone, Pencil, Check, X } from "lucide-react";
 import { api, TeamMember } from "@/lib/api";
 
-function AgentIdCell({ callerId, initial }: { callerId: string; initial: string | null }) {
+function InlineEditCell({
+  callerId,
+  initial,
+  field,
+  placeholder,
+}: {
+  callerId: string;
+  initial: string | null;
+  field: "name" | "phone" | "telecmi_agent_id";
+  placeholder?: string;
+}) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(initial ?? "");
   const [saving, setSaving] = useState(false);
@@ -11,7 +21,7 @@ function AgentIdCell({ callerId, initial }: { callerId: string; initial: string 
   async function save() {
     setSaving(true);
     try {
-      await api.callers.update(callerId, { telecmi_agent_id: value.trim() || null });
+      await api.callers.update(callerId, { [field]: value.trim() || null });
       setEditing(false);
     } finally {
       setSaving(false);
@@ -25,9 +35,12 @@ function AgentIdCell({ callerId, initial }: { callerId: string; initial: string 
           autoFocus
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
-          className="w-28 px-2 py-1 text-xs border border-border-subtle rounded-lg font-body focus:outline-none focus:ring-1 focus:ring-primary"
-          placeholder="e.g. 1001"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") save();
+            if (e.key === "Escape") { setValue(initial ?? ""); setEditing(false); }
+          }}
+          className="w-32 px-2 py-1 text-xs border border-border-subtle rounded-lg font-body focus:outline-none focus:ring-1 focus:ring-primary"
+          placeholder={placeholder}
         />
         <button onClick={save} disabled={saving} className="p-1 rounded text-green-600 hover:bg-green-50">
           <Check size={13} />
@@ -101,6 +114,9 @@ export default function TeamPage() {
     await load();
   }
 
+  // Owner row first, then callers
+  const sorted = [...members].sort((a, b) => (a.role === "owner" ? -1 : b.role === "owner" ? 1 : 0));
+
   return (
     <div>
       <div className="flex items-center justify-between mb-7">
@@ -172,28 +188,56 @@ export default function TeamPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
-              {members.filter((m) => m.role !== "owner").map((m) => (
+              {sorted.map((m) => (
                 <tr key={m.user_id} className="hover:bg-surface-subtle transition-colors">
                   <td className="px-5 py-4">
-                    <p className="font-label font-semibold text-ink text-sm">{m.caller_profile?.name || "—"}</p>
-                    <p className="font-body text-xs text-ink-muted">{m.user_id.slice(0, 8)}…</p>
+                    {m.caller_profile?.id ? (
+                      <InlineEditCell
+                        callerId={m.caller_profile.id}
+                        initial={m.caller_profile.name ?? null}
+                        field="name"
+                        placeholder="Name"
+                      />
+                    ) : (
+                      <>
+                        <p className="font-label font-semibold text-ink text-sm">—</p>
+                        <p className="font-body text-xs text-ink-muted">{m.user_id.slice(0, 8)}…</p>
+                      </>
+                    )}
+                    <p className="font-body text-xs text-ink-muted mt-0.5">{m.user_id.slice(0, 8)}…</p>
                   </td>
                   <td className="px-5 py-4">
-                    <span className={`badge ${m.role === "owner" ? "badge-green" : "badge-yellow"}`}>{m.role}</span>
+                    <span className={`badge ${m.role === "owner" ? "badge-green" : "badge-yellow"}`}>
+                      {m.role === "owner" ? "admin" : "caller"}
+                    </span>
+                    {m.role === "owner" && (
+                      <p className="font-body text-xs text-ink-muted mt-1">global fallback</p>
+                    )}
                   </td>
                   <td className="px-5 py-4">
                     <span className="font-body text-sm text-ink">{m.caller_profile?.overall_score ?? "—"}</span>
                   </td>
                   <td className="px-5 py-4">
-                    <span className="font-body text-sm text-ink-muted flex items-center gap-1">
-                      {m.caller_profile?.phone ? <><Phone size={12} />{m.caller_profile.phone}</> : "—"}
-                    </span>
+                    {m.caller_profile?.id ? (
+                      <InlineEditCell
+                        callerId={m.caller_profile.id}
+                        initial={m.caller_profile.phone ?? null}
+                        field="phone"
+                        placeholder="+91xxxxxxxxxx"
+                      />
+                    ) : (
+                      <span className="font-body text-sm text-ink-muted flex items-center gap-1">
+                        <Phone size={12} /> —
+                      </span>
+                    )}
                   </td>
                   <td className="px-5 py-4">
                     {m.caller_profile?.id ? (
-                      <AgentIdCell
+                      <InlineEditCell
                         callerId={m.caller_profile.id}
                         initial={m.caller_profile.telecmi_agent_id ?? null}
+                        field="telecmi_agent_id"
+                        placeholder="e.g. 102_33335739"
                       />
                     ) : "—"}
                   </td>

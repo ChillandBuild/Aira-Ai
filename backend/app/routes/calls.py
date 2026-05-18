@@ -40,10 +40,9 @@ async def initiate_call(payload: InitiateCall, ctx: dict = Depends(get_tenant_an
     tenant_id = ctx["tenant_id"]
     role = ctx.get("role")
 
-    telecmi_user_id = get_setting("telecmi_user_id") or settings.telecmi_user_id
     telecmi_secret = get_setting("telecmi_secret") or settings.telecmi_secret
-    if not telecmi_user_id or not telecmi_secret:
-        raise HTTPException(status_code=400, detail="TeleCMI credentials not configured. Set them in Settings.")
+    if not telecmi_secret:
+        raise HTTPException(status_code=400, detail="TeleCMI App Secret not configured. Set it in Settings.")
 
     if not payload.lead_id and not payload.phone:
         raise HTTPException(status_code=400, detail="Provide either lead_id or phone")
@@ -115,7 +114,16 @@ async def initiate_call(payload: InitiateCall, ctx: dict = Depends(get_tenant_an
         # TeleCMI click-to-call: rings the caller first, then bridges to the lead
         telecmi_callerid = get_setting("telecmi_callerid") or settings.telecmi_callerid or best_number["number"]
         # Caller's own agent ID takes priority; admin direct calls fall back to global setting
-        effective_agent_id = caller_telecmi_agent_id or telecmi_user_id
+        # Fallback: owner's own caller record agent_id, then global setting
+        effective_agent_id = caller_telecmi_agent_id
+        if not effective_agent_id:
+            owner_member = db.table("tenant_users").select("user_id").eq("tenant_id", tenant_id).eq("role", "owner").maybe_single().execute()
+            if owner_member.data:
+                owner_caller = db.table("callers").select("telecmi_agent_id").eq("user_id", owner_member.data["user_id"]).eq("tenant_id", tenant_id).maybe_single().execute()
+                if owner_caller.data:
+                    effective_agent_id = owner_caller.data.get("telecmi_agent_id")
+        if not effective_agent_id:
+            effective_agent_id = get_setting("telecmi_user_id") or settings.telecmi_user_id
         if not effective_agent_id:
             raise HTTPException(status_code=400, detail="No TeleCMI Agent ID found. Assign one from the Team page.")
         result = await initiate_click2call(
