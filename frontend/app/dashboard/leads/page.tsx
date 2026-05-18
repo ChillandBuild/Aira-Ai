@@ -249,14 +249,20 @@ export default function LeadsPage() {
             <Plus size={16} />
             New Message
           </button>
-          <a
-            href={api.leads.exportUrl(tab)}
-            download
+          <button
+            onClick={async () => {
+              try {
+                await api.leads.exportLeads(tab);
+                toast.success("Export downloaded");
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Export failed");
+              }
+            }}
             className="flex items-center gap-2 px-4 py-2.5 bg-tertiary text-white rounded-xl font-label text-sm font-semibold hover:bg-tertiary/90 transition-colors"
           >
             <Download size={16} />
             Export Segment {tab}
-          </a>
+          </button>
         </div>
       </div>
 

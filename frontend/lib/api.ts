@@ -381,6 +381,20 @@ export const api = {
     },
     exportUrl: (segment?: string) =>
       `${API_URL}/api/v1/leads/export${segment ? `?segment=${segment}` : ""}`,
+    exportLeads: async (segment?: string) => {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/leads/export${segment ? `?segment=${segment}` : ""}`, { headers });
+      if (!res.ok) throw new Error(`Export failed: ${res.status} ${res.statusText}`);
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `leads_${segment || "all"}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    },
   },
   callers: {
     create: (name: string, phone: string) =>
