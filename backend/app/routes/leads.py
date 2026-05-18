@@ -83,7 +83,7 @@ async def export_leads(
     tenant_id: str = Depends(get_tenant_id),
 ):
     db = get_supabase()
-    query = db.table("leads").select("id,phone,name,source,score,segment,notes,created_at").eq("tenant_id", tenant_id).is_("deleted_at", "null")
+    query = db.table("leads").select("id,phone,name,source,score,segment,notes,created_at").eq("tenant_id", tenant_id).is_("deleted_at", "null").neq("opted_out", True).neq("whatsapp_undeliverable", True)
     if segment:
         query = query.eq("segment", segment)
     result = query.order("score", desc=True).execute()
