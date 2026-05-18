@@ -27,6 +27,12 @@ async def list_settings(tenant_id: str = Depends(get_tenant_id)):
         "razorpay_key_id": "razorpay_key_id",
         "razorpay_key_secret": "razorpay_key_secret",
         "razorpay_webhook_secret": "razorpay_webhook_secret",
+        "telecmi_user_id": "telecmi_user_id",
+        "telecmi_secret": "telecmi_secret",
+        "telecmi_callerid": "telecmi_callerid",
+        "telecmi_recording_base_url": "telecmi_recording_base_url",
+        "groq_api_key": "groq_api_key",
+        "gemini_api_key": "gemini_api_key",
     }
     for row in rows:
         db_value = row["value"]
