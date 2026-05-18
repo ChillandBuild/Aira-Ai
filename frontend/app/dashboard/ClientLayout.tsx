@@ -1,13 +1,23 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sidebar } from "@/components/sidebar";
 import { AuthRoleProvider } from "./contexts/AuthRoleContext";
 import { ActiveCallProvider } from "./contexts/ActiveCallContext";
 import { CalendarPanel } from "@/components/CalendarPanel";
 import { Calendar } from "lucide-react";
+import { API_URL } from "@/lib/api";
+
+const PING_INTERVAL_MS = 8 * 60 * 1000; // 8 min — keeps Render warm (sleeps after 15 min)
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+
+  useEffect(() => {
+    const ping = () => fetch(`${API_URL}/health`, { method: "GET" }).catch(() => {});
+    ping(); // immediate ping on mount to wake server if sleeping
+    const id = setInterval(ping, PING_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <AuthRoleProvider>

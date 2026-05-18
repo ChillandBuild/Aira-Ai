@@ -99,7 +99,7 @@ async function saveSettings(updates: SettingsMap): Promise<void> {
       });
       if (!res.ok) throw new Error("Failed to save settings");
       return;
-    } catch (e) {
+    } catch {
       if (attempt === 2) throw new Error("Server unreachable — please try again");
     }
   }
