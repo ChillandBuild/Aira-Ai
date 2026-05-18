@@ -90,12 +90,19 @@ async function fetchSettings(): Promise<Setting[]> {
 
 async function saveSettings(updates: SettingsMap): Promise<void> {
   const auth = await getAuthHeaders();
-  const res = await fetch(`${API_URL}/api/v1/settings`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", ...auth },
-    body: JSON.stringify({ updates }),
-  });
-  if (!res.ok) throw new Error("Failed to save settings");
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const res = await fetch(`${API_URL}/api/v1/settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...auth },
+        body: JSON.stringify({ updates }),
+      });
+      if (!res.ok) throw new Error("Failed to save settings");
+      return;
+    } catch (e) {
+      if (attempt === 2) throw new Error("Server unreachable — please try again");
+    }
+  }
 }
 
 function OutlinedField({
