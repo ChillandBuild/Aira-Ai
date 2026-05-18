@@ -245,7 +245,12 @@ async def create_caller(payload: CreateCaller, tenant_id: str = Depends(get_tena
 @router.get("/")
 async def list_callers(tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
-    callers = db.table("callers").select("*").eq("tenant_id", tenant_id).eq("active", True).order("overall_score", desc=True).execute()
+    owner = db.table("tenant_users").select("user_id").eq("tenant_id", tenant_id).eq("role", "owner").maybe_single().execute()
+    owner_user_id = (owner.data or {}).get("user_id")
+    query = db.table("callers").select("*").eq("tenant_id", tenant_id).eq("active", True)
+    if owner_user_id:
+        query = query.neq("user_id", owner_user_id)
+    callers = query.order("overall_score", desc=True).execute()
     return {"data": callers.data or []}
 
 
