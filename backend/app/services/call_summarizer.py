@@ -2,13 +2,13 @@ import json
 import logging
 
 import httpx
-from groq import Groq
+from groq import AsyncGroq
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-_client = Groq(api_key=settings.groq_api_key) if settings.groq_api_key else None
+_client = AsyncGroq(api_key=settings.groq_api_key) if settings.groq_api_key else None
 _TRANSCRIBE_MODEL = "whisper-large-v3-turbo"
 _SUMMARY_MODEL = "llama-3.3-70b-versatile"
 
@@ -37,7 +37,7 @@ async def transcribe_recording(recording_url: str) -> str:
 
     try:
         logger.info(f"Sending {len(audio_bytes)} bytes to Groq Whisper for transcription")
-        result = _client.audio.transcriptions.create(
+        result = await _client.audio.transcriptions.create(
             file=("recording.mp3", audio_bytes, "audio/mp3"),
             model=_TRANSCRIBE_MODEL,
         )
@@ -58,7 +58,7 @@ async def summarize_call(transcript: str, lead_name: str | None = None) -> dict:
         user_prompt = f"Lead name: {lead_name}\n\n" + user_prompt
 
     try:
-        response = _client.chat.completions.create(
+        response = await _client.chat.completions.create(
             model=_SUMMARY_MODEL,
             messages=[
                 {"role": "system", "content": _SUMMARIZE_SYSTEM},
@@ -93,7 +93,7 @@ async def evaluate_call(transcript: str) -> dict:
     if not transcript or not _client:
         return {}
     try:
-        response = _client.chat.completions.create(
+        response = await _client.chat.completions.create(
             model=_SUMMARY_MODEL,
             messages=[
                 {"role": "user", "content": _EVALUATE_PROMPT.format(transcript=transcript)},
