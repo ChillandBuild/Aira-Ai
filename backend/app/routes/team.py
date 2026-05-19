@@ -20,6 +20,29 @@ class InvitePayload(BaseModel):
 @router.get("/me")
 def get_me(ctx: dict = Depends(get_tenant_and_role)):
     db = get_supabase()
+
+    # Enabled features for this tenant
+    tenant = (
+        db.table("tenants")
+        .select("enabled_features")
+        .eq("id", ctx["tenant_id"])
+        .maybe_single()
+        .execute()
+    )
+    enabled_features: list[str] = (
+        (tenant.data or {}).get("enabled_features") or ["whatsapp", "telecalling"]
+    )
+
+    # Check system admin
+    admin = (
+        db.table("system_admins")
+        .select("user_id")
+        .eq("user_id", ctx["user_id"])
+        .maybe_single()
+        .execute()
+    )
+    is_system_admin = bool(admin.data)
+
     caller = (
         db.table("callers")
         .select("id, name, phone, overall_score")
@@ -29,11 +52,14 @@ def get_me(ctx: dict = Depends(get_tenant_and_role)):
         .execute()
     )
     profile = caller.data[0] if caller and caller.data else None
+
     return {
         "tenant_id": ctx["tenant_id"],
         "role": ctx["role"],
         "caller_id": ctx.get("caller_id"),
         "caller_profile": profile,
+        "enabled_features": enabled_features,
+        "is_system_admin": is_system_admin,
     }
 
 
