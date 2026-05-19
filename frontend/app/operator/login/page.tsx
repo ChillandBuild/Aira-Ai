@@ -29,11 +29,15 @@ export default function OperatorLoginPage() {
       const token = data.session?.access_token;
       if (!token) throw new Error("No session returned");
 
-      const res = await fetch(`${API_URL}/api/v1/team/me`, {
+      const res = await fetch(`${API_URL}/api/v1/operator/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      if (!res.ok) throw new Error("Failed to verify operator access");
+      if (!res.ok) {
+        await supabase.auth.signOut();
+        setError("Access denied. This console is for Aayira AI operators only.");
+        return;
+      }
 
       const me = await res.json();
 

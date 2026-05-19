@@ -6,10 +6,27 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 
 from app.db.supabase import get_supabase
+from app.dependencies.auth import get_current_user
 from app.dependencies.system_admin import get_system_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+@router.get("/me")
+def operator_me(user: dict = Depends(get_current_user)):
+    """Verify the caller is a system admin. No tenant required."""
+    db = get_supabase()
+    result = (
+        db.table("system_admins")
+        .select("user_id")
+        .eq("user_id", user["user_id"])
+        .maybe_single()
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=403, detail="Access denied.")
+    return {"is_system_admin": True, "user_id": user["user_id"]}
 
 ServiceTier = Literal["whatsapp_only", "telecalling_only", "combined"]
 
