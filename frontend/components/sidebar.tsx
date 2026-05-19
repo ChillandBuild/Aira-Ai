@@ -5,7 +5,7 @@ import { useAuthRole } from "@/app/dashboard/contexts/AuthRoleContext";
 import {
   LayoutDashboard, MessageSquare, Users, Settings, Phone,
   BarChart2, Upload, BookOpen, Layers, FileCheck, StickyNote,
-  LogOut, BookOpenCheck,
+  LogOut, BookOpenCheck, Inbox,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AiraLogo } from "./logo";
@@ -21,6 +21,7 @@ type NavItem = {
 const OWNER_NAV: NavItem[] = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Overview" },
   { href: "/dashboard/conversations", icon: MessageSquare, label: "Conversations", feature: "whatsapp" },
+  { href: "/dashboard/inbox", icon: Inbox, label: "Inbox", feature: "whatsapp" },
   { href: "/dashboard/leads", icon: Users, label: "Leads" },
   { href: "/dashboard/upload", icon: Upload, label: "Upload", feature: "whatsapp" },
   { href: "/dashboard/telecalling", icon: Phone, label: "Telecalling", feature: "telecalling" },
