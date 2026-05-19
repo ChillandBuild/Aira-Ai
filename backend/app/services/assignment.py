@@ -35,6 +35,36 @@ def set_round_robin_enabled(tenant_id: str, enabled: bool) -> None:
     ).execute()
 
 
+def is_cold_assignment_enabled(tenant_id: str) -> bool:
+    """Check app_settings for cold_assignment_enabled. Defaults to False."""
+    db = get_supabase()
+    result = (
+        db.table("app_settings")
+        .select("value")
+        .eq("tenant_id", tenant_id)
+        .eq("key", "cold_assignment_enabled")
+        .maybe_single()
+        .execute()
+    )
+    if not result or not result.data:
+        return False
+    return result.data.get("value", "false").lower() == "true"
+
+
+def set_cold_assignment_enabled(tenant_id: str, enabled: bool) -> None:
+    """Upsert cold_assignment_enabled in app_settings."""
+    db = get_supabase()
+    db.table("app_settings").upsert(
+        {
+            "key": "cold_assignment_enabled",
+            "value": "true" if enabled else "false",
+            "tenant_id": tenant_id,
+            "is_secret": False,
+        },
+        on_conflict="tenant_id,key",
+    ).execute()
+
+
 def get_caller_id_for_user(user_id: str, tenant_id: str) -> str | None:
     """Return callers.id for this auth user, or None if not a caller."""
     db = get_supabase()
@@ -62,6 +92,19 @@ def auto_assign_lead(lead_id: str, tenant_id: str) -> str | None:
         return None
 
     db = get_supabase()
+
+    lead_res = (
+        db.table("leads")
+        .select("segment")
+        .eq("id", lead_id)
+        .maybe_single()
+        .execute()
+    )
+    lead_segment = (lead_res.data or {}).get("segment", "C")
+    if lead_segment == "C" and not is_cold_assignment_enabled(tenant_id):
+        logger.info("Cold assignment OFF — skipping assignment for C-segment lead %s", lead_id)
+        return None
+
     callers = (
         db.table("callers")
         .select("id")

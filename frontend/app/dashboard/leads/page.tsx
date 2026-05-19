@@ -1,7 +1,7 @@
 "use client";
 import { toast } from "sonner";
 import { useEffect, useState } from "react";
-import { api, Lead, Caller, SegmentTemplate, BroadcastResult } from "@/lib/api";
+import { api, Lead, Caller, SegmentTemplate, BroadcastResult, API_URL, getAuthHeaders } from "@/lib/api";
 import { SegmentBadge } from "@/components/segment-badge";
 import { Download, Send, Save, Pencil, Plus, X, Loader2 } from "lucide-react";
 import { timeAgo, formatPhone } from "@/lib/utils";
@@ -173,6 +173,47 @@ function ComposeModal({ onClose, onSent }: { onClose: () => void; onSent: () => 
 }
 
 
+function ColdAssignmentToggle() {
+  const [enabled, setEnabled] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getAuthHeaders().then(async (auth) => {
+      const res = await fetch(`${API_URL}/api/v1/callers/cold-assignment`, { headers: auth });
+      if (res.ok) setEnabled((await res.json()).enabled);
+      setLoading(false);
+    });
+  }, []);
+
+  async function toggle() {
+    const auth = await getAuthHeaders();
+    const next = !enabled;
+    setEnabled(next);
+    await fetch(`${API_URL}/api/v1/callers/cold-assignment`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...auth },
+      body: JSON.stringify({ enabled: next }),
+    });
+  }
+
+  if (loading) return null;
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-2.5 bg-surface-subtle rounded-xl">
+      <div className="flex-1">
+        <p className="font-label font-semibold text-ink text-sm">Auto-assign Cold Leads</p>
+        <p className="font-body text-xs text-ink-muted">When ON, C-segment leads are auto-assigned to callers</p>
+      </div>
+      <button
+        onClick={toggle}
+        className={`relative w-10 h-6 rounded-full transition-colors flex-shrink-0 ${enabled ? "bg-primary" : "bg-surface-mid"}`}
+      >
+        <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${enabled ? "translate-x-5" : "translate-x-1"}`} />
+      </button>
+    </div>
+  );
+}
+
 export default function LeadsPage() {
   const { role } = useAuthRole();
   const [tab, setTab] = useState<typeof SEGMENTS[number]>("A");
@@ -240,6 +281,7 @@ export default function LeadsPage() {
         <div>
           <h1 className="font-display text-3xl font-bold text-tertiary">Leads</h1>
           <p className="font-body text-on-surface-muted mt-1">Priority segments A → D</p>
+          {role === "owner" && <div className="mt-3"><ColdAssignmentToggle /></div>}
         </div>
         <div className="flex items-center gap-2">
           <button

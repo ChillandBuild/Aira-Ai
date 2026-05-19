@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id, get_tenant_and_role
-from app.services.assignment import is_round_robin_enabled, set_round_robin_enabled, reassign_backlog
+from app.services.assignment import is_round_robin_enabled, set_round_robin_enabled, reassign_backlog, is_cold_assignment_enabled, set_cold_assignment_enabled
 from app.services.call_coach import coaching_tip
 
 logger = logging.getLogger(__name__)
@@ -44,6 +44,17 @@ async def get_round_robin(tenant_id: str = Depends(get_tenant_id)):
 async def toggle_round_robin(payload: RoundRobinToggle, tenant_id: str = Depends(get_tenant_id)):
     """Enable or disable automatic round-robin lead assignment for new inbound leads."""
     set_round_robin_enabled(tenant_id, payload.enabled)
+    return {"enabled": payload.enabled}
+
+
+@router.get("/cold-assignment")
+async def get_cold_assignment(tenant_id: str = Depends(get_tenant_id)):
+    return {"enabled": is_cold_assignment_enabled(tenant_id)}
+
+
+@router.patch("/cold-assignment")
+async def toggle_cold_assignment(payload: RoundRobinToggle, tenant_id: str = Depends(get_tenant_id)):
+    set_cold_assignment_enabled(tenant_id, payload.enabled)
     return {"enabled": payload.enabled}
 
 
