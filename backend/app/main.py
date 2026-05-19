@@ -7,7 +7,7 @@ from app.dependencies.auth import get_current_user
 
 import os
 from app.config import settings
-from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team, media, alerts, todos, bookings, conversations
+from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team, media, alerts, todos, bookings, conversations, operator
 from app.routes.calls import public_router as calls_public_router
 
 # Configure logging
@@ -89,4 +89,5 @@ app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["alerts"], depe
 app.include_router(todos.router, prefix="/api/v1/todos", tags=["todos"], dependencies=_auth)
 app.include_router(bookings.router, prefix="/api/v1/bookings", tags=["bookings"], dependencies=_auth)
 app.include_router(conversations.router, prefix="/api/v1/conversations", tags=["conversations"], dependencies=_auth)
+app.include_router(operator.router, prefix="/api/v1/operator", tags=["operator"])
 
