@@ -1,6 +1,5 @@
 import logging
 import secrets
-import string
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -56,17 +55,18 @@ def list_clients(_admin: dict = Depends(get_system_admin)):
         .order("created_at", desc=True)
         .execute()
     )
-    result = []
-    for t in (tenants.data or []):
-        owner = (
+    tenant_ids = [t["id"] for t in (tenants.data or [])]
+    owners_map: dict[str, str] = {}
+    if tenant_ids:
+        owners_rows = (
             db.table("tenant_users")
-            .select("user_id")
-            .eq("tenant_id", t["id"])
+            .select("tenant_id, user_id")
+            .in_("tenant_id", tenant_ids)
             .eq("role", "owner")
-            .maybe_single()
             .execute()
         )
-        result.append({**t, "owner_user_id": (owner.data or {}).get("user_id")})
+        owners_map = {r["tenant_id"]: r["user_id"] for r in (owners_rows.data or [])}
+    result = [{**t, "owner_user_id": owners_map.get(t["id"])} for t in (tenants.data or [])]
     return {"data": result}
 
 
@@ -89,31 +89,39 @@ async def create_client(payload: CreateClientPayload, _admin: dict = Depends(get
             raise HTTPException(status_code=400, detail="A user with this email already exists")
         raise HTTPException(status_code=400, detail=f"Failed to create user: {msg}")
 
-    tenant_result = db.table("tenants").insert({
-        "name": payload.company_name,
-        "enabled_features": features,
-        "status": "active",
-    }).execute()
-    tenant_id = tenant_result.data[0]["id"]
+    try:
+        tenant_result = db.table("tenants").insert({
+            "name": payload.company_name,
+            "enabled_features": features,
+            "status": "active",
+        }).execute()
+        tenant_id = tenant_result.data[0]["id"]
 
-    db.table("app_settings").insert([
-        {"tenant_id": tenant_id, "key": k, "value": None, "is_secret": s}
-        for k, s in _SETTING_KEYS
-    ]).execute()
+        db.table("app_settings").insert([
+            {"tenant_id": tenant_id, "key": k, "value": None, "is_secret": s}
+            for k, s in _SETTING_KEYS
+        ]).execute()
 
-    db.table("tenant_users").insert({
-        "tenant_id": tenant_id,
-        "user_id": new_user_id,
-        "role": "owner",
-    }).execute()
+        db.table("tenant_users").insert({
+            "tenant_id": tenant_id,
+            "user_id": new_user_id,
+            "role": "owner",
+        }).execute()
 
-    db.table("callers").insert({
-        "tenant_id": tenant_id,
-        "user_id": new_user_id,
-        "name": "Admin",
-        "active": True,
-        "overall_score": 7.0,
-    }).execute()
+        db.table("callers").insert({
+            "tenant_id": tenant_id,
+            "user_id": new_user_id,
+            "name": "Admin",
+            "active": True,
+            "overall_score": 7.0,
+        }).execute()
+    except Exception as e:
+        logger.error(f"Tenant setup failed for new user {new_user_id}, cleaning up: {e}")
+        try:
+            db.auth.admin.delete_user(new_user_id)
+        except Exception as cleanup_err:
+            logger.error(f"Failed to delete orphaned auth user {new_user_id}: {cleanup_err}")
+        raise HTTPException(status_code=500, detail="Client setup failed; user account cleaned up.")
 
     logger.info(f"Operator created client: {payload.company_name} ({tenant_id}), service={payload.service}")
     return {
@@ -157,6 +165,6 @@ async def reset_password(tenant_id: str, _admin: dict = Depends(get_system_admin
     )
     if not owner.data:
         raise HTTPException(status_code=404, detail="No owner found for this tenant")
-    temp_pw = "Aira@" + "".join(secrets.choice(string.digits) for _ in range(6))
+    temp_pw = "Aira@" + secrets.token_urlsafe(10)
     db.auth.admin.update_user_by_id(owner.data["user_id"], {"password": temp_pw})
     return {"temp_password": temp_pw}

@@ -5,6 +5,22 @@ export default async function OperatorLayout({ children }: { children: React.Rea
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+
+  const { data: { session } } = await supabase.auth.getSession();
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  try {
+    const meRes = await fetch(`${apiUrl}/api/v1/team/me`, {
+      headers: { Authorization: `Bearer ${session?.access_token}` },
+      cache: "no-store",
+    });
+    if (meRes.ok) {
+      const me = await meRes.json();
+      if (!me.is_system_admin) redirect("/dashboard");
+    }
+  } catch {
+    redirect("/dashboard");
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-between">

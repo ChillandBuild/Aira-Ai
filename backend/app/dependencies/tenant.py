@@ -21,7 +21,17 @@ def get_tenant_id(user: dict = Depends(get_current_user)) -> str:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tenant associated with this account. Complete onboarding first.",
         )
-    return result.data["tenant_id"]
+    tenant_id = result.data["tenant_id"]
+    tenant = (
+        db.table("tenants")
+        .select("status")
+        .eq("id", tenant_id)
+        .maybe_single()
+        .execute()
+    )
+    if (tenant.data or {}).get("status") == "suspended":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended.")
+    return tenant_id
 
 
 def get_tenant_and_role(user: dict = Depends(get_current_user)) -> dict:
@@ -41,6 +51,15 @@ def get_tenant_and_role(user: dict = Depends(get_current_user)) -> dict:
         )
     tenant_id = result.data["tenant_id"]
     role = result.data["role"]
+    tenant = (
+        db.table("tenants")
+        .select("status")
+        .eq("id", tenant_id)
+        .maybe_single()
+        .execute()
+    )
+    if (tenant.data or {}).get("status") == "suspended":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended.")
     caller_id = get_caller_id_for_user(user["user_id"], tenant_id) if role == "caller" else None
     return {
         "tenant_id": tenant_id,
