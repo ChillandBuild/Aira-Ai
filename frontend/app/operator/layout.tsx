@@ -26,7 +26,7 @@ export default async function OperatorLayout({ children }: { children: React.Rea
       <header className="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-lg font-bold text-gray-900">
-            Aira<span className="text-indigo-600">AI</span>
+            Aira <span className="text-indigo-600">AI</span>
           </span>
           <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest border border-gray-200 rounded px-2 py-0.5">
             Operator Console

@@ -35,7 +35,7 @@ export default function OperatorLoginPage() {
 
       if (!res.ok) {
         await supabase.auth.signOut();
-        setError("Access denied. This console is for Aayira AI operators only.");
+        setError("Access denied. This console is for Aira AI operators only.");
         return;
       }
 
@@ -43,7 +43,7 @@ export default function OperatorLoginPage() {
 
       if (!me.is_system_admin) {
         await supabase.auth.signOut();
-        setError("Access denied. This console is for Aayira AI operators only.");
+        setError("Access denied. This console is for Aira AI operators only.");
         return;
       }
 
@@ -60,7 +60,7 @@ export default function OperatorLoginPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <p className="text-2xl font-bold text-gray-900">
-            Aayira<span className="text-indigo-600">AI</span>
+            Aira<span className="text-indigo-600">AI</span>
           </p>
           <p className="text-xs text-gray-400 mt-1.5 uppercase tracking-widest font-semibold">
             Operator Console
@@ -83,7 +83,7 @@ export default function OperatorLoginPage() {
                 required
                 autoFocus
                 className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="you@aayiraai.com"
+                placeholder="you@airaai.com"
               />
             </div>
             <div>
