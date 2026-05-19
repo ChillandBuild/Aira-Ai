@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 export default async function OperatorLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  if (!user) redirect("/operator/login");
 
   const { data: { session } } = await supabase.auth.getSession();
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
