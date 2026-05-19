@@ -5,7 +5,7 @@ import { useAuthRole } from "@/app/dashboard/contexts/AuthRoleContext";
 import {
   LayoutDashboard, MessageSquare, Users, Settings, Phone,
   BarChart2, Upload, BookOpen, Layers, FileCheck, StickyNote,
-  LogOut, BookOpenCheck, ShieldCheck,
+  LogOut, BookOpenCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AiraLogo } from "./logo";
@@ -65,7 +65,7 @@ function LogoutButton() {
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { role, enabledFeatures, isSystemAdmin, loading: roleLoading } = useAuthRole();
+  const { role, enabledFeatures, loading: roleLoading } = useAuthRole();
 
   if (roleLoading) {
     return (
@@ -157,20 +157,6 @@ export function Sidebar() {
           );
         })}
 
-        {isSystemAdmin && (
-          <Link
-            href="/operator"
-            className={cn(
-              "flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all duration-150 group",
-              pathname.startsWith("/operator")
-                ? "bg-surface-low text-primary font-medium"
-                : "text-ink-secondary hover:bg-surface-subtle hover:text-ink"
-            )}
-          >
-            <ShieldCheck size={16} className="flex-shrink-0 text-ink-muted group-hover:text-ink-secondary" />
-            <span className="font-body text-sm">Operator</span>
-          </Link>
-        )}
 
         <div className="px-3 pt-2">
           <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-surface-low">
