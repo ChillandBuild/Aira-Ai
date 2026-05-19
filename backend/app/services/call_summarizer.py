@@ -75,3 +75,37 @@ async def summarize_call(transcript: str, lead_name: str | None = None) -> dict:
     except Exception as e:
         logger.error(f"Groq summarize_call failed: {e}")
         return {}
+
+
+_EVALUATE_PROMPT = (
+    "You are evaluating a sales call recording transcript. Assess the caller's performance.\n\n"
+    "Transcript:\n{transcript}\n\n"
+    "Return valid JSON only with these exact keys:\n"
+    "- talk_ratio: integer 0-100, estimated percentage of time the caller was speaking\n"
+    "- objection_handling: one of 'good', 'average', 'poor'\n"
+    "- outcome_clarity: 'yes' if call ended with a clear next step, 'no' otherwise\n"
+    "- overall_score: integer 1-10 for overall call quality\n"
+    "- coaching_tip: string, one specific actionable improvement for the caller (max 50 words)"
+)
+
+
+async def evaluate_call(transcript: str) -> dict:
+    if not transcript or not _client:
+        return {}
+    try:
+        response = _client.chat.completions.create(
+            model=_SUMMARY_MODEL,
+            messages=[
+                {"role": "user", "content": _EVALUATE_PROMPT.format(transcript=transcript)},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.2,
+            max_tokens=300,
+        )
+        return json.loads(response.choices[0].message.content)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse Groq evaluation JSON: {e}")
+        return {}
+    except Exception as e:
+        logger.error(f"Groq evaluate_call failed: {e}")
+        return {}

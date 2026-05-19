@@ -12,7 +12,7 @@ from app.config_dynamic import get_setting
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id, get_tenant_and_role
 from app.services.call_scorer import score_from_outcome, recompute_caller_score
-from app.services.call_summarizer import transcribe_recording, summarize_call
+from app.services.call_summarizer import transcribe_recording, summarize_call, evaluate_call
 from app.services.growth import record_stage_event, sync_follow_up_jobs
 from app.services.telecmi_client import initiate_click2call
 from app.services.voice_router import get_best_voice_number, increment_voice_call_count
@@ -298,6 +298,10 @@ async def _run_summarization(call_log_id: str, recording_url: str) -> None:
             "transcript": transcript,
             "ai_summary": summary,
         }).eq("id", call_log_id).execute()
+        evaluation = await evaluate_call(transcript)
+        if evaluation:
+            db.table("call_logs").update({"evaluation": evaluation}).eq("id", call_log_id).execute()
+            logger.info(f"Call evaluation stored for {call_log_id}: score={evaluation.get('overall_score')}")
         if summary.get("next_action"):
             log_row = db.table("call_logs").select("lead_id").eq("id", call_log_id).maybe_single().execute()
             lead_id = (log_row.data or {}).get("lead_id")
