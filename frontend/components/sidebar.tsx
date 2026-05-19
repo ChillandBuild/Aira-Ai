@@ -1,7 +1,9 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { useAuthRole } from "@/app/dashboard/contexts/AuthRoleContext";
+import { API_URL, getAuthHeaders } from "@/lib/api";
 import {
   LayoutDashboard, MessageSquare, Users, Settings, Phone,
   BarChart2, Upload, BookOpen, Layers, FileCheck, StickyNote,
@@ -67,6 +69,21 @@ function LogoutButton() {
 export function Sidebar() {
   const pathname = usePathname();
   const { role, enabledFeatures, loading: roleLoading } = useAuthRole();
+  const [inboxCount, setInboxCount] = useState(0);
+
+  useEffect(() => {
+    if (!enabledFeatures.includes("whatsapp")) return;
+    async function fetchCount() {
+      try {
+        const auth = await getAuthHeaders();
+        const res = await fetch(`${API_URL}/api/v1/chat-handovers/count`, { headers: auth });
+        if (res.ok) setInboxCount((await res.json()).count ?? 0);
+      } catch {}
+    }
+    fetchCount();
+    const id = setInterval(fetchCount, 60_000);
+    return () => clearInterval(id);
+  }, [enabledFeatures]);
 
   if (roleLoading) {
     return (
@@ -109,6 +126,7 @@ export function Sidebar() {
       <nav className="flex-1 px-3 pb-2 space-y-0.5 overflow-y-auto">
         {activeNav.map(({ href, icon: Icon, label }) => {
           const active = href === "/dashboard" ? pathname === href : pathname.startsWith(href);
+          const badge = href === "/dashboard/inbox" && inboxCount > 0 ? inboxCount : null;
           return (
             <Link
               key={href}
@@ -130,7 +148,12 @@ export function Sidebar() {
                   active ? "text-primary" : "text-ink-muted group-hover:text-ink-secondary"
                 )}
               />
-              <span className="font-body text-sm">{label}</span>
+              <span className="font-body text-sm flex-1">{label}</span>
+              {badge && (
+                <span className="flex-shrink-0 min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-1">
+                  {badge > 99 ? "99+" : badge}
+                </span>
+              )}
             </Link>
           );
         })}
