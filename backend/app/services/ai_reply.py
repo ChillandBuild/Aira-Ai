@@ -190,6 +190,48 @@ Do not use markdown or quotes."""
     except Exception as e:
         logger.error(f"Re-engagement copy failed for lead {lead_id}: {e}")
         return REENGAGEMENT_FALLBACKS.get(cadence, REENGAGEMENT_FALLBACKS["1w"])
+
+
+_ESCALATION_PHRASES = [
+    "connect you with our team",
+    "connect them with a team member",
+    "let me connect",
+    "our team will",
+    "team will reach out",
+    "team member will",
+    "team will get back",
+]
+
+
+def _trigger_chat_escalation(
+    lead_id: str, reason: str, tenant_id: str, assigned_to: str | None, db
+) -> None:
+    existing = (
+        db.table("chat_handovers")
+        .select("id")
+        .eq("lead_id", lead_id)
+        .eq("status", "pending")
+        .maybe_single()
+        .execute()
+    )
+    if existing.data:
+        return  # already has an open handover
+
+    db.table("leads").update({
+        "needs_human_attention": True,
+        "escalation_reason": reason,
+    }).eq("id", lead_id).execute()
+
+    db.table("chat_handovers").insert({
+        "tenant_id": tenant_id,
+        "lead_id": lead_id,
+        "assigned_to": assigned_to,
+        "reason": reason,
+        "status": "pending",
+    }).execute()
+    logger.info(f"Chat handover created for lead {lead_id}")
+
+
 async def generate_reply(
     lead_id: str,
     message: str,
@@ -361,3 +403,16 @@ async def generate_reply(
                 logger.warning(f"Alert creation failed for lead {lead_id}: {alert_err}")
     except Exception as e:
         logger.error(f"Scoring update failed for lead {lead_id}: {e}")
+
+    # Step 6: Detect AI escalation and open a chat handover
+    if is_ai and any(phrase in reply_text.lower() for phrase in _ESCALATION_PHRASES):
+        try:
+            _trigger_chat_escalation(
+                lead_id=str(lead_id),
+                reason=message[:200],
+                tenant_id=lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001",
+                assigned_to=lead_data.get("assigned_to"),
+                db=db,
+            )
+        except Exception as e:
+            logger.error(f"Chat escalation trigger failed for lead {lead_id}: {e}")
