@@ -59,6 +59,7 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
     status = "PENDING"
     if waba_id:
         try:
+            buttons_dict = [b.model_dump() for b in payload.buttons] if payload.buttons else None
             meta_response = await submit_template(
                 waba_id=waba_id,
                 name=name,
@@ -69,7 +70,7 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
                 header_media_type=payload.header_media_type,
                 header_media_url=payload.header_media_url,
                 footer_text=payload.footer_text,
-                buttons=payload.buttons or None,
+                buttons=buttons_dict,
                 tenant_id=tenant_id,
             )
             meta_template_id = str(meta_response.get("id", ""))
@@ -78,7 +79,7 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
     else:
         logger.info(f"No meta_waba_id configured — saving template '{name}' locally as PENDING")
 
-    result = db.table("message_templates").insert({
+    db_insert = {
         "name": name,
         "category": category,
         "language": payload.language,
@@ -86,12 +87,15 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
         "header_text": payload.header_text,
         "header_media_type": payload.header_media_type,
         "header_media_url": payload.header_media_url,
-        "footer_text": payload.footer_text,
         "buttons": [b.model_dump() for b in payload.buttons] if payload.buttons else None,
         "status": status,
         "meta_template_id": meta_template_id,
         "tenant_id": tenant_id,
-    }).execute()
+    }
+    if payload.footer_text:
+        db_insert["footer_text"] = payload.footer_text
+
+    result = db.table("message_templates").insert(db_insert).execute()
 
     return result.data[0]
 

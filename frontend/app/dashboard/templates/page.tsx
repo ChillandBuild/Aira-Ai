@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X, Trash2, Check, Clock, AlertCircle, RefreshCw, Send, Upload, Image as ImageIcon } from "lucide-react";
+import { Plus, X, Trash2, Check, Clock, AlertCircle, RefreshCw, Send, Upload, Image as ImageIcon, FileText, MapPin, Phone, Globe, Copy, MessageSquare } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -46,18 +46,18 @@ const STATUS_CONFIG = {
 const CATEGORY_OPTIONS = [
   {
     value: "MARKETING" as const,
-    label: "📣 Promotional",
-    description: "Event invites, offers, campaign messages",
+    label: "Promotional",
+    icon: "📣",
   },
   {
     value: "UTILITY" as const,
-    label: "🔔 Service Update",
-    description: "Booking confirmations, reminders, alerts",
+    label: "Service Update",
+    icon: "🔔",
   },
   {
     value: "AUTHENTICATION" as const,
-    label: "🔐 Verification",
-    description: "OTP codes, login verification",
+    label: "Verification",
+    icon: "🔐",
   },
 ];
 
@@ -66,6 +66,14 @@ const LANGUAGE_OPTIONS = [
   { value: "ta", label: "Tamil" },
   { value: "hi", label: "Hindi" },
   { value: "te", label: "Telugu" },
+];
+
+const BUTTON_TYPE_OPTIONS = [
+  { type: "QUICK_REPLY" as const, label: "Quick Reply" },
+  { type: "URL" as const, label: "Visit Website" },
+  { type: "WHATSAPP_CALL" as const, label: "Call on WhatsApp" },
+  { type: "PHONE_NUMBER" as const, label: "Call Phone Number" },
+  { type: "COPY_CODE" as const, label: "Copy Offer Code" },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -225,7 +233,6 @@ export default function TemplatesPage() {
         { method: "POST" }
       );
       await load();
-      // Show result inline — simple alert for now
       alert(`Synced ${result.total} templates from Meta — ${result.added} new, ${result.updated} updated.`);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Sync failed");
@@ -380,7 +387,7 @@ export default function TemplatesPage() {
                     </td>
                     <td className="px-4 py-3">
                       <span className="font-body text-xs text-ink-secondary">
-                        {catOption?.label ?? t.category}
+                        {catOption?.icon} {catOption?.label ?? t.category}
                       </span>
                     </td>
                     <td className="px-4 py-3 max-w-xs">
@@ -512,483 +519,503 @@ export default function TemplatesPage() {
       {/* ── New Template Modal ─────────────────────────────────────────────── */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl p-8 max-h-[92vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl p-0 max-h-[92vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle">
               <div>
-                <h2 className="font-display font-bold text-ink text-xl">
+                <h2 className="font-display font-bold text-ink text-lg">
                   New WhatsApp Template
                 </h2>
-                <p className="font-body text-sm text-ink-muted mt-1">Design and submit a new message template for Meta approval.</p>
+                <p className="font-body text-sm text-ink-muted mt-0.5">Design and submit a new message template for Meta approval.</p>
               </div>
               <button onClick={resetModal} className="p-2 rounded-xl hover:bg-surface-subtle text-ink-muted transition-colors">
                 <X size={20} />
               </button>
             </div>
 
-            {error && (
-              <div className="mb-6 p-4 rounded-2xl bg-red-50 text-red-700 font-body text-sm flex items-center gap-2">
-                <AlertCircle size={16} />{error}
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-              {/* Left: Form */}
-              <div className="lg:col-span-3 space-y-5">
-                {/* Title */}
-                <div>
-                  <label className="font-body text-sm font-medium text-ink mb-1.5 block">
-                    Template Title
-                  </label>
-                  <input
-                    value={title}
-                    onChange={e => setTitle(e.target.value)}
-                    placeholder="e.g. Welcome Message"
-                    className="input"
-                  />
-                  {generatedName && (
-                    <p className="font-body text-[11px] text-ink-muted mt-1.5">
-                      Will be submitted as: <span className="font-mono text-ink bg-surface-subtle px-1.5 py-0.5 rounded">{generatedName}</span>
-                    </p>
-                  )}
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {error && (
+                <div className="mb-6 p-4 rounded-xl bg-red-50 text-red-700 font-body text-sm flex items-center gap-2">
+                  <AlertCircle size={16} />{error}
                 </div>
+              )}
 
-                {/* Category cards */}
-                <div>
-                  <label className="font-body text-sm font-medium text-ink mb-2 block">
-                    Message Type
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    {CATEGORY_OPTIONS.map(opt => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => setCategory(opt.value)}
-                        className={`w-full text-left p-3 rounded-2xl border-2 transition-all ${
-                          category === opt.value
-                            ? "border-primary bg-primary/5 shadow-sm"
-                            : "border-border-subtle hover:border-border bg-white"
-                        }`}
-                      >
-                        <p className="font-body text-sm font-medium text-ink">{opt.label.split(' ')[0]} {opt.label.split(' ').slice(1).join(' ')}</p>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Language */}
-                <div>
-                  <label className="font-body text-sm font-medium text-ink mb-1.5 block">Language</label>
-                  <select value={language} onChange={e => setLanguage(e.target.value)} className="input w-full sm:w-1/2">
-                    {LANGUAGE_OPTIONS.map(l => (
-                      <option key={l.value} value={l.value}>{l.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Header text */}
-                <div>
-                  <label className="font-body text-sm font-medium text-ink mb-1.5 block">
-                    Header Text <span className="text-ink-muted font-normal">(optional, max 60 chars)</span>
-                  </label>
-                  <input
-                    value={headerText}
-                    onChange={e => setHeaderText(e.target.value)}
-                    maxLength={60}
-                    placeholder="e.g. Special Offer"
-                    className="input"
-                  />
-                </div>
-
-                {/* Media support */}
-                <div>
-                  <label className="font-body text-sm font-medium text-ink mb-1.5 block">
-                    Media Header <span className="text-ink-muted font-normal">(optional)</span>
-                  </label>
-                  <select
-                    value={headerMediaType}
-                    onChange={e => setHeaderMediaType(e.target.value)}
-                    className="input w-full sm:w-1/2 mb-3"
-                  >
-                    <option value="NONE">None</option>
-                    <option value="IMAGE">Image</option>
-                    <option value="VIDEO">Video</option>
-                    <option value="DOCUMENT">Document</option>
-                    <option value="LOCATION">Location</option>
-                  </select>
-                  
-                  {headerMediaType === "IMAGE" && (
-                    <div className="space-y-2">
-                      {headerMediaPreview ? (
-                        <div className="relative rounded-xl overflow-hidden border border-border-subtle">
-                          <img src={headerMediaPreview} alt="Preview" className="w-full h-32 object-cover" />
-                          <button
-                            type="button"
-                            onClick={clearMedia}
-                            className="absolute top-2 right-2 p-1.5 bg-white/90 rounded-lg hover:bg-white shadow-sm"
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                      ) : (
-                        <div
-                          onClick={() => fileInputRef.current?.click()}
-                          className="border-2 border-dashed border-border-subtle rounded-xl p-6 text-center cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
-                        >
-                          <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp"
-                            onChange={handleFileSelect}
-                            className="hidden"
-                          />
-                          <Upload size={24} className="mx-auto text-ink-muted mb-2" />
-                          <p className="font-body text-sm text-ink-secondary">
-                            {uploadingMedia ? "Uploading..." : "Click to upload image"}
-                          </p>
-                          <p className="font-body text-xs text-ink-muted mt-1">
-                            JPEG, PNG, WebP • Max 5MB
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  
-                  {headerMediaType !== "NONE" && headerMediaType !== "IMAGE" && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Left: Form */}
+                <div className="space-y-5">
+                  {/* Title */}
+                  <div>
+                    <label className="font-body text-sm font-medium text-ink mb-1.5 block">
+                      Template Title
+                    </label>
                     <input
-                      value={headerMediaUrl}
-                      onChange={e => setHeaderMediaUrl(e.target.value)}
-                      placeholder={
-                        headerMediaType === "LOCATION"
-                          ? "https://maps.google.com/?q=..."
-                          : "https://example.com/media.mp4"
-                      }
+                      value={title}
+                      onChange={e => setTitle(e.target.value)}
+                      placeholder="e.g. Welcome Message"
                       className="input"
                     />
-                  )}
-                </div>
-
-                {/* Body text */}
-                <div>
-                  <label className="font-body text-sm font-medium text-ink mb-1.5 block">Message Body</label>
-                  <textarea
-                    value={bodyText}
-                    onChange={e => setBodyText(e.target.value)}
-                    placeholder={"Hi {{1}},\n\nThank you for your interest. Reply YES to confirm your booking."}
-                    rows={5}
-                    className="input resize-y min-h-[120px]"
-                  />
-                  <p className="font-body text-xs text-ink-muted mt-1.5">
-                    Use {"{{1}}"}, {"{{2}}"} etc. for personalised values like name, date.
-                  </p>
-                </div>
-
-                {/* Footer text */}
-                <div>
-                  <label className="font-body text-sm font-medium text-ink mb-1.5 block">
-                    Footer Text <span className="text-ink-muted font-normal">(optional, max 60 chars)</span>
-                  </label>
-                  <input
-                    value={footerText}
-                    onChange={e => setFooterText(e.target.value)}
-                    maxLength={60}
-                    placeholder="e.g. Terms and conditions apply."
-                    className="input"
-                  />
-                </div>
-
-                {/* Buttons */}
-                <div className="pt-2">
-                  <div className="flex items-center justify-between mb-3">
-                    <label className="font-body text-sm font-medium text-ink">
-                      Buttons <span className="text-ink-muted font-normal">(optional, max 3)</span>
-                    </label>
-                    {buttons.length < 3 && !showButtonTypePicker && (
-                      <button
-                        type="button"
-                        onClick={() => setShowButtonTypePicker(true)}
-                        className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 font-semibold bg-primary/5 hover:bg-primary/10 px-3 py-1.5 rounded-lg transition-colors"
-                      >
-                        <Plus size={14} /> Add button
-                      </button>
+                    {generatedName && (
+                      <p className="font-body text-[11px] text-ink-muted mt-1.5">
+                        Will be submitted as: <span className="font-mono text-ink bg-surface-subtle px-1.5 py-0.5 rounded">{generatedName}</span>
+                      </p>
                     )}
                   </div>
-                  
-                  {/* Button type picker dropdown */}
-                  {showButtonTypePicker && buttons.length < 3 && (
-                    <div className="mb-3 p-3 rounded-xl bg-surface-subtle border border-border-subtle">
-                      <p className="font-body text-xs text-ink-muted mb-2">Select button type:</p>
-                      <div className="grid grid-cols-1 gap-1.5">
-                        {[
-                          { type: "QUICK_REPLY" as const, label: "Quick Reply", icon: "💬", desc: "Custom reply text" },
-                          { type: "URL" as const, label: "Visit Website", icon: "🔗", desc: "Open a URL" },
-                          { type: "WHATSAPP_CALL" as const, label: "Call on WhatsApp", icon: "📞", desc: "WhatsApp call button" },
-                          { type: "PHONE_NUMBER" as const, label: "Call Phone Number", icon: "📱", desc: "Phone call button" },
-                          { type: "COPY_CODE" as const, label: "Copy Offer Code", icon: "📋", desc: "Copy code to clipboard" },
-                        ].map(opt => (
-                          <button
-                            key={opt.type}
-                            type="button"
-                            onClick={() => addButton(opt.type)}
-                            className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-white hover:shadow-sm transition-all text-left"
-                          >
-                            <span className="text-lg">{opt.icon}</span>
-                            <div>
-                              <p className="font-body text-sm font-medium text-ink">{opt.label}</p>
-                              <p className="font-body text-xs text-ink-muted">{opt.desc}</p>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowButtonTypePicker(false)}
-                        className="mt-2 text-xs text-ink-muted hover:text-ink-secondary"
-                      >
-                        Cancel
-                      </button>
+
+                  {/* Category cards */}
+                  <div>
+                    <label className="font-body text-sm font-medium text-ink mb-2 block">
+                      Message Type
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {CATEGORY_OPTIONS.map(opt => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setCategory(opt.value)}
+                          className={`w-full text-left p-3 rounded-xl border-2 transition-all text-sm ${
+                            category === opt.value
+                              ? "border-emerald-500 bg-emerald-50"
+                              : "border-border-subtle hover:border-border bg-white"
+                          }`}
+                        >
+                          <span className="mr-1.5">{opt.icon}</span>
+                          <span className="font-medium text-ink">{opt.label}</span>
+                        </button>
+                      ))}
                     </div>
-                  )}
-                  
-                  {buttons.length === 0 && !showButtonTypePicker && (
-                    <p className="font-body text-xs text-ink-muted">
-                      Add buttons so users can respond or take action with one tap.
+                  </div>
+
+                  {/* Language */}
+                  <div>
+                    <label className="font-body text-sm font-medium text-ink mb-1.5 block">Language</label>
+                    <select value={language} onChange={e => setLanguage(e.target.value)} className="input w-full">
+                      {LANGUAGE_OPTIONS.map(l => (
+                        <option key={l.value} value={l.value}>{l.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Header text */}
+                  <div>
+                    <label className="font-body text-sm font-medium text-ink mb-1.5 block">
+                      Header Text <span className="text-ink-muted font-normal">(optional, max 60 chars)</span>
+                    </label>
+                    <input
+                      value={headerText}
+                      onChange={e => setHeaderText(e.target.value)}
+                      maxLength={60}
+                      placeholder="e.g. Special Offer"
+                      className="input"
+                    />
+                  </div>
+
+                  {/* Media support */}
+                  <div>
+                    <label className="font-body text-sm font-medium text-ink mb-1.5 block">
+                      Media Header <span className="text-ink-muted font-normal">(optional)</span>
+                    </label>
+                    <select
+                      value={headerMediaType}
+                      onChange={e => setHeaderMediaType(e.target.value)}
+                      className="input w-full mb-3"
+                    >
+                      <option value="NONE">None</option>
+                      <option value="IMAGE">Image</option>
+                      <option value="VIDEO">Video</option>
+                      <option value="DOCUMENT">Document</option>
+                      <option value="LOCATION">Location</option>
+                    </select>
+                    
+                    {headerMediaType === "IMAGE" && (
+                      <div className="space-y-2">
+                        {headerMediaPreview ? (
+                          <div className="relative rounded-xl overflow-hidden border border-border-subtle">
+                            <img src={headerMediaPreview} alt="Preview" className="w-full h-40 object-cover" />
+                            <button
+                              type="button"
+                              onClick={clearMedia}
+                              className="absolute top-2 right-2 p-1.5 bg-white/90 rounded-lg hover:bg-white shadow-sm"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div
+                            onClick={() => fileInputRef.current?.click()}
+                            className="border-2 border-dashed border-border-subtle rounded-xl p-8 text-center cursor-pointer hover:border-emerald-500/50 hover:bg-emerald-50/50 transition-colors"
+                          >
+                            <input
+                              ref={fileInputRef}
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              onChange={handleFileSelect}
+                              className="hidden"
+                            />
+                            <Upload size={28} className="mx-auto text-ink-muted mb-2" />
+                            <p className="font-body text-sm text-ink-secondary">
+                              {uploadingMedia ? "Uploading..." : "Click to upload image"}
+                            </p>
+                            <p className="font-body text-xs text-ink-muted mt-1">
+                              JPEG, PNG, WebP • Max 5MB
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    {headerMediaType !== "NONE" && headerMediaType !== "IMAGE" && (
+                      <input
+                        value={headerMediaUrl}
+                        onChange={e => setHeaderMediaUrl(e.target.value)}
+                        placeholder={
+                          headerMediaType === "LOCATION"
+                            ? "https://maps.google.com/?q=..."
+                            : "https://example.com/media.mp4"
+                        }
+                        className="input"
+                      />
+                    )}
+                  </div>
+
+                  {/* Body text */}
+                  <div>
+                    <label className="font-body text-sm font-medium text-ink mb-1.5 block">Message Body</label>
+                    <textarea
+                      value={bodyText}
+                      onChange={e => setBodyText(e.target.value)}
+                      placeholder={"Hi {{1}},\n\nThank you for your interest. Reply YES to confirm your booking."}
+                      rows={4}
+                      className="input resize-y min-h-[100px]"
+                    />
+                    <p className="font-body text-xs text-ink-muted mt-1.5">
+                      Use {"{{1}}"}, {"{{2}}"} etc. for personalised values like name, date.
                     </p>
-                  )}
-                  
-                  <div className="space-y-3">
-                    {buttons.map((btn, i) => (
-                      <div key={i} className="p-4 rounded-xl bg-white border border-border-subtle shadow-sm space-y-3">
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1">
-                            <p className="font-body text-xs text-ink-muted mb-1">Button type</p>
-                            <div className="flex items-center gap-2">
-                              <span className="text-base">
-                                {btn.type === "QUICK_REPLY" && "💬"}
-                                {btn.type === "URL" && "🔗"}
-                                {btn.type === "WHATSAPP_CALL" && "📞"}
-                                {btn.type === "PHONE_NUMBER" && "📱"}
-                                {btn.type === "COPY_CODE" && ""}
-                              </span>
+                  </div>
+
+                  {/* Footer text */}
+                  <div>
+                    <label className="font-body text-sm font-medium text-ink mb-1.5 block">
+                      Footer Text <span className="text-ink-muted font-normal">(optional, max 60 chars)</span>
+                    </label>
+                    <input
+                      value={footerText}
+                      onChange={e => setFooterText(e.target.value)}
+                      maxLength={60}
+                      placeholder="e.g. Terms and conditions apply."
+                      className="input"
+                    />
+                  </div>
+
+                  {/* Buttons */}
+                  <div className="pt-2">
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="font-body text-sm font-medium text-ink">
+                        Buttons <span className="text-ink-muted font-normal">(optional, max 3)</span>
+                      </label>
+                      {buttons.length < 3 && !showButtonTypePicker && (
+                        <button
+                          type="button"
+                          onClick={() => setShowButtonTypePicker(true)}
+                          className="flex items-center gap-1.5 text-sm text-emerald-600 hover:text-emerald-700 font-medium"
+                        >
+                          <Plus size={16} /> Add button
+                        </button>
+                      )}
+                    </div>
+                    
+                    {/* Button type picker dropdown */}
+                    {showButtonTypePicker && buttons.length < 3 && (
+                      <div className="mb-3 p-3 rounded-xl bg-surface-subtle border border-border-subtle">
+                        <p className="font-body text-xs text-ink-muted mb-2">Select button type:</p>
+                        <div className="grid grid-cols-1 gap-1">
+                          {BUTTON_TYPE_OPTIONS.map(opt => (
+                            <button
+                              key={opt.type}
+                              type="button"
+                              onClick={() => addButton(opt.type)}
+                              className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-white hover:shadow-sm transition-all text-left"
+                            >
+                              <div>
+                                <p className="font-body text-sm font-medium text-ink">{opt.label}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowButtonTypePicker(false)}
+                          className="mt-2 text-xs text-ink-muted hover:text-ink-secondary"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                    
+                    {buttons.length === 0 && !showButtonTypePicker && (
+                      <p className="font-body text-xs text-ink-muted">
+                        Add buttons so users can respond or take action with one tap.
+                      </p>
+                    )}
+                    
+                    <div className="space-y-3">
+                      {buttons.map((btn, i) => (
+                        <div key={i} className="p-4 rounded-xl bg-white border border-border-subtle shadow-sm space-y-3">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1">
+                              <p className="font-body text-xs text-ink-muted mb-1">Button type</p>
                               <select
                                 value={btn.type}
                                 onChange={e => updateButton(i, "type", e.target.value)}
-                                className="input text-sm py-1.5 flex-1"
+                                className="input text-sm py-1.5 w-full"
                               >
-                                <option value="QUICK_REPLY">Quick Reply</option>
-                                <option value="URL">Visit Website</option>
-                                <option value="WHATSAPP_CALL">Call on WhatsApp</option>
-                                <option value="PHONE_NUMBER">Call Phone Number</option>
-                                <option value="COPY_CODE">Copy Offer Code</option>
+                                {BUTTON_TYPE_OPTIONS.map(opt => (
+                                  <option key={opt.type} value={opt.type}>{opt.label}</option>
+                                ))}
                               </select>
                             </div>
+                            <button
+                              type="button"
+                              onClick={() => removeButton(i)}
+                              className="p-2 rounded-lg hover:bg-red-50 text-ink-muted hover:text-red-500 transition-colors flex-shrink-0 mt-5"
+                            >
+                              <Trash2 size={16} />
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => removeButton(i)}
-                            className="p-2 rounded-lg hover:bg-red-50 text-ink-muted hover:text-red-500 transition-colors flex-shrink-0 mt-5"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                        
-                        {/* Button text (all types) */}
-                        <div>
-                          <p className="font-body text-xs text-ink-muted mb-1">Button text</p>
-                          <input
-                            value={btn.text}
-                            onChange={e => updateButton(i, "text", e.target.value.slice(0, 25))}
-                            placeholder={
-                              btn.type === "QUICK_REPLY" ? "e.g. Book Now" :
-                              btn.type === "URL" ? "e.g. Visit Website" :
-                              btn.type === "WHATSAPP_CALL" ? "e.g. Call on WhatsApp" :
-                              btn.type === "PHONE_NUMBER" ? "e.g. Call Us" :
-                              "e.g. Copy Code"
-                            }
-                            maxLength={25}
-                            className="input text-sm"
-                          />
-                        </div>
-                        
-                        {/* URL fields */}
-                        {btn.type === "URL" && (
+                          
+                          {/* Button text (all types) */}
                           <div>
-                            <p className="font-body text-xs text-ink-muted mb-1">Website URL</p>
+                            <p className="font-body text-xs text-ink-muted mb-1">Button text</p>
                             <input
-                              value={btn.url || ""}
-                              onChange={e => updateButton(i, "url", e.target.value)}
-                              placeholder="https://www.example.com"
+                              value={btn.text}
+                              onChange={e => updateButton(i, "text", e.target.value.slice(0, 25))}
+                              placeholder={
+                                btn.type === "QUICK_REPLY" ? "e.g. Book Now" :
+                                btn.type === "URL" ? "e.g. Visit Website" :
+                                btn.type === "WHATSAPP_CALL" ? "e.g. Call on WhatsApp" :
+                                btn.type === "PHONE_NUMBER" ? "e.g. Call Us" :
+                                "e.g. Copy Code"
+                              }
+                              maxLength={25}
                               className="input text-sm"
                             />
                           </div>
-                        )}
-                        
-                        {/* Phone number fields */}
-                        {(btn.type === "PHONE_NUMBER" || btn.type === "WHATSAPP_CALL") && (
-                          <div className="grid grid-cols-3 gap-2">
+                          
+                          {/* URL fields */}
+                          {btn.type === "URL" && (
                             <div>
-                              <p className="font-body text-xs text-ink-muted mb-1">Country</p>
-                              <select
-                                value={btn.country || "+91"}
-                                onChange={e => updateButton(i, "country", e.target.value)}
-                                className="input text-sm"
-                              >
-                                <option value="+91">IN +91</option>
-                                <option value="+1">US +1</option>
-                                <option value="+44">UK +44</option>
-                                <option value="+61">AU +61</option>
-                                <option value="+81">JP +81</option>
-                              </select>
-                            </div>
-                            <div className="col-span-2">
-                              <p className="font-body text-xs text-ink-muted mb-1">Phone number</p>
+                              <p className="font-body text-xs text-ink-muted mb-1">Website URL</p>
                               <input
-                                value={btn.phone || ""}
-                                onChange={e => updateButton(i, "phone", e.target.value)}
-                                placeholder="9876543210"
+                                value={btn.url || ""}
+                                onChange={e => updateButton(i, "url", e.target.value)}
+                                placeholder="https://www.example.com"
                                 className="input text-sm"
                               />
                             </div>
-                          </div>
-                        )}
-                        
-                        {/* WhatsApp call active for */}
-                        {btn.type === "WHATSAPP_CALL" && (
-                          <div>
-                            <p className="font-body text-xs text-ink-muted mb-1">Active for</p>
-                            <select
-                              value={btn.active_for_days || 7}
-                              onChange={e => updateButton(i, "active_for_days", parseInt(e.target.value))}
-                              className="input text-sm"
-                            >
-                              <option value={7}>7 days</option>
-                              <option value={30}>30 days</option>
-                              <option value={90}>90 days</option>
-                            </select>
-                          </div>
-                        )}
-                        
-                        {/* Copy offer code */}
-                        {btn.type === "COPY_CODE" && (
-                          <div>
-                            <p className="font-body text-xs text-ink-muted mb-1">Offer code</p>
-                            <input
-                              value={btn.offer_code || ""}
-                              onChange={e => updateButton(i, "offer_code", e.target.value.slice(0, 20))}
-                              placeholder="e.g. SAVE20"
-                              maxLength={20}
-                              className="input text-sm"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Right: Live Preview */}
-              <div className="lg:col-span-2 flex flex-col">
-                <label className="font-body text-sm font-medium text-ink mb-2 block">
-                  Preview
-                </label>
-                <div className="bg-[#EFEAE2] rounded-3xl p-5 flex-1 relative overflow-hidden flex flex-col min-h-[500px]">
-                  {/* WhatsApp chat background pattern overlay */}
-                  <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: "url('https://static.whatsapp.net/rsrc.php/v3/yl/r/r_Q1kFPEKdt.png')", backgroundSize: "400px" }}></div>
-                  
-                  <div className="relative z-10 w-full">
-                    {/* Media header preview */}
-                    {headerMediaType !== "NONE" && (headerMediaPreview || headerMediaUrl) && (
-                      <div className="mb-2 w-[92%] float-left clear-both">
-                        {headerMediaType === "IMAGE" && headerMediaPreview && (
-                          <img src={headerMediaPreview} alt="Header" className="w-full h-32 object-cover rounded-t-[18px]" />
-                        )}
-                        {headerMediaType === "IMAGE" && !headerMediaPreview && (
-                          <div className="bg-gray-200 rounded-t-[18px] h-32 flex items-center justify-center">
-                            <ImageIcon size={24} className="text-gray-400" />
-                          </div>
-                        )}
-                        {headerMediaType === "VIDEO" && (
-                          <div className="bg-gray-200 rounded-t-[18px] h-32 flex items-center justify-center">
-                            <span className="text-gray-500 text-xs">▶ Video</span>
-                          </div>
-                        )}
-                        {headerMediaType === "DOCUMENT" && (
-                          <div className="bg-gray-200 rounded-t-[18px] h-20 flex items-center justify-center gap-2">
-                            <span className="text-gray-500 text-xs">📄 Document</span>
-                          </div>
-                        )}
-                        {headerMediaType === "LOCATION" && (
-                          <div className="bg-gray-200 rounded-t-[18px] h-32 flex items-center justify-center">
-                            <span className="text-gray-500 text-xs">📍 Location</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    
-                    <div className="bg-white rounded-[18px] rounded-tl-sm px-3.5 py-2.5 shadow-sm w-[92%] float-left clear-both relative">
-                      {headerText && (
-                        <p className="font-body text-[13px] font-bold text-[#111B21] mb-1 break-words">
-                          {headerText}
-                        </p>
-                      )}
-                      
-                      <p className="font-body text-[13.5px] text-[#111B21] whitespace-pre-wrap break-words leading-relaxed">
-                        {bodyText ? renderPreview(bodyText) : (
-                          <span className="text-gray-400 italic">Your message will appear here…</span>
-                        )}
-                      </p>
-                      
-                      {footerText && (
-                        <p className="font-body text-[11.5px] text-gray-500 mt-1.5 break-words">
-                          {footerText}
-                        </p>
-                      )}
-                      
-                      <div className="flex justify-end items-center gap-1 mt-0.5">
-                        <p className="font-body text-[10px] text-gray-400">12:00 PM</p>
-                        <svg viewBox="0 0 16 11" height="11" width="16" preserveAspectRatio="xMidYMid meet" className="text-[#53bdeb]"><path d="M11.832 0 4.887 6.945 1.79 3.848.376 5.263l4.511 4.511L13.246 1.414zM16 1.414l-1.414-1.414-3.414 3.414 1.414 1.414zM10.22 6.946l1.414-1.414 3.414 3.414-1.414 1.414z" fill="currentColor"></path></svg>
-                      </div>
+                          )}
+                          
+                          {/* Phone number fields */}
+                          {(btn.type === "PHONE_NUMBER" || btn.type === "WHATSAPP_CALL") && (
+                            <div className="grid grid-cols-3 gap-2">
+                              <div>
+                                <p className="font-body text-xs text-ink-muted mb-1">Country</p>
+                                <select
+                                  value={btn.country || "+91"}
+                                  onChange={e => updateButton(i, "country", e.target.value)}
+                                  className="input text-sm"
+                                >
+                                  <option value="+91">IN +91</option>
+                                  <option value="+1">US +1</option>
+                                  <option value="+44">UK +44</option>
+                                  <option value="+61">AU +61</option>
+                                  <option value="+81">JP +81</option>
+                                </select>
+                              </div>
+                              <div className="col-span-2">
+                                <p className="font-body text-xs text-ink-muted mb-1">Phone number</p>
+                                <input
+                                  value={btn.phone || ""}
+                                  onChange={e => updateButton(i, "phone", e.target.value)}
+                                  placeholder="9876543210"
+                                  className="input text-sm"
+                                />
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* WhatsApp call active for */}
+                          {btn.type === "WHATSAPP_CALL" && (
+                            <div>
+                              <p className="font-body text-xs text-ink-muted mb-1">Active for</p>
+                              <select
+                                value={btn.active_for_days || 7}
+                                onChange={e => updateButton(i, "active_for_days", parseInt(e.target.value))}
+                                className="input text-sm"
+                              >
+                                <option value={7}>7 days</option>
+                                <option value={30}>30 days</option>
+                                <option value={90}>90 days</option>
+                              </select>
+                            </div>
+                          )}
+                          
+                          {/* Copy offer code */}
+                          {btn.type === "COPY_CODE" && (
+                            <div>
+                              <p className="font-body text-xs text-ink-muted mb-1">Offer code</p>
+                              <input
+                                value={btn.offer_code || ""}
+                                onChange={e => updateButton(i, "offer_code", e.target.value.slice(0, 20))}
+                                placeholder="e.g. SAVE20"
+                                maxLength={20}
+                                className="input text-sm"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                    
-                    {buttons.filter(b => b.text.trim()).length > 0 && (
-                      <div className="mt-1.5 space-y-1.5 w-[92%] float-left clear-both">
-                        {buttons.filter(b => b.text.trim()).map((btn, i) => (
-                          <div key={i} className="bg-white rounded-xl px-4 py-2.5 text-center text-[13.5px] font-medium shadow-sm w-full truncate border border-white hover:bg-gray-50 transition-colors">
-                            {btn.type === "QUICK_REPLY" && (
-                              <span className="text-[#00a884]">{btn.text}</span>
-                            )}
-                            {btn.type === "URL" && (
-                              <span className="text-[#00a884]">🔗 {btn.text}</span>
-                            )}
-                            {btn.type === "WHATSAPP_CALL" && (
-                              <span className="text-[#00a884]">📞 {btn.text}</span>
-                            )}
-                            {btn.type === "PHONE_NUMBER" && (
-                              <span className="text-[#00a884]">📱 {btn.text}</span>
-                            )}
-                            {btn.type === "COPY_CODE" && (
-                              <span className="text-[#00a884]">📋 {btn.text}</span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
                 </div>
-                
-                <p className="font-body text-xs text-ink-muted mt-3 text-center">
-                  This is how your message will look on WhatsApp.
-                </p>
-                <div className="mt-4 p-3.5 rounded-2xl bg-amber-50/80 border border-amber-100 flex gap-3 items-start">
-                  <Clock size={16} className="text-amber-600 shrink-0 mt-0.5" />
-                  <p className="font-body text-xs text-amber-800 leading-relaxed">
-                    WhatsApp reviews new templates within <strong>24–72 hours</strong>. You will see the status update automatically here once approved.
-                  </p>
+
+                {/* Right: Live Preview */}
+                <div className="flex flex-col">
+                  <label className="font-body text-sm font-medium text-ink mb-2 block">
+                    Preview
+                  </label>
+                  <div className="bg-[#EFEAE2] rounded-2xl p-4 flex-1 relative overflow-hidden flex flex-col min-h-[500px]">
+                    {/* WhatsApp chat background pattern */}
+                    <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: "url('https://static.whatsapp.net/rsrc.php/v3/yl/r/r_Q1kFPEKdt.png')", backgroundSize: "400px" }}></div>
+                    
+                    <div className="relative z-10 w-full">
+                      {/* Media header preview */}
+                      {headerMediaType !== "NONE" && (headerMediaPreview || headerMediaUrl) && (
+                        <div className="mb-0">
+                          {headerMediaType === "IMAGE" && headerMediaPreview && (
+                            <div className="bg-white rounded-t-2xl overflow-hidden">
+                              <img src={headerMediaPreview} alt="Header" className="w-full h-40 object-cover" />
+                            </div>
+                          )}
+                          {headerMediaType === "IMAGE" && !headerMediaPreview && (
+                            <div className="bg-gray-300 rounded-t-2xl h-40 flex items-center justify-center">
+                              <ImageIcon size={32} className="text-gray-500" />
+                            </div>
+                          )}
+                          {headerMediaType === "VIDEO" && (
+                            <div className="bg-gray-300 rounded-t-2xl h-40 flex items-center justify-center relative">
+                              <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg">
+                                <div className="w-0 h-0 border-t-[10px] border-t-transparent border-l-[16px] border-l-gray-600 border-b-[10px] border-b-transparent ml-1"></div>
+                              </div>
+                            </div>
+                          )}
+                          {headerMediaType === "DOCUMENT" && (
+                            <div className="bg-gray-300 rounded-t-2xl h-24 flex items-center justify-center gap-2">
+                              <FileText size={24} className="text-gray-500" />
+                              <span className="text-gray-500 text-sm">Document</span>
+                            </div>
+                          )}
+                          {headerMediaType === "LOCATION" && (
+                            <div className="bg-gray-300 rounded-t-2xl h-40 flex items-center justify-center">
+                              <MapPin size={32} className="text-gray-500" />
+                            </div>
+                          )}
+                          
+                          {/* Message bubble with header text */}
+                          <div className="bg-white rounded-b-2xl px-4 py-3 shadow-sm">
+                            {headerText && (
+                              <p className="font-body text-sm font-bold text-[#111B21] mb-1">
+                                {headerText}
+                              </p>
+                            )}
+                            
+                            <p className="font-body text-[13.5px] text-[#111B21] whitespace-pre-wrap break-words leading-relaxed">
+                              {bodyText ? renderPreview(bodyText) : (
+                                <span className="text-gray-400 italic">Your message will appear here…</span>
+                              )}
+                            </p>
+                            
+                            {footerText && (
+                              <p className="font-body text-[11px] text-gray-500 mt-2 pt-2 border-t border-gray-100">
+                                {footerText}
+                              </p>
+                            )}
+                            
+                            <div className="flex justify-end items-center gap-1 mt-1">
+                              <p className="font-body text-[10px] text-gray-400">12:00 PM</p>
+                              <svg viewBox="0 0 16 11" height="11" width="16" preserveAspectRatio="xMidYMid meet" className="text-[#53bdeb]"><path d="M11.832 0 4.887 6.945 1.79 3.848.376 5.263l4.511 4.511L13.246 1.414zM16 1.414l-1.414-1.414-3.414 3.414 1.414 1.414zM10.22 6.946l1.414-1.414 3.414 3.414-1.414 1.414z" fill="currentColor"></path></svg>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* No media - standard bubble */}
+                      {headerMediaType === "NONE" && (
+                        <div className="bg-white rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm w-[92%]">
+                          {headerText && (
+                            <p className="font-body text-sm font-bold text-[#111B21] mb-1">
+                              {headerText}
+                            </p>
+                          )}
+                          
+                          <p className="font-body text-[13.5px] text-[#111B21] whitespace-pre-wrap break-words leading-relaxed">
+                            {bodyText ? renderPreview(bodyText) : (
+                              <span className="text-gray-400 italic">Your message will appear here…</span>
+                            )}
+                          </p>
+                          
+                          {footerText && (
+                            <p className="font-body text-[11px] text-gray-500 mt-2 pt-2 border-t border-gray-100">
+                              {footerText}
+                            </p>
+                          )}
+                          
+                          <div className="flex justify-end items-center gap-1 mt-1">
+                            <p className="font-body text-[10px] text-gray-400">12:00 PM</p>
+                            <svg viewBox="0 0 16 11" height="11" width="16" preserveAspectRatio="xMidYMid meet" className="text-[#53bdeb]"><path d="M11.832 0 4.887 6.945 1.79 3.848.376 5.263l4.511 4.511L13.246 1.414zM16 1.414l-1.414-1.414-3.414 3.414 1.414 1.414zM10.22 6.946l1.414-1.414 3.414 3.414-1.414 1.414z" fill="currentColor"></path></svg>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Buttons */}
+                      {buttons.filter(b => b.text.trim()).length > 0 && (
+                        <div className="mt-2 space-y-1.5 w-[92%]">
+                          {buttons.filter(b => b.text.trim()).map((btn, i) => (
+                            <div key={i} className="bg-white rounded-xl px-4 py-3 text-center text-[13.5px] font-medium shadow-sm w-full truncate border border-white hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
+                              {btn.type === "QUICK_REPLY" && (
+                                <MessageSquare size={14} className="text-emerald-600" />
+                              )}
+                              {btn.type === "URL" && (
+                                <Globe size={14} className="text-emerald-600" />
+                              )}
+                              {btn.type === "WHATSAPP_CALL" && (
+                                <Phone size={14} className="text-emerald-600" />
+                              )}
+                              {btn.type === "PHONE_NUMBER" && (
+                                <Phone size={14} className="text-emerald-600" />
+                              )}
+                              {btn.type === "COPY_CODE" && (
+                                <Copy size={14} className="text-emerald-600" />
+                              )}
+                              <span className="text-emerald-600">{btn.text}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="mt-4 p-3 rounded-xl bg-amber-50 border border-amber-100 flex gap-3 items-start">
+                    <Clock size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                    <p className="font-body text-xs text-amber-800 leading-relaxed">
+                      WhatsApp reviews new templates within <strong>24–72 hours</strong>. You will see the status update automatically here once approved.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="flex gap-3 mt-8 pt-5 border-t border-border-subtle justify-end">
+            {/* Modal Footer */}
+            <div className="flex gap-3 px-6 py-4 border-t border-border-subtle justify-end bg-white">
               <button onClick={resetModal} className="btn-ghost px-6">Cancel</button>
               <button
                 onClick={handleSubmit}
