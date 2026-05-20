@@ -62,7 +62,6 @@ const SECTIONS: SectionDef[] = [
     fields: [
       { key: "telecmi_secret", label: "App Secret", secret: true, required: true },
       { key: "telecmi_callerid", label: "Caller ID (DID shown to leads)", secret: false, required: false, hint: "The outbound number leads see when you call them" },
-      { key: "telecmi_recording_base_url", label: "Recording Base URL", secret: false, required: false, hint: "From TeleCMI dashboard → Settings → Recording. Needed for call summaries." },
     ],
   },
   {
