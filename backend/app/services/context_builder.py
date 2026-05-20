@@ -4,6 +4,13 @@ from app.db.supabase import get_supabase
 logger = logging.getLogger(__name__)
 
 
+def _safe_data(response) -> list | dict:
+    """Safely extract .data from a Supabase response that may be None."""
+    if response is None:
+        return []
+    return (response.data or []) if hasattr(response, "data") else []
+
+
 def _format_messages(messages: list[dict]) -> str:
     """Format messages for LLM context."""
     lines = []
@@ -42,7 +49,7 @@ def build_scorer_context(
             .maybe_single()
             .execute()
         )
-        state_data = state_row.data or {}
+        state_data = _safe_data(state_row) or {}
         summary = state_data.get("conversation_summary")
         msg_count = state_data.get("message_count", 0)
         flow_state = state_data.get("state", "idle")
@@ -61,7 +68,7 @@ def build_scorer_context(
                 )
                 context_block = (
                     f"CONVERSATION SUMMARY:\n{summary}\n\n"
-                    f"RECENT MESSAGES (full context for re-evaluation):\n{_format_messages(messages.data or [])}\n\n"
+                    f"RECENT MESSAGES (full context for re-evaluation):\n{_format_messages(_safe_data(messages))}\n\n"
                     f"CURRENT FLOW STATE: {flow_state}"
                 )
             else:
@@ -74,7 +81,7 @@ def build_scorer_context(
                     .execute()
                 )
                 context_block = (
-                    f"FULL CONVERSATION HISTORY:\n{_format_messages(messages.data or [])}\n\n"
+                    f"FULL CONVERSATION HISTORY:\n{_format_messages(_safe_data(messages))}\n\n"
                     f"CURRENT FLOW STATE: {flow_state}"
                 )
         else:
@@ -91,7 +98,7 @@ def build_scorer_context(
                 )
                 context_block = (
                     f"CONVERSATION SUMMARY:\n{summary}\n\n"
-                    f"RECENT MESSAGES:\n{_format_messages(messages.data or [])}\n\n"
+                    f"RECENT MESSAGES:\n{_format_messages(_safe_data(messages))}\n\n"
                     f"CURRENT FLOW STATE: {flow_state}"
                 )
             else:
@@ -105,7 +112,7 @@ def build_scorer_context(
                     .execute()
                 )
                 context_block = (
-                    f"RECENT CONVERSATION:\n{_format_messages(messages.data or [])}\n\n"
+                    f"RECENT CONVERSATION:\n{_format_messages(_safe_data(messages))}\n\n"
                     f"CURRENT FLOW STATE: {flow_state}"
                 )
         
