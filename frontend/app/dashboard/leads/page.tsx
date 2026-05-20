@@ -199,18 +199,18 @@ function ColdAssignmentToggle() {
   if (loading) return null;
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5 bg-surface-subtle rounded-xl">
-      <div className="flex-1">
-        <p className="font-label font-semibold text-ink text-sm">Auto-assign Cold Leads</p>
-        <p className="font-body text-xs text-ink-muted">When ON, C-segment leads are auto-assigned to callers</p>
-      </div>
-      <button
-        onClick={toggle}
-        className={`relative w-10 h-6 rounded-full transition-colors flex-shrink-0 ${enabled ? "bg-primary" : "bg-surface-mid"}`}
-      >
-        <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${enabled ? "translate-x-5" : "translate-x-1"}`} />
-      </button>
-    </div>
+    <button
+      onClick={toggle}
+      className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-border-subtle bg-white hover:bg-surface-subtle transition-colors"
+    >
+      {/* pill toggle */}
+      <span className={`relative inline-flex w-8 h-[18px] rounded-full transition-colors duration-200 flex-shrink-0 ${enabled ? "bg-primary" : "bg-surface-mid"}`}>
+        <span className={`absolute top-[3px] left-[3px] w-3 h-3 bg-white rounded-full shadow-sm transition-transform duration-200 ${enabled ? "translate-x-[14px]" : "translate-x-0"}`} />
+      </span>
+      <span className="font-label text-xs font-semibold text-ink-muted whitespace-nowrap">
+        Cold lead auto-assign <span className={`ml-1 font-bold ${enabled ? "text-primary" : "text-ink-muted"}`}>{enabled ? "ON" : "OFF"}</span>
+      </span>
+    </button>
   );
 }
 
@@ -279,9 +279,11 @@ export default function LeadsPage() {
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="font-display text-3xl font-bold text-tertiary">Leads</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="font-display text-3xl font-bold text-tertiary">Leads</h1>
+            {role === "owner" && <ColdAssignmentToggle />}
+          </div>
           <p className="font-body text-on-surface-muted mt-1">Priority segments A → D</p>
-          {role === "owner" && <div className="mt-3"><ColdAssignmentToggle /></div>}
         </div>
         <div className="flex items-center gap-2">
           <button
