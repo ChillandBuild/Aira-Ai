@@ -26,21 +26,29 @@ export function AuthRoleProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getAuthHeaders()
-      .then(async (auth) => {
-        const res = await fetch(`${API_URL}/api/v1/team/me`, { headers: auth });
-        if (!res.ok) throw new Error(`team/me ${res.status}`);
-        const d = await res.json();
-        setRole(d.role as "owner" | "caller");
-        setCallerId(d.caller_id ?? null);
-        setEnabledFeatures(d.enabled_features ?? ["whatsapp", "telecalling"]);
-        setIsSystemAdmin(d.is_system_admin ?? false);
-      })
-      .catch(() => {
-        setRole("owner");
-        setEnabledFeatures(["whatsapp", "telecalling"]);
-      })
-      .finally(() => setLoading(false));
+    async function fetchMe(retries = 2, delayMs = 4000): Promise<void> {
+      const auth = await getAuthHeaders();
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+          const res = await fetch(`${API_URL}/api/v1/team/me`, { headers: auth });
+          if (!res.ok) throw new Error(`team/me ${res.status}`);
+          const d = await res.json();
+          setRole(d.role as "owner" | "caller");
+          setCallerId(d.caller_id ?? null);
+          setEnabledFeatures(d.enabled_features ?? ["whatsapp", "telecalling"]);
+          setIsSystemAdmin(d.is_system_admin ?? false);
+          return;
+        } catch {
+          if (attempt < retries) {
+            await new Promise((r) => setTimeout(r, delayMs));
+          }
+        }
+      }
+      // All retries exhausted — leave role null (blank sidebar, not admin access)
+      setRole(null);
+    }
+
+    fetchMe().finally(() => setLoading(false));
   }, []);
 
   return (
