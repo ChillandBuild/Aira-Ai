@@ -233,8 +233,10 @@ async def submit_template(
     language: str,
     body_text: str,
     header_text: Optional[str] = None,
+    header_media_type: Optional[str] = None,  # IMAGE | VIDEO | DOCUMENT | LOCATION
+    header_media_url: Optional[str] = None,
     footer_text: Optional[str] = None,
-    buttons: list[str] | None = None,  # Quick reply button labels
+    buttons: list[dict] | None = None,  # Structured buttons
     access_token: Optional[str] = None,
     tenant_id: Optional[str] = None,
 ) -> dict:
@@ -248,7 +250,20 @@ async def submit_template(
 
     components: list[dict] = [body_component]
 
-    if header_text and header_text.strip():
+    # Handle header (text or media)
+    if header_media_type and header_media_type != "NONE":
+        # Media header
+        media_format = header_media_type.upper()
+        header_component: dict = {"type": "HEADER", "format": media_format}
+        if header_media_url:
+            # Add example for media approval
+            if media_format == "LOCATION":
+                header_component["example"] = {"header_handle": [header_media_url]}
+            else:
+                header_component["example"] = {"header_handle": [header_media_url]}
+        components.append(header_component)
+    elif header_text and header_text.strip():
+        # Text header
         components.append({
             "type": "HEADER",
             "format": "TEXT",
@@ -262,14 +277,55 @@ async def submit_template(
         })
 
     if buttons:
-        # Meta allows max 3 quick reply buttons
-        components.append({
-            "type": "BUTTONS",
-            "buttons": [
-                {"type": "QUICK_REPLY", "text": btn[:25]}  # Max 25 chars per button
-                for btn in buttons[:3]
-            ],
-        })
+        # Build button components based on type
+        button_components: list[dict] = []
+        for btn in buttons[:3]:  # Max 3 buttons
+            btn_type = btn.get("type", "QUICK_REPLY")
+            btn_text = btn.get("text", "")[:25]
+            
+            if btn_type == "QUICK_REPLY":
+                button_components.append({
+                    "type": "QUICK_REPLY",
+                    "text": btn_text
+                })
+            elif btn_type == "URL":
+                url_val = btn.get("url", "")
+                button_components.append({
+                    "type": "URL",
+                    "text": btn_text,
+                    "url": url_val,
+                    "example": {"url_suffix": [url_val.split("?")[-1] if "?" in url_val else ""]}
+                })
+            elif btn_type == "PHONE_NUMBER":
+                phone = btn.get("phone", "")
+                country = btn.get("country", "+1")
+                button_components.append({
+                    "type": "PHONE_NUMBER",
+                    "text": btn_text,
+                    "phone_number": f"{country} {phone}"
+                })
+            elif btn_type == "WHATSAPP_CALL":
+                phone = btn.get("phone", "")
+                country = btn.get("country", "+1")
+                button_components.append({
+                    "type": "PHONE_NUMBER",
+                    "text": btn_text,
+                    "phone_number": f"{country} {phone}",
+                    "example": {"whatsapp_call": True}
+                })
+            elif btn_type == "COPY_CODE":
+                offer_code = btn.get("offer_code", "")
+                button_components.append({
+                    "type": "COPY_CODE",
+                    "text": btn_text,
+                    "example": {"code": [offer_code]}
+                })
+        
+        if button_components:
+            components.append({
+                "type": "BUTTONS",
+                "buttons": button_components
+            })
 
     payload = {
         "name": name,

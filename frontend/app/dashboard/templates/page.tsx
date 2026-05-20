@@ -6,6 +6,16 @@ import { API_URL, getAuthHeaders } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+type Button = {
+  type: "QUICK_REPLY" | "URL" | "PHONE_NUMBER" | "WHATSAPP_CALL" | "COPY_CODE";
+  text: string;
+  url?: string;
+  phone?: string;
+  country?: string;
+  offer_code?: string;
+  active_for_days?: number;
+};
+
 type Template = {
   id: string;
   name: string;
@@ -13,7 +23,10 @@ type Template = {
   language: string;
   body_text: string;
   header_text?: string | null;
+  header_media_type?: string | null;
+  header_media_url?: string | null;
   footer_text?: string | null;
+  buttons?: Button[] | null;
   status: "PENDING" | "APPROVED" | "REJECTED" | "PAUSED";
   rejection_reason: string | null;
   submitted_at: string;
@@ -98,17 +111,33 @@ export default function TemplatesPage() {
   const [category, setCategory] = useState<"MARKETING" | "UTILITY" | "AUTHENTICATION">("UTILITY");
   const [language, setLanguage] = useState("en");
   const [headerText, setHeaderText] = useState("");
+  const [headerMediaType, setHeaderMediaType] = useState<string>("NONE");
+  const [headerMediaUrl, setHeaderMediaUrl] = useState("");
   const [bodyText, setBodyText] = useState("");
   const [footerText, setFooterText] = useState("");
-  const [buttons, setButtons] = useState<string[]>([]);
+  const [buttons, setButtons] = useState<Button[]>([]);
 
   const generatedName = toTemplateName(title);
 
-  function addButton() {
-    if (buttons.length < 3) setButtons(prev => [...prev, ""]);
+  function addButton(type: Button["type"] = "QUICK_REPLY") {
+    if (buttons.length < 3) {
+      const newButton: Button = { type, text: "" };
+      if (type === "URL") {
+        newButton.url = "";
+      } else if (type === "PHONE_NUMBER" || type === "WHATSAPP_CALL") {
+        newButton.phone = "";
+        newButton.country = "+1";
+        if (type === "WHATSAPP_CALL") {
+          newButton.active_for_days = 7;
+        }
+      } else if (type === "COPY_CODE") {
+        newButton.offer_code = "";
+      }
+      setButtons(prev => [...prev, newButton]);
+    }
   }
-  function updateButton(index: number, value: string) {
-    setButtons(prev => prev.map((b, i) => i === index ? value.slice(0, 25) : b));
+  function updateButton(index: number, field: keyof Button, value: string | number) {
+    setButtons(prev => prev.map((b, i) => i === index ? { ...b, [field]: value } : b));
   }
   function removeButton(index: number) {
     setButtons(prev => prev.filter((_, i) => i !== index));
@@ -130,7 +159,7 @@ export default function TemplatesPage() {
   useEffect(() => { load(); }, []);
 
   function resetModal() {
-    setTitle(""); setBodyText(""); setHeaderText(""); setFooterText(""); setCategory("UTILITY"); setLanguage("en");
+    setTitle(""); setBodyText(""); setHeaderText(""); setHeaderMediaType("NONE"); setHeaderMediaUrl(""); setFooterText(""); setCategory("UTILITY"); setLanguage("en");
     setButtons([]);
     setError(null); setShowModal(false);
   }
@@ -165,8 +194,10 @@ export default function TemplatesPage() {
           language,
           body_text: bodyText.trim(),
           header_text: headerText.trim() || null,
+          header_media_type: headerMediaType !== "NONE" ? headerMediaType : null,
+          header_media_url: headerMediaUrl.trim() || null,
           footer_text: footerText.trim() || null,
-          buttons: buttons.filter(b => b.trim()).length > 0 ? buttons.filter(b => b.trim()) : undefined,
+          buttons: buttons.filter(b => b.text.trim()).length > 0 ? buttons.filter(b => b.text.trim()) : undefined,
         }),
       });
       resetModal();
@@ -511,6 +542,36 @@ export default function TemplatesPage() {
                   />
                 </div>
 
+                {/* Media support */}
+                <div>
+                  <label className="font-body text-sm font-medium text-ink mb-1.5 block">
+                    Media Header <span className="text-ink-muted font-normal">(optional)</span>
+                  </label>
+                  <select
+                    value={headerMediaType}
+                    onChange={e => setHeaderMediaType(e.target.value)}
+                    className="input w-full sm:w-1/2 mb-2"
+                  >
+                    <option value="NONE">None</option>
+                    <option value="IMAGE">Image</option>
+                    <option value="VIDEO">Video</option>
+                    <option value="DOCUMENT">Document</option>
+                    <option value="LOCATION">Location</option>
+                  </select>
+                  {headerMediaType !== "NONE" && (
+                    <input
+                      value={headerMediaUrl}
+                      onChange={e => setHeaderMediaUrl(e.target.value)}
+                      placeholder={
+                        headerMediaType === "LOCATION"
+                          ? "https://maps.google.com/?q=..."
+                          : "https://example.com/media.jpg"
+                      }
+                      className="input"
+                    />
+                  )}
+                </div>
+
                 {/* Body text */}
                 <div>
                   <label className="font-body text-sm font-medium text-ink mb-1.5 block">Message Body</label>
@@ -540,52 +601,147 @@ export default function TemplatesPage() {
                   />
                 </div>
 
-                {/* Quick Reply Buttons */}
+                {/* Buttons */}
                 <div className="pt-2">
                   <div className="flex items-center justify-between mb-2">
                     <label className="font-body text-sm font-medium text-ink">
-                      Quick Reply Buttons <span className="text-ink-muted font-normal">(optional, max 3)</span>
+                      Buttons <span className="text-ink-muted font-normal">(optional, max 3)</span>
                     </label>
                     {buttons.length < 3 && (
-                      <button
-                        type="button"
-                        onClick={addButton}
-                        className="text-xs text-primary hover:underline font-semibold bg-primary/5 px-2 py-1 rounded-md"
-                      >
-                        + Add button
-                      </button>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => addButton("QUICK_REPLY")}
+                          className="text-xs text-primary hover:underline font-semibold bg-primary/5 px-2 py-1 rounded-md"
+                        >
+                          + Add button
+                        </button>
+                        {buttons.length < 3 && (
+                          <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-border-subtle py-1 z-10 min-w-[180px]">
+                            {[
+                              { type: "QUICK_REPLY" as const, label: "Quick Reply", desc: "Custom reply" },
+                              { type: "URL" as const, label: "Visit Website", desc: "Open URL" },
+                              { type: "WHATSAPP_CALL" as const, label: "Call on WhatsApp", desc: "WhatsApp call" },
+                              { type: "PHONE_NUMBER" as const, label: "Call Phone Number", desc: "Phone call" },
+                              { type: "COPY_CODE" as const, label: "Copy Offer Code", desc: "Copy code" },
+                            ].map(opt => (
+                              <button
+                                key={opt.type}
+                                type="button"
+                                onClick={() => { addButton(opt.type); }}
+                                className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-subtle flex items-center gap-2"
+                              >
+                                <span className="font-medium">{opt.label}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                   {buttons.length === 0 && (
                     <p className="font-body text-xs text-ink-muted">
-                      Add buttons like &quot;Book Now&quot; or &quot;Not Interested&quot; so users can reply with one tap.
+                      Add buttons so users can respond or take action with one tap.
                     </p>
                   )}
-                  <div className="space-y-2.5">
+                  <div className="space-y-3">
                     {buttons.map((btn, i) => (
-                      <div key={i} className="flex items-center gap-2">
+                      <div key={i} className="p-3 rounded-2xl bg-surface-subtle border border-border-subtle space-y-2">
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={btn.type}
+                            onChange={e => updateButton(i, "type", e.target.value)}
+                            className="input text-xs py-1.5 flex-1"
+                          >
+                            <option value="QUICK_REPLY">Quick Reply</option>
+                            <option value="URL">Visit Website</option>
+                            <option value="WHATSAPP_CALL">Call on WhatsApp</option>
+                            <option value="PHONE_NUMBER">Call Phone Number</option>
+                            <option value="COPY_CODE">Copy Offer Code</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => removeButton(i)}
+                            className="p-1.5 rounded-xl hover:bg-red-50 text-ink-muted hover:text-red-500 transition-colors flex-shrink-0"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                        
+                        {/* Button text (all types) */}
                         <input
-                          value={btn}
-                          onChange={e => updateButton(i, e.target.value)}
-                          placeholder={i === 0 ? "Book Now" : i === buttons.length - 1 && i > 0 ? "வேண்டாம் (Not Interested)" : "Button text"}
+                          value={btn.text}
+                          onChange={e => updateButton(i, "text", e.target.value.slice(0, 25))}
+                          placeholder={
+                            btn.type === "QUICK_REPLY" ? "Button text" :
+                            btn.type === "URL" ? "Visit website" :
+                            btn.type === "WHATSAPP_CALL" ? "Call on WhatsApp" :
+                            btn.type === "PHONE_NUMBER" ? "Call phone number" :
+                            "Copy offer code"
+                          }
                           maxLength={25}
-                          className="input flex-1 text-sm bg-surface-subtle border-transparent focus:bg-white"
+                          className="input text-sm"
                         />
-                        <button
-                          type="button"
-                          onClick={() => removeButton(i)}
-                          className="p-2 rounded-xl hover:bg-red-50 text-ink-muted hover:text-red-500 transition-colors flex-shrink-0"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                        
+                        {/* URL fields */}
+                        {btn.type === "URL" && (
+                          <input
+                            value={btn.url || ""}
+                            onChange={e => updateButton(i, "url", e.target.value)}
+                            placeholder="https://www.example.com"
+                            className="input text-sm"
+                          />
+                        )}
+                        
+                        {/* Phone number fields */}
+                        {(btn.type === "PHONE_NUMBER" || btn.type === "WHATSAPP_CALL") && (
+                          <div className="flex gap-2">
+                            <select
+                              value={btn.country || "+1"}
+                              onChange={e => updateButton(i, "country", e.target.value)}
+                              className="input text-sm w-24"
+                            >
+                              <option value="+1">US +1</option>
+                              <option value="+91">IN +91</option>
+                              <option value="+44">UK +44</option>
+                              <option value="+61">AU +61</option>
+                              <option value="+81">JP +81</option>
+                            </select>
+                            <input
+                              value={btn.phone || ""}
+                              onChange={e => updateButton(i, "phone", e.target.value)}
+                              placeholder="Phone number"
+                              className="input text-sm flex-1"
+                            />
+                          </div>
+                        )}
+                        
+                        {/* WhatsApp call active for */}
+                        {btn.type === "WHATSAPP_CALL" && (
+                          <select
+                            value={btn.active_for_days || 7}
+                            onChange={e => updateButton(i, "active_for_days", parseInt(e.target.value))}
+                            className="input text-sm"
+                          >
+                            <option value={7}>7 days</option>
+                            <option value={30}>30 days</option>
+                            <option value={90}>90 days</option>
+                          </select>
+                        )}
+                        
+                        {/* Copy offer code */}
+                        {btn.type === "COPY_CODE" && (
+                          <input
+                            value={btn.offer_code || ""}
+                            onChange={e => updateButton(i, "offer_code", e.target.value.slice(0, 20))}
+                            placeholder="Enter sample code"
+                            maxLength={20}
+                            className="input text-sm"
+                          />
+                        )}
                       </div>
                     ))}
                   </div>
-                  {buttons.length > 0 && (
-                    <p className="font-body text-[11px] text-ink-muted mt-2">
-                      Tip: Add &quot;வேண்டாம்&quot; or &quot;Not Interested&quot; as the last button so users can opt out with one tap.
-                    </p>
-                  )}
                 </div>
               </div>
 
@@ -599,6 +755,32 @@ export default function TemplatesPage() {
                   <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: "url('https://static.whatsapp.net/rsrc.php/v3/yl/r/r_Q1kFPEKdt.png')", backgroundSize: "400px" }}></div>
                   
                   <div className="relative z-10 w-full">
+                    {/* Media header preview */}
+                    {headerMediaType !== "NONE" && headerMediaUrl && (
+                      <div className="mb-2 w-[92%] float-left clear-both">
+                        {headerMediaType === "IMAGE" && (
+                          <div className="bg-gray-200 rounded-t-[18px] h-32 flex items-center justify-center">
+                            <span className="text-gray-500 text-xs">Image</span>
+                          </div>
+                        )}
+                        {headerMediaType === "VIDEO" && (
+                          <div className="bg-gray-200 rounded-t-[18px] h-32 flex items-center justify-center">
+                            <span className="text-gray-500 text-xs">Video</span>
+                          </div>
+                        )}
+                        {headerMediaType === "DOCUMENT" && (
+                          <div className="bg-gray-200 rounded-t-[18px] h-20 flex items-center justify-center gap-2">
+                            <span className="text-gray-500 text-xs">📄 Document</span>
+                          </div>
+                        )}
+                        {headerMediaType === "LOCATION" && (
+                          <div className="bg-gray-200 rounded-t-[18px] h-32 flex items-center justify-center">
+                            <span className="text-gray-500 text-xs">📍 Location</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
                     <div className="bg-white rounded-[18px] rounded-tl-sm px-3.5 py-2.5 shadow-sm w-[92%] float-left clear-both relative">
                       {headerText && (
                         <p className="font-body text-[13px] font-bold text-[#111B21] mb-1 break-words">
@@ -624,11 +806,25 @@ export default function TemplatesPage() {
                       </div>
                     </div>
                     
-                    {buttons.filter(b => b.trim()).length > 0 && (
+                    {buttons.filter(b => b.text.trim()).length > 0 && (
                       <div className="mt-1.5 space-y-1.5 w-[92%] float-left clear-both">
-                        {buttons.filter(b => b.trim()).map((btn, i) => (
-                          <div key={i} className="bg-white rounded-xl px-4 py-2.5 text-center text-[13.5px] text-[#00a884] font-medium shadow-sm w-full truncate border border-white">
-                            {btn}
+                        {buttons.filter(b => b.text.trim()).map((btn, i) => (
+                          <div key={i} className="bg-white rounded-xl px-4 py-2.5 text-center text-[13.5px] font-medium shadow-sm w-full truncate border border-white">
+                            {btn.type === "QUICK_REPLY" && (
+                              <span className="text-[#00a884]">{btn.text}</span>
+                            )}
+                            {btn.type === "URL" && (
+                              <span className="text-[#00a884]">🔗 {btn.text}</span>
+                            )}
+                            {btn.type === "WHATSAPP_CALL" && (
+                              <span className="text-[#00a884]">📞 {btn.text}</span>
+                            )}
+                            {btn.type === "PHONE_NUMBER" && (
+                              <span className="text-[#00a884]">📱 {btn.text}</span>
+                            )}
+                            {btn.type === "COPY_CODE" && (
+                              <span className="text-[#00a884]">📋 {btn.text}</span>
+                            )}
                           </div>
                         ))}
                       </div>

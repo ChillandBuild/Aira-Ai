@@ -12,14 +12,26 @@ router = APIRouter()
 public_router = APIRouter()  # No auth — Meta calls these endpoints directly
 
 
+class Button(BaseModel):
+    type: str  # QUICK_REPLY | URL | PHONE_NUMBER | WHATSAPP_CALL | COPY_CODE
+    text: str
+    url: str | None = None
+    phone: str | None = None
+    country: str | None = None
+    offer_code: str | None = None
+    active_for_days: int | None = None
+
+
 class CreateTemplate(BaseModel):
     name: str
     category: str
     language: str = "en"
     body_text: str
     header_text: str | None = None
+    header_media_type: str | None = None  # IMAGE | VIDEO | DOCUMENT | LOCATION
+    header_media_url: str | None = None
     footer_text: str | None = None
-    buttons: list[str] | None = None  # Optional quick reply button labels
+    buttons: list[Button] | None = None
 
 
 @router.get("/")
@@ -54,6 +66,8 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
                 language=payload.language,
                 body_text=payload.body_text,
                 header_text=payload.header_text,
+                header_media_type=payload.header_media_type,
+                header_media_url=payload.header_media_url,
                 footer_text=payload.footer_text,
                 buttons=payload.buttons or None,
                 tenant_id=tenant_id,
@@ -69,6 +83,11 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
         "category": category,
         "language": payload.language,
         "body_text": payload.body_text,
+        "header_text": payload.header_text,
+        "header_media_type": payload.header_media_type,
+        "header_media_url": payload.header_media_url,
+        "footer_text": payload.footer_text,
+        "buttons": [b.model_dump() for b in payload.buttons] if payload.buttons else None,
         "status": status,
         "meta_template_id": meta_template_id,
         "tenant_id": tenant_id,
