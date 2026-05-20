@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X, Trash2, Check, Clock, AlertCircle, RefreshCw, Send } from "lucide-react";
+import { Plus, X, Trash2, Check, Clock, AlertCircle, RefreshCw, Send, Upload, Image as ImageIcon } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -25,6 +25,7 @@ type Template = {
   header_text?: string | null;
   header_media_type?: string | null;
   header_media_url?: string | null;
+  header_media_id?: string | null;
   footer_text?: string | null;
   buttons?: Button[] | null;
   status: "PENDING" | "APPROVED" | "REJECTED" | "PAUSED";
@@ -113,20 +114,26 @@ export default function TemplatesPage() {
   const [headerText, setHeaderText] = useState("");
   const [headerMediaType, setHeaderMediaType] = useState<string>("NONE");
   const [headerMediaUrl, setHeaderMediaUrl] = useState("");
+  const [headerMediaId, setHeaderMediaId] = useState<string>("");
+  const [headerMediaFile, setHeaderMediaFile] = useState<File | null>(null);
+  const [headerMediaPreview, setHeaderMediaPreview] = useState<string>("");
+  const [uploadingMedia, setUploadingMedia] = useState(false);
   const [bodyText, setBodyText] = useState("");
   const [footerText, setFooterText] = useState("");
   const [buttons, setButtons] = useState<Button[]>([]);
+  const [showButtonTypePicker, setShowButtonTypePicker] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const generatedName = toTemplateName(title);
 
-  function addButton(type: Button["type"] = "QUICK_REPLY") {
+  function addButton(type: Button["type"]) {
     if (buttons.length < 3) {
       const newButton: Button = { type, text: "" };
       if (type === "URL") {
         newButton.url = "";
       } else if (type === "PHONE_NUMBER" || type === "WHATSAPP_CALL") {
         newButton.phone = "";
-        newButton.country = "+1";
+        newButton.country = "+91";
         if (type === "WHATSAPP_CALL") {
           newButton.active_for_days = 7;
         }
@@ -134,6 +141,7 @@ export default function TemplatesPage() {
         newButton.offer_code = "";
       }
       setButtons(prev => [...prev, newButton]);
+      setShowButtonTypePicker(false);
     }
   }
   function updateButton(index: number, field: keyof Button, value: string | number) {
@@ -141,6 +149,51 @@ export default function TemplatesPage() {
   }
   function removeButton(index: number) {
     setButtons(prev => prev.filter((_, i) => i !== index));
+  }
+
+  async function handleMediaUpload(file: File) {
+    setUploadingMedia(true);
+    try {
+      const authHeaders = await getAuthHeaders();
+      const formData = new FormData();
+      formData.append("file", file);
+      
+      const res = await fetch(`${API_URL}/api/v1/templates/upload-media`, {
+        method: "POST",
+        headers: authHeaders,
+        body: formData,
+      });
+      
+      if (!res.ok) throw new Error(`Upload failed: ${await res.text()}`);
+      
+      const data = await res.json();
+      setHeaderMediaId(data.media_id);
+      setHeaderMediaUrl(data.media_id);
+      
+      const previewUrl = URL.createObjectURL(file);
+      setHeaderMediaPreview(previewUrl);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to upload media");
+    } finally {
+      setUploadingMedia(false);
+    }
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) {
+      setHeaderMediaFile(file);
+      const previewUrl = URL.createObjectURL(file);
+      setHeaderMediaPreview(previewUrl);
+    }
+  }
+
+  function clearMedia() {
+    setHeaderMediaFile(null);
+    setHeaderMediaPreview("");
+    setHeaderMediaId("");
+    setHeaderMediaUrl("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   async function load() {
@@ -159,8 +212,8 @@ export default function TemplatesPage() {
   useEffect(() => { load(); }, []);
 
   function resetModal() {
-    setTitle(""); setBodyText(""); setHeaderText(""); setHeaderMediaType("NONE"); setHeaderMediaUrl(""); setFooterText(""); setCategory("UTILITY"); setLanguage("en");
-    setButtons([]);
+    setTitle(""); setBodyText(""); setHeaderText(""); setHeaderMediaType("NONE"); setHeaderMediaUrl(""); setHeaderMediaId(""); setHeaderMediaFile(null); setHeaderMediaPreview(""); setFooterText(""); setCategory("UTILITY"); setLanguage("en");
+    setButtons([]); setShowButtonTypePicker(false);
     setError(null); setShowModal(false);
   }
 
@@ -186,6 +239,10 @@ export default function TemplatesPage() {
     setSubmitting(true);
     setError(null);
     try {
+      if (headerMediaFile && headerMediaType === "IMAGE" && !headerMediaId) {
+        await handleMediaUpload(headerMediaFile);
+      }
+      
       await apiFetch("/api/v1/templates/", {
         method: "POST",
         body: JSON.stringify({
@@ -195,7 +252,7 @@ export default function TemplatesPage() {
           body_text: bodyText.trim(),
           header_text: headerText.trim() || null,
           header_media_type: headerMediaType !== "NONE" ? headerMediaType : null,
-          header_media_url: headerMediaUrl.trim() || null,
+          header_media_url: headerMediaId || headerMediaUrl.trim() || null,
           footer_text: footerText.trim() || null,
           buttons: buttons.filter(b => b.text.trim()).length > 0 ? buttons.filter(b => b.text.trim()) : undefined,
         }),
@@ -454,17 +511,17 @@ export default function TemplatesPage() {
 
       {/* ── New Template Modal ─────────────────────────────────────────────── */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-card-hover w-full max-w-4xl p-7 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl p-8 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 className="font-display font-bold text-ink" style={{ fontSize: "1.2rem" }}>
+                <h2 className="font-display font-bold text-ink text-xl">
                   New WhatsApp Template
                 </h2>
                 <p className="font-body text-sm text-ink-muted mt-1">Design and submit a new message template for Meta approval.</p>
               </div>
               <button onClick={resetModal} className="p-2 rounded-xl hover:bg-surface-subtle text-ink-muted transition-colors">
-                <X size={18} />
+                <X size={20} />
               </button>
             </div>
 
@@ -474,9 +531,9 @@ export default function TemplatesPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-5 gap-10">
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
               {/* Left: Form */}
-              <div className="col-span-3 space-y-5">
+              <div className="lg:col-span-3 space-y-5">
                 {/* Title */}
                 <div>
                   <label className="font-body text-sm font-medium text-ink mb-1.5 block">
@@ -550,7 +607,7 @@ export default function TemplatesPage() {
                   <select
                     value={headerMediaType}
                     onChange={e => setHeaderMediaType(e.target.value)}
-                    className="input w-full sm:w-1/2 mb-2"
+                    className="input w-full sm:w-1/2 mb-3"
                   >
                     <option value="NONE">None</option>
                     <option value="IMAGE">Image</option>
@@ -558,14 +615,52 @@ export default function TemplatesPage() {
                     <option value="DOCUMENT">Document</option>
                     <option value="LOCATION">Location</option>
                   </select>
-                  {headerMediaType !== "NONE" && (
+                  
+                  {headerMediaType === "IMAGE" && (
+                    <div className="space-y-2">
+                      {headerMediaPreview ? (
+                        <div className="relative rounded-xl overflow-hidden border border-border-subtle">
+                          <img src={headerMediaPreview} alt="Preview" className="w-full h-32 object-cover" />
+                          <button
+                            type="button"
+                            onClick={clearMedia}
+                            className="absolute top-2 right-2 p-1.5 bg-white/90 rounded-lg hover:bg-white shadow-sm"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => fileInputRef.current?.click()}
+                          className="border-2 border-dashed border-border-subtle rounded-xl p-6 text-center cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
+                        >
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            onChange={handleFileSelect}
+                            className="hidden"
+                          />
+                          <Upload size={24} className="mx-auto text-ink-muted mb-2" />
+                          <p className="font-body text-sm text-ink-secondary">
+                            {uploadingMedia ? "Uploading..." : "Click to upload image"}
+                          </p>
+                          <p className="font-body text-xs text-ink-muted mt-1">
+                            JPEG, PNG, WebP • Max 5MB
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  {headerMediaType !== "NONE" && headerMediaType !== "IMAGE" && (
                     <input
                       value={headerMediaUrl}
                       onChange={e => setHeaderMediaUrl(e.target.value)}
                       placeholder={
                         headerMediaType === "LOCATION"
                           ? "https://maps.google.com/?q=..."
-                          : "https://example.com/media.jpg"
+                          : "https://example.com/media.mp4"
                       }
                       className="input"
                     />
@@ -603,141 +698,187 @@ export default function TemplatesPage() {
 
                 {/* Buttons */}
                 <div className="pt-2">
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-3">
                     <label className="font-body text-sm font-medium text-ink">
                       Buttons <span className="text-ink-muted font-normal">(optional, max 3)</span>
                     </label>
-                    {buttons.length < 3 && (
-                      <div className="relative">
-                        <button
-                          type="button"
-                          onClick={() => addButton("QUICK_REPLY")}
-                          className="text-xs text-primary hover:underline font-semibold bg-primary/5 px-2 py-1 rounded-md"
-                        >
-                          + Add button
-                        </button>
-                        {buttons.length < 3 && (
-                          <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-border-subtle py-1 z-10 min-w-[180px]">
-                            {[
-                              { type: "QUICK_REPLY" as const, label: "Quick Reply", desc: "Custom reply" },
-                              { type: "URL" as const, label: "Visit Website", desc: "Open URL" },
-                              { type: "WHATSAPP_CALL" as const, label: "Call on WhatsApp", desc: "WhatsApp call" },
-                              { type: "PHONE_NUMBER" as const, label: "Call Phone Number", desc: "Phone call" },
-                              { type: "COPY_CODE" as const, label: "Copy Offer Code", desc: "Copy code" },
-                            ].map(opt => (
-                              <button
-                                key={opt.type}
-                                type="button"
-                                onClick={() => { addButton(opt.type); }}
-                                className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-subtle flex items-center gap-2"
-                              >
-                                <span className="font-medium">{opt.label}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                    {buttons.length < 3 && !showButtonTypePicker && (
+                      <button
+                        type="button"
+                        onClick={() => setShowButtonTypePicker(true)}
+                        className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 font-semibold bg-primary/5 hover:bg-primary/10 px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        <Plus size={14} /> Add button
+                      </button>
                     )}
                   </div>
-                  {buttons.length === 0 && (
+                  
+                  {/* Button type picker dropdown */}
+                  {showButtonTypePicker && buttons.length < 3 && (
+                    <div className="mb-3 p-3 rounded-xl bg-surface-subtle border border-border-subtle">
+                      <p className="font-body text-xs text-ink-muted mb-2">Select button type:</p>
+                      <div className="grid grid-cols-1 gap-1.5">
+                        {[
+                          { type: "QUICK_REPLY" as const, label: "Quick Reply", icon: "💬", desc: "Custom reply text" },
+                          { type: "URL" as const, label: "Visit Website", icon: "🔗", desc: "Open a URL" },
+                          { type: "WHATSAPP_CALL" as const, label: "Call on WhatsApp", icon: "📞", desc: "WhatsApp call button" },
+                          { type: "PHONE_NUMBER" as const, label: "Call Phone Number", icon: "📱", desc: "Phone call button" },
+                          { type: "COPY_CODE" as const, label: "Copy Offer Code", icon: "📋", desc: "Copy code to clipboard" },
+                        ].map(opt => (
+                          <button
+                            key={opt.type}
+                            type="button"
+                            onClick={() => addButton(opt.type)}
+                            className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-white hover:shadow-sm transition-all text-left"
+                          >
+                            <span className="text-lg">{opt.icon}</span>
+                            <div>
+                              <p className="font-body text-sm font-medium text-ink">{opt.label}</p>
+                              <p className="font-body text-xs text-ink-muted">{opt.desc}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowButtonTypePicker(false)}
+                        className="mt-2 text-xs text-ink-muted hover:text-ink-secondary"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                  
+                  {buttons.length === 0 && !showButtonTypePicker && (
                     <p className="font-body text-xs text-ink-muted">
                       Add buttons so users can respond or take action with one tap.
                     </p>
                   )}
+                  
                   <div className="space-y-3">
                     {buttons.map((btn, i) => (
-                      <div key={i} className="p-3 rounded-2xl bg-surface-subtle border border-border-subtle space-y-2">
+                      <div key={i} className="p-4 rounded-xl bg-white border border-border-subtle shadow-sm space-y-3">
                         <div className="flex items-center gap-2">
-                          <select
-                            value={btn.type}
-                            onChange={e => updateButton(i, "type", e.target.value)}
-                            className="input text-xs py-1.5 flex-1"
-                          >
-                            <option value="QUICK_REPLY">Quick Reply</option>
-                            <option value="URL">Visit Website</option>
-                            <option value="WHATSAPP_CALL">Call on WhatsApp</option>
-                            <option value="PHONE_NUMBER">Call Phone Number</option>
-                            <option value="COPY_CODE">Copy Offer Code</option>
-                          </select>
+                          <div className="flex-1">
+                            <p className="font-body text-xs text-ink-muted mb-1">Button type</p>
+                            <div className="flex items-center gap-2">
+                              <span className="text-base">
+                                {btn.type === "QUICK_REPLY" && "💬"}
+                                {btn.type === "URL" && "🔗"}
+                                {btn.type === "WHATSAPP_CALL" && "📞"}
+                                {btn.type === "PHONE_NUMBER" && "📱"}
+                                {btn.type === "COPY_CODE" && ""}
+                              </span>
+                              <select
+                                value={btn.type}
+                                onChange={e => updateButton(i, "type", e.target.value)}
+                                className="input text-sm py-1.5 flex-1"
+                              >
+                                <option value="QUICK_REPLY">Quick Reply</option>
+                                <option value="URL">Visit Website</option>
+                                <option value="WHATSAPP_CALL">Call on WhatsApp</option>
+                                <option value="PHONE_NUMBER">Call Phone Number</option>
+                                <option value="COPY_CODE">Copy Offer Code</option>
+                              </select>
+                            </div>
+                          </div>
                           <button
                             type="button"
                             onClick={() => removeButton(i)}
-                            className="p-1.5 rounded-xl hover:bg-red-50 text-ink-muted hover:text-red-500 transition-colors flex-shrink-0"
+                            className="p-2 rounded-lg hover:bg-red-50 text-ink-muted hover:text-red-500 transition-colors flex-shrink-0 mt-5"
                           >
-                            <Trash2 size={14} />
+                            <Trash2 size={16} />
                           </button>
                         </div>
                         
                         {/* Button text (all types) */}
-                        <input
-                          value={btn.text}
-                          onChange={e => updateButton(i, "text", e.target.value.slice(0, 25))}
-                          placeholder={
-                            btn.type === "QUICK_REPLY" ? "Button text" :
-                            btn.type === "URL" ? "Visit website" :
-                            btn.type === "WHATSAPP_CALL" ? "Call on WhatsApp" :
-                            btn.type === "PHONE_NUMBER" ? "Call phone number" :
-                            "Copy offer code"
-                          }
-                          maxLength={25}
-                          className="input text-sm"
-                        />
+                        <div>
+                          <p className="font-body text-xs text-ink-muted mb-1">Button text</p>
+                          <input
+                            value={btn.text}
+                            onChange={e => updateButton(i, "text", e.target.value.slice(0, 25))}
+                            placeholder={
+                              btn.type === "QUICK_REPLY" ? "e.g. Book Now" :
+                              btn.type === "URL" ? "e.g. Visit Website" :
+                              btn.type === "WHATSAPP_CALL" ? "e.g. Call on WhatsApp" :
+                              btn.type === "PHONE_NUMBER" ? "e.g. Call Us" :
+                              "e.g. Copy Code"
+                            }
+                            maxLength={25}
+                            className="input text-sm"
+                          />
+                        </div>
                         
                         {/* URL fields */}
                         {btn.type === "URL" && (
-                          <input
-                            value={btn.url || ""}
-                            onChange={e => updateButton(i, "url", e.target.value)}
-                            placeholder="https://www.example.com"
-                            className="input text-sm"
-                          />
+                          <div>
+                            <p className="font-body text-xs text-ink-muted mb-1">Website URL</p>
+                            <input
+                              value={btn.url || ""}
+                              onChange={e => updateButton(i, "url", e.target.value)}
+                              placeholder="https://www.example.com"
+                              className="input text-sm"
+                            />
+                          </div>
                         )}
                         
                         {/* Phone number fields */}
                         {(btn.type === "PHONE_NUMBER" || btn.type === "WHATSAPP_CALL") && (
-                          <div className="flex gap-2">
-                            <select
-                              value={btn.country || "+1"}
-                              onChange={e => updateButton(i, "country", e.target.value)}
-                              className="input text-sm w-24"
-                            >
-                              <option value="+1">US +1</option>
-                              <option value="+91">IN +91</option>
-                              <option value="+44">UK +44</option>
-                              <option value="+61">AU +61</option>
-                              <option value="+81">JP +81</option>
-                            </select>
-                            <input
-                              value={btn.phone || ""}
-                              onChange={e => updateButton(i, "phone", e.target.value)}
-                              placeholder="Phone number"
-                              className="input text-sm flex-1"
-                            />
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <p className="font-body text-xs text-ink-muted mb-1">Country</p>
+                              <select
+                                value={btn.country || "+91"}
+                                onChange={e => updateButton(i, "country", e.target.value)}
+                                className="input text-sm"
+                              >
+                                <option value="+91">IN +91</option>
+                                <option value="+1">US +1</option>
+                                <option value="+44">UK +44</option>
+                                <option value="+61">AU +61</option>
+                                <option value="+81">JP +81</option>
+                              </select>
+                            </div>
+                            <div className="col-span-2">
+                              <p className="font-body text-xs text-ink-muted mb-1">Phone number</p>
+                              <input
+                                value={btn.phone || ""}
+                                onChange={e => updateButton(i, "phone", e.target.value)}
+                                placeholder="9876543210"
+                                className="input text-sm"
+                              />
+                            </div>
                           </div>
                         )}
                         
                         {/* WhatsApp call active for */}
                         {btn.type === "WHATSAPP_CALL" && (
-                          <select
-                            value={btn.active_for_days || 7}
-                            onChange={e => updateButton(i, "active_for_days", parseInt(e.target.value))}
-                            className="input text-sm"
-                          >
-                            <option value={7}>7 days</option>
-                            <option value={30}>30 days</option>
-                            <option value={90}>90 days</option>
-                          </select>
+                          <div>
+                            <p className="font-body text-xs text-ink-muted mb-1">Active for</p>
+                            <select
+                              value={btn.active_for_days || 7}
+                              onChange={e => updateButton(i, "active_for_days", parseInt(e.target.value))}
+                              className="input text-sm"
+                            >
+                              <option value={7}>7 days</option>
+                              <option value={30}>30 days</option>
+                              <option value={90}>90 days</option>
+                            </select>
+                          </div>
                         )}
                         
                         {/* Copy offer code */}
                         {btn.type === "COPY_CODE" && (
-                          <input
-                            value={btn.offer_code || ""}
-                            onChange={e => updateButton(i, "offer_code", e.target.value.slice(0, 20))}
-                            placeholder="Enter sample code"
-                            maxLength={20}
-                            className="input text-sm"
-                          />
+                          <div>
+                            <p className="font-body text-xs text-ink-muted mb-1">Offer code</p>
+                            <input
+                              value={btn.offer_code || ""}
+                              onChange={e => updateButton(i, "offer_code", e.target.value.slice(0, 20))}
+                              placeholder="e.g. SAVE20"
+                              maxLength={20}
+                              className="input text-sm"
+                            />
+                          </div>
                         )}
                       </div>
                     ))}
@@ -746,26 +887,29 @@ export default function TemplatesPage() {
               </div>
 
               {/* Right: Live Preview */}
-              <div className="col-span-2 flex flex-col">
+              <div className="lg:col-span-2 flex flex-col">
                 <label className="font-body text-sm font-medium text-ink mb-2 block">
                   Preview
                 </label>
-                <div className="bg-[#EFEAE2] rounded-3xl p-5 flex-1 relative overflow-hidden flex flex-col">
-                  {/* WhatsApp chat background pattern overlay (optional, subtle) */}
+                <div className="bg-[#EFEAE2] rounded-3xl p-5 flex-1 relative overflow-hidden flex flex-col min-h-[500px]">
+                  {/* WhatsApp chat background pattern overlay */}
                   <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: "url('https://static.whatsapp.net/rsrc.php/v3/yl/r/r_Q1kFPEKdt.png')", backgroundSize: "400px" }}></div>
                   
                   <div className="relative z-10 w-full">
                     {/* Media header preview */}
-                    {headerMediaType !== "NONE" && headerMediaUrl && (
+                    {headerMediaType !== "NONE" && (headerMediaPreview || headerMediaUrl) && (
                       <div className="mb-2 w-[92%] float-left clear-both">
-                        {headerMediaType === "IMAGE" && (
+                        {headerMediaType === "IMAGE" && headerMediaPreview && (
+                          <img src={headerMediaPreview} alt="Header" className="w-full h-32 object-cover rounded-t-[18px]" />
+                        )}
+                        {headerMediaType === "IMAGE" && !headerMediaPreview && (
                           <div className="bg-gray-200 rounded-t-[18px] h-32 flex items-center justify-center">
-                            <span className="text-gray-500 text-xs">Image</span>
+                            <ImageIcon size={24} className="text-gray-400" />
                           </div>
                         )}
                         {headerMediaType === "VIDEO" && (
                           <div className="bg-gray-200 rounded-t-[18px] h-32 flex items-center justify-center">
-                            <span className="text-gray-500 text-xs">Video</span>
+                            <span className="text-gray-500 text-xs">▶ Video</span>
                           </div>
                         )}
                         {headerMediaType === "DOCUMENT" && (
@@ -809,7 +953,7 @@ export default function TemplatesPage() {
                     {buttons.filter(b => b.text.trim()).length > 0 && (
                       <div className="mt-1.5 space-y-1.5 w-[92%] float-left clear-both">
                         {buttons.filter(b => b.text.trim()).map((btn, i) => (
-                          <div key={i} className="bg-white rounded-xl px-4 py-2.5 text-center text-[13.5px] font-medium shadow-sm w-full truncate border border-white">
+                          <div key={i} className="bg-white rounded-xl px-4 py-2.5 text-center text-[13.5px] font-medium shadow-sm w-full truncate border border-white hover:bg-gray-50 transition-colors">
                             {btn.type === "QUICK_REPLY" && (
                               <span className="text-[#00a884]">{btn.text}</span>
                             )}
@@ -835,7 +979,7 @@ export default function TemplatesPage() {
                 <p className="font-body text-xs text-ink-muted mt-3 text-center">
                   This is how your message will look on WhatsApp.
                 </p>
-                <div className="mt-5 p-3.5 rounded-2xl bg-amber-50/80 border border-amber-100 flex gap-3 items-start">
+                <div className="mt-4 p-3.5 rounded-2xl bg-amber-50/80 border border-amber-100 flex gap-3 items-start">
                   <Clock size={16} className="text-amber-600 shrink-0 mt-0.5" />
                   <p className="font-body text-xs text-amber-800 leading-relaxed">
                     WhatsApp reviews new templates within <strong>24–72 hours</strong>. You will see the status update automatically here once approved.
