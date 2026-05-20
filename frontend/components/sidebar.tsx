@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useAuthRole } from "@/app/dashboard/contexts/AuthRoleContext";
+import { useAuthRole, clearRoleCache } from "@/app/dashboard/contexts/AuthRoleContext";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import {
   LayoutDashboard, MessageSquare, Users, Settings, Phone,
@@ -51,6 +51,7 @@ const BOTTOM_NAV: NavItem[] = [
 function LogoutButton() {
   const router = useRouter();
   async function handleLogout() {
+    clearRoleCache();
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/login");
@@ -92,7 +93,7 @@ export function Sidebar() {
     );
   }
 
-  const baseNav = role === "caller" ? CALLER_NAV : OWNER_NAV;
+  const baseNav = role === "owner" ? OWNER_NAV : role === "caller" ? CALLER_NAV : [];
   const activeNav = baseNav.filter(
     (item) => !item.feature || enabledFeatures.includes(item.feature)
   );
@@ -163,7 +164,7 @@ export function Sidebar() {
       <div className="px-3 pb-4 space-y-0.5">
         <div className="mx-2 mb-2 h-px bg-border-subtle" />
 
-        {role !== "caller" && BOTTOM_NAV.map(({ href, icon: Icon, label }) => {
+        {role === "owner" && BOTTOM_NAV.map(({ href, icon: Icon, label }) => {
           const active = pathname.startsWith(href);
           return (
             <Link

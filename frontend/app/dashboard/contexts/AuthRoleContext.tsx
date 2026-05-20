@@ -1,6 +1,7 @@
 "use client";
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { API_URL, getAuthHeaders } from "@/lib/api";
+import { API_URL } from "@/lib/api";
+import { createClient } from "@/lib/supabase/client";
 
 interface RoleCtx {
   role: "owner" | "caller" | null;
@@ -20,34 +21,56 @@ const AuthRoleContext = createContext<RoleCtx>({
 
 const CACHE_KEY = "aira_role_cache";
 
-function readCache(): Partial<RoleCtx> | null {
+interface CacheEntry {
+  userId: string;
+  role: "owner" | "caller";
+  callerId: string | null;
+  enabledFeatures: string[];
+  isSystemAdmin: boolean;
+}
+
+function readCache(): CacheEntry | null {
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch { return null; }
 }
 
-function writeCache(data: Partial<RoleCtx>) {
+function writeCache(data: CacheEntry) {
   try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch {}
 }
 
-export function AuthRoleProvider({ children }: { children: ReactNode }) {
-  const cached = typeof window !== "undefined" ? readCache() : null;
+export function clearRoleCache() {
+  try { localStorage.removeItem(CACHE_KEY); } catch {}
+}
 
-  const [role, setRole] = useState<"owner" | "caller" | null>(
-    (cached?.role as "owner" | "caller" | null) ?? null
-  );
-  const [callerId, setCallerId] = useState<string | null>(cached?.callerId ?? null);
-  const [enabledFeatures, setEnabledFeatures] = useState<string[]>(
-    cached?.enabledFeatures ?? ["whatsapp", "telecalling"]
-  );
-  const [isSystemAdmin, setIsSystemAdmin] = useState(cached?.isSystemAdmin ?? false);
-  // If we have cached data, don't block render
-  const [loading, setLoading] = useState(!cached);
+export function AuthRoleProvider({ children }: { children: ReactNode }) {
+  const [role, setRole] = useState<"owner" | "caller" | null>(null);
+  const [callerId, setCallerId] = useState<string | null>(null);
+  const [enabledFeatures, setEnabledFeatures] = useState<string[]>(["whatsapp", "telecalling"]);
+  const [isSystemAdmin, setIsSystemAdmin] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchMe(retries = 3, delayMs = 5000): Promise<void> {
-      const auth = await getAuthHeaders();
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const currentUserId = session?.user?.id;
+
+      // Apply cache only if it belongs to the current user — prevents stale owner
+      // role from bleeding into a caller session when the same browser is reused.
+      if (currentUserId) {
+        const cached = readCache();
+        if (cached && cached.userId === currentUserId) {
+          setRole(cached.role);
+          setCallerId(cached.callerId);
+          setEnabledFeatures(cached.enabledFeatures);
+          setIsSystemAdmin(cached.isSystemAdmin);
+          setLoading(false);
+        }
+      }
+
+      const auth: Record<string, string> = session ? { Authorization: `Bearer ${session.access_token}` } : {};
       for (let attempt = 1; attempt <= retries; attempt++) {
         try {
           const res = await fetch(`${API_URL}/api/v1/team/me`, { headers: auth });
@@ -61,7 +84,9 @@ export function AuthRoleProvider({ children }: { children: ReactNode }) {
           setCallerId(newCallerId);
           setEnabledFeatures(newFeatures);
           setIsSystemAdmin(newIsAdmin);
-          writeCache({ role: newRole, callerId: newCallerId, enabledFeatures: newFeatures, isSystemAdmin: newIsAdmin });
+          if (currentUserId) {
+            writeCache({ userId: currentUserId, role: newRole, callerId: newCallerId, enabledFeatures: newFeatures, isSystemAdmin: newIsAdmin });
+          }
           return;
         } catch {
           if (attempt < retries) {
@@ -69,7 +94,6 @@ export function AuthRoleProvider({ children }: { children: ReactNode }) {
           }
         }
       }
-      // All retries failed — keep whatever was in cache (don't clear it)
     }
 
     fetchMe().finally(() => setLoading(false));
