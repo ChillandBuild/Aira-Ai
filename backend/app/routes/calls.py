@@ -236,11 +236,16 @@ async def telecmi_cdr(request: Request, background_tasks: BackgroundTasks):
         updates["status"] = "failed"
 
     # Handle recording if present
+    # TeleCMI recording URL: https://piopiy.telecmi.com/v1/play?appid=<appid>&token=<secret>&file=<filename>
     recording_filename = cdr.get("filename")
     if recording_filename:
-        recording_base_url = get_setting("telecmi_recording_base_url") or ""
-        if recording_base_url:
-            full_url = f"{recording_base_url.rstrip('/')}/{recording_filename}"
+        appid = cdr.get("appid")
+        secret = get_setting("telecmi_secret") or settings.telecmi_secret
+        if appid and secret:
+            full_url = (
+                f"https://piopiy.telecmi.com/v1/play"
+                f"?appid={appid}&token={secret}&file={recording_filename}"
+            )
             updates["recording_url"] = full_url
             background_tasks.add_task(_process_telecmi_recording, call_log_id, full_url)
 
