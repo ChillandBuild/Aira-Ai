@@ -38,6 +38,7 @@ const OWNER_NAV: NavItem[] = [
 
 const CALLER_NAV: NavItem[] = [
   { href: "/dashboard/profile", icon: Users, label: "My Profile" },
+  { href: "/dashboard/inbox", icon: Inbox, label: "Inbox", feature: "whatsapp" },
   { href: "/dashboard/telecalling", icon: Phone, label: "Telecalling" },
   { href: "/dashboard/notes", icon: StickyNote, label: "Notes" },
   { href: "/dashboard/conversations", icon: MessageSquare, label: "Conversations" },

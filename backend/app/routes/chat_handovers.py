@@ -1,36 +1,40 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from app.db.supabase import get_supabase
-from app.dependencies.tenant import get_tenant_id
+from app.dependencies.tenant import get_tenant_and_role
 
 router = APIRouter()
 
 
 @router.get("/")
-def list_handovers(tenant_id: str = Depends(get_tenant_id)):
+def list_handovers(ctx: dict = Depends(get_tenant_and_role)):
     db = get_supabase()
-    rows = (
+    query = (
         db.table("chat_handovers")
         .select("id, lead_id, assigned_to, reason, status, opened_at, leads(name, phone, segment)")
-        .eq("tenant_id", tenant_id)
+        .eq("tenant_id", ctx["tenant_id"])
         .eq("status", "pending")
         .order("opened_at", desc=True)
         .limit(50)
-        .execute()
     )
+    if ctx["role"] == "caller" and ctx.get("caller_id"):
+        query = query.eq("assigned_to", ctx["caller_id"])
+    rows = query.execute()
     return {"data": rows.data or []}
 
 
 @router.get("/count")
-def handover_count(tenant_id: str = Depends(get_tenant_id)):
+def handover_count(ctx: dict = Depends(get_tenant_and_role)):
     db = get_supabase()
-    result = (
+    query = (
         db.table("chat_handovers")
         .select("id", count="exact")
-        .eq("tenant_id", tenant_id)
+        .eq("tenant_id", ctx["tenant_id"])
         .eq("status", "pending")
-        .execute()
     )
+    if ctx["role"] == "caller" and ctx.get("caller_id"):
+        query = query.eq("assigned_to", ctx["caller_id"])
+    result = query.execute()
     return {"count": result.count or 0}
 
 
