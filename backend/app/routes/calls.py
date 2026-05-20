@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Literal
 from uuid import UUID
@@ -155,6 +156,29 @@ async def initiate_call(payload: InitiateCall, ctx: dict = Depends(get_tenant_an
 # Configure this URL in your TeleCMI dashboard → SETTINGS → WEBHOOKS.
 # URL: https://YOUR-RENDER-URL.onrender.com/api/v1/calls/telecmi-cdr
 
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+
+
+def _extract_call_log_id(cdr: dict) -> str | None:
+    """Pull a usable call_log_id from a TeleCMI CDR `custom` field.
+
+    TeleCMI sends the literal string `"none"` (lowercase) when no custom value
+    was attached at dial time — treat that like a missing field. Also reject
+    our own marker `"aira_ai_call"` and anything that isn't a UUID, to avoid
+    sending invalid UUIDs to PostgREST (which returns 400 and crashes the
+    handler via maybe_single).
+    """
+    raw = cdr.get("custom")
+    if not raw or not isinstance(raw, str):
+        return None
+    val = raw.strip()
+    if val.lower() in {"", "none", "null", "aira_ai_call"}:
+        return None
+    if not _UUID_RE.match(val):
+        return None
+    return val
+
+
 @public_router.post("/telecmi-cdr")
 async def telecmi_cdr(request: Request, background_tasks: BackgroundTasks):
     """Receive Call Detail Record (CDR) from TeleCMI."""
@@ -162,13 +186,13 @@ async def telecmi_cdr(request: Request, background_tasks: BackgroundTasks):
     logger.info(f"TeleCMI CDR received: {cdr}")
 
     status = cdr.get("status")
+    call_log_id = _extract_call_log_id(cdr)
 
     # TeleCMI sends separate CDRs for user_missed / user_answered (agent leg).
     # We only process outbound CDRs with a call_log_id embedded in custom.
     if status == "user_missed":
         logger.info("TeleCMI CDR: agent missed the call, updating call log")
-        call_log_id = cdr.get("custom")
-        if call_log_id and call_log_id != "aira_ai_call":
+        if call_log_id:
             db = get_supabase()
             db.table("call_logs").update({
                 "status": "missed",
@@ -176,10 +200,8 @@ async def telecmi_cdr(request: Request, background_tasks: BackgroundTasks):
             }).eq("id", call_log_id).execute()
         return {"ok": True}
 
-    # We embed call_log_id in the `custom` field when initiating the call.
-    call_log_id = cdr.get("custom")
-    if not call_log_id or call_log_id == "aira_ai_call":
-        logger.warning(f"TeleCMI CDR missing call_log_id in custom field, ignoring: {cdr}")
+    if not call_log_id:
+        logger.warning(f"TeleCMI CDR missing/invalid call_log_id, ignoring: {cdr}")
         return {"ok": True}
 
     db = get_supabase()
@@ -191,7 +213,7 @@ async def telecmi_cdr(request: Request, background_tasks: BackgroundTasks):
         .maybe_single()
         .execute()
     )
-    if not log_row.data:
+    if not log_row or not log_row.data:
         logger.warning(f"TeleCMI CDR: no call_log found for id={call_log_id}")
         return {"ok": True}
 

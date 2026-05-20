@@ -1,8 +1,10 @@
+import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id, get_tenant_and_role
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -19,12 +21,19 @@ def list_handovers(ctx: dict = Depends(get_tenant_and_role)):
     )
     if ctx["role"] == "caller" and ctx.get("caller_id"):
         query = query.eq("assigned_to", ctx["caller_id"])
-    rows = query.execute()
+    try:
+        rows = query.execute()
+    except Exception as e:
+        logger.warning(f"chat_handovers list failed (transient?): {e}")
+        return {"data": []}
     return {"data": rows.data or []}
 
 
 @router.get("/count")
 def handover_count(ctx: dict = Depends(get_tenant_and_role)):
+    """Sidebar badge polls this every 60s. Swallow transient Supabase
+    HTTP/2 disconnects (RemoteProtocolError) so a flaky connection doesn't
+    spam 500s into the UI — the next poll will succeed."""
     db = get_supabase()
     query = (
         db.table("chat_handovers")
@@ -34,7 +43,11 @@ def handover_count(ctx: dict = Depends(get_tenant_and_role)):
     )
     if ctx["role"] == "caller" and ctx.get("caller_id"):
         query = query.eq("assigned_to", ctx["caller_id"])
-    result = query.execute()
+    try:
+        result = query.execute()
+    except Exception as e:
+        logger.warning(f"chat_handovers count failed (transient?): {e}")
+        return {"count": 0}
     return {"count": result.count or 0}
 
 
