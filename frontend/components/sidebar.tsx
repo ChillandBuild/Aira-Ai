@@ -92,6 +92,13 @@ export function Sidebar() {
     );
   }
 
+  // null role means API hasn't resolved yet or failed — show nothing
+  if (!role) {
+    return (
+      <aside className="fixed left-0 top-0 h-full w-[220px] bg-white z-20 shadow-sidebar border-r border-border-subtle" />
+    );
+  }
+
   const baseNav = role === "caller" ? CALLER_NAV : OWNER_NAV;
   const activeNav = baseNav.filter(
     (item) => !item.feature || enabledFeatures.includes(item.feature)
