@@ -1,10 +1,10 @@
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id
-from app.services.meta_cloud import submit_template, get_template_status, list_all_templates, upload_media_to_meta
+from app.services.meta_cloud import submit_template, get_template_status, list_all_templates
 from app.config_dynamic import get_setting
 
 logger = logging.getLogger(__name__)
@@ -59,7 +59,6 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
     status = "PENDING"
     if waba_id:
         try:
-            buttons_dict = [b.model_dump() for b in payload.buttons] if payload.buttons else None
             meta_response = await submit_template(
                 waba_id=waba_id,
                 name=name,
@@ -70,7 +69,7 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
                 header_media_type=payload.header_media_type,
                 header_media_url=payload.header_media_url,
                 footer_text=payload.footer_text,
-                buttons=buttons_dict,
+                buttons=payload.buttons or None,
                 tenant_id=tenant_id,
             )
             meta_template_id = str(meta_response.get("id", ""))
@@ -95,39 +94,6 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
     }).execute()
 
     return result.data[0]
-
-
-@router.post("/upload-media")
-async def upload_template_media(
-    file: UploadFile = File(...),
-    tenant_id: str = Depends(get_tenant_id),
-):
-    """Upload media file to Meta and return media ID for template header."""
-    allowed_types = {
-        "image/jpeg", "image/jpg", "image/png", "image/webp",
-    }
-    if file.content_type not in allowed_types:
-        raise HTTPException(status_code=400, detail="Only JPEG, PNG, and WebP images are allowed")
-    
-    file_bytes = await file.read()
-    if len(file_bytes) > 5 * 1024 * 1024:  # 5MB limit
-        raise HTTPException(status_code=400, detail="File size must be under 5MB")
-    
-    waba_id = get_setting("meta_waba_id", tenant_id=tenant_id)
-    if not waba_id:
-        raise HTTPException(status_code=400, detail="meta_waba_id not configured in Settings")
-    
-    try:
-        media_id = await upload_media_to_meta(
-            file_bytes=file_bytes,
-            mime_type=file.content_type,
-            filename=file.filename or "image.jpg",
-            tenant_id=tenant_id,
-        )
-        return {"media_id": media_id, "mime_type": file.content_type}
-    except Exception as e:
-        logger.error(f"Media upload failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to upload media: {str(e)}")
 
 
 @router.delete("/{template_id}")
