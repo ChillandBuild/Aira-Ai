@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id
-from app.services.meta_cloud import submit_template, get_template_status, list_all_templates
+from app.services.meta_cloud import submit_template, get_template_status, list_all_templates, TemplateContentExistsError
 from app.config_dynamic import get_setting
 
 logger = logging.getLogger(__name__)
@@ -74,6 +74,8 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
                 tenant_id=tenant_id,
             )
             meta_template_id = str(meta_response.get("id", ""))
+        except TemplateContentExistsError:
+            raise
         except Exception as e:
             logger.warning(f"Meta template submission failed for {name}: {e}, saved as PENDING")
     else:
@@ -84,7 +86,6 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
         "category": category,
         "language": payload.language,
         "body_text": payload.body_text,
-        "header_text": payload.header_text,
         "header_media_type": payload.header_media_type,
         "header_media_url": payload.header_media_url,
         "buttons": [b.model_dump() for b in payload.buttons] if payload.buttons else None,
@@ -92,6 +93,8 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
         "meta_template_id": meta_template_id,
         "tenant_id": tenant_id,
     }
+    if payload.header_text:
+        db_insert["header_text"] = payload.header_text
     if payload.footer_text:
         db_insert["footer_text"] = payload.footer_text
 

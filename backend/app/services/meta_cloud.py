@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Optional
 
@@ -7,6 +8,11 @@ from fastapi import HTTPException
 from app.config_dynamic import get_setting
 
 logger = logging.getLogger(__name__)
+
+
+class TemplateContentExistsError(HTTPException):
+    """Raised when Meta rejects template creation because name+language already exists."""
+    pass
 
 _GRAPH_BASE = "https://graph.facebook.com/v18.0"
 
@@ -277,11 +283,24 @@ async def submit_template(
         })
 
     if buttons:
-        # Build button components based on type
+        import re
+        _emoji_pattern = re.compile(
+            "["
+            "\U0001F600-\U0001F64F"  # emoticons
+            "\U0001F300-\U0001F5FF"  # symbols & pictographs
+            "\U0001F680-\U0001F6FF"  # transport & map
+            "\U0001F1E0-\U0001F1FF"  # flags
+            "\U00002702-\U000027B0"
+            "\U000024C2-\U0001F251"
+            "]+", flags=re.UNICODE
+        )
+        def _strip_emojis(text: str) -> str:
+            return _emoji_pattern.sub("", text).strip()
+
         button_components: list[dict] = []
         for btn in buttons[:3]:  # Max 3 buttons
             btn_type = btn.get("type", "QUICK_REPLY")
-            btn_text = btn.get("text", "")[:25]
+            btn_text = _strip_emojis(btn.get("text", "")[:25])
             
             if btn_type == "QUICK_REPLY":
                 button_components.append({
@@ -294,7 +313,7 @@ async def submit_template(
                     "type": "URL",
                     "text": btn_text,
                     "url": url_val,
-                    "example": {"url_suffix": [url_val.split("?")[-1] if "?" in url_val else ""]}
+                    "example": [url_val]
                 })
             elif btn_type == "PHONE_NUMBER":
                 phone = btn.get("phone", "")
@@ -310,15 +329,14 @@ async def submit_template(
                 button_components.append({
                     "type": "PHONE_NUMBER",
                     "text": btn_text,
-                    "phone_number": f"{country} {phone}",
-                    "example": {"whatsapp_call": True}
+                    "phone_number": f"{country} {phone}"
                 })
             elif btn_type == "COPY_CODE":
                 offer_code = btn.get("offer_code", "")
                 button_components.append({
                     "type": "COPY_CODE",
                     "text": btn_text,
-                    "example": {"code": [offer_code]}
+                    "example": [offer_code]
                 })
         
         if button_components:
@@ -337,6 +355,17 @@ async def submit_template(
         resp = await client.post(url, json=payload, headers={"Authorization": f"Bearer {tok}"})
     if not resp.is_success:
         logger.error("submit_template failed: %s %s", resp.status_code, resp.text)
+        try:
+            err_body = json.loads(resp.text)
+            err_subcode = err_body.get("error", {}).get("error_subcode")
+            if err_subcode == 2388024:
+                user_msg = err_body.get("error", {}).get("error_user_msg", "Content already exists")
+                raise TemplateContentExistsError(
+                    status_code=409,
+                    detail=f"A template with this name and language already exists on Meta. {user_msg}",
+                )
+        except json.JSONDecodeError:
+            pass
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
     return resp.json()
 
