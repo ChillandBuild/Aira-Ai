@@ -283,6 +283,10 @@ async def submit_template(
         })
 
     if buttons:
+        max_btn = 1 if (header_media_type and header_media_type != "NONE") else 3
+        if len(buttons) > max_btn:
+            logger.warning("Trimming %d buttons to %d (media header limits Meta to 1)", len(buttons), max_btn)
+
         import re
         _emoji_pattern = re.compile(
             "["
@@ -298,7 +302,7 @@ async def submit_template(
             return _emoji_pattern.sub("", text).strip()
 
         button_components: list[dict] = []
-        for btn in buttons[:3]:  # Max 3 buttons
+        for btn in buttons[:max_btn]:
             btn_type = btn.get("type", "QUICK_REPLY")
             btn_text = _strip_emojis(btn.get("text", "")[:25])
             

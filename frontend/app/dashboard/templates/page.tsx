@@ -135,7 +135,8 @@ export default function TemplatesPage() {
   const generatedName = toTemplateName(title);
 
   function addButton(type: Button["type"]) {
-    if (buttons.length < 3) {
+    const maxButtons = headerMediaType !== "NONE" ? 1 : 3;
+    if (buttons.length < maxButtons) {
       const newButton: Button = { type, text: "" };
       if (type === "URL") {
         newButton.url = "";
@@ -712,9 +713,9 @@ export default function TemplatesPage() {
                   <div className="pt-2">
                     <div className="flex items-center justify-between mb-3">
                       <label className="font-body text-sm font-medium text-ink">
-                        Buttons <span className="text-ink-muted font-normal">(optional, max 3)</span>
+                        Buttons <span className="text-ink-muted font-normal">(optional, max {headerMediaType !== "NONE" ? 1 : 3})</span>
                       </label>
-                      {buttons.length < 3 && !showButtonTypePicker && (
+                      {buttons.length < (headerMediaType !== "NONE" ? 1 : 3) && !showButtonTypePicker && (
                         <button
                           type="button"
                           onClick={() => setShowButtonTypePicker(true)}
@@ -726,7 +727,7 @@ export default function TemplatesPage() {
                     </div>
                     
                     {/* Button type picker dropdown */}
-                    {showButtonTypePicker && buttons.length < 3 && (
+                    {showButtonTypePicker && buttons.length < (headerMediaType !== "NONE" ? 1 : 3) && (
                       <div className="mb-3 p-3 rounded-xl bg-surface-subtle border border-border-subtle">
                         <p className="font-body text-xs text-ink-muted mb-2">Select button type:</p>
                         <div className="grid grid-cols-1 gap-1">
@@ -755,7 +756,9 @@ export default function TemplatesPage() {
                     
                     {buttons.length === 0 && !showButtonTypePicker && (
                       <p className="font-body text-xs text-ink-muted">
-                        Add buttons so users can respond or take action with one tap.
+                        {headerMediaType !== "NONE"
+                          ? "Templates with media can only have 1 button."
+                          : "Add buttons so users can respond or take action with one tap."}
                       </p>
                     )}
                     
