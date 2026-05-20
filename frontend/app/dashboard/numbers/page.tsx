@@ -1,7 +1,7 @@
 "use client";
 import { toast } from "sonner";
 import { useEffect, useRef, useState } from "react";
-import { Plus, X, Pencil, Trash2, ChevronDown, PauseCircle, PlayCircle, Star } from "lucide-react";
+import { Plus, X, Pencil, Trash2, ChevronDown, PauseCircle, PlayCircle, Star, RefreshCw } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
 type PhoneNumber = {
@@ -71,6 +71,8 @@ const numbersApi = {
     }),
   remove: (id: string) =>
     apiFetch<{ deleted: boolean }>(`/api/v1/numbers/${id}`, { method: "DELETE" }),
+  syncMeta: (id: string) =>
+    apiFetch<PhoneNumber>(`/api/v1/numbers/${id}/sync-meta`, { method: "POST" }),
 };
 
 function ActionMenu({
@@ -78,11 +80,15 @@ function ActionMenu({
   onSetPrimary,
   onTogglePause,
   onRename,
+  onSync,
+  syncing,
 }: {
   num: PhoneNumber;
   onSetPrimary: () => void;
   onTogglePause: () => void;
   onRename: () => void;
+  onSync: () => void;
+  syncing: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -133,6 +139,14 @@ function ActionMenu({
             <Pencil size={12} className="text-on-surface-muted" />
             Rename
           </button>
+          <button
+            onClick={() => { setOpen(false); onSync(); }}
+            disabled={syncing}
+            className="w-full flex items-center gap-2 px-3 py-2 font-label text-xs text-on-surface hover:bg-surface-low transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={12} className={`text-blue-500 ${syncing ? "animate-spin" : ""}`} />
+            {syncing ? "Syncing…" : "Sync from Meta"}
+          </button>
         </div>
       )}
     </div>
@@ -152,6 +166,7 @@ export default function NumbersPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [saving, setSaving] = useState(false);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
 
   async function reload() {
     const rows = await numbersApi.list();
@@ -222,6 +237,19 @@ export default function NumbersPage() {
       toast.error(err instanceof Error ? err.message : "Rename failed");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSyncMeta(id: string) {
+    setSyncingId(id);
+    try {
+      await numbersApi.syncMeta(id);
+      await reload();
+      toast.success("Synced from Meta");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Sync failed");
+    } finally {
+      setSyncingId(null);
     }
   }
 
@@ -376,6 +404,8 @@ export default function NumbersPage() {
                               onSetPrimary={() => handleSetPrimary(num.id)}
                               onTogglePause={() => handleTogglePause(num)}
                               onRename={() => startRename(num)}
+                              onSync={() => handleSyncMeta(num.id)}
+                              syncing={syncingId === num.id}
                             />
                             <button
                               onClick={() => handleDelete(num.id)}

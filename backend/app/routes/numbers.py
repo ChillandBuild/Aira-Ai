@@ -1,9 +1,11 @@
 import logging
+from datetime import datetime, timezone
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id
+from app.services.meta_cloud import get_number_quality
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -84,6 +86,64 @@ async def update_phone_number(number_id: UUID, payload: UpdatePhoneNumber, tenan
     result = db.table("phone_numbers").update(updates).eq("id", str(number_id)).eq("tenant_id", tenant_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Phone number not found")
+    return result.data[0]
+
+
+_QUALITY_MAP = {"HIGH": "green", "MEDIUM": "yellow", "LOW": "red"}
+_WARM_UP_MAX = 14
+
+
+@router.post("/{number_id}/sync-meta")
+async def sync_number_from_meta(number_id: UUID, tenant_id: str = Depends(get_tenant_id)):
+    db = get_supabase()
+    row_result = (
+        db.table("phone_numbers")
+        .select("*")
+        .eq("id", str(number_id))
+        .eq("tenant_id", tenant_id)
+        .execute()
+    )
+    if not row_result.data:
+        raise HTTPException(status_code=404, detail="Phone number not found")
+    row = row_result.data[0]
+
+    meta_pid = row.get("meta_phone_number_id")
+    if not meta_pid:
+        raise HTTPException(status_code=400, detail="No Meta phone number ID set for this number")
+
+    meta_data = await get_number_quality(phone_number_id=meta_pid, tenant_id=tenant_id)
+
+    raw_quality = meta_data.get("quality_rating", "")
+    quality = _QUALITY_MAP.get(raw_quality.upper(), row["quality_rating"])
+    tier = meta_data.get("messaging_tier") or row["messaging_tier"]
+
+    now = datetime.now(timezone.utc)
+    last_reset_raw = row.get("last_reset_at")
+    days_elapsed = 0
+    if last_reset_raw:
+        last_reset = datetime.fromisoformat(last_reset_raw.replace("Z", "+00:00"))
+        days_elapsed = max(0, (now - last_reset).days)
+
+    updates: dict = {
+        "quality_rating": quality,
+        "messaging_tier": tier,
+        "daily_send_count": 0,
+        "last_reset_at": now.isoformat(),
+    }
+
+    if row["status"] == "warming" and days_elapsed > 0:
+        new_day = min(row["warm_up_day"] + days_elapsed, _WARM_UP_MAX)
+        updates["warm_up_day"] = new_day
+        if new_day >= _WARM_UP_MAX:
+            updates["status"] = "active"
+
+    result = (
+        db.table("phone_numbers")
+        .update(updates)
+        .eq("id", str(number_id))
+        .eq("tenant_id", tenant_id)
+        .execute()
+    )
     return result.data[0]
 
 
