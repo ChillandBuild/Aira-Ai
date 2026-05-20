@@ -146,6 +146,7 @@ export default function TemplatesPage() {
           newButton.active_for_days = 7;
         }
       } else if (type === "COPY_CODE") {
+        newButton.text = "Copy offer code";
         newButton.offer_code = "";
       }
       setButtons(prev => [...prev, newButton]);
@@ -786,19 +787,32 @@ export default function TemplatesPage() {
                           {/* Button text (all types) */}
                           <div>
                             <p className="font-body text-xs text-ink-muted mb-1">Button text</p>
-                            <input
-                              value={btn.text}
-                              onChange={e => updateButton(i, "text", e.target.value.slice(0, 25))}
-                              placeholder={
-                                btn.type === "QUICK_REPLY" ? "e.g. Book Now" :
-                                btn.type === "URL" ? "e.g. Visit Website" :
-                                btn.type === "WHATSAPP_CALL" ? "e.g. Call on WhatsApp" :
-                                btn.type === "PHONE_NUMBER" ? "e.g. Call Us" :
-                                "e.g. Copy Code"
-                              }
-                              maxLength={25}
-                              className="input text-sm"
-                            />
+                            {btn.type === "COPY_CODE" ? (
+                              <div>
+                                <input
+                                  value={btn.text}
+                                  readOnly
+                                  className="input text-sm bg-surface-subtle text-ink-muted cursor-not-allowed"
+                                />
+                                <p className="font-body text-[10px] text-amber-600 mt-1">
+                                  Meta requires this exact text for Copy Code buttons
+                                </p>
+                              </div>
+                            ) : (
+                              <input
+                                value={btn.text}
+                                onChange={e => updateButton(i, "text", e.target.value.slice(0, 25))}
+                                placeholder={
+                                  btn.type === "QUICK_REPLY" ? "e.g. Book Now" :
+                                  btn.type === "URL" ? "e.g. Visit Website" :
+                                  btn.type === "WHATSAPP_CALL" ? "e.g. Call on WhatsApp" :
+                                  btn.type === "PHONE_NUMBER" ? "e.g. Call Us" :
+                                  "e.g. Copy Code"
+                                }
+                                maxLength={25}
+                                className="input text-sm"
+                              />
+                            )}
                           </div>
                           
                           {/* URL fields */}

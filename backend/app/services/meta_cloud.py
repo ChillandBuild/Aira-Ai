@@ -335,7 +335,7 @@ async def submit_template(
                 offer_code = btn.get("offer_code", "")
                 button_components.append({
                     "type": "COPY_CODE",
-                    "text": btn_text,
+                    "text": "Copy offer code",
                     "example": [offer_code]
                 })
         
