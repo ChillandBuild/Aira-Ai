@@ -89,6 +89,8 @@ async def update_phone_number(number_id: UUID, payload: UpdatePhoneNumber, tenan
 
 @router.delete("/{number_id}")
 async def delete_phone_number(number_id: UUID, tenant_id: str = Depends(get_tenant_id)):
+    """Hard delete a phone number. FK on incidents.phone_number_id is ON
+    DELETE SET NULL so historical incidents stay intact, just lose the ref."""
     db = get_supabase()
     active_result = (
         db.table("phone_numbers")
@@ -100,5 +102,13 @@ async def delete_phone_number(number_id: UUID, tenant_id: str = Depends(get_tena
     active_ids = [row["id"] for row in (active_result.data or [])]
     if len(active_ids) == 1 and active_ids[0] == str(number_id):
         raise HTTPException(status_code=400, detail="Cannot delete last active number")
-    db.table("phone_numbers").update({"status": "archived", "role": "archived"}).eq("id", str(number_id)).eq("tenant_id", tenant_id).execute()
+    result = (
+        db.table("phone_numbers")
+        .delete()
+        .eq("id", str(number_id))
+        .eq("tenant_id", tenant_id)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Phone number not found")
     return {"deleted": True}
