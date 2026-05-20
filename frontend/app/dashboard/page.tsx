@@ -210,7 +210,7 @@ export default function DashboardPage() {
   }, [role, roleLoading, router]);
 
   useEffect(() => {
-    if (role === "caller") return; // skip fetching admin data for callers
+    if (role !== "owner") return; // only owners fetch admin data
     Promise.all([api.leads.list({ limit: 200 }), api.analytics.overview().catch(() => null)])
       .then(([l, o]) => {
         setLeads(l);
@@ -219,11 +219,24 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, [role]);
 
-  // Prevent flash of admin content for callers while role loads or redirect fires
-  if (roleLoading || role === "caller") {
+  // Only owners ever see admin content. Callers redirect; unknown/loading shows spinner.
+  if (roleLoading || role !== "owner") {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
         <RefreshCw size={24} className="animate-spin text-primary" />
+        {!roleLoading && role === null && (
+          <div className="text-center max-w-sm">
+            <p className="font-body text-sm text-ink-muted mb-3">
+              Couldn&apos;t reach the server. The backend may be waking up — this can take 30–60 seconds.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="btn-primary text-sm"
+            >
+              Retry
+            </button>
+          </div>
+        )}
       </div>
     );
   }

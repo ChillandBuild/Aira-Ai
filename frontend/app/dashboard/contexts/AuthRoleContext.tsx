@@ -52,7 +52,9 @@ export function AuthRoleProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchMe(retries = 3, delayMs = 5000): Promise<void> {
+    // Render free-tier sleeps after 15min idle and takes 30-60s to wake.
+    // 12 retries × 5s = 60s window, generous enough to survive cold-start.
+    async function fetchMe(retries = 12, delayMs = 5000): Promise<void> {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       const currentUserId = session?.user?.id;
