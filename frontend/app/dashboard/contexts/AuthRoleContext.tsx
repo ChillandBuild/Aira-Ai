@@ -18,25 +18,50 @@ const AuthRoleContext = createContext<RoleCtx>({
   loading: true,
 });
 
+const CACHE_KEY = "aira_role_cache";
+
+function readCache(): Partial<RoleCtx> | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function writeCache(data: Partial<RoleCtx>) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch {}
+}
+
 export function AuthRoleProvider({ children }: { children: ReactNode }) {
-  const [role, setRole] = useState<"owner" | "caller" | null>(null);
-  const [callerId, setCallerId] = useState<string | null>(null);
-  const [enabledFeatures, setEnabledFeatures] = useState<string[]>(["whatsapp", "telecalling"]);
-  const [isSystemAdmin, setIsSystemAdmin] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const cached = typeof window !== "undefined" ? readCache() : null;
+
+  const [role, setRole] = useState<"owner" | "caller" | null>(
+    (cached?.role as "owner" | "caller" | null) ?? null
+  );
+  const [callerId, setCallerId] = useState<string | null>(cached?.callerId ?? null);
+  const [enabledFeatures, setEnabledFeatures] = useState<string[]>(
+    cached?.enabledFeatures ?? ["whatsapp", "telecalling"]
+  );
+  const [isSystemAdmin, setIsSystemAdmin] = useState(cached?.isSystemAdmin ?? false);
+  // If we have cached data, don't block render
+  const [loading, setLoading] = useState(!cached);
 
   useEffect(() => {
-    async function fetchMe(retries = 2, delayMs = 4000): Promise<void> {
+    async function fetchMe(retries = 3, delayMs = 5000): Promise<void> {
       const auth = await getAuthHeaders();
       for (let attempt = 1; attempt <= retries; attempt++) {
         try {
           const res = await fetch(`${API_URL}/api/v1/team/me`, { headers: auth });
           if (!res.ok) throw new Error(`team/me ${res.status}`);
           const d = await res.json();
-          setRole(d.role as "owner" | "caller");
-          setCallerId(d.caller_id ?? null);
-          setEnabledFeatures(d.enabled_features ?? ["whatsapp", "telecalling"]);
-          setIsSystemAdmin(d.is_system_admin ?? false);
+          const newRole = d.role as "owner" | "caller";
+          const newFeatures = d.enabled_features ?? ["whatsapp", "telecalling"];
+          const newIsAdmin = d.is_system_admin ?? false;
+          const newCallerId = d.caller_id ?? null;
+          setRole(newRole);
+          setCallerId(newCallerId);
+          setEnabledFeatures(newFeatures);
+          setIsSystemAdmin(newIsAdmin);
+          writeCache({ role: newRole, callerId: newCallerId, enabledFeatures: newFeatures, isSystemAdmin: newIsAdmin });
           return;
         } catch {
           if (attempt < retries) {
@@ -44,8 +69,7 @@ export function AuthRoleProvider({ children }: { children: ReactNode }) {
           }
         }
       }
-      // All retries exhausted — leave role null (blank sidebar, not admin access)
-      setRole(null);
+      // All retries failed — keep whatever was in cache (don't clear it)
     }
 
     fetchMe().finally(() => setLoading(false));
