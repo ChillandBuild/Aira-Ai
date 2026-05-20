@@ -34,7 +34,7 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Auto-failover + migration notice | ✅ Built — failover.py |
 | Incidents page (frontend) | ✅ Built — dashboard/incidents/ |
 | lead_notes table + briefing modal | ✅ Built — migration 012 + lead_notes.py + telecalling modal |
-| Gemini transcription + AI call summary | ✅ Built — call_summarizer.py + BackgroundTasks |
+| Groq Whisper transcription + AI call summary | ✅ Built — call_summarizer.py + BackgroundTasks |
 | Notes page (/dashboard/notes) | ✅ Built — lead search, notes CRUD, AI summary cards, audio player |
 | Message Templates page | ✅ Built + Meta-connected — dashboard/templates/, routes/templates.py |
 | Template submission to Meta API | ✅ Built — uses meta_waba_id, WABA ID in app_settings |

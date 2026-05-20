@@ -143,6 +143,7 @@ async def upload_leads(
                     campaign_name=row_campaign_name,
                     external_campaign_id=row_external_campaign_id,
                     spend_inr=row_spend,
+                    tenant_id=tenant_id,
                 )
             campaign = campaign_cache[campaign_key]
         if campaign:

@@ -243,7 +243,7 @@ async def generate_reply(
     """
     Core pipeline:
     1. Check FAQ table (keyword match)
-    2. If no FAQ hit, call Gemini for reply
+    2. If no FAQ hit, call Groq for reply
     3. Send reply via the matching channel
     4. Score the message and update lead score + segment in DB
     """
@@ -329,7 +329,7 @@ async def generate_reply(
             is_ai = True
             reply_source = "knowledge" if context_text else "ai"
         except Exception as e:
-            logger.error(f"Gemini reply failed for lead {lead_id}: {e}")
+            logger.error(f"Groq reply failed for lead {lead_id}: {e}")
             reply_text = "Thank you for reaching out! We'll get back to you shortly."
             is_ai = False
             reply_source = "ai"

@@ -35,6 +35,7 @@ def stage_depth(segment: str | None) -> int:
 def get_or_create_campaign(
     db,
     *,
+    tenant_id: str,
     platform: str | None,
     campaign_name: str | None,
     external_campaign_id: str | None = None,
@@ -52,6 +53,7 @@ def get_or_create_campaign(
             db.table("ad_campaigns")
             .select("*")
             .eq("external_campaign_id", normalized_external_id)
+            .eq("tenant_id", tenant_id)
             .limit(1)
             .execute()
         )
@@ -62,6 +64,7 @@ def get_or_create_campaign(
             .select("*")
             .eq("platform", normalized_platform)
             .eq("campaign_name", normalized_name)
+            .eq("tenant_id", tenant_id)
             .limit(1)
             .execute()
         )
@@ -81,6 +84,7 @@ def get_or_create_campaign(
                 db.table("ad_campaigns")
                 .update(updates)
                 .eq("id", existing["id"])
+                .eq("tenant_id", tenant_id)
                 .execute()
             )
             if refreshed.data:
@@ -92,6 +96,7 @@ def get_or_create_campaign(
         "campaign_name": normalized_name or normalized_external_id,
         "external_campaign_id": normalized_external_id,
         "spend_inr": spend_inr or 0,
+        "tenant_id": tenant_id,
     }
     created = db.table("ad_campaigns").insert(payload).execute()
     return (created.data or [None])[0]
@@ -243,9 +248,9 @@ def build_follow_up_summary(db=None) -> dict[str, Any]:
     }
 
 
-def build_ad_performance(db=None) -> dict[str, Any]:
+def build_ad_performance(*, tenant_id: str, db=None) -> dict[str, Any]:
     db = db or get_supabase()
-    campaigns = db.table("ad_campaigns").select("*").order("created_at", desc=True).execute().data or []
+    campaigns = db.table("ad_campaigns").select("*").eq("tenant_id", tenant_id).order("created_at", desc=True).execute().data or []
     if not campaigns:
         return {
             "totals": {
@@ -261,7 +266,7 @@ def build_ad_performance(db=None) -> dict[str, Any]:
 
     leads = db.table("leads").select(
         "id,ad_campaign_id,segment,converted_at,created_at,ad_name,ad_set_name"
-    ).execute().data or []
+    ).eq("tenant_id", tenant_id).execute().data or []
     tracked_leads = [lead for lead in leads if lead.get("ad_campaign_id")]
     lead_ids = [lead["id"] for lead in tracked_leads]
     events = []
@@ -270,6 +275,7 @@ def build_ad_performance(db=None) -> dict[str, Any]:
             db.table("lead_stage_events")
             .select("lead_id,to_segment,event_type,created_at")
             .in_("lead_id", lead_ids)
+            .eq("tenant_id", tenant_id)
             .order("created_at")
             .execute()
             .data

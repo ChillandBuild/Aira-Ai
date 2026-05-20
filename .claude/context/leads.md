@@ -27,7 +27,7 @@ Values and bulk-send permissions:
 
 Bulk-send route must enforce this gate. Reject with 400 if null.
 
-## Scoring Rules (Gemini 2.5-pro)
+## Scoring Rules (Groq Llama 3.1 8B)
 Score recomputed on every inbound message. Always integer 1–10.
 - 9–10 → Segment A: mentioned college visit, specific course, asked for fees
 - 7–8  → Segment B: detailed questions, multiple exchanges
@@ -42,7 +42,7 @@ Never rename. Never add new segments without explicit instruction.
 GET /api/v1/leads?segment=A&format=csv  (all 4 segments must support this)
 
 ## Key Files
-- backend/app/services/lead_scorer.py — Gemini 2.5-pro scoring
+- backend/app/services/lead_scorer.py — Groq Llama 3.1 8B scoring
 - backend/app/services/segmentation.py — A/B/C/D assignment
 - backend/app/routes/leads.py — CRUD + export endpoint
 - backend/app/routes/segments.py — segment-specific queries

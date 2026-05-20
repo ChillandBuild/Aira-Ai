@@ -298,10 +298,6 @@ async def overview_analytics(tenant_id: str = Depends(get_tenant_id)):
 
 @router.get("/ad-performance")
 async def ad_performance_summary(tenant_id: str = Depends(get_tenant_id)):
-    """Stub — ad attribution to be wired when an Ads source/UTM column exists."""
-    return {
-        "campaigns": [],
-        "total_spend": 0,
-        "total_conversions": 0,
-        "cost_per_conversion": None,
-    }
+    db = get_supabase()
+    from app.services.growth import build_ad_performance
+    return build_ad_performance(tenant_id=tenant_id, db=db)

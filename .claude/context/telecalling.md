@@ -48,16 +48,16 @@ Component lives in: frontend/app/dashboard/telecalling/
 Trigger: intercept the "Call" button click, show modal, then dial on confirm.
 
 ## AI Transcription + Summary Flow (Phase 1b)
-1. Exotel webhook delivers recording URL → already in call_logs.recording_url
-2. Download from Supabase Storage → send bytes to Gemini 2.0-flash for transcription
-3. Gemini 2.5-pro generates structured summary: {course, budget, timeline, next_action, sentiment}
+1. Webhook delivers recording URL → already in call_logs.recording_url
+2. Download from Supabase Storage → send bytes to Groq Whisper (whisper-large-v3-turbo) for transcription
+3. Groq Llama (llama-3.3-70b-versatile) generates structured summary: {course, budget, timeline, next_action, sentiment}
 4. UPDATE call_logs SET transcript = ..., ai_summary = ... WHERE id = $log_id
 5. Telecaller reviews draft in UI → can edit → save
 6. Pinnable facts extracted → INSERT into lead_notes WHERE is_pinned = true
 
-## Gemini Model Choice
-- Transcription: gemini-2.0-flash (cheap, fast)
-- Structured summary: gemini-2.5-pro (reasoning needed)
+## Groq Model Choice
+- Transcription: whisper-large-v3-turbo (cheap, fast)
+- Structured summary: llama-3.3-70b-versatile (reasoning needed)
 
 ## Frontend Location
 frontend/app/dashboard/telecalling/ — all telecalling UI
