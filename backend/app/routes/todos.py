@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
 from datetime import date
 from uuid import UUID
+from pydantic import BaseModel
 from app.dependencies.auth import get_current_user
 from app.db.supabase import get_supabase
 from app.models.schemas import Todo, TodoCreate, SuccessResponse
@@ -46,23 +47,21 @@ async def create_or_update_todo(
         raise HTTPException(status_code=400, detail="Failed to create todo")
     return res.data[0]
 
+class TodoUpdate(BaseModel):
+    is_completed: Optional[bool] = None
+    content: Optional[str] = None
+
 @router.patch("/{todo_id}", response_model=Todo)
 async def update_todo(
     todo_id: UUID,
-    is_completed: Optional[bool] = None,
-    content: Optional[str] = None,
+    payload: TodoUpdate,
     current_user: dict = Depends(get_current_user)
 ):
     """
     Update a specific todo.
     """
     db = get_supabase()
-    update_data = {}
-    if is_completed is not None:
-        update_data["is_completed"] = is_completed
-    if content is not None:
-        update_data["content"] = content
-        
+    update_data = payload.model_dump(exclude_none=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="No update data provided")
         
