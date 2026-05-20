@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from app.db.supabase import get_supabase
-from app.dependencies.tenant import get_tenant_and_role
+from app.dependencies.tenant import get_tenant_id, get_tenant_and_role
 
 router = APIRouter()
 
