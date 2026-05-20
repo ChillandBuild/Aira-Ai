@@ -26,22 +26,26 @@ def get_me(ctx: dict = Depends(get_tenant_and_role)):
         db.table("tenants")
         .select("enabled_features")
         .eq("id", ctx["tenant_id"])
-        .maybe_single()
+        .limit(1)
         .execute()
     )
+    tenant_row = tenant.data[0] if tenant and tenant.data else {}
     enabled_features: list[str] = (
-        (tenant.data or {}).get("enabled_features") or ["whatsapp", "telecalling"]
+        tenant_row.get("enabled_features") or ["whatsapp", "telecalling"]
     )
 
-    # Check system admin
+    # Check system admin — use limit(1) instead of maybe_single() to avoid
+    # PostgREST 406 on zero rows, which causes the client to return None and
+    # crash the `.data` access (was the cause of /api/v1/team/me 500s for
+    # non-admin users like callers).
     admin = (
         db.table("system_admins")
         .select("user_id")
         .eq("user_id", ctx["user_id"])
-        .maybe_single()
+        .limit(1)
         .execute()
     )
-    is_system_admin = bool(admin.data)
+    is_system_admin = bool(admin and admin.data)
 
     caller = (
         db.table("callers")
