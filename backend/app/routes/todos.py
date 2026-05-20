@@ -18,7 +18,7 @@ async def get_todos(
     Fetch todos for the current user, optionally filtered by date range.
     """
     db = get_supabase()
-    query = db.table("employee_todos").select("*").eq("user_id", current_user["id"])
+    query = db.table("employee_todos").select("*").eq("user_id", current_user["user_id"])
     
     if start_date:
         query = query.gte("todo_date", start_date.isoformat())
@@ -38,7 +38,7 @@ async def create_or_update_todo(
     """
     db = get_supabase()
     todo_data = todo.model_dump()
-    todo_data["user_id"] = current_user["id"]
+    todo_data["user_id"] = current_user["user_id"]
     
     res = db.table("employee_todos").insert(todo_data).execute()
     if not res.data:
@@ -68,7 +68,7 @@ async def update_todo(
     res = db.table("employee_todos") \
         .update(update_data) \
         .eq("id", str(todo_id)) \
-        .eq("user_id", current_user["id"]) \
+        .eq("user_id", current_user["user_id"]) \
         .execute()
         
     if not res.data:
@@ -87,7 +87,7 @@ async def delete_todo(
     res = db.table("employee_todos") \
         .delete() \
         .eq("id", str(todo_id)) \
-        .eq("user_id", current_user["id"]) \
+        .eq("user_id", current_user["user_id"]) \
         .execute()
         
     if not res.data:

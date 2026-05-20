@@ -289,6 +289,7 @@ async def generate_reply(
                 converted_at=lead_data.get("converted_at"),
                 ai_enabled=False,
                 reason="ai_disabled",
+                tenant_id=lead_data.get("tenant_id"),
                 db=db,
             )
         except Exception as e:
@@ -382,6 +383,7 @@ async def generate_reply(
             converted_at=lead_data.get("converted_at"),
             ai_enabled=lead_data.get("ai_enabled", True),
             reason=f"{channel}_reply",
+            tenant_id=lead_data.get("tenant_id"),
             db=db,
         )
         logger.info(f"Lead {lead_id} scored {new_score} → segment {new_segment}")

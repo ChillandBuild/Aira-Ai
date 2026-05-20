@@ -201,6 +201,7 @@ async def upload_leads(
                 converted_at=lead.get("converted_at"),
                 ai_enabled=lead.get("ai_enabled", True),
                 reason="upload",
+                tenant_id=lead.get("tenant_id") or tenant_id,
                 db=db,
             )
 

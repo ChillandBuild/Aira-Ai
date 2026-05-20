@@ -418,6 +418,7 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate):
                 converted_at=lead_data.get("converted_at"),
                 ai_enabled=lead_data.get("ai_enabled", True),
                 reason=f"call_{payload.outcome}",
+                tenant_id=lead_data.get("tenant_id"),
                 db=db,
             )
             if payload.outcome == "callback" and payload.callback_time:

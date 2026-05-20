@@ -155,6 +155,7 @@ async def update_lead(lead_id: UUID, updates: LeadUpdate, tenant_id: str = Depen
         converted_at=updated.get("converted_at"),
         ai_enabled=updated.get("ai_enabled", existing.data.get("ai_enabled", True)),
         reason="manual_update",
+        tenant_id=tenant_id,
         db=db,
     )
     return updated
@@ -199,6 +200,7 @@ async def mark_converted(lead_id: UUID, payload: ConvertPayload | None = None, t
         converted_at=updated.get("converted_at"),
         ai_enabled=updated.get("ai_enabled", existing.data.get("ai_enabled", True)),
         reason="converted",
+        tenant_id=tenant_id,
         db=db,
     )
     return updated
@@ -228,6 +230,7 @@ async def toggle_ai(lead_id: UUID, payload: AiToggle, tenant_id: str = Depends(g
         converted_at=updated.get("converted_at") or existing.data.get("converted_at"),
         ai_enabled=payload.enabled,
         reason="ai_toggle",
+        tenant_id=tenant_id,
         db=db,
     )
     return updated

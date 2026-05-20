@@ -148,6 +148,7 @@ def sync_follow_up_jobs(
     converted_at: str | None,
     ai_enabled: bool,
     reason: str,
+    tenant_id: str | None = None,
     anchor_time: datetime | None = None,
     db=None,
 ) -> list[dict[str, Any]]:
@@ -174,6 +175,7 @@ def sync_follow_up_jobs(
             "cadence": cadence,
             "status": "pending",
             "scheduled_for": (anchor + offset).isoformat(),
+            "tenant_id": tenant_id,
         }
         for cadence, offset in FOLLOW_UP_CADENCES
     ]
