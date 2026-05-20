@@ -48,7 +48,7 @@ async def get_booking(booking_id: str, tenant_id: str = Depends(get_tenant_id)):
         .maybe_single()
         .execute()
     )
-    if not result.data:
+    if not result or not result.data:
         raise HTTPException(status_code=404, detail="Booking not found")
     return result.data
 

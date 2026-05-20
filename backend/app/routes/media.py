@@ -69,7 +69,7 @@ async def send_media_to_lead(
         .maybe_single()
         .execute()
     )
-    if not lead.data:
+    if not lead or not lead.data:
         raise HTTPException(status_code=404, detail="Lead not found")
     if lead.data.get("source") == "instagram":
         raise HTTPException(status_code=400, detail="Media sending is only supported for WhatsApp leads")

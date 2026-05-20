@@ -12,7 +12,7 @@ def get_system_admin(user: dict = Depends(get_current_user)) -> dict:
         .maybe_single()
         .execute()
     )
-    if not result.data:
+    if not result or not result.data:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="System admin access required.",

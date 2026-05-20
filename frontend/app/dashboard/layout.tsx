@@ -23,7 +23,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
       if (res.ok) {
         const data = await res.json();
         if (!data.has_tenant) {
-          redirect("/dashboard/onboarding");
+          // Operator accounts are system_admins with no tenant — send them
+          // to the operator console, not the client onboarding flow.
+          redirect(data.is_system_admin ? "/operator" : "/dashboard/onboarding");
         }
       }
     } catch {

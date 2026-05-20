@@ -71,7 +71,7 @@ async def analyze(for_prompt: str = "whatsapp_reply", limit: int = 5, tenant_id:
     db = get_supabase()
 
     prompt_row = db.table("ai_prompts").select("content").eq("name", for_prompt).eq("tenant_id", tenant_id).maybe_single().execute()
-    if not prompt_row.data:
+    if not prompt_row or not prompt_row.data:
         raise HTTPException(status_code=404, detail=f"Prompt '{for_prompt}' not found")
     active_prompt = prompt_row.data["content"]
 
@@ -171,14 +171,14 @@ async def list_suggestions(status: Literal["pending", "applied", "rejected", "al
 async def apply_suggestion(suggestion_id: str, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
     sug = db.table("ai_tune_suggestions").select("*").eq("id", suggestion_id).eq("tenant_id", tenant_id).maybe_single().execute()
-    if not sug.data:
+    if not sug or not sug.data:
         raise HTTPException(status_code=404, detail="Suggestion not found")
     if sug.data["status"] != "pending":
         raise HTTPException(status_code=400, detail=f"Suggestion already {sug.data['status']}")
 
     name = sug.data["for_prompt"]
     prompt_row = db.table("ai_prompts").select("content").eq("name", name).eq("tenant_id", tenant_id).maybe_single().execute()
-    if not prompt_row.data:
+    if not prompt_row or not prompt_row.data:
         raise HTTPException(status_code=404, detail=f"Prompt '{name}' not found")
 
     new_content = prompt_row.data["content"].rstrip() + "\n\n" + sug.data["suggestion"].strip() + "\n"

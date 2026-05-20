@@ -45,14 +45,6 @@ def create_tenant(payload: CreateTenantPayload, user: dict = Depends(get_current
 
 @router.get("/status")
 def tenant_status(user: dict = Depends(get_current_user)):
-    """Return tenant membership for the current user.
-
-    `maybe_single()` returns None when no row matches (PostgREST 406 / 204),
-    so we must guard against `result is None` BEFORE touching `.data`,
-    otherwise we crash with AttributeError and 500 the dashboard layout —
-    which then can't redirect the user to onboarding/operator and the page
-    renders blank.
-    """
     db = get_supabase()
     result = (
         db.table("tenant_users")
@@ -61,10 +53,20 @@ def tenant_status(user: dict = Depends(get_current_user)):
         .maybe_single()
         .execute()
     )
+    admin = (
+        db.table("system_admins")
+        .select("user_id")
+        .eq("user_id", user["user_id"])
+        .limit(1)
+        .execute()
+    )
+    is_system_admin = bool(admin and admin.data)
+
     if not result or not result.data:
-        return {"has_tenant": False}
+        return {"has_tenant": False, "is_system_admin": is_system_admin}
     return {
         "has_tenant": True,
         "tenant_id": result.data["tenant_id"],
         "role": result.data["role"],
+        "is_system_admin": is_system_admin,
     }

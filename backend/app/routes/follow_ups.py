@@ -56,7 +56,7 @@ async def run_due_follow_ups(limit: int = Query(20, ge=1, le=100), tenant_id: st
             .maybe_single()
             .execute()
         )
-        lead_data = lead.data or {}
+        lead_data = (lead and lead.data) or {}
         if (
             not lead_data
             or lead_data.get("converted_at")
@@ -151,7 +151,7 @@ async def today_callbacks(tenant_id: str = Depends(get_tenant_id)):
         lead = db.table("leads").select("id,name,phone,segment").eq(
             "id", job["lead_id"]
         ).eq("tenant_id", tenant_id).maybe_single().execute()
-        result.append({**job, "lead": lead.data or {}})
+        result.append({**job, "lead": (lead and lead.data) or {}})
 
     return {"data": result}
 
@@ -182,6 +182,6 @@ async def today_completed_callbacks(tenant_id: str = Depends(get_tenant_id)):
         lead = db.table("leads").select("id,name,phone,segment").eq(
             "id", job["lead_id"]
         ).eq("tenant_id", tenant_id).maybe_single().execute()
-        result.append({**job, "lead": lead.data or {}})
+        result.append({**job, "lead": (lead and lead.data) or {}})
 
     return {"data": result}

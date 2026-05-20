@@ -49,7 +49,7 @@ def _get_tenant_id_for_twilio_number(number: str, db) -> str | None:
 async def _handle_opt_out(phone: str, tenant_id: str, db) -> bool:
     try:
         lead = db.table("leads").select("id").eq("phone", phone).eq("tenant_id", tenant_id).maybe_single().execute()
-        if not lead.data:
+        if not lead or not lead.data:
             return False
         lead_id = lead.data["id"]
         db.table("leads").update({"opted_out": True, "ai_enabled": False, "opted_out_at": datetime.now(timezone.utc).isoformat()}).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
