@@ -38,6 +38,7 @@ async def create_or_update_todo(
     """
     db = get_supabase()
     todo_data = todo.model_dump()
+    todo_data["todo_date"] = str(todo_data["todo_date"])
     todo_data["user_id"] = current_user["user_id"]
     
     res = db.table("employee_todos").insert(todo_data).execute()
