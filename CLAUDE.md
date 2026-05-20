@@ -119,7 +119,7 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | WhatsApp templates, Meta template API | backend/app/routes/templates.py + services/meta_cloud.py |
 
 ## Agent Dispatch
-See AGENTS.md — spawn sub-agents automatically for tasks with 2+ independent work units.
+See AI_RULES.md — spawn sub-agents automatically for tasks with 2+ independent work units.
 Parallel pattern: schema + API route + frontend page → all 3 in one message.
 
 ## Known Tech Debt

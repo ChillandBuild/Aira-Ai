@@ -1,6 +1,6 @@
 # Aira AI — Universal Rules (all platforms)
 
-> This is the single source of truth. CLAUDE.md, CODEX.md, .cursorrules, and .windsurfrules all point here.
+> This is the single source of truth. CLAUDE.md, .cursorrules, and .windsurfrules all point here.
 
 ## What is Aira
 Generic B2B SaaS — WhatsApp lead-gen + telecalling for any business.
@@ -74,3 +74,17 @@ Agent 3: Next.js page
 - No Meta webhook signature verification
 - Razorpay no idempotency key
 - No self-service WABA onboarding
+
+## Ruflo V3 Quick Start & Commands
+Background workers are managed via Ruflo daemon:
+```bash
+npx ruflo daemon start  # Start background workers (memory, optimization, learning)
+npx ruflo memory init   # Initialize memory database
+npx ruflo status        # Check daemon status
+```
+
+### Slash Commands
+- `/claude-flow-swarm` — launch a coordinated agent swarm
+- `/claude-flow-memory` — query/store persistent memory
+- `/claude-flow-help` — full command reference
+

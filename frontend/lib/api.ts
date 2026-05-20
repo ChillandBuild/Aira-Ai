@@ -143,6 +143,7 @@ export interface AnalyzeResult {
 export interface SystemStatus {
   has_meta: boolean;
   has_gemini: boolean;
+  has_groq: boolean;
   supabase_url: string;
   active_prompt: { name: string; updated_at: string } | null;
   active_faq_count: number;

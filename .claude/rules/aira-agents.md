@@ -45,7 +45,7 @@ Each agent prompt must include:
 ```
 Task: <1-2 sentence description>
 
-Stack: FastAPI (backend/app/), Next.js 14 (frontend/app/dashboard/), Supabase, Gemini.
+Stack: FastAPI (backend/app/), Next.js 14 (frontend/app/dashboard/), Supabase, Groq.
 
 Context:
 <paste relevant .claude/context/*.md sections>

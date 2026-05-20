@@ -32,7 +32,6 @@ async def list_settings(tenant_id: str = Depends(get_tenant_id)):
         "telecmi_callerid": "telecmi_callerid",
         "telecmi_recording_base_url": "telecmi_recording_base_url",
         "groq_api_key": "groq_api_key",
-        "gemini_api_key": "gemini_api_key",
     }
     for row in rows:
         db_value = row["value"]

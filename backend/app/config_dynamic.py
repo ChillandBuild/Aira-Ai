@@ -18,7 +18,6 @@ _ENV_MAP = {
     "telecmi_secret": "TELECMI_SECRET",
     "telecmi_callerid": "TELECMI_CALLERID",
     "telecmi_recording_base_url": "TELECMI_RECORDING_BASE_URL",
-    "gemini_api_key": "GEMINI_API_KEY",
     "razorpay_key_id": "RAZORPAY_KEY_ID",
     "razorpay_key_secret": "RAZORPAY_KEY_SECRET",
     "razorpay_webhook_secret": "RAZORPAY_WEBHOOK_SECRET",

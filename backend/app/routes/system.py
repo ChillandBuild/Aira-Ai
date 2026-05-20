@@ -22,7 +22,8 @@ async def status():
 
     return {
         "has_meta": bool(settings.meta_page_token),
-        "has_gemini": bool(settings.gemini_api_key),
+        "has_gemini": False,
+        "has_groq": bool(settings.groq_api_key),
         "supabase_url": settings.supabase_url,
         "active_prompt": active_prompt,
         "active_faq_count": faq_row.count or 0,
