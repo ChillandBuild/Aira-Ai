@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id, get_tenant_and_role
 from app.models.schemas import Lead, LeadUpdate, LeadWithMessages, Message, PaginatedResponse
-from app.services.ai_reply import send_whatsapp, send_instagram, get_last_send_error
+from app.services.ai_reply import send_whatsapp, send_instagram, send_facebook, get_last_send_error
 from app.services.growth import record_stage_event, sync_follow_up_jobs
 
 logger = logging.getLogger(__name__)
@@ -243,18 +243,34 @@ async def send_human_message(lead_id: UUID, payload: HumanMessage, tenant_id: st
         raise HTTPException(status_code=400, detail="Message is empty")
 
     db = get_supabase()
-    lead = db.table("leads").select("phone,source,ig_user_id").eq("id", str(lead_id)).eq("tenant_id", tenant_id).maybe_single().execute()
+    lead = db.table("leads").select("phone,source,ig_user_id,tg_user_id,fb_user_id").eq("id", str(lead_id)).eq("tenant_id", tenant_id).maybe_single().execute()
     if not lead.data:
         raise HTTPException(status_code=404, detail="Lead not found")
 
     source = lead.data.get("source")
-    channel = "instagram" if source == "instagram" else "whatsapp"
+    channel = (
+        "instagram" if source == "instagram"
+        else "telegram" if source == "telegram"
+        else "facebook" if source == "facebook"
+        else "whatsapp"
+    )
     sid: str | None = None
     if channel == "instagram":
         ig_id = lead.data.get("ig_user_id")
         if not ig_id:
             raise HTTPException(status_code=400, detail="Instagram lead missing ig_user_id")
-        sid = send_instagram(ig_id, content)
+        sid = await send_instagram(ig_id, content, tenant_id=tenant_id)
+    elif channel == "telegram":
+        tg_id = lead.data.get("tg_user_id")
+        if not tg_id:
+            raise HTTPException(status_code=400, detail="Telegram lead missing tg_user_id")
+        from app.services.ai_reply import send_telegram
+        sid = await send_telegram(tg_id, content, tenant_id=tenant_id)
+    elif channel == "facebook":
+        fb_id = lead.data.get("fb_user_id")
+        if not fb_id:
+            raise HTTPException(status_code=400, detail="Facebook lead missing fb_user_id")
+        sid = await send_facebook(fb_id, content, tenant_id=tenant_id)
     else:
         phone = lead.data.get("phone")
         if not phone:
@@ -265,7 +281,12 @@ async def send_human_message(lead_id: UUID, payload: HumanMessage, tenant_id: st
         meta_err = get_last_send_error() or "unknown error"
         raise HTTPException(status_code=502, detail=f"Channel send failed: {meta_err}")
 
-    sid_field = "meta_message_id" if channel == "whatsapp" else "twilio_message_sid"
+    if channel == "telegram":
+        sid_field = "tg_message_id"
+    elif channel == "facebook":
+        sid_field = "fb_message_id"
+    else:
+        sid_field = "meta_message_id"  # whatsapp and instagram both use meta_message_id
     row = db.table("messages").insert({
         "lead_id": str(lead_id),
         "tenant_id": tenant_id,

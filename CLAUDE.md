@@ -21,7 +21,9 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Knowledge/FAQ base | ✅ Built |
 | AI Tune (integrated into Knowledge page tab) | ✅ Built |
 | Analytics page | ✅ Built — WhatsApp tab + Telecalling tab + funnel API |
-| Instagram webhook | ✅ Built — DISABLED (Phase 2, do not enable) |
+| Instagram webhook | ✅ Built — ENABLED, tenant-scoped, X-Hub-Signature-256 verified |
+| Telegram webhook + Bot API | ✅ Built — secret_token verified, per-tenant unique index |
+| Facebook Messenger webhook | ✅ Built — tenant-scoped, X-Hub-Signature-256 verified |
 | Provider abstraction layer | ✅ Built — meta_cloud.py + wati_cloud.py |
 | MetaCloudProvider adapter | ✅ Built — services/meta_cloud.py |
 | WatiProvider adapter | ✅ Built — services/wati_cloud.py |

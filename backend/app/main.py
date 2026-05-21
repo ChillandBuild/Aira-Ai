@@ -7,7 +7,7 @@ from app.dependencies.auth import get_current_user
 
 import os
 from app.config import settings
-from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team, media, alerts, todos, bookings, conversations, operator, chat_handovers
+from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team, media, alerts, todos, bookings, conversations, operator, chat_handovers, telegram, instagram, facebook
 from app.routes.calls import public_router as calls_public_router
 
 # Configure logging
@@ -59,9 +59,11 @@ _auth = [Depends(get_current_user)]
 
 # Webhook routes — no auth (Meta/Twilio call directly)
 app.include_router(webhook.router, prefix="/webhook/whatsapp", tags=["webhook"])
+app.include_router(telegram.router, prefix="/webhook/telegram", tags=["telegram-webhook"])
+app.include_router(instagram.router, prefix="/webhook/instagram", tags=["instagram-webhook"])
+app.include_router(facebook.router, prefix="/webhook/facebook", tags=["facebook-webhook"])
 app.include_router(calls_public_router, prefix="/api/v1/calls", tags=["calls-telecmi"])
 app.include_router(bookings.public_router, prefix="/api/v1/bookings", tags=["bookings-webhook"])
-# Instagram webhook disabled — Phase 2
 
 # API routes — all require auth
 app.include_router(leads.router, prefix="/api/v1/leads", tags=["leads"], dependencies=_auth)

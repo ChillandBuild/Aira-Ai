@@ -17,6 +17,23 @@ function IgIcon({ size = 12, className = "" }: { size?: number; className?: stri
   );
 }
 
+function TgIcon({ size = 12, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <line x1="22" y1="2" x2="11" y2="13" />
+      <polygon points="22 2 15 22 11 13 2 9 22 2" />
+    </svg>
+  );
+}
+
+function FbIcon({ size = 12, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+    </svg>
+  );
+}
+
 const FILTERS = [
   { label: "All", value: null },
   { label: "Hot", value: "A" },
@@ -270,6 +287,10 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
                   <div className="flex items-center gap-1.5 min-w-0">
                     {lead.source === "instagram" ? (
                       <IgIcon size={13} className="shrink-0 text-pink-500 drop-shadow-sm" />
+                    ) : lead.source === "telegram" ? (
+                      <TgIcon size={13} className="shrink-0 text-sky-500 drop-shadow-sm" />
+                    ) : lead.source === "facebook" ? (
+                      <FbIcon size={13} className="shrink-0 text-blue-600 drop-shadow-sm" />
                     ) : (
                       <MessageCircle size={13} className="shrink-0 text-green-500 drop-shadow-sm" />
                     )}
@@ -277,7 +298,7 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
                       "font-display text-[14px] font-semibold truncate",
                       selectedId === lead.id ? "text-tertiary" : "text-on-surface group-hover:text-tertiary transition-colors"
                     )}>
-                      {lead.name || formatPhone(lead.phone) || "Instagram lead"}
+                      {lead.name || formatPhone(lead.phone) || (lead.source === "instagram" ? "Instagram lead" : lead.source === "telegram" ? "Telegram lead" : lead.source === "facebook" ? "Facebook lead" : "WhatsApp lead")}
                     </span>
                   </div>
                   <span className="font-label text-[10px] font-medium text-on-surface-muted shrink-0 whitespace-nowrap">

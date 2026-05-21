@@ -11,7 +11,15 @@ type Handover = {
   reason: string | null;
   status: string;
   opened_at: string;
-  leads: { name: string | null; phone: string; segment: "A" | "B" | "C" | "D" } | null;
+  leads: {
+    name: string | null;
+    phone: string | null;
+    segment: "A" | "B" | "C" | "D";
+    source?: string;
+    tg_username?: string | null;
+    ig_user_id?: string | null;
+    fb_user_id?: string | null;
+  } | null;
 };
 
 async function fetchHandovers(): Promise<Handover[]> {
@@ -75,7 +83,17 @@ export default function InboxPage() {
                   </span>
                   {h.leads?.segment && <SegmentBadge segment={h.leads.segment} />}
                 </div>
-                <p className="font-body text-xs text-ink-muted mb-1.5">{h.leads?.phone}</p>
+                <p className="font-body text-xs text-ink-muted mb-1.5 font-medium">
+                  {h.leads?.source === "telegram" ? (
+                    <span className="text-sky-500">Telegram · @{h.leads.tg_username || "unknown"}</span>
+                  ) : h.leads?.source === "instagram" ? (
+                    <span className="text-pink-500">Instagram · {h.leads.ig_user_id}</span>
+                  ) : h.leads?.source === "facebook" ? (
+                    <span className="text-blue-600">Facebook · {h.leads.fb_user_id}</span>
+                  ) : (
+                    <span>WhatsApp · {h.leads?.phone}</span>
+                  )}
+                </p>
                 {h.reason && (
                   <p className="font-body text-sm text-ink bg-surface-subtle rounded-lg px-3 py-2 mb-3">
                     &ldquo;{h.reason}&rdquo;

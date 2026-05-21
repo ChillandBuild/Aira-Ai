@@ -13,7 +13,7 @@ def list_handovers(ctx: dict = Depends(get_tenant_and_role)):
     db = get_supabase()
     query = (
         db.table("chat_handovers")
-        .select("id, lead_id, assigned_to, reason, status, opened_at, leads(name, phone, segment)")
+        .select("id, lead_id, assigned_to, reason, status, opened_at, leads(name, phone, segment, source, tg_username, ig_user_id, fb_user_id)")
         .eq("tenant_id", ctx["tenant_id"])
         .eq("status", "pending")
         .order("opened_at", desc=True)
