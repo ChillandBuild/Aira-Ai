@@ -3,7 +3,8 @@ import io
 import logging
 from datetime import datetime, timezone
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from app.services.automation_triggers import fire_trigger
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
@@ -310,7 +311,7 @@ class ComposeMessage(BaseModel):
 
 
 @router.post("/compose")
-async def compose_new_message(payload: ComposeMessage, tenant_id: str = Depends(get_tenant_id)):
+async def compose_new_message(payload: ComposeMessage, background_tasks: BackgroundTasks, tenant_id: str = Depends(get_tenant_id)):
     """Send a WhatsApp message to any phone — creates lead if it doesn't exist."""
     content = (payload.content or "").strip()
     if not content:
@@ -335,6 +336,7 @@ async def compose_new_message(payload: ComposeMessage, tenant_id: str = Depends(
         new_lead = db.table("leads").insert(insert_data).execute()
         lead_id = new_lead.data[0]["id"]
         record_stage_event(lead_id, to_segment="C", event_type="created", metadata={"source": "manual"}, tenant_id=tenant_id, db=db)
+        fire_trigger(background_tasks, lead_id, tenant_id, "lead_created", db=db)
 
     sid = await send_whatsapp(phone, content, tenant_id=tenant_id)
     if not sid:

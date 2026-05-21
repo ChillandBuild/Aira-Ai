@@ -7,7 +7,7 @@ import { API_URL, getAuthHeaders } from "@/lib/api";
 import {
   LayoutDashboard, MessageSquare, Users, Settings, Phone,
   BarChart2, Upload, BookOpen, Layers, FileCheck, StickyNote,
-  LogOut, BookOpenCheck, Inbox,
+  LogOut, BookOpenCheck, Inbox, Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AiraLogo } from "./logo";
@@ -32,6 +32,7 @@ const OWNER_NAV: NavItem[] = [
   { href: "/dashboard/numbers", icon: Layers, label: "Numbers", feature: "telecalling" },
   { href: "/dashboard/templates", icon: FileCheck, label: "Templates", feature: "whatsapp" },
   { href: "/dashboard/bookings", icon: BookOpenCheck, label: "Bookings" },
+  { href: "/dashboard/automations", icon: Zap, label: "Automations" },
   { href: "/dashboard/analytics", icon: BarChart2, label: "Analytics" },
   { href: "/dashboard/team", icon: Users, label: "Team" },
 ];

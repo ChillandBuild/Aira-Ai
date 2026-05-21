@@ -7,6 +7,7 @@ from app.config_dynamic import get_setting
 from app.services.growth import record_stage_event
 from app.services.ai_reply import generate_reply
 from app.services.meta_webhook_verify import verify_meta_signature, resolve_tenant_for_page
+from app.services.automation_triggers import fire_trigger
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -125,6 +126,7 @@ async def facebook_webhook(tenant_id: str, request: Request, background_tasks: B
                     auto_assign_lead(lead_id, tenant_id)
                 except Exception as e:
                     logger.warning(f"Auto-assign failed for Facebook lead {lead_id}: {e}")
+                fire_trigger(background_tasks, lead_id, tenant_id, "lead_created", db=db)
 
             # Step 2: Prevent duplicate message insertion
             already = (
@@ -139,6 +141,11 @@ async def facebook_webhook(tenant_id: str, request: Request, background_tasks: B
                 continue
 
             # Step 3: Insert inbound message
+            _is_first = (
+                db.table("messages").select("id").eq("lead_id", lead_id)
+                .eq("direction", "inbound").limit(1).execute()
+            )
+            is_first_message = not bool(_is_first.data)
             db.table("messages").insert({
                 "lead_id": lead_id,
                 "direction": "inbound",
@@ -148,6 +155,11 @@ async def facebook_webhook(tenant_id: str, request: Request, background_tasks: B
                 "fb_message_id": str(message_id),
                 "tenant_id": tenant_id,
             }).execute()
+            fire_trigger(
+                background_tasks, lead_id, tenant_id,
+                "new_message_received", message=text,
+                is_first_message=is_first_message, db=db,
+            )
 
             # Step 4: Update conversation activity state
             try:
