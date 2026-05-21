@@ -178,7 +178,7 @@ function StepConfigEditor({
         value={c.url || ""}
         onChange={e => onChange({ ...c, url: e.target.value })}
       />
-      <p className="text-[11px] text-on-surface-muted">We'll POST lead_id, name, phone, segment, score, message to this URL.</p>
+      <p className="text-[11px] text-on-surface-muted">We&apos;ll POST lead_id, name, phone, segment, score, message to this URL.</p>
     </div>
   );
 
@@ -260,12 +260,10 @@ function StepConfigEditor({
 
 function StepCard({
   step,
-  index,
   onDelete,
   onUpdate,
 }: {
   step: AutomationStep;
-  index: number;
   onDelete: () => void;
   onUpdate: (s: AutomationStep) => void;
 }) {
@@ -358,9 +356,11 @@ function TriggerConfig({
   trigger_config: Record<string, unknown>;
   onChange: (c: Record<string, unknown>) => void;
 }) {
+  // useState must always be at the top — never inside a conditional
+  const [kw, setKw] = useState("");
+
   if (trigger_type === "keyword_match") {
     const keywords: string[] = (trigger_config.keywords as string[]) || [];
-    const [kw, setKw] = useState("");
     return (
       <div className="mt-3 space-y-2 border-t border-surface-mid pt-3">
         <label className="text-xs font-medium text-on-surface-muted">Keywords (any of these trigger the automation)</label>
@@ -504,32 +504,29 @@ export default function AutomationBuilder({ initial }: { initial?: AutomationDat
   const rootSteps = steps.filter(s => !s.parent_step_id);
   const conditionSteps = steps.filter(s => s.parent_step_id);
 
-  const renderStepList = (stepList: AutomationStep[], indices: number[], parentId?: string, branch?: "yes" | "no") => (
+  const renderStepList = (stepList: AutomationStep[], parentId?: string, branch?: "yes" | "no") => (
     <div className={`space-y-2 ${branch ? `pl-4 border-l-2 ${branch === "yes" ? "border-emerald-200" : "border-red-200"}` : ""}`}>
       {branch && (
         <p className={`text-[11px] font-bold uppercase tracking-wide ${branch === "yes" ? "text-emerald-600" : "text-red-500"}`}>
           {branch === "yes" ? "✓ Yes" : "✗ No"}
         </p>
       )}
-      {stepList.map((step, i) => {
+      {stepList.map((step) => {
         const globalIndex = steps.indexOf(step);
         const isCondition = step.step_type === "condition";
         const yesChildren = conditionSteps.filter(s => s.parent_step_id === step.id && s.branch === "yes");
         const noChildren = conditionSteps.filter(s => s.parent_step_id === step.id && s.branch === "no");
-        const yesIndices = yesChildren.map(s => steps.indexOf(s));
-        const noIndices = noChildren.map(s => steps.indexOf(s));
         return (
           <div key={globalIndex} className="space-y-2">
             <StepCard
               step={step}
-              index={globalIndex}
               onDelete={() => deleteStep(globalIndex)}
               onUpdate={updated => updateStep(globalIndex, updated)}
             />
             {isCondition && (
               <div className="ml-4 grid grid-cols-2 gap-3">
-                {renderStepList(yesChildren, yesIndices, step.id || String(globalIndex), "yes")}
-                {renderStepList(noChildren, noIndices, step.id || String(globalIndex), "no")}
+                {renderStepList(yesChildren, step.id || String(globalIndex), "yes")}
+                {renderStepList(noChildren, step.id || String(globalIndex), "no")}
               </div>
             )}
           </div>
@@ -589,7 +586,7 @@ export default function AutomationBuilder({ initial }: { initial?: AutomationDat
       {/* Steps */}
       <div className="mb-8">
         <p className="text-xs font-semibold text-on-surface-muted uppercase tracking-wide mb-3">Steps</p>
-        {renderStepList(rootSteps, rootSteps.map(s => steps.indexOf(s)))}
+        {renderStepList(rootSteps)}
       </div>
 
       {/* Error */}
