@@ -3,6 +3,7 @@ import sys
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.dependencies.auth import get_current_user
 
 import os
@@ -19,12 +20,40 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def _process_automation_waits() -> None:
+    """APScheduler job: resume automation wait-step executions that are due."""
+    try:
+        from app.services.automation_engine import resume_pending_executions
+        count = await resume_pending_executions()
+        if count:
+            logger.info(f"Automation scheduler: resumed {count} pending execution(s)")
+    except Exception as e:
+        logger.error(f"Automation scheduler error: {e}")
+
+
+_scheduler = AsyncIOScheduler()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Aira AI backend starting up...")
     logger.info(f"Supabase: {settings.supabase_url}")
     logger.info("Voice: TeleCMI")
+
+    # Schedule automation wait-step processing every 5 minutes
+    _scheduler.add_job(
+        _process_automation_waits,
+        trigger="interval",
+        minutes=5,
+        id="automation-pending",
+        replace_existing=True,
+    )
+    _scheduler.start()
+    logger.info("Automation scheduler started (every 5 min)")
+
     yield
+
+    _scheduler.shutdown(wait=False)
     logger.info("Aira AI backend shutting down.")
 
 
