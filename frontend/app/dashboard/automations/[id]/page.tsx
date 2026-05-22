@@ -1,11 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
-import { use } from "react";
+import { useParams } from "next/navigation";
 import AutomationBuilder, { type AutomationData } from "@/components/automations/automation-builder";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
-export default function EditAutomationPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function EditAutomationPage() {
+  const { id } = useParams<{ id: string }>();
   const [data, setData] = useState<AutomationData | null>(null);
   const [loading, setLoading] = useState(true);
 

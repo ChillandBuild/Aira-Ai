@@ -19,6 +19,7 @@ const TRIGGER_LABELS: Record<string, string> = {
   new_message_received: "Message Received",
   keyword_match: "Keyword Match",
   segment_changed: "Segment Changed",
+  score_threshold: "Score Threshold",
 };
 
 const TRIGGER_COLORS: Record<string, string> = {
@@ -27,6 +28,7 @@ const TRIGGER_COLORS: Record<string, string> = {
   new_message_received: "bg-violet-100 text-violet-700",
   keyword_match: "bg-amber-100 text-amber-700",
   segment_changed: "bg-pink-100 text-pink-700",
+  score_threshold: "bg-orange-100 text-orange-700",
 };
 
 export default function AutomationsPage() {

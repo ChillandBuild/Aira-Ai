@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { use } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { ArrowLeft, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
@@ -91,8 +90,8 @@ function LogRow({ log }: { log: AutomationLog }) {
   );
 }
 
-export default function AutomationLogsPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function AutomationLogsPage() {
+  const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [logs, setLogs] = useState<AutomationLog[]>([]);
   const [loading, setLoading] = useState(true);
