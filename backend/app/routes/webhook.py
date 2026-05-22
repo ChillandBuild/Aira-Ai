@@ -1,10 +1,11 @@
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, Form, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Form, Request, Response
 from app.db.supabase import get_supabase
 from app.config import settings
 from app.services.growth import record_stage_event
 from app.services.failover import update_number_quality, handle_quality_red, handle_quality_yellow
+from app.services.automation_triggers import fire_trigger
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -92,6 +93,7 @@ async def verify_webhook(request: Request):
 @router.post("")
 async def whatsapp_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     From: str | None = Form(None),
     To: str | None = Form(None),
     Body: str | None = Form(None),
@@ -184,10 +186,21 @@ async def whatsapp_webhook(
                                 auto_assign_lead(lead_id, tenant_id)
                             except Exception as e:
                                 logger.warning(f"Auto-assign failed for lead {lead_id}: {e}")
+                            fire_trigger(background_tasks, lead_id, tenant_id, "lead_created", db=db)
 
                         already = db.table("messages").select("id").eq("meta_message_id", msg_id).limit(1).execute()
                         if already.data:
                             continue
+
+                        _is_first = (
+                            db.table("messages")
+                            .select("id")
+                            .eq("lead_id", lead_id)
+                            .eq("direction", "inbound")
+                            .limit(1)
+                            .execute()
+                        )
+                        is_first_message = not bool(_is_first.data)
 
                         insert_row: dict = {
                             "lead_id": lead_id,
@@ -199,6 +212,12 @@ async def whatsapp_webhook(
                             "tenant_id": tenant_id,
                         }
                         db.table("messages").insert(insert_row).execute()
+                        if body:
+                            fire_trigger(
+                                background_tasks, lead_id, tenant_id,
+                                "new_message_received", message=body,
+                                is_first_message=is_first_message, db=db,
+                            )
 
                         # Update conversation state counters
                         from app.services.booking_flow import get_or_create_state

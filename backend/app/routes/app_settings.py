@@ -1,4 +1,6 @@
 import logging
+import secrets
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
@@ -11,6 +13,31 @@ router = APIRouter()
 
 class SettingsUpdate(BaseModel):
     updates: dict[str, str | None]
+
+
+async def setup_telegram_webhook(bot_token: str, tenant_id: str) -> tuple[bool, str | None]:
+    """Register Telegram webhook + return generated secret (None if base_url missing)."""
+    from app.config_dynamic import get_setting
+    base_url = get_setting("public_base_url") or env_settings.public_base_url
+    if not base_url:
+        logger.warning("public_base_url not set — cannot register Telegram webhook")
+        return True, None
+    webhook_url = f"{base_url.rstrip('/')}/webhook/telegram/{tenant_id}"
+    secret_token = secrets.token_urlsafe(32)
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/setWebhook"
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                url,
+                json={"url": webhook_url, "secret_token": secret_token},
+                timeout=10.0,
+            )
+            resp.raise_for_status()
+            logger.info(f"Telegram webhook set to {webhook_url} for tenant {tenant_id}")
+            return True, secret_token
+    except Exception as e:
+        logger.error(f"Failed to set Telegram webhook: {e}")
+        return False, None
 
 
 @router.get("/")
@@ -32,6 +59,12 @@ async def list_settings(tenant_id: str = Depends(get_tenant_id)):
         "telecmi_callerid": "telecmi_callerid",
         "telecmi_recording_base_url": "telecmi_recording_base_url",
         "groq_api_key": "groq_api_key",
+        "telegram_bot_token": "telegram_bot_token",
+        "instagram_access_token": "instagram_access_token",
+        "instagram_page_id": "instagram_page_id",
+        "facebook_access_token": "facebook_access_token",
+        "facebook_page_id": "facebook_page_id",
+        "meta_app_secret": "meta_app_secret",
     }
     for row in rows:
         db_value = row["value"]
@@ -63,7 +96,42 @@ async def list_settings(tenant_id: str = Depends(get_tenant_id)):
 async def update_settings(payload: SettingsUpdate, tenant_id: str = Depends(get_tenant_id)):
     if not payload.updates:
         raise HTTPException(status_code=400, detail="Nothing to update")
+
     db = get_supabase()
+
+    if "telegram_bot_token" in payload.updates:
+        tg_token = payload.updates["telegram_bot_token"]
+        if tg_token:
+            tg_token = tg_token.strip()
+            payload.updates["telegram_bot_token"] = tg_token
+            success, secret_token = await setup_telegram_webhook(tg_token, tenant_id)
+            if not success:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Failed to set Telegram webhook. Please verify your Bot Token is correct."
+                )
+            if secret_token:
+                # Persist webhook secret so the route can validate inbound updates
+                existing = (
+                    db.table("app_settings")
+                    .select("id")
+                    .eq("tenant_id", tenant_id)
+                    .eq("key", "telegram_webhook_secret")
+                    .maybe_single()
+                    .execute()
+                )
+                if existing and existing.data:
+                    db.table("app_settings").update(
+                        {"value": secret_token, "updated_at": "now()"}
+                    ).eq("tenant_id", tenant_id).eq("key", "telegram_webhook_secret").execute()
+                else:
+                    db.table("app_settings").insert({
+                        "tenant_id": tenant_id,
+                        "key": "telegram_webhook_secret",
+                        "value": secret_token,
+                        "is_secret": True,
+                    }).execute()
+
     updated = []
     for key, value in payload.updates.items():
         result = (

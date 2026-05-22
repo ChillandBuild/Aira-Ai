@@ -21,6 +21,23 @@ function IgIcon({ size = 10, className = "" }: { size?: number; className?: stri
   );
 }
 
+function TgIcon({ size = 10, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <line x1="22" y1="2" x2="11" y2="13" />
+      <polygon points="22 2 15 22 11 13 2 9 22 2" />
+    </svg>
+  );
+}
+
+function FbIcon({ size = 10, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+    </svg>
+  );
+}
+
 // ─── Media bubble renderer ────────────────────────────────────────────────────
 function MediaBubble({ msg }: { msg: Message }) {
   const mediaType = msg.media_type;
@@ -353,7 +370,9 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
   const aiEnabled = current.ai_enabled !== false;
   const converted = Boolean(current.converted_at);
   const isInstagram = current.source === "instagram";
-  const canSendMedia = !aiEnabled && !isInstagram;
+  const isTelegram = current.source === "telegram";
+  const isFacebook = current.source === "facebook";
+  const canSendMedia = !aiEnabled && current.source === "whatsapp";
 
   const lastInbound = [...messages].reverse().find((m) => m.direction === "inbound");
   const hoursSinceInbound = lastInbound
@@ -398,6 +417,14 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
             {isInstagram ? (
               <span className="inline-flex items-center gap-1 text-pink-500 font-semibold">
                 <IgIcon size={10} /> Instagram
+              </span>
+            ) : isTelegram ? (
+              <span className="inline-flex items-center gap-1 text-sky-500 font-semibold">
+                <TgIcon size={10} /> Telegram
+              </span>
+            ) : isFacebook ? (
+              <span className="inline-flex items-center gap-1 text-blue-600 font-semibold">
+                <FbIcon size={10} /> Facebook
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 text-green-600 font-semibold">
@@ -516,7 +543,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
 
       {/* Input area */}
       <div className="border-t border-surface-mid bg-surface px-6 py-3">
-        {outsideWindow && !aiEnabled && !isInstagram && (
+        {outsideWindow && !aiEnabled && current.source === "whatsapp" && (
           <div className="mb-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800">
             <AlertTriangle size={14} className="mt-0.5 shrink-0" />
             <p className="font-label text-[11px] leading-snug">
@@ -611,7 +638,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
                   ? "Recording… click 🔴 to stop"
                   : aiEnabled
                     ? "Take over: pause AI first, then type…"
-                    : `Type a message via ${isInstagram ? "Instagram DM" : "WhatsApp"} (Enter to send, Shift+Enter for newline)`
+                    : `Type a message via ${isInstagram ? "Instagram DM" : isTelegram ? "Telegram message" : isFacebook ? "Facebook Messenger" : "WhatsApp"} (Enter to send, Shift+Enter for newline)`
               }
               rows={2}
               disabled={aiEnabled || sending || isRecording}

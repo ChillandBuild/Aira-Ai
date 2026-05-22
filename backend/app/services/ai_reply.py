@@ -126,32 +126,95 @@ async def send_whatsapp(to_phone: str, message: str, tenant_id: str | None = Non
         logger.error(f"Meta send failed to {to_phone}: {err_msg}")
         return None
 
-def send_instagram(ig_user_id: str, message: str) -> str | None:
+async def send_instagram(ig_user_id: str, message: str, tenant_id: str | None = None) -> str | None:
     """Send an Instagram DM via Instagram Graph API. Returns message id or None on failure."""
-    if not settings.meta_page_token:
-        logger.error("META_PAGE_TOKEN not configured — cannot send Instagram DM")
+    from app.config_dynamic import get_setting
+    access_token = get_setting("instagram_access_token", tenant_id=tenant_id) or settings.meta_page_token
+    if not access_token:
+        logger.error(f"instagram_access_token not configured for tenant {tenant_id} — cannot send Instagram DM")
         return None
     try:
         url = "https://graph.instagram.com/v21.0/me/messages"
-        resp = httpx.post(
-            url,
-            params={"access_token": settings.meta_page_token},
-            json={
-                "recipient": {"id": ig_user_id},
-                "message": {"text": message},
-            },
-            timeout=15.0,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        mid = data.get("message_id")
-        logger.info(f"Instagram sent to {ig_user_id}: mid={mid}")
-        return mid
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                url,
+                params={"access_token": access_token},
+                json={
+                    "recipient": {"id": ig_user_id},
+                    "message": {"text": message},
+                },
+                timeout=15.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            mid = data.get("message_id")
+            logger.info(f"Instagram sent to {ig_user_id}: mid={mid}")
+            return mid
     except httpx.HTTPStatusError as e:
         logger.error(f"Instagram send failed to {ig_user_id}: {e.response.status_code} {e.response.text}")
         return None
     except Exception as e:
         logger.error(f"Instagram send failed to {ig_user_id}: {e}")
+        return None
+
+
+async def send_telegram(tg_user_id: str, message: str, tenant_id: str | None = None) -> str | None:
+    """Send a Telegram message via Bot API. Returns message ID (as string) or None on failure."""
+    from app.config_dynamic import get_setting
+    bot_token = get_setting("telegram_bot_token", tenant_id=tenant_id) or settings.telegram_bot_token
+    if not bot_token:
+        logger.error(f"telegram_bot_token not configured for tenant {tenant_id} — cannot send Telegram DM")
+        return None
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                url,
+                json={
+                    "chat_id": tg_user_id,
+                    "text": message,
+                },
+                timeout=15.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            mid = str(data.get("result", {}).get("message_id"))
+            logger.info(f"Telegram sent to {tg_user_id}: mid={mid}")
+            return mid
+    except Exception as e:
+        logger.error(f"Telegram send failed to {tg_user_id}: {e}")
+        return None
+
+
+async def send_facebook(fb_user_id: str, message: str, tenant_id: str | None = None) -> str | None:
+    """Send a Facebook Messenger message via Graph API. Returns message id or None on failure."""
+    from app.config_dynamic import get_setting
+    access_token = get_setting("facebook_access_token", tenant_id=tenant_id) or settings.facebook_access_token
+    if not access_token:
+        logger.error(f"facebook_access_token not configured for tenant {tenant_id} — cannot send Facebook DM")
+        return None
+    try:
+        url = "https://graph.facebook.com/v21.0/me/messages"
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                url,
+                params={"access_token": access_token},
+                json={
+                    "recipient": {"id": fb_user_id},
+                    "message": {"text": message},
+                },
+                timeout=15.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            mid = data.get("message_id")
+            logger.info(f"Facebook sent to {fb_user_id}: mid={mid}")
+            return mid
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Facebook send failed to {fb_user_id}: {e.response.status_code} {e.response.text}")
+        return None
+    except Exception as e:
+        logger.error(f"Facebook send failed to {fb_user_id}: {e}")
         return None
 
 
@@ -239,6 +302,8 @@ async def generate_reply(
     channel: str = "whatsapp",
     ig_user_id: str | None = None,
     context_block: str | None = None,
+    tg_user_id: str | None = None,
+    fb_user_id: str | None = None,
 ) -> None:
     """
     Core pipeline:
@@ -337,12 +402,23 @@ async def generate_reply(
 
     # Step 3: Dispatch to the correct channel
     if channel == "instagram":
-        sid = send_instagram(ig_user_id, reply_text) if ig_user_id else None
+        sid = await send_instagram(ig_user_id, reply_text, tenant_id=lead_data.get("tenant_id")) if ig_user_id else None
+    elif channel == "telegram":
+        sid = await send_telegram(tg_user_id, reply_text, tenant_id=lead_data.get("tenant_id")) if tg_user_id else None
+    elif channel == "facebook":
+        sid = await send_facebook(fb_user_id, reply_text, tenant_id=lead_data.get("tenant_id")) if fb_user_id else None
     else:
         sid = await send_whatsapp(phone, reply_text, tenant_id=lead_data.get("tenant_id")) if phone else None
 
     # Step 4: Store outbound message
-    sid_field = "meta_message_id" if channel == "whatsapp" else "twilio_message_sid"
+    if channel == "telegram":
+        sid_field = "tg_message_id"
+    elif channel == "facebook":
+        sid_field = "fb_message_id"
+    elif channel == "whatsapp":
+        sid_field = "meta_message_id"
+    else:
+        sid_field = "meta_message_id"  # instagram uses meta_message_id
     db.table("messages").insert({
         "lead_id": str(lead_id),
         "direction": "outbound",
@@ -403,6 +479,21 @@ async def generate_reply(
                 )
             except Exception as alert_err:
                 logger.warning(f"Alert creation failed for lead {lead_id}: {alert_err}")
+
+            # Fire score_threshold automation trigger (non-blocking, no BackgroundTasks here)
+            try:
+                from app.services.automation_triggers import _dispatch
+                import asyncio
+                asyncio.create_task(_dispatch(
+                    lead_id=str(lead_id),
+                    tenant_id=lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001",
+                    trigger_type="score_threshold",
+                    message=message,
+                    is_first_message=False,
+                    db=db,
+                ))
+            except Exception as auto_err:
+                logger.warning(f"score_threshold trigger failed for lead {lead_id}: {auto_err}")
     except Exception as e:
         logger.error(f"Scoring update failed for lead {lead_id}: {e}")
 

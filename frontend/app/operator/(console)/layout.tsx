@@ -9,13 +9,15 @@ export default async function OperatorLayout({ children }: { children: React.Rea
   const { data: { session } } = await supabase.auth.getSession();
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
   try {
-    const meRes = await fetch(`${apiUrl}/api/v1/team/me`, {
+    const meRes = await fetch(`${apiUrl}/api/v1/operator/me`, {
       headers: { Authorization: `Bearer ${session?.access_token}` },
       cache: "no-store",
     });
     if (meRes.ok) {
       const me = await meRes.json();
       if (!me.is_system_admin) redirect("/dashboard");
+    } else {
+      redirect("/dashboard");
     }
   } catch {
     redirect("/dashboard");

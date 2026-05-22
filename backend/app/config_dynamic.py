@@ -23,6 +23,13 @@ _ENV_MAP = {
     "razorpay_webhook_secret": "RAZORPAY_WEBHOOK_SECRET",
     "ai_auto_reply_enabled": "AI_AUTO_REPLY_ENABLED",
     "faq_match_threshold": "FAQ_MATCH_THRESHOLD",
+    "telegram_bot_token": "TELEGRAM_BOT_TOKEN",
+    "instagram_access_token": "INSTAGRAM_ACCESS_TOKEN",
+    "instagram_page_id": "INSTAGRAM_PAGE_ID",
+    "facebook_access_token": "FACEBOOK_ACCESS_TOKEN",
+    "facebook_page_id": "FACEBOOK_PAGE_ID",
+    "meta_app_secret": "META_APP_SECRET",
+    "telegram_webhook_secret": "TELEGRAM_WEBHOOK_SECRET",
 }
 
 

@@ -379,7 +379,7 @@ export default function LeadsPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-surface-mid">
-                <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Phone</th>
+                <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Contact/ID</th>
                 <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Name</th>
                 <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Score</th>
                 <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Segment</th>
@@ -398,7 +398,9 @@ export default function LeadsPage() {
                     i % 2 === 0 ? "" : "bg-surface-low/30"
                   }`}
                 >
-                  <td className="px-6 py-4 font-body text-sm text-on-surface">{formatPhone(lead.phone)}</td>
+                  <td className="px-6 py-4 font-body text-sm text-on-surface">
+                    {lead.phone ? formatPhone(lead.phone) : (lead.source === "telegram" ? `@${lead.tg_username || "unknown"}` : (lead.source === "instagram" ? lead.ig_user_id : (lead.source === "facebook" ? lead.fb_user_id : "No Contact")))}
+                  </td>
                   <td className="px-6 py-4">
                     <NameCell
                       lead={lead}

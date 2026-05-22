@@ -22,6 +22,9 @@ export interface Lead {
   converted_at?: string | null;
   assigned_to?: string | null;
   needs_human_intervention?: boolean;
+  tg_username?: string | null;
+  ig_user_id?: string | null;
+  fb_user_id?: string | null;
   created_at: string;
 }
 

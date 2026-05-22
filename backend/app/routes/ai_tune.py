@@ -46,13 +46,38 @@ _DEFAULT_WHATSAPP_PROMPT = "You are a helpful AI assistant. Answer customer quer
 async def list_prompts(tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
     res = db.table("ai_prompts").select("*").eq("tenant_id", tenant_id).order("name").execute()
-    if not res.data:
-        db.table("ai_prompts").insert({
+    existing_names = {row["name"] for row in (res.data or [])}
+    
+    missing_prompts = []
+    if "whatsapp_reply" not in existing_names:
+        missing_prompts.append({
             "name": "whatsapp_reply",
             "content": _DEFAULT_WHATSAPP_PROMPT,
             "tenant_id": tenant_id,
-        }).execute()
+        })
+    if "telegram_reply" not in existing_names:
+        missing_prompts.append({
+            "name": "telegram_reply",
+            "content": "You are a helpful AI assistant. Answer customer queries accurately and warmly via Telegram. Keep replies concise (2-3 sentences). Always encourage the next step.",
+            "tenant_id": tenant_id,
+        })
+    if "instagram_reply" not in existing_names:
+        missing_prompts.append({
+            "name": "instagram_reply",
+            "content": "You are a helpful AI assistant. Answer customer queries accurately and warmly via Instagram. Keep replies concise (2-3 sentences). Always encourage the next step.",
+            "tenant_id": tenant_id,
+        })
+    if "facebook_reply" not in existing_names:
+        missing_prompts.append({
+            "name": "facebook_reply",
+            "content": "You are a helpful AI assistant. Answer customer queries accurately and warmly via Facebook Messenger. Keep replies concise (2-3 sentences). Always encourage the next step.",
+            "tenant_id": tenant_id,
+        })
+
+    if missing_prompts:
+        db.table("ai_prompts").insert(missing_prompts).execute()
         res = db.table("ai_prompts").select("*").eq("tenant_id", tenant_id).order("name").execute()
+        
     return {"data": res.data or []}
 
 

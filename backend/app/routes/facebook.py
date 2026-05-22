@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, Request, BackgroundTasks, HTTPException, Response
+from fastapi import APIRouter, Request, BackgroundTasks, Response
 from app.db.supabase import get_supabase
 from app.config import settings
 from app.config_dynamic import get_setting
@@ -14,57 +14,57 @@ router = APIRouter()
 
 
 @router.get("/{tenant_id}")
-async def verify_instagram_webhook(tenant_id: str, request: Request):
+async def verify_facebook_webhook(tenant_id: str, request: Request):
     mode = request.query_params.get("hub.mode")
     token = request.query_params.get("hub.verify_token")
     challenge = request.query_params.get("hub.challenge")
 
-    # Retrieve tenant-specific webhook verify token or fallback to global setting
+    # Use tenant-specific verify token, fallback to global
     verify_token = get_setting("meta_webhook_verify_token", tenant_id=tenant_id) or settings.meta_verify_token
 
     if mode == "subscribe" and token == verify_token:
-        logger.info(f"Instagram webhook verified successfully for tenant {tenant_id}")
+        logger.info(f"Facebook webhook verified successfully for tenant {tenant_id}")
         return Response(content=challenge, media_type="text/plain")
 
-    logger.warning(f"Instagram webhook verification failed for tenant {tenant_id} — token mismatch. received={token}")
+    logger.warning(f"Facebook webhook verification failed for tenant {tenant_id} — token mismatch. received={token}")
     return Response(content="Forbidden", status_code=403)
 
 
 @router.post("/{tenant_id}")
-async def instagram_webhook(tenant_id: str, request: Request, background_tasks: BackgroundTasks):
+async def facebook_webhook(tenant_id: str, request: Request, background_tasks: BackgroundTasks):
     raw_body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256")
     if not verify_meta_signature(raw_body, signature, tenant_id):
-        logger.warning(f"Instagram webhook signature invalid for tenant {tenant_id}")
+        logger.warning(f"Facebook webhook signature invalid for tenant {tenant_id}")
         return Response(content="Forbidden", status_code=403)
 
     try:
         import json as _json
         payload = _json.loads(raw_body.decode("utf-8")) if raw_body else {}
     except Exception:
-        logger.error("Failed to parse Instagram webhook request JSON")
+        logger.error("Failed to parse Facebook webhook request JSON")
         return {"status": "ok", "detail": "invalid_json"}
 
-    # Meta webhook event payloads have "object": "instagram" and "entry" list
-    if payload.get("object") != "instagram":
-        return {"status": "ok", "detail": "not_instagram_object"}
+    # Meta Messenger payloads have "object": "page"
+    if payload.get("object") != "page":
+        return {"status": "ok", "detail": "not_page_object"}
 
     entries = payload.get("entry", [])
     db = get_supabase()
 
     for entry in entries:
-        ig_account_id = entry.get("id", "")
-        owner_tenant = resolve_tenant_for_page(ig_account_id, "instagram")
+        page_id = entry.get("id", "")
+        # Validate that this page_id belongs to the tenant in the URL
+        owner_tenant = resolve_tenant_for_page(page_id, "facebook")
         if owner_tenant and owner_tenant != tenant_id:
             logger.warning(
-                f"Instagram account {ig_account_id} belongs to tenant {owner_tenant}, "
+                f"Facebook page_id {page_id} belongs to tenant {owner_tenant}, "
                 f"not {tenant_id} (URL) — skipping entry"
             )
             continue
-
         messaging = entry.get("messaging", [])
         for event in messaging:
-            # We ignore echo messages (messages sent by our own application/page)
+            # Ignore echo messages (sent by our page)
             message = event.get("message", {})
             if not message or message.get("is_echo"):
                 continue
@@ -73,14 +73,15 @@ async def instagram_webhook(tenant_id: str, request: Request, background_tasks: 
             text = (message.get("text") or "").strip()
             sender_id = event.get("sender", {}).get("id")
 
+            # Skip non-text messages (images, stickers, etc.)
             if not sender_id or not text or not message_id:
                 continue
 
-            # Step 1: Look up or create the lead by ig_user_id
+            # Step 1: Look up or create lead by fb_user_id
             existing = (
                 db.table("leads")
                 .select("id,score,segment,deleted_at,ai_enabled")
-                .eq("ig_user_id", sender_id)
+                .eq("fb_user_id", sender_id)
                 .eq("tenant_id", tenant_id)
                 .limit(1)
                 .execute()
@@ -94,20 +95,21 @@ async def instagram_webhook(tenant_id: str, request: Request, background_tasks: 
                         "ai_enabled": True,
                         "needs_human_intervention": False,
                     }).eq("id", lead_id).execute()
-                    logger.info(f"Restored soft-deleted Instagram lead {lead_id}")
+                    logger.info(f"Restored soft-deleted Facebook lead {lead_id}")
             else:
-                name = f"Instagram User {sender_id[:6]}"
+                name = f"Facebook User {sender_id[:6]}"
                 new_lead = db.table("leads").insert({
                     "name": name,
-                    "ig_user_id": sender_id,
-                    "source": "instagram",
+                    "fb_user_id": sender_id,
+                    "fb_page_id": page_id,
+                    "source": "facebook",
                     "score": 5,
                     "segment": "C",
                     "tenant_id": tenant_id,
                 }).execute()
 
                 if not new_lead.data:
-                    logger.error(f"Failed to create new Instagram lead for sender {sender_id}")
+                    logger.error(f"Failed to create new Facebook lead for sender {sender_id}")
                     continue
 
                 lead_id = new_lead.data[0]["id"]
@@ -115,22 +117,22 @@ async def instagram_webhook(tenant_id: str, request: Request, background_tasks: 
                     lead_id,
                     to_segment="C",
                     event_type="created",
-                    metadata={"source": "instagram"},
+                    metadata={"source": "facebook"},
                     tenant_id=tenant_id,
-                    db=db
+                    db=db,
                 )
                 try:
                     from app.services.assignment import auto_assign_lead
                     auto_assign_lead(lead_id, tenant_id)
                 except Exception as e:
-                    logger.warning(f"Auto-assign failed for Instagram lead {lead_id}: {e}")
+                    logger.warning(f"Auto-assign failed for Facebook lead {lead_id}: {e}")
                 fire_trigger(background_tasks, lead_id, tenant_id, "lead_created", db=db)
 
             # Step 2: Prevent duplicate message insertion
             already = (
                 db.table("messages")
                 .select("id")
-                .eq("meta_message_id", str(message_id))
+                .eq("fb_message_id", str(message_id))
                 .eq("tenant_id", tenant_id)
                 .limit(1)
                 .execute()
@@ -144,16 +146,15 @@ async def instagram_webhook(tenant_id: str, request: Request, background_tasks: 
                 .eq("direction", "inbound").limit(1).execute()
             )
             is_first_message = not bool(_is_first.data)
-            insert_row = {
+            db.table("messages").insert({
                 "lead_id": lead_id,
                 "direction": "inbound",
-                "channel": "instagram",
+                "channel": "facebook",
                 "content": text,
                 "is_ai_generated": False,
-                "meta_message_id": str(message_id),
+                "fb_message_id": str(message_id),
                 "tenant_id": tenant_id,
-            }
-            db.table("messages").insert(insert_row).execute()
+            }).execute()
             fire_trigger(
                 background_tasks, lead_id, tenant_id,
                 "new_message_received", message=text,
@@ -170,7 +171,7 @@ async def instagram_webhook(tenant_id: str, request: Request, background_tasks: 
                     "last_activity_at": datetime.now(timezone.utc).isoformat(),
                 }).eq("lead_id", lead_id).execute()
             except Exception as state_err:
-                logger.warning(f"Failed to update Instagram lead conversation state: {state_err}")
+                logger.warning(f"Failed to update Facebook lead conversation state: {state_err}")
 
             # Step 5: Queue AI Auto-Reply
             try:
@@ -180,11 +181,11 @@ async def instagram_webhook(tenant_id: str, request: Request, background_tasks: 
                     generate_reply,
                     lead_id=lead_id,
                     message=text,
-                    channel="instagram",
+                    channel="facebook",
                     context_block=context_block,
-                    ig_user_id=sender_id
+                    fb_user_id=sender_id,
                 )
             except Exception as reply_err:
-                logger.error(f"Failed to queue generate_reply task for Instagram lead {lead_id}: {reply_err}")
+                logger.error(f"Failed to queue generate_reply for Facebook lead {lead_id}: {reply_err}")
 
     return {"status": "ok"}

@@ -3,11 +3,12 @@ import sys
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.dependencies.auth import get_current_user
 
 import os
 from app.config import settings
-from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team, media, alerts, todos, bookings, conversations, operator, chat_handovers, instagram
+from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team, media, alerts, todos, bookings, conversations, operator, chat_handovers, telegram, instagram, facebook, automations
 from app.routes.calls import public_router as calls_public_router
 
 # Configure logging
@@ -19,12 +20,40 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def _process_automation_waits() -> None:
+    """APScheduler job: resume automation wait-step executions that are due."""
+    try:
+        from app.services.automation_engine import resume_pending_executions
+        count = await resume_pending_executions()
+        if count:
+            logger.info(f"Automation scheduler: resumed {count} pending execution(s)")
+    except Exception as e:
+        logger.error(f"Automation scheduler error: {e}")
+
+
+_scheduler = AsyncIOScheduler()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Aira AI backend starting up...")
     logger.info(f"Supabase: {settings.supabase_url}")
     logger.info("Voice: TeleCMI")
+
+    # Schedule automation wait-step processing every 5 minutes
+    _scheduler.add_job(
+        _process_automation_waits,
+        trigger="interval",
+        minutes=5,
+        id="automation-pending",
+        replace_existing=True,
+    )
+    _scheduler.start()
+    logger.info("Automation scheduler started (every 5 min)")
+
     yield
+
+    _scheduler.shutdown(wait=False)
     logger.info("Aira AI backend shutting down.")
 
 
@@ -59,7 +88,9 @@ _auth = [Depends(get_current_user)]
 
 # Webhook routes — no auth (Meta/Twilio call directly)
 app.include_router(webhook.router, prefix="/webhook/whatsapp", tags=["webhook"])
-app.include_router(instagram.router, prefix="/instagram", tags=["instagram-webhook"])
+app.include_router(telegram.router, prefix="/webhook/telegram", tags=["telegram-webhook"])
+app.include_router(instagram.router, prefix="/webhook/instagram", tags=["instagram-webhook"])
+app.include_router(facebook.router, prefix="/webhook/facebook", tags=["facebook-webhook"])
 app.include_router(calls_public_router, prefix="/api/v1/calls", tags=["calls-telecmi"])
 app.include_router(bookings.public_router, prefix="/api/v1/bookings", tags=["bookings-webhook"])
 
@@ -91,4 +122,5 @@ app.include_router(bookings.router, prefix="/api/v1/bookings", tags=["bookings"]
 app.include_router(conversations.router, prefix="/api/v1/conversations", tags=["conversations"], dependencies=_auth)
 app.include_router(operator.router, prefix="/api/v1/operator", tags=["operator"])
 app.include_router(chat_handovers.router, prefix="/api/v1/chat-handovers", tags=["chat-handovers"], dependencies=_auth)
+app.include_router(automations.router, prefix="/api/v1/automations", tags=["automations"], dependencies=_auth)
 

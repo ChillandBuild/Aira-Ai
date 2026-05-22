@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import {
   MessageSquare, Phone, Sparkles, Eye, EyeOff,
-  Save, AlertCircle, Loader2, CheckCircle2, ChevronDown,
+  Save, AlertCircle, Loader2, CheckCircle2, ChevronDown, Send, Camera,
 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
@@ -49,7 +49,43 @@ const SECTIONS: SectionDef[] = [
     fields: [
       { key: "meta_phone_number_id", label: "Phone Number ID", secret: false, required: true },
       { key: "meta_access_token", label: "Permanent Access Token", secret: true, required: true },
-      { key: "meta_webhook_verify_token", label: "Webhook Verify Token", secret: true, required: true },
+      { key: "meta_webhook_verify_token", label: "Webhook Verify Token", secret: true, required: true, hint: "Pick any string. Paste the same value into Meta Developer App → Webhook → Verify Token (shared by WhatsApp, Instagram, Facebook)." },
+      { key: "meta_app_secret", label: "Meta App Secret", secret: true, required: true, hint: "Meta Developer App → Settings → Basic → App Secret. Used to verify inbound Facebook + Instagram webhooks." },
+    ],
+  },
+  {
+    id: "telegram",
+    label: "Telegram (Bot API)",
+    icon: Send,
+    color: "#0284c7",
+    bg: "#e0f2fe",
+    description: "Connect your Telegram Bot. The webhook URL is registered automatically when saving.",
+    fields: [
+      { key: "telegram_bot_token", label: "Telegram Bot Token", secret: true, required: true, hint: "Obtain this token from @BotFather on Telegram" },
+    ],
+  },
+  {
+    id: "instagram",
+    label: "Instagram (Direct Messages)",
+    icon: Camera,
+    color: "#e1306c",
+    bg: "#fdf2f8",
+    description: "Connect your Instagram Business Account. Provide your credentials and register the webhook URL.",
+    fields: [
+      { key: "instagram_page_id", label: "Instagram Page ID / Business Account ID", secret: false, required: true, hint: "Meta Business Manager Page ID or Instagram Business Account ID" },
+      { key: "instagram_access_token", label: "Instagram Page Access Token", secret: true, required: true, hint: "Permanent page access token with instagram_manage_messages scope" },
+    ],
+  },
+  {
+    id: "facebook",
+    label: "Facebook Messenger",
+    icon: MessageSquare,
+    color: "#1877f2",
+    bg: "#eff6ff",
+    description: "Connect your Facebook Page to receive and reply to Messenger conversations.",
+    fields: [
+      { key: "facebook_page_id", label: "Facebook Page ID", secret: false, required: true, hint: "Your Facebook Page's numeric ID from Page settings" },
+      { key: "facebook_access_token", label: "Facebook Page Access Token", secret: true, required: true, hint: "Permanent page access token with pages_messaging scope" },
     ],
   },
   {
@@ -187,6 +223,7 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [tenantId, setTenantId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -211,7 +248,22 @@ export default function SettingsPage() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    async function fetchTenantStatus() {
+      try {
+        const auth = await getAuthHeaders();
+        const res = await fetch(`${API_URL}/api/v1/onboarding/status`, { headers: auth });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.tenant_id) setTenantId(data.tenant_id);
+        }
+      } catch (e) {
+        console.error("Failed to load onboarding status", e);
+      }
+    }
+    fetchTenantStatus();
+  }, [load]);
 
   function settingFor(key: string) {
     return settings.find(s => s.key === key);
@@ -366,6 +418,32 @@ export default function SettingsPage() {
                         );
                       })}
                     </div>
+
+                    {section.id === "instagram" && (
+                      <div className="mt-5 p-4 rounded-2xl bg-surface-subtle border border-border-subtle font-body text-xs text-ink-secondary space-y-2">
+                        <p className="font-semibold text-ink">Meta Webhook Configuration Guide:</p>
+                        <p>1. In your Meta Developer App, add the <strong>Instagram Graph API</strong> product.</p>
+                        <p>2. Set the Webhook Callback URL to:</p>
+                        <div className="p-2.5 rounded-xl bg-white border border-border font-mono text-xs select-all break-all text-primary font-medium">
+                          {tenantId ? `${API_URL.replace("/api/v1", "/webhook")}/instagram/${tenantId}` : "Retrieving webhook URL..."}
+                        </div>
+                        <p>3. Use the verify token you chose or set in Meta Webhook configuration.</p>
+                        <p>4. Subscribe to <strong>messages</strong> Webhook event fields.</p>
+                      </div>
+                    )}
+
+                    {section.id === "facebook" && (
+                      <div className="mt-5 p-4 rounded-2xl bg-surface-subtle border border-border-subtle font-body text-xs text-ink-secondary space-y-2">
+                        <p className="font-semibold text-ink">Facebook Messenger Webhook Configuration Guide:</p>
+                        <p>1. In your Meta Developer App, add the <strong>Messenger</strong> product and link your Page.</p>
+                        <p>2. Set the Webhook Callback URL to:</p>
+                        <div className="p-2.5 rounded-xl bg-white border border-border font-mono text-xs select-all break-all text-primary font-medium">
+                          {tenantId ? `${API_URL.replace("/api/v1", "/webhook")}/facebook/${tenantId}` : "Retrieving webhook URL..."}
+                        </div>
+                        <p>3. Use the same verify token configured for your Meta app (meta_webhook_verify_token).</p>
+                        <p>4. Subscribe to <strong>messages</strong> Webhook event fields under your Page.</p>
+                      </div>
+                    )}
 
                     {section.toggles && section.toggles.length > 0 && (
                       <div className="mt-4 space-y-3">
