@@ -40,11 +40,12 @@ class AutomationUpdate(BaseModel):
 
 _VALID_TRIGGERS = {
     "lead_created", "first_inbound_message", "new_message_received",
-    "keyword_match", "segment_changed",
+    "keyword_match", "segment_changed", "score_threshold",
 }
 _VALID_STEPS = {
     "send_message", "send_template", "assign_lead",
-    "update_segment", "add_note", "send_webhook", "wait", "condition",
+    "update_segment", "add_note", "send_webhook",
+    "wait", "condition", "create_followup",
 }
 
 

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import {
   Plus, Trash2, ChevronDown, ChevronUp, Save, Play,
   MessageSquare, Send, Users, Tag, FileText, Webhook,
-  Clock, GitBranch, Zap, ArrowLeft, Loader2, type LucideIcon,
+  Clock, GitBranch, Zap, ArrowLeft, Loader2, PhoneCall, type LucideIcon,
 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
@@ -36,6 +36,7 @@ const TRIGGER_OPTIONS = [
   { value: "new_message_received", label: "Any Message Received", description: "Any inbound message arrives from a lead" },
   { value: "keyword_match", label: "Keyword Match", description: "Message contains specific keywords" },
   { value: "segment_changed", label: "Segment Changed", description: "Lead's segment (A/B/C/D) changes" },
+  { value: "score_threshold", label: "Score Threshold", description: "Groq AI scores a lead above or below a threshold" },
 ];
 
 const STEP_OPTIONS: { value: string; label: string; icon: LucideIcon; color: string }[] = [
@@ -47,6 +48,7 @@ const STEP_OPTIONS: { value: string; label: string; icon: LucideIcon; color: str
   { value: "send_webhook", label: "Send Webhook", icon: Webhook, color: "text-cyan-500" },
   { value: "wait", label: "Wait", icon: Clock, color: "text-slate-400" },
   { value: "condition", label: "Condition (Branch)", icon: GitBranch, color: "text-orange-500" },
+  { value: "create_followup", label: "Create Callback Task", icon: PhoneCall, color: "text-teal-500" },
 ];
 
 const STEP_ICON: Record<string, LucideIcon> = {
@@ -58,6 +60,7 @@ const STEP_ICON: Record<string, LucideIcon> = {
   send_webhook: Webhook,
   wait: Clock,
   condition: GitBranch,
+  create_followup: PhoneCall,
 };
 
 function stepSummary(step: AutomationStep): string {
@@ -71,6 +74,7 @@ function stepSummary(step: AutomationStep): string {
     case "send_webhook": return c.url ? String(c.url).replace(/^https?:\/\//, "") : "(no URL)";
     case "wait": return c.amount ? `Wait ${c.amount} ${c.unit || "minutes"}` : "(no duration)";
     case "condition": return c.subject ? `If ${c.subject} ${c.operator} "${c.value}"` : "(no condition)";
+    case "create_followup": return c.due_in_minutes ? `Callback in ${c.due_in_minutes} min` : "Callback task";
     default: return "";
   }
 }
@@ -253,6 +257,35 @@ function StepConfigEditor({
     </div>
   );
 
+  if (step.step_type === "create_followup") return (
+    <div className="space-y-3">
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-on-surface-muted">Schedule callback in</label>
+        <div className="flex gap-2 items-center">
+          <input
+            type="number"
+            min={1}
+            className="w-24 rounded-xl border border-surface-mid bg-surface-subtle px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
+            placeholder="30"
+            value={c.due_in_minutes || ""}
+            onChange={e => onChange({ ...c, due_in_minutes: e.target.value })}
+          />
+          <span className="text-sm text-on-surface-muted">minutes from now</span>
+        </div>
+      </div>
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-on-surface-muted">Note for telecaller (optional)</label>
+        <input
+          className="w-full rounded-xl border border-surface-mid bg-surface-subtle px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
+          placeholder="e.g. Lead asked about pricing, follow up warmly"
+          value={c.note || ""}
+          onChange={e => onChange({ ...c, note: e.target.value })}
+        />
+      </div>
+      <p className="text-[11px] text-on-surface-muted">Creates a callback task in the telecaller&apos;s queue. Visible in Follow-ups.</p>
+    </div>
+  );
+
   return null;
 }
 
@@ -426,6 +459,35 @@ function TriggerConfig({
             >{s}</button>
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (trigger_type === "score_threshold") {
+    return (
+      <div className="mt-3 border-t border-surface-mid pt-3 space-y-3">
+        <label className="text-xs font-medium text-on-surface-muted">Fire when Groq AI score</label>
+        <div className="flex gap-2 items-center">
+          <select
+            className="rounded-xl border border-surface-mid bg-surface-subtle px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
+            value={(trigger_config.operator as string) || "gte"}
+            onChange={e => onChange({ ...trigger_config, operator: e.target.value })}
+          >
+            <option value="gte">reaches ≥</option>
+            <option value="lte">drops to ≤</option>
+          </select>
+          <input
+            type="number"
+            min={1}
+            max={10}
+            className="w-20 rounded-xl border border-surface-mid bg-surface-subtle px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
+            placeholder="7"
+            value={(trigger_config.threshold as string) || ""}
+            onChange={e => onChange({ ...trigger_config, threshold: e.target.value })}
+          />
+          <span className="text-sm text-on-surface-muted">/ 10</span>
+        </div>
+        <p className="text-[11px] text-on-surface-muted">Fires once per lead when their score crosses this threshold after an AI reply.</p>
       </div>
     );
   }

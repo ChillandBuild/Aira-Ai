@@ -479,6 +479,21 @@ async def generate_reply(
                 )
             except Exception as alert_err:
                 logger.warning(f"Alert creation failed for lead {lead_id}: {alert_err}")
+
+            # Fire score_threshold automation trigger (non-blocking, no BackgroundTasks here)
+            try:
+                from app.services.automation_triggers import _dispatch
+                import asyncio
+                asyncio.create_task(_dispatch(
+                    lead_id=str(lead_id),
+                    tenant_id=lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001",
+                    trigger_type="score_threshold",
+                    message=message,
+                    is_first_message=False,
+                    db=db,
+                ))
+            except Exception as auto_err:
+                logger.warning(f"score_threshold trigger failed for lead {lead_id}: {auto_err}")
     except Exception as e:
         logger.error(f"Scoring update failed for lead {lead_id}: {e}")
 

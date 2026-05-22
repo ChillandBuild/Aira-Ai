@@ -62,6 +62,17 @@ async def _dispatch(
                     if matched:
                         await run_automation(auto, lead_id, "keyword_match", message, db)
 
+            # ── score_threshold ────────────────────────────────────────────
+            elif trigger_type == "score_threshold" and ttype == "score_threshold":
+                cfg = auto.get("trigger_config") or {}
+                threshold = float(cfg.get("threshold", 7))
+                operator = cfg.get("operator", "gte")  # gte or lte
+                score_row = db.table("leads").select("score").eq("id", lead_id).maybe_single().execute()
+                current_score = float((score_row.data or {}).get("score") or 0)
+                matched = (current_score >= threshold) if operator == "gte" else (current_score <= threshold)
+                if matched:
+                    await run_automation(auto, lead_id, trigger_type, message, db)
+
             # ── segment_changed ────────────────────────────────────────────
             elif trigger_type == "segment_changed" and ttype == "segment_changed":
                 cfg = auto.get("trigger_config") or {}

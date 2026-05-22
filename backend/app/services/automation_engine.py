@@ -268,6 +268,26 @@ async def _execute_step(
         except Exception as e:
             return {"status": "error", "detail": str(e)}
 
+    # ── create_followup ───────────────────────────────────────────────────
+    if step_type == "create_followup":
+        due_in_minutes = int(config.get("due_in_minutes", 30))
+        channel = config.get("channel", lead_data.get("source", "whatsapp"))
+        try:
+            scheduled_for = (datetime.now(timezone.utc) + timedelta(minutes=due_in_minutes)).isoformat()
+            db.table("follow_up_jobs").insert({
+                "lead_id": lead_id,
+                "tenant_id": tenant_id,
+                "channel": channel,
+                "cadence": "callback",
+                "status": "pending",
+                "scheduled_for": scheduled_for,
+                "message_preview": config.get("note", f"Auto-callback via automation"),
+            }).execute()
+            return {"status": "ok", "detail": f"callback scheduled in {due_in_minutes} min"}
+        except Exception as e:
+            logger.error(f"create_followup failed for lead {lead_id}: {e}")
+            return {"status": "error", "detail": str(e)}
+
     # ── wait ──────────────────────────────────────────────────────────────
     if step_type == "wait":
         amount = int(config.get("amount", 1))
