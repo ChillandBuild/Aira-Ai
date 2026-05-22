@@ -9,6 +9,7 @@ import LiveNotesPane from "./components/live-notes-pane";
 import NotesHistoryModal from "./components/notes-history-modal";
 import { fetchNotes, fetchTodayCallbacks, fetchTodayCompletedCallbacks, markCallbackDone, saveNote } from "./lib/notes-api";
 import type { ActiveCallCtx, CallbackJob, NotesResponse } from "./types";
+import { usePolling } from "@/hooks/usePolling";
 
 
 
@@ -78,11 +79,8 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // auto-refresh callbacks every 5 minutes
-  useEffect(() => {
-    const id = setInterval(loadCallbacks, 5 * 60 * 1000);
-    return () => clearInterval(id);
-  }, [loadCallbacks]);
+  // auto-refresh callbacks every 5 minutes (paused when tab hidden)
+  usePolling(loadCallbacks, 5 * 60 * 1000);
 
   // Modal data fetching
   useEffect(() => {

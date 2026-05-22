@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { api, Lead } from "@/lib/api";
 import { SegmentBadge } from "./segment-badge";
 import { timeAgo, formatPhone, cn } from "@/lib/utils";
@@ -69,21 +69,23 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const visible = (segment ? leads.filter((l) => l.segment === segment) : leads)
-    .filter((l) => {
-      if (!searchQuery) return true;
-      const q = searchQuery.toLowerCase();
-      const name = l.name?.toLowerCase() || "";
-      const phone = l.phone?.toLowerCase() || "";
-      return name.includes(q) || phone.includes(q);
-    })
-    .sort((a, b) => {
-      if (a.needs_human_intervention && !b.needs_human_intervention) return -1;
-      if (!a.needs_human_intervention && b.needs_human_intervention) return 1;
-      const aTime = (a as ConversationLead).last_reply_at || a.created_at;
-      const bTime = (b as ConversationLead).last_reply_at || b.created_at;
-      return new Date(bTime).getTime() - new Date(aTime).getTime();
-    });
+  const visible = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    return (segment ? leads.filter((l) => l.segment === segment) : leads)
+      .filter((l) => {
+        if (!q) return true;
+        const name = l.name?.toLowerCase() || "";
+        const phone = l.phone?.toLowerCase() || "";
+        return name.includes(q) || phone.includes(q);
+      })
+      .sort((a, b) => {
+        if (a.needs_human_intervention && !b.needs_human_intervention) return -1;
+        if (!a.needs_human_intervention && b.needs_human_intervention) return 1;
+        const aTime = (a as ConversationLead).last_reply_at || a.created_at;
+        const bTime = (b as ConversationLead).last_reply_at || b.created_at;
+        return new Date(bTime).getTime() - new Date(aTime).getTime();
+      });
+  }, [leads, segment, searchQuery]);
 
   async function handleDeleteSelected() {
     if (!confirm(`Delete ${selectedIds.size} conversations?`)) return;

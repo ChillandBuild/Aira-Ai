@@ -1,7 +1,8 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { usePolling } from "@/hooks/usePolling";
 
 type Incident = {
   id: string;
@@ -104,9 +105,8 @@ export default function IncidentsPage() {
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  async function fetchIncidents(currentOffset: number, append: boolean) {
+  const fetchIncidents = useCallback(async (currentOffset: number, append: boolean) => {
     try {
       const result = await apiFetch<{ data: Incident[] }>(
         `/api/v1/incidents/?limit=${PAGE_SIZE}&offset=${currentOffset}`
@@ -117,20 +117,15 @@ export default function IncidentsPage() {
     } catch {
       // silent — keep stale data visible
     }
-  }
+  }, []);
 
   useEffect(() => {
     setLoading(true);
     fetchIncidents(0, false).finally(() => setLoading(false));
+  }, [fetchIncidents]);
 
-    intervalRef.current = setInterval(() => {
-      fetchIncidents(0, false);
-    }, 30_000);
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, []);
+  const refresh = useCallback(() => { fetchIncidents(0, false); }, [fetchIncidents]);
+  usePolling(refresh, 30_000);
 
   async function handleLoadMore() {
     const nextOffset = offset + PAGE_SIZE;

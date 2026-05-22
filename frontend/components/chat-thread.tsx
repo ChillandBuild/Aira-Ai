@@ -1,9 +1,10 @@
 "use client";
 import { toast } from "sonner";
-import { useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { api, Lead, Message } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
+import { usePolling } from "@/hooks/usePolling";
 import {
   Bot, User, CheckCircle2, Send, PowerOff, Power,
   AlertTriangle, Pencil, MessageCircle, Trash2,
@@ -114,6 +115,50 @@ function MediaBubble({ msg }: { msg: Message }) {
   );
 }
 
+// ─── Single message bubble (memoized — only re-renders when this message changes) ─
+const MessageBubble = memo(function MessageBubble({ msg }: { msg: Message }) {
+  return (
+    <div className={cn("flex gap-2", msg.direction === "outbound" && "flex-row-reverse")}>
+      <div className={cn(
+        "w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5",
+        msg.direction === "outbound"
+          ? (msg.is_ai_generated ? "bg-secondary/10" : "bg-tertiary/10")
+          : "bg-surface-mid"
+      )}>
+        {msg.direction === "outbound" ? (
+          msg.is_ai_generated ? <Bot size={14} className="text-secondary" /> : <User size={14} className="text-tertiary" />
+        ) : (
+          <User size={14} className="text-on-surface-muted" />
+        )}
+      </div>
+      <div className={cn(
+        "max-w-[70%] px-4 py-2.5 rounded-2xl font-body text-sm",
+        msg.direction === "outbound"
+          ? "bg-tertiary text-white rounded-tr-sm"
+          : "bg-surface text-on-surface shadow-card rounded-tl-sm"
+      )}>
+        {msg.media_type && <MediaBubble msg={msg} />}
+        {msg.content && !(msg.media_type && msg.content.startsWith("[")) && (
+          <p className={cn("whitespace-pre-wrap", msg.media_type && "mt-1.5 text-xs opacity-80")}>
+            {msg.content}
+          </p>
+        )}
+        {msg.direction === "outbound" && (
+          <p className="mt-1 text-[10px] opacity-60">
+            {msg.is_ai_generated
+              ? msg.reply_source === "faq"
+                ? "📋 FAQ"
+                : msg.reply_source === "knowledge"
+                ? "📄 Knowledge Base"
+                : "✨ AI"
+              : "Sent by you"}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+});
+
 // ─── Selected file preview ────────────────────────────────────────────────────
 function FilePreview({ file, onRemove }: { file: File; onRemove: () => void }) {
   const isImage = file.type.startsWith("image/");
@@ -133,7 +178,7 @@ function FilePreview({ file, onRemove }: { file: File; onRemove: () => void }) {
     <div className="flex items-center gap-2 px-3 py-2 mb-2 bg-surface-low rounded-xl border border-surface-mid">
       {isImage && previewUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={previewUrl} alt={file.name} className="w-10 h-10 object-cover rounded-lg shrink-0" />
+        <img src={previewUrl} alt={file.name} loading="lazy" decoding="async" className="w-10 h-10 object-cover rounded-lg shrink-0" />
       ) : (
         <div className="w-10 h-10 bg-tertiary/10 rounded-lg flex items-center justify-center shrink-0">
           <FileText size={18} className="text-tertiary" />
@@ -328,19 +373,6 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
 
     fetchMsgs();
 
-    const interval = setInterval(() => {
-      api.leads.messages(lead.id).then((newMsgs) => {
-        if (!mounted) return;
-        setMessages((prev) => {
-          if (
-            prev.length !== newMsgs.length ||
-            (prev.length > 0 && newMsgs.length > 0 && prev[prev.length - 1].id !== newMsgs[newMsgs.length - 1].id)
-          ) return newMsgs;
-          return prev;
-        });
-      });
-    }, 3000);
-
     const channel = supabase
       .channel(`messages:${lead.id}`)
       .on(
@@ -358,10 +390,23 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
 
     return () => {
       mounted = false;
-      clearInterval(interval);
       supabase.removeChannel(channel);
     };
   }, [lead.id]);
+
+  const pollMessages = useCallback(() => {
+    api.leads.messages(lead.id).then((newMsgs) => {
+      setMessages((prev) => {
+        if (
+          prev.length !== newMsgs.length ||
+          (prev.length > 0 && newMsgs.length > 0 && prev[prev.length - 1].id !== newMsgs[newMsgs.length - 1].id)
+        ) return newMsgs;
+        return prev;
+      });
+    }).catch(() => { /* silent — realtime is primary */ });
+  }, [lead.id]);
+
+  usePolling(pollMessages, 15000);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -495,48 +540,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
             No messages yet
           </div>
         ) : (
-          messages.map((msg) => (
-            <div key={msg.id} className={cn("flex gap-2", msg.direction === "outbound" && "flex-row-reverse")}>
-              <div className={cn(
-                "w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5",
-                msg.direction === "outbound"
-                  ? (msg.is_ai_generated ? "bg-secondary/10" : "bg-tertiary/10")
-                  : "bg-surface-mid"
-              )}>
-                {msg.direction === "outbound" ? (
-                  msg.is_ai_generated ? <Bot size={14} className="text-secondary" /> : <User size={14} className="text-tertiary" />
-                ) : (
-                  <User size={14} className="text-on-surface-muted" />
-                )}
-              </div>
-              <div className={cn(
-                "max-w-[70%] px-4 py-2.5 rounded-2xl font-body text-sm",
-                msg.direction === "outbound"
-                  ? "bg-tertiary text-white rounded-tr-sm"
-                  : "bg-surface text-on-surface shadow-card rounded-tl-sm"
-              )}>
-                {/* Media bubble if message has media */}
-                {msg.media_type && <MediaBubble msg={msg} />}
-                {/* Text content (caption or text body) */}
-                {msg.content && !(msg.media_type && msg.content.startsWith("[")) && (
-                  <p className={cn("whitespace-pre-wrap", msg.media_type && "mt-1.5 text-xs opacity-80")}>
-                    {msg.content}
-                  </p>
-                )}
-                {msg.direction === "outbound" && (
-                  <p className="mt-1 text-[10px] opacity-60">
-                    {msg.is_ai_generated
-                      ? msg.reply_source === "faq"
-                        ? "📋 FAQ"
-                        : msg.reply_source === "knowledge"
-                        ? "📄 Knowledge Base"
-                        : "✨ AI"
-                      : "Sent by you"}
-                  </p>
-                )}
-              </div>
-            </div>
-          ))
+          messages.map((msg) => <MessageBubble key={msg.id} msg={msg} />)
         )}
         <div ref={bottomRef} />
       </div>

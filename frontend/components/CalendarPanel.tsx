@@ -30,9 +30,10 @@ export function CalendarPanel({ isOpen, onClose }: CalendarPanelProps) {
 
   // Update clock
   useEffect(() => {
+    if (!isOpen) return;
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [isOpen]);
 
   // Fetch todos for current month
   // eslint-disable-next-line react-hooks/exhaustive-deps

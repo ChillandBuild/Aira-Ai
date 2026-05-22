@@ -1,9 +1,10 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuthRole, clearRoleCache } from "@/app/dashboard/contexts/AuthRoleContext";
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { usePolling } from "@/hooks/usePolling";
 import {
   LayoutDashboard, MessageSquare, Users, Settings, Phone,
   BarChart2, Upload, BookOpen, Layers, FileCheck, StickyNote,
@@ -73,19 +74,19 @@ export function Sidebar() {
   const { role, enabledFeatures, loading: roleLoading } = useAuthRole();
   const [inboxCount, setInboxCount] = useState(0);
 
+  const waEnabled = enabledFeatures.includes("whatsapp");
+  const fetchCount = useCallback(async () => {
+    try {
+      const auth = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/chat-handovers/count`, { headers: auth });
+      if (res.ok) setInboxCount((await res.json()).count ?? 0);
+    } catch {}
+  }, []);
+
   useEffect(() => {
-    if (!enabledFeatures.includes("whatsapp")) return;
-    async function fetchCount() {
-      try {
-        const auth = await getAuthHeaders();
-        const res = await fetch(`${API_URL}/api/v1/chat-handovers/count`, { headers: auth });
-        if (res.ok) setInboxCount((await res.json()).count ?? 0);
-      } catch {}
-    }
-    fetchCount();
-    const id = setInterval(fetchCount, 60_000);
-    return () => clearInterval(id);
-  }, [enabledFeatures]);
+    if (waEnabled) fetchCount();
+  }, [waEnabled, fetchCount]);
+  usePolling(fetchCount, 60_000, waEnabled);
 
   if (roleLoading) {
     return (

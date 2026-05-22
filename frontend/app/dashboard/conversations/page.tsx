@@ -1,9 +1,10 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getAuthHeaders, API_URL, Lead } from "@/lib/api";
 import { ConversationList } from "@/components/conversation-list";
 import { ChatThread } from "@/components/chat-thread";
 import { MessageSquare } from "lucide-react";
+import { usePolling } from "@/hooks/usePolling";
 
 async function fetchConversations(): Promise<Lead[]> {
   const auth = await getAuthHeaders();
@@ -18,13 +19,14 @@ export default function ConversationsPage() {
   const [selected, setSelected] = useState<Lead | null>(null);
   const [error, setError] = useState(false);
 
-  useEffect(() => {
-    fetchConversations().then(leads => { setLeads(leads); setError(false); }).catch(() => setError(true));
-    const interval = setInterval(() => {
-      fetchConversations().then(leads => { setLeads(leads); setError(false); }).catch(() => setError(true));
-    }, 20000);
-    return () => clearInterval(interval);
+  const load = useCallback(() => {
+    fetchConversations()
+      .then((leads) => { setLeads(leads); setError(false); })
+      .catch(() => setError(true));
   }, []);
+
+  useEffect(() => { load(); }, [load]);
+  usePolling(load, 20000);
 
   return (
     <div className="-m-8 h-screen flex">

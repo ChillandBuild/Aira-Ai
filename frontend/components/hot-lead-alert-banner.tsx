@@ -1,22 +1,20 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, HotLeadAlert } from "@/lib/api";
+import { usePolling } from "@/hooks/usePolling";
 
 export function HotLeadAlertBanner() {
   const [alerts, setAlerts] = useState<HotLeadAlert[]>([]);
 
-  async function load() {
+  const load = useCallback(async () => {
     try {
       const data = await api.alerts.mine();
       setAlerts(data);
     } catch {}
-  }
-
-  useEffect(() => {
-    load();
-    const interval = setInterval(load, 30_000);
-    return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => { load(); }, [load]);
+  usePolling(load, 30_000);
 
   async function dismiss(id: string) {
     try {

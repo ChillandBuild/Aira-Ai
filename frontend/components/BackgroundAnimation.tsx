@@ -6,6 +6,9 @@ export default function BackgroundAnimation() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -14,6 +17,7 @@ export default function BackgroundAnimation() {
 
     let animationFrameId: number;
     let particles: Particle[] = [];
+    let isVisible = true;
 
     const resize = () => {
       canvas.width = window.innerWidth;
@@ -57,15 +61,19 @@ export default function BackgroundAnimation() {
 
     const initParticles = () => {
       particles = [];
-      const numberOfParticles = Math.floor((canvas.width * canvas.height) / 10000);
+      const numberOfParticles = Math.min(50, Math.floor((canvas.width * canvas.height) / 25000));
       for (let i = 0; i < numberOfParticles; i++) {
         particles.push(new Particle());
       }
     };
 
     const animate = () => {
+      if (!isVisible) {
+        animationFrameId = requestAnimationFrame(animate);
+        return;
+      }
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
+
       // Draw background gradient
       const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
       gradient.addColorStop(0, '#000000'); // black
@@ -78,12 +86,13 @@ export default function BackgroundAnimation() {
         particles[i].update();
         particles[i].draw();
         
-        for (let j = i; j < particles.length; j++) {
+        for (let j = i + 1; j < particles.length; j++) {
           const dx = particles[i].x - particles[j].x;
           const dy = particles[i].y - particles[j].y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
+          const distSq = dx * dx + dy * dy;
           
-          if (distance < 150) {
+          if (distSq < 22500) { // 150 * 150
+            const distance = Math.sqrt(distSq);
             ctx.beginPath();
             ctx.strokeStyle = `rgba(255, 255, 255, ${0.15 - distance / 1000})`;
             ctx.lineWidth = 1;
@@ -96,13 +105,24 @@ export default function BackgroundAnimation() {
       animationFrameId = requestAnimationFrame(animate);
     };
 
+    const onVisibility = () => { isVisible = !document.hidden; };
     window.addEventListener("resize", resize);
-    resize();
-    animate();
+    document.addEventListener("visibilitychange", onVisibility);
+
+    // Defer initialization until after first paint
+    const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => number })
+      .requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 200));
+    const startId = idle(() => {
+      resize();
+      animate();
+    });
 
     return () => {
       window.removeEventListener("resize", resize);
+      document.removeEventListener("visibilitychange", onVisibility);
       cancelAnimationFrame(animationFrameId);
+      const cancel = (window as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback;
+      if (cancel && typeof startId === "number") cancel(startId);
     };
   }, []);
 

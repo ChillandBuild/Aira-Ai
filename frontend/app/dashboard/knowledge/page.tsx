@@ -1,6 +1,6 @@
 "use client";
 import { toast } from "sonner";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Search, Plus, Trash2, Edit3, CheckCircle2, XCircle,
   Upload, FileText, Loader2, Info, AlertCircle,
@@ -9,6 +9,7 @@ import {
 import { api, FAQ, FAQInput, AIPrompt } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/utils";
+import { usePolling } from "@/hooks/usePolling";
 
 interface KnowledgeDoc {
   id: string;
@@ -48,9 +49,13 @@ export default function KnowledgePage() {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadDocuments, 5000);
-    return () => clearInterval(interval);
   }, []);
+
+  const hasProcessing = useMemo(
+    () => documents.some((d) => d.status === "processing"),
+    [documents]
+  );
+  usePolling(loadDocuments, 5000, hasProcessing);
 
   useEffect(() => {
     if (tab === "ai-tune" && prompts.length === 0) loadPrompts();
