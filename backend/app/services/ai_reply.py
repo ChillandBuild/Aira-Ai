@@ -84,11 +84,14 @@ def _recent_thread(db, lead_id: str, limit: int = 6) -> list[dict]:
         or []
     )
 
-def _check_faq(message: str, db) -> str | None:
+def _check_faq(message: str, db, tenant_id: str | None = None) -> str | None:
     """Check FAQ table for a keyword match. Returns answer or None."""
     try:
         message_lower = message.lower()
-        faqs = db.table("faqs").select("id,answer,keywords").eq("active", True).execute()
+        query = db.table("faqs").select("id,answer,keywords").eq("active", True)
+        if tenant_id:
+            query = query.eq("tenant_id", tenant_id)
+        faqs = query.execute()
         for faq in (faqs.data or []):
             keywords = faq.get("keywords") or []
             if any(kw.lower() in message_lower for kw in keywords if kw):
@@ -362,7 +365,7 @@ async def generate_reply(
         return
 
     # Step 1: FAQ check (no LLM cost)
-    faq_answer = _check_faq(message, db)
+    faq_answer = _check_faq(message, db, tenant_id=lead_data.get("tenant_id"))
     
     context_text = ""
 

@@ -4,12 +4,39 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Search, Plus, Trash2, Edit3, CheckCircle2, XCircle,
   Upload, FileText, Loader2, Info, AlertCircle,
-  Database, HelpCircle, Sparkles, Save
+  Database, HelpCircle, Sparkles, Save, MessageCircle
 } from "lucide-react";
 import { api, FAQ, FAQInput, AIPrompt } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/utils";
 import { usePolling } from "@/hooks/usePolling";
+
+function IgIcon({ size = 14, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+      <circle cx="12" cy="12" r="4" />
+      <circle cx="17.5" cy="6.5" r="0.5" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function TgIcon({ size = 14, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <line x1="22" y1="2" x2="11" y2="13" />
+      <polygon points="22 2 15 22 11 13 2 9 22 2" />
+    </svg>
+  );
+}
+
+function FbIcon({ size = 14, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+    </svg>
+  );
+}
 
 interface KnowledgeDoc {
   id: string;
@@ -168,6 +195,15 @@ export default function KnowledgePage() {
   }
 
   // AI Tune Handlers
+  function handleChannelSwitch(channelId: string) {
+    if (draft !== activePrompt?.content) {
+      if (!confirm("You have unsaved changes. Switch channel anyway?")) {
+        return;
+      }
+    }
+    setActiveName(channelId);
+  }
+
   async function savePrompt() {
     setTuneSaving(true);
     try {
@@ -412,17 +448,48 @@ export default function KnowledgePage() {
         </div>
       ) : (
         /* AI Tune Tab */
-        <div className="space-y-4">
+        <div className="space-y-4 animate-in fade-in duration-200">
           {tuneMsg && (
             <div className="p-3 rounded-xl bg-tertiary-bg text-tertiary font-label text-sm">
               {tuneMsg}
             </div>
           )}
+
+          {/* Channel Selector Pills */}
+          <div className="flex flex-wrap gap-2 p-1.5 bg-surface-low rounded-2xl border border-surface-mid/60 w-fit">
+            {[
+              { id: "whatsapp_reply", label: "WhatsApp", icon: <MessageCircle size={14} className="shrink-0" />, colorClass: "hover:bg-surface-mid text-on-surface-muted hover:text-on-surface", activeClass: "bg-green-600 text-white shadow-sm" },
+              { id: "telegram_reply", label: "Telegram", icon: <TgIcon size={14} className="shrink-0" />, colorClass: "hover:bg-surface-mid text-on-surface-muted hover:text-on-surface", activeClass: "bg-sky-600 text-white shadow-sm" },
+              { id: "instagram_reply", label: "Instagram", icon: <IgIcon size={14} className="shrink-0" />, colorClass: "hover:bg-surface-mid text-on-surface-muted hover:text-on-surface", activeClass: "bg-pink-600 text-white shadow-sm" },
+              { id: "facebook_reply", label: "Facebook Messenger", icon: <FbIcon size={14} className="shrink-0" />, colorClass: "hover:bg-surface-mid text-on-surface-muted hover:text-on-surface", activeClass: "bg-blue-600 text-white shadow-sm" },
+            ].map((chan) => {
+              const isActive = activeName === chan.id;
+              return (
+                <button
+                  key={chan.id}
+                  onClick={() => handleChannelSwitch(chan.id)}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold font-label transition-all duration-200",
+                    isActive ? chan.activeClass : chan.colorClass
+                  )}
+                >
+                  {chan.icon}
+                  <span>{chan.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
           <div className="bg-surface rounded-card p-8 shadow-card ring-1 ring-[#c4c7c7]/15">
             <div className="mb-4">
-              <h2 className="font-display text-lg font-bold text-tertiary">Active Prompt</h2>
+              <h2 className="font-display text-lg font-bold text-tertiary">
+                Active Prompt: {activeName === "whatsapp_reply" ? "WhatsApp" : activeName === "telegram_reply" ? "Telegram" : activeName === "instagram_reply" ? "Instagram" : "Facebook Messenger"}
+              </h2>
               <p className="font-body text-sm text-on-surface-muted mt-0.5">
-                Edit the system prompt used by the WhatsApp AI auto-reply.
+                {activeName === "whatsapp_reply" && "Edit the system prompt used by the WhatsApp AI auto-reply."}
+                {activeName === "telegram_reply" && "Edit the system prompt used by the Telegram AI auto-reply."}
+                {activeName === "instagram_reply" && "Edit the system prompt used by the Instagram AI auto-reply."}
+                {activeName === "facebook_reply" && "Edit the system prompt used by the Facebook Messenger AI auto-reply."}
               </p>
             </div>
             {activePrompt && (
