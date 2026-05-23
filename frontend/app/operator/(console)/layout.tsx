@@ -34,8 +34,8 @@ export default async function OperatorLayout({ children }: { children: React.Rea
             Operator Console
           </span>
         </div>
-        <a href="/dashboard" className="text-sm text-gray-500 hover:text-gray-800">
-          ← Back to Dashboard
+        <a href="/login" className="text-sm text-gray-500 hover:text-gray-800">
+          ← Back to Client Login
         </a>
       </header>
       <main className="max-w-5xl mx-auto px-8 py-8">{children}</main>

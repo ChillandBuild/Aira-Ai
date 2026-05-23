@@ -31,15 +31,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && request.nextUrl.pathname === "/login") {
-    const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
-    return NextResponse.redirect(url);
-  }
+  // NOTE: We intentionally do NOT redirect authenticated users away from /login.
+  // Operator console users share the same Supabase session and should be able
+  // to visit /login without being bounced to /dashboard.
+  // The /login page component handles its own redirect-if-authenticated logic.
 
   return supabaseResponse;
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/login"],
+  matcher: ["/dashboard/:path*"],
 };
