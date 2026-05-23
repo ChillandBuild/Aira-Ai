@@ -35,6 +35,20 @@ async def facebook_webhook(tenant_id: str, request: Request, background_tasks: B
     raw_body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256")
     if not verify_meta_signature(raw_body, signature, tenant_id):
+        # Return 200 for echo messages (our own sent messages bounced back by Meta)
+        # so Meta stops retrying them.
+        try:
+            import json as _json
+            _payload = _json.loads(raw_body.decode("utf-8")) if raw_body else {}
+            _is_echo = any(
+                event.get("message", {}).get("is_echo")
+                for entry in _payload.get("entry", [])
+                for event in entry.get("messaging", [])
+            )
+            if _is_echo:
+                return {"status": "ok", "detail": "echo_ignored"}
+        except Exception:
+            pass
         logger.warning(f"Facebook webhook signature invalid for tenant {tenant_id}")
         return Response(content="Forbidden", status_code=403)
 
