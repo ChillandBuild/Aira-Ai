@@ -130,14 +130,16 @@ async def send_whatsapp(to_phone: str, message: str, tenant_id: str | None = Non
         return None
 
 async def send_instagram(ig_user_id: str, message: str, tenant_id: str | None = None) -> str | None:
-    """Send an Instagram DM via Instagram Graph API. Returns message id or None on failure."""
+    """Send an Instagram DM via Facebook Graph API (Messenger Platform for Instagram).
+    Uses Page Access Token — requires pages_messaging + instagram_manage_messages scope.
+    """
     from app.config_dynamic import get_setting
     access_token = get_setting("instagram_access_token", tenant_id=tenant_id) or settings.meta_page_token
     if not access_token:
         logger.error(f"instagram_access_token not configured for tenant {tenant_id} — cannot send Instagram DM")
         return None
     try:
-        url = "https://graph.instagram.com/v21.0/me/messages"
+        url = "https://graph.facebook.com/v21.0/me/messages"
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 url,
