@@ -633,6 +633,7 @@ export default function TemplatesPage() {
                       <div className="space-y-2">
                         {headerMediaPreview ? (
                           <div className="relative rounded-xl overflow-hidden border border-border-subtle">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={headerMediaPreview} alt="Preview" loading="lazy" decoding="async" className="w-full h-40 object-cover" />
                             <button
                               type="button"
@@ -910,6 +911,7 @@ export default function TemplatesPage() {
                         <div className="mb-0">
                           {headerMediaType === "IMAGE" && headerMediaPreview && (
                             <div className="bg-white rounded-t-2xl overflow-hidden">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img src={headerMediaPreview} alt="Header" loading="lazy" decoding="async" className="w-full h-40 object-cover" />
                             </div>
                           )}

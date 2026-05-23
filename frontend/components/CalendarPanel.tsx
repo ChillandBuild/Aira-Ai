@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { 
   X, 
   ChevronLeft, 
@@ -35,15 +35,7 @@ export function CalendarPanel({ isOpen, onClose }: CalendarPanelProps) {
     return () => clearInterval(timer);
   }, [isOpen]);
 
-  // Fetch todos for current month
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (isOpen) {
-      fetchTodos();
-    }
-  }, [isOpen, viewDate]);
-
-  const fetchTodos = async () => {
+  const fetchTodos = useCallback(async () => {
     try {
       const start = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
       const end = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0);
@@ -55,7 +47,14 @@ export function CalendarPanel({ isOpen, onClose }: CalendarPanelProps) {
     } catch (err) {
       console.error("Failed to fetch todos", err);
     }
-  };
+  }, [viewDate]);
+
+  // Fetch todos for current month
+  useEffect(() => {
+    if (isOpen) {
+      fetchTodos();
+    }
+  }, [isOpen, fetchTodos]);
 
   const handleAddTodo = async (e: React.FormEvent) => {
     e.preventDefault();

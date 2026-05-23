@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Upload, Check, AlertTriangle, ChevronRight, RotateCcw, MessageSquare, Clock, Send, Download, CheckCircle2, Eye, XCircle, Calendar, Phone, Search } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -137,11 +137,6 @@ export default function UploadPage() {
   });
   
   // Supabase client for realtime updates
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
-  );
-  
   // Realtime subscription for message status updates
   useEffect(() => {
     if (activeTab !== "history") return;
