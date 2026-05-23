@@ -294,6 +294,9 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
       },
     });
     if (!res.ok) {
+      if (res.status === 401 && typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
       const err = await res.json().catch(() => ({ detail: "Request failed" }));
       throw new Error(err.detail || "Request failed");
     }
