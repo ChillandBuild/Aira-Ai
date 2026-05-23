@@ -104,7 +104,7 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 - Payments: Razorpay (Payment Links API — no SDK, direct httpx calls)
 
 ## Supabase Config (production)
-- Project ID: `tovmebyyjhvszwgvyfdm`
+- Project ID: `ayftynkgmfkaqmmnlmoc`
 - Region: ap-northeast-1
 - WABA ID in app_settings: `meta_waba_id = 994218516456571`
 - Default tenant: `00000000-0000-0000-0000-000000000001`
