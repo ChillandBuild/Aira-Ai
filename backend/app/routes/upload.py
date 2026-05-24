@@ -788,6 +788,164 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
     }
 
 
+# --- Single source of truth for broadcast outcomes ---
+# Both the dashboard counter (/history/refresh) and the failed-CSV download
+# (/failed-csv) classify recipients here, so the numbers can never drift.
+
+_DELIVERY_PRIORITY = {"failed": 0, "sent": 1, "delivered": 2, "read": 3}
+
+
+def _classify_broadcast_outcomes(
+    db,
+    tenant_id: str,
+    broadcast_id: str,
+    broadcast_timestamp_iso: str,
+) -> dict:
+    """
+    Classify every recipient of one broadcast into sent / delivered / opened / failed
+    using a single rule set.
+
+    Returns:
+        {
+            "found": bool,            # False when this broadcast has no recipient rows
+            "counts": {"sent", "delivered", "opened", "failed", "total"},
+            "failures": list[dict],   # one row per failure, ready for CSV writer
+        }
+
+    Rules (top to bottom, first match wins):
+      1. send_status in {failed, rejected}            -> failed (send error)
+      2. send_status == opted_out_skip                 -> failed (opted out)
+      3. lead currently opted_out=True                 -> failed (opted out)
+      4. messages.delivery_status == failed in window  -> failed (delivery failure)
+      5. messages.delivery_status == read              -> opened (+delivered +sent)
+      6. messages.delivery_status == delivered         -> delivered (+sent)
+      7. everything else                               -> sent
+    """
+    # Check fail_reason column exists (migration 058 compat)
+    has_fail_reason = True
+    try:
+        db.table("broadcast_recipients").select("fail_reason").limit(1).execute()
+    except Exception:
+        has_fail_reason = False
+
+    select_cols = "lead_id, phone, name, send_status, fail_reason" if has_fail_reason else "lead_id, phone, name, send_status"
+    recipients_resp = db.table("broadcast_recipients") \
+        .select(select_cols) \
+        .eq("tenant_id", tenant_id) \
+        .eq("broadcast_id", broadcast_id) \
+        .execute()
+    recipients = recipients_resp.data or []
+    if not recipients:
+        return {
+            "found": False,
+            "counts": {"sent": 0, "delivered": 0, "opened": 0, "failed": 0, "total": 0},
+            "failures": [],
+        }
+
+    lead_ids = [r["lead_id"] for r in recipients if r.get("lead_id")]
+
+    # Lead opt-out map (id -> opted_out_at)
+    opted_out_map: dict[str, str | None] = {}
+    if lead_ids:
+        try:
+            opted_rows = db.table("leads") \
+                .select("id, opted_out_at") \
+                .in_("id", lead_ids) \
+                .eq("opted_out", True) \
+                .execute()
+            for row in (opted_rows.data or []):
+                opted_out_map[row["id"]] = row.get("opted_out_at")
+        except Exception as e:
+            logger.warning(f"Classifier opt-out lookup failed: {e}")
+
+    # Delivery status per lead, scoped to the broadcast time window
+    # Window: -2 min to +10 min absorbs clock skew and webhook lag
+    msg_status_by_lead: dict[str, str] = {}
+    try:
+        ts_dt = datetime.fromisoformat(broadcast_timestamp_iso.replace("Z", "+00:00"))
+        window_start = (ts_dt - timedelta(minutes=2)).isoformat()
+        window_end = (ts_dt + timedelta(minutes=10)).isoformat()
+        if lead_ids:
+            msg_rows = db.table("messages") \
+                .select("lead_id, delivery_status") \
+                .in_("lead_id", lead_ids) \
+                .eq("direction", "outbound") \
+                .gte("created_at", window_start) \
+                .lte("created_at", window_end) \
+                .execute()
+            for msg in (msg_rows.data or []):
+                lid = msg.get("lead_id")
+                status = msg.get("delivery_status")
+                if not lid or not status:
+                    continue
+                if lid not in msg_status_by_lead:
+                    msg_status_by_lead[lid] = status
+                elif _DELIVERY_PRIORITY.get(status, -1) > _DELIVERY_PRIORITY.get(msg_status_by_lead[lid], -1):
+                    msg_status_by_lead[lid] = status
+    except Exception as e:
+        logger.warning(f"Classifier delivery-status lookup failed: {e}")
+
+    sent = delivered = opened = failed = 0
+    failures: list[dict] = []
+    seen_phones: set[str] = set()
+
+    for r in recipients:
+        phone = r.get("phone") or ""
+        name = r.get("name") or ""
+        send_status = r.get("send_status") or ""
+        lead_id = r.get("lead_id")
+
+        reason: str | None = None
+        fail_reason: str | None = None
+        opted_out_at: str | None = None
+
+        if send_status in ("failed", "rejected"):
+            reason = send_status
+            fail_reason = r.get("fail_reason") or "api_error"
+        elif send_status == "opted_out_skip":
+            reason = "not_interested"
+            fail_reason = r.get("fail_reason") or "opted_out"
+            opted_out_at = opted_out_map.get(lead_id)
+        elif lead_id and lead_id in opted_out_map:
+            reason = "not_interested"
+            fail_reason = "opted_out"
+            opted_out_at = opted_out_map[lead_id]
+        else:
+            delivery = msg_status_by_lead.get(lead_id) if lead_id else None
+            if delivery == "failed":
+                reason = "failed"
+                fail_reason = "delivery_failed"
+            elif delivery == "read":
+                sent += 1
+                delivered += 1
+                opened += 1
+                continue
+            elif delivery == "delivered":
+                sent += 1
+                delivered += 1
+                continue
+            else:
+                sent += 1
+                continue
+
+        failed += 1
+        if phone and phone not in seen_phones:
+            seen_phones.add(phone)
+            failures.append({
+                "phone": phone,
+                "name": name,
+                "reason": reason,
+                "fail_reason": fail_reason or "",
+                "opted_out_at": opted_out_at or "",
+            })
+
+    return {
+        "found": True,
+        "counts": {"sent": sent, "delivered": delivered, "opened": opened, "failed": failed, "total": len(recipients)},
+        "failures": failures,
+    }
+
+
 @router.get("/failed-csv")
 async def get_failed_csv(
     broadcast_id: str = Query(..., description="Broadcast UUID to generate failed CSV for"),
@@ -796,22 +954,29 @@ async def get_failed_csv(
     """Generate a CSV of all failed/unreached/opted-out contacts for a broadcast."""
     db = get_supabase()
 
-    # Check if fail_reason column exists (migration 058 compat)
-    _has_fail_reason_csv = False
+    # Look up broadcast timestamp from history for time-window queries / fallback
+    broadcast_timestamp: str | None = None
     try:
-        db.table("broadcast_recipients").select("fail_reason").limit(1).execute()
-        _has_fail_reason_csv = True
+        history_row = db.table("app_settings") \
+            .select("value") \
+            .eq("tenant_id", tenant_id) \
+            .eq("key", "broadcast_history") \
+            .maybe_single() \
+            .execute()
+        if history_row and history_row.data and history_row.data.get("value"):
+            history = json.loads(history_row.data["value"])
+            for record in history:
+                if record.get("broadcast_id") == broadcast_id:
+                    broadcast_timestamp = record.get("timestamp")
+                    break
     except Exception:
         pass
+    if not broadcast_timestamp:
+        broadcast_timestamp = datetime.now(timezone.utc).isoformat()
 
-    select_cols = "lead_id, phone, name, send_status, fail_reason" if _has_fail_reason_csv else "lead_id, phone, name, send_status"
-    recipients = db.table("broadcast_recipients") \
-        .select(select_cols) \
-        .eq("tenant_id", tenant_id) \
-        .eq("broadcast_id", broadcast_id) \
-        .execute()
+    outcome = _classify_broadcast_outcomes(db, tenant_id, broadcast_id, broadcast_timestamp)
 
-    if not recipients.data:
+    if not outcome["found"]:
         # Fallback for broadcasts sent before migration 038 (no broadcast_recipients rows)
         # Look up the broadcast timestamp from history and find failed messages in that window
         try:
@@ -858,119 +1023,22 @@ async def get_failed_csv(
         writer.writeheader()
         return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=failed_{broadcast_id[:8]}.csv"})
 
-    lead_ids = [r["lead_id"] for r in recipients.data if r.get("lead_id")]
-
-    # Look up broadcast timestamp FIRST (needed for time-window queries below)
-    broadcast_timestamp = None
-    try:
-        history_row = db.table("app_settings") \
-            .select("value") \
-            .eq("tenant_id", tenant_id) \
-            .eq("key", "broadcast_history") \
-            .maybe_single() \
-            .execute()
-        if history_row and history_row.data and history_row.data.get("value"):
-            history = json.loads(history_row.data["value"])
-            for record in history:
-                if record.get("broadcast_id") == broadcast_id:
-                    broadcast_timestamp = record.get("timestamp")
-                    break
-    except Exception:
-        pass
-
-    if not broadcast_timestamp:
-        broadcast_timestamp = datetime.now(timezone.utc).isoformat()
-
-    opted_out_map = {}
-    if lead_ids:
-        opted_out_rows = db.table("leads") \
-            .select("id, opted_out_at") \
-            .in_("id", lead_ids) \
-            .eq("opted_out", True) \
-            .execute()
-        for row in (opted_out_rows.data or []):
-            opted_out_map[row["id"]] = row.get("opted_out_at")
-
-    failed_delivery_leads = set()
-    if lead_ids and broadcast_timestamp:
-        try:
-            ts_dt = datetime.fromisoformat(broadcast_timestamp.replace("Z", "+00:00"))
-            window_end = (ts_dt + timedelta(minutes=10)).isoformat()
-            failed_msg_rows = db.table("messages") \
-                .select("lead_id") \
-                .in_("lead_id", lead_ids) \
-                .eq("direction", "outbound") \
-                .eq("delivery_status", "failed") \
-                .gte("created_at", broadcast_timestamp) \
-                .lte("created_at", window_end) \
-                .execute()
-            for row in (failed_msg_rows.data or []):
-                failed_delivery_leads.add(row["lead_id"])
-        except Exception as tw_err:
-            logger.warning(f"Failed-csv time-window query failed: {tw_err}")
-
-    failed_rows = []
-    seen_phones = set()
-
-    for r in recipients.data:
-        phone = r.get("phone", "")
-        name = r.get("name") or ""
-        send_status = r.get("send_status", "")
-        lead_id = r.get("lead_id")
-
-        reason = None
-        fail_reason = None
-        opted_out_at = None
-
-        if send_status in ("failed", "rejected"):
-            reason = send_status
-            fail_reason = r.get("fail_reason") or "api_error"
-        elif lead_id in failed_delivery_leads:
-            reason = "failed"
-            fail_reason = "delivery_failed"
-        elif lead_id in opted_out_map:
-            reason = "not_interested"
-            fail_reason = "opted_out"
-            opted_out_at = opted_out_map[lead_id]
-
-        if reason and phone not in seen_phones:
-            seen_phones.add(phone)
-            failed_rows.append({
-                "phone": phone,
-                "name": name,
-                "reason": reason,
-                "fail_reason": fail_reason or "",
-                "opted_out_at": opted_out_at or "",
-                "broadcast_id": broadcast_id,
-                "broadcast_timestamp": broadcast_timestamp,
-            })
-
-    if not failed_rows:
-        # Return empty CSV with headers instead of 404 — better UX
-        output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "fail_reason", "opted_out_at", "broadcast_id", "broadcast_timestamp"])
-        writer.writeheader()
-        return Response(
-            content=output.getvalue(),
-            media_type="text/csv",
-            headers={
-                "Content-Disposition": f"attachment; filename=failed_{broadcast_id[:8]}.csv"
-            }
-        )
-
     output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "fail_reason", "opted_out_at", "broadcast_id", "broadcast_timestamp"])
+    writer = csv.DictWriter(
+        output,
+        fieldnames=["phone", "name", "reason", "fail_reason", "opted_out_at", "broadcast_id", "broadcast_timestamp"],
+    )
     writer.writeheader()
-    for row in failed_rows:
-        writer.writerow(row)
-
-    csv_content = output.getvalue()
+    for row in outcome["failures"]:
+        writer.writerow({
+            **row,
+            "broadcast_id": broadcast_id,
+            "broadcast_timestamp": broadcast_timestamp,
+        })
     return Response(
-        content=csv_content,
+        content=output.getvalue(),
         media_type="text/csv",
-        headers={
-            "Content-Disposition": f"attachment; filename=failed_{broadcast_id[:8]}.csv"
-        }
+        headers={"Content-Disposition": f"attachment; filename=failed_{broadcast_id[:8]}.csv"},
     )
 
 
@@ -1050,79 +1118,13 @@ async def refresh_broadcast_metrics(tenant_id: str = Depends(get_tenant_id)):
             window_end = (record_time + timedelta(minutes=10)).isoformat()
             
             if broadcast_id:
-                recipients = db.table("broadcast_recipients") \
-                    .select("lead_id, phone, send_status") \
-                    .eq("tenant_id", tenant_id) \
-                    .eq("broadcast_id", broadcast_id) \
-                    .execute()
-                
-                if recipients.data:
-                    lead_ids = [r["lead_id"] for r in recipients.data if r.get("lead_id")]
-                    
-                    # Get delivery status from messages (scoped by lead_ids + time window)
-                    msg_status_by_lead = {}
-                    if lead_ids:
-                        msg_rows = db.table("messages") \
-                            .select("lead_id, delivery_status") \
-                            .in_("lead_id", lead_ids) \
-                            .eq("direction", "outbound") \
-                            .gte("created_at", window_start) \
-                            .lte("created_at", window_end) \
-                            .execute()
-                        for msg in (msg_rows.data or []):
-                            lid = msg["lead_id"]
-                            status = msg.get("delivery_status")
-                            if lid not in msg_status_by_lead:
-                                msg_status_by_lead[lid] = status
-                            else:
-                                priority = {"failed": 0, "sent": 1, "delivered": 2, "read": 3}
-                                if priority.get(status, 0) > priority.get(msg_status_by_lead[lid], 0):
-                                    msg_status_by_lead[lid] = status
-                    
-                    # Get opted-out leads
-                    opted_out_lead_ids = set()
-                    if lead_ids:
-                        opted_rows = db.table("leads") \
-                            .select("id") \
-                            .in_("id", lead_ids) \
-                            .eq("opted_out", True) \
-                            .execute()
-                        for row in (opted_rows.data or []):
-                            opted_out_lead_ids.add(row["id"])
-                    
-                    # Recalculate all 4 metrics
-                    sent_count = 0
-                    delivered_count = 0
-                    opened_count = 0
-                    failed_count = 0
-                    
-                    for r in recipients.data:
-                        send_status = r.get("send_status", "")
-                        lead_id = r.get("lead_id")
-                        
-                        if send_status in ("failed", "rejected", "opted_out_skip"):
-                            failed_count += 1
-                            continue
-                        
-                        if lead_id in opted_out_lead_ids:
-                            failed_count += 1
-                            continue
-                        
-                        delivery_status = msg_status_by_lead.get(lead_id)
-                        if delivery_status == "failed":
-                            failed_count += 1
-                        else:
-                            sent_count += 1
-                            if delivery_status == "delivered":
-                                delivered_count += 1
-                            elif delivery_status == "read":
-                                delivered_count += 1
-                                opened_count += 1
-                    
-                    record["sent"] = sent_count
-                    record["delivered"] = delivered_count
-                    record["opened"] = opened_count
-                    record["failed"] = failed_count
+                outcome = _classify_broadcast_outcomes(db, tenant_id, broadcast_id, record["timestamp"])
+                if outcome["found"]:
+                    counts = outcome["counts"]
+                    record["sent"] = counts["sent"]
+                    record["delivered"] = counts["delivered"]
+                    record["opened"] = counts["opened"]
+                    record["failed"] = counts["failed"]
                 else:
                     # broadcast_id exists but no recipients yet — fallback to time-window
                     _refresh_delivered_opened_timewindow(db, record, tenant_id, window_start, window_end)
