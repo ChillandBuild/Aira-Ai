@@ -65,6 +65,7 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Role-based access | ✅ Built — owner and caller roles |
 | Automations engine | ✅ Built — migration 055, routes/automations.py |
 | Broadcast history + fail reason tracking | ✅ Built — migration 058_broadcast_fail_reason |
+| Carousel templates (2–10 cards via Meta API) | ✅ Built — migration 060, dashboard/templates/carousel/ |
 | WABA onboarding (self-service) | ❌ Not built — manual env config only |
 
 ## Hard Invariants — Never Break
@@ -155,14 +156,14 @@ Parallel pattern: schema + API route + frontend page → all 3 in one message.
 | backend/app/services/broadcast_executor.py | Executes a scheduled_broadcasts row |
 | backend/app/services/failover.py | Quality RED/YELLOW handlers + auto-failover |
 | backend/app/services/meta_webhook_verify.py | X-Hub-Signature-256 verification (shared by WA/IG/FB) |
-| backend/app/services/meta_cloud.py | Meta Cloud API |
+| backend/app/services/meta_cloud.py | Meta Cloud API (text/media/template + carousel submission) |
 | backend/app/services/lead_scorer.py | Groq scoring (1–10) |
 | backend/app/services/telecmi_client.py | TeleCMI click-to-call |
 | backend/app/db/supabase.py | Supabase client singleton |
 | backend/supabase/migrations/ | All schema migrations 001–058 |
 | frontend/app/dashboard/ | All dashboard pages |
 
-## Migration Index (latest = 058)
+## Migration Index (latest = 060)
 | Migration | What |
 |---|---|
 | 051 | Telegram support — tg_user_id on leads |
@@ -174,6 +175,7 @@ Parallel pattern: schema + API route + frontend page → all 3 in one message.
 | 057 | scheduled_broadcasts table (APScheduler-based) |
 | 058_broadcast_fail_reason | fail_reason column on broadcast_recipients |
 | 058_incidents_token_health | incidents: tenant_id column + token_invalid/webhook_unhealthy types |
+| 060 | carousel_cards JSONB column on message_templates |
 
 ## Response Style
 - One sentence per progress update while working

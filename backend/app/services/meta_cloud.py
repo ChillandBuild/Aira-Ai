@@ -232,6 +232,41 @@ def _extract_variable_examples(body_text: str) -> list[str]:
     return examples
 
 
+def _build_button_components(buttons: list[dict], max_btn: int) -> list[dict]:
+    """Shared button-component builder used by main template + carousel cards."""
+    import re
+    _emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"
+        "\U0001F300-\U0001F5FF"
+        "\U0001F680-\U0001F6FF"
+        "\U0001F1E0-\U0001F1FF"
+        "\U00002702-\U000027B0"
+        "\U000024C2-\U0001F251"
+        "]+", flags=re.UNICODE
+    )
+    def _strip_emojis(text: str) -> str:
+        return _emoji_pattern.sub("", text).strip()
+
+    out: list[dict] = []
+    for btn in buttons[:max_btn]:
+        btn_type = btn.get("type", "QUICK_REPLY")
+        btn_text = _strip_emojis((btn.get("text") or "")[:25])
+        if btn_type == "QUICK_REPLY":
+            out.append({"type": "QUICK_REPLY", "text": btn_text})
+        elif btn_type == "URL":
+            url_val = btn.get("url", "")
+            out.append({"type": "URL", "text": btn_text, "url": url_val, "example": [url_val]})
+        elif btn_type in ("PHONE_NUMBER", "WHATSAPP_CALL"):
+            phone = btn.get("phone", "")
+            country = btn.get("country", "+1")
+            out.append({"type": "PHONE_NUMBER", "text": btn_text, "phone_number": f"{country} {phone}"})
+        elif btn_type == "COPY_CODE":
+            offer_code = btn.get("offer_code", "")
+            out.append({"type": "COPY_CODE", "text": "Copy offer code", "example": [offer_code]})
+    return out
+
+
 async def submit_template(
     waba_id: str,
     name: str,
@@ -243,6 +278,7 @@ async def submit_template(
     header_media_url: Optional[str] = None,
     footer_text: Optional[str] = None,
     buttons: list[dict] | None = None,  # Structured buttons
+    carousel_cards: list[dict] | None = None,  # 2-10 cards for CAROUSEL templates
     access_token: Optional[str] = None,
     tenant_id: Optional[str] = None,
 ) -> dict:
@@ -286,68 +322,36 @@ async def submit_template(
         max_btn = 1 if (header_media_type and header_media_type != "NONE") else 3
         if len(buttons) > max_btn:
             logger.warning("Trimming %d buttons to %d (media header limits Meta to 1)", len(buttons), max_btn)
-
-        import re
-        _emoji_pattern = re.compile(
-            "["
-            "\U0001F600-\U0001F64F"  # emoticons
-            "\U0001F300-\U0001F5FF"  # symbols & pictographs
-            "\U0001F680-\U0001F6FF"  # transport & map
-            "\U0001F1E0-\U0001F1FF"  # flags
-            "\U00002702-\U000027B0"
-            "\U000024C2-\U0001F251"
-            "]+", flags=re.UNICODE
-        )
-        def _strip_emojis(text: str) -> str:
-            return _emoji_pattern.sub("", text).strip()
-
-        button_components: list[dict] = []
-        for btn in buttons[:max_btn]:
-            btn_type = btn.get("type", "QUICK_REPLY")
-            btn_text = _strip_emojis(btn.get("text", "")[:25])
-            
-            if btn_type == "QUICK_REPLY":
-                button_components.append({
-                    "type": "QUICK_REPLY",
-                    "text": btn_text
-                })
-            elif btn_type == "URL":
-                url_val = btn.get("url", "")
-                button_components.append({
-                    "type": "URL",
-                    "text": btn_text,
-                    "url": url_val,
-                    "example": [url_val]
-                })
-            elif btn_type == "PHONE_NUMBER":
-                phone = btn.get("phone", "")
-                country = btn.get("country", "+1")
-                button_components.append({
-                    "type": "PHONE_NUMBER",
-                    "text": btn_text,
-                    "phone_number": f"{country} {phone}"
-                })
-            elif btn_type == "WHATSAPP_CALL":
-                phone = btn.get("phone", "")
-                country = btn.get("country", "+1")
-                button_components.append({
-                    "type": "PHONE_NUMBER",
-                    "text": btn_text,
-                    "phone_number": f"{country} {phone}"
-                })
-            elif btn_type == "COPY_CODE":
-                offer_code = btn.get("offer_code", "")
-                button_components.append({
-                    "type": "COPY_CODE",
-                    "text": "Copy offer code",
-                    "example": [offer_code]
-                })
-        
+        button_components = _build_button_components(buttons, max_btn)
         if button_components:
-            components.append({
-                "type": "BUTTONS",
-                "buttons": button_components
-            })
+            components.append({"type": "BUTTONS", "buttons": button_components})
+
+    if carousel_cards:
+        cards_payload: list[dict] = []
+        for card in carousel_cards[:10]:
+            card_components: list[dict] = []
+            c_media_type = (card.get("header_media_type") or "IMAGE").upper()
+            c_media_url = card.get("header_media_url") or ""
+            if c_media_url:
+                card_components.append({
+                    "type": "HEADER",
+                    "format": c_media_type,
+                    "example": {"header_handle": [c_media_url]},
+                })
+            c_body = (card.get("body_text") or "").strip()
+            if c_body:
+                card_components.append({"type": "BODY", "text": c_body})
+            c_buttons = card.get("buttons") or []
+            if c_buttons:
+                card_btn_components = _build_button_components(c_buttons, 2)
+                if card_btn_components:
+                    card_components.append({"type": "BUTTONS", "buttons": card_btn_components})
+            if card_components:
+                cards_payload.append({"components": card_components})
+        if len(cards_payload) >= 2:
+            components.append({"type": "CAROUSEL", "cards": cards_payload})
+        else:
+            logger.warning("Carousel needs ≥2 valid cards — got %d, skipping carousel component", len(cards_payload))
 
     payload = {
         "name": name,

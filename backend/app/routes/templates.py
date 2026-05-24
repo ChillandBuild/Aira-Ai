@@ -22,6 +22,13 @@ class Button(BaseModel):
     active_for_days: int | None = None
 
 
+class CarouselCard(BaseModel):
+    header_media_type: str = "IMAGE"  # IMAGE | VIDEO
+    header_media_url: str
+    body_text: str
+    buttons: list[Button] | None = None  # 1-2 per card
+
+
 class CreateTemplate(BaseModel):
     name: str
     category: str
@@ -32,6 +39,7 @@ class CreateTemplate(BaseModel):
     header_media_url: str | None = None
     footer_text: str | None = None
     buttons: list[Button] | None = None
+    carousel_cards: list[CarouselCard] | None = None
 
 
 @router.get("/")
@@ -60,6 +68,14 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
     if waba_id:
         try:
             buttons_dict = [b.model_dump() for b in payload.buttons] if payload.buttons else None
+            carousel_dict = None
+            if payload.carousel_cards:
+                carousel_dict = []
+                for c in payload.carousel_cards:
+                    raw = c.model_dump()
+                    if c.buttons:
+                        raw["buttons"] = [b.model_dump() for b in c.buttons]
+                    carousel_dict.append(raw)
             meta_response = await submit_template(
                 waba_id=waba_id,
                 name=name,
@@ -71,6 +87,7 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
                 header_media_url=payload.header_media_url,
                 footer_text=payload.footer_text,
                 buttons=buttons_dict,
+                carousel_cards=carousel_dict,
                 tenant_id=tenant_id,
             )
             meta_template_id = str(meta_response.get("id", ""))
@@ -89,6 +106,14 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
         "header_media_type": payload.header_media_type,
         "header_media_url": payload.header_media_url,
         "buttons": [b.model_dump() for b in payload.buttons] if payload.buttons else None,
+        "carousel_cards": (
+            [
+                {**c.model_dump(), "buttons": [b.model_dump() for b in c.buttons] if c.buttons else None}
+                for c in payload.carousel_cards
+            ]
+            if payload.carousel_cards
+            else None
+        ),
         "status": status,
         "meta_template_id": meta_template_id,
         "tenant_id": tenant_id,
