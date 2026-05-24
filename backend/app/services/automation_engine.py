@@ -141,7 +141,7 @@ async def _execute_step(
                 from app.services.ai_reply import send_whatsapp
                 phone = lead_data.get("phone")
                 if phone:
-                    sid = await send_whatsapp(phone, text, tenant_id=tenant_id)
+                    sid = await send_whatsapp(phone, text, tenant_id=tenant_id, lead_id=lead_id)
             if sid:
                 db.table("messages").insert({
                     "lead_id": lead_id,

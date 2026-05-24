@@ -103,11 +103,21 @@ async def execute_broadcast(row: dict) -> dict:
             extra_cols: dict = lead.get("extra_cols") or {}
 
             try:
+                from app.services.link_shortener import rewrite_urls_in_text
                 components: list[dict] = []
                 if has_vars:
                     params = []
                     for col in (variable_mapping or []):
                         val = extra_cols.get(col, "") or ""
+                        if val and "http" in val:
+                            try:
+                                val = rewrite_urls_in_text(
+                                    val, tenant_id=tenant_id, lead_id=lead_id,
+                                    broadcast_id=broadcast_id, template_name=template_name,
+                                    campaign="broadcast",
+                                )
+                            except Exception as _e:
+                                logger.warning(f"URL rewrite skipped: {_e}")
                         params.append({"type": "text", "text": val or "Customer"})
                     if not params:
                         params = [{"type": "text", "text": lead_name or "Customer"}]

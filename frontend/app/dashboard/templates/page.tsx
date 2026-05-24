@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X, Trash2, Check, Clock, AlertCircle, RefreshCw, Send, Upload, Image as ImageIcon, FileText, MapPin, Phone, Globe, Copy, MessageSquare } from "lucide-react";
+import Link from "next/link";
+import { Plus, X, Trash2, Check, Clock, AlertCircle, RefreshCw, Send, Upload, Image as ImageIcon, FileText, MapPin, Phone, Globe, Copy, MessageSquare, Layers } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -328,6 +329,9 @@ export default function TemplatesPage() {
             <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
             {syncing ? "Syncing…" : "Sync from Meta"}
           </button>
+          <Link href="/dashboard/templates/carousel" className="btn-ghost">
+            <Layers size={14} />New Carousel
+          </Link>
           <button onClick={() => setShowModal(true)} className="btn-primary"><Plus size={14} />New Template</button>
         </div>
       </div>

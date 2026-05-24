@@ -237,7 +237,9 @@ async def upload_leads(
     failed = 0
     if campaign_message:
         for phone in phones:
-            sid = await send_whatsapp(phone, campaign_message, tenant_id=tenant_id)
+            lead_row = db.table("leads").select("id").eq("phone", phone).eq("tenant_id", tenant_id).limit(1).execute()
+            lead_id_for_send = lead_row.data[0]["id"] if lead_row.data else None
+            sid = await send_whatsapp(phone, campaign_message, tenant_id=tenant_id, lead_id=lead_id_for_send)
             if sid:
                 sent += 1
                 lead = db.table("leads").select("id").eq("phone", phone).limit(1).execute()

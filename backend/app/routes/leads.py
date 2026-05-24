@@ -276,7 +276,7 @@ async def send_human_message(lead_id: UUID, payload: HumanMessage, tenant_id: st
         phone = lead.data.get("phone")
         if not phone:
             raise HTTPException(status_code=400, detail="Lead has no phone number")
-        sid = await send_whatsapp(phone, content, tenant_id=tenant_id)
+        sid = await send_whatsapp(phone, content, tenant_id=tenant_id, lead_id=str(lead_id))
 
     if not sid:
         meta_err = get_last_send_error() or "unknown error"
@@ -338,7 +338,7 @@ async def compose_new_message(payload: ComposeMessage, background_tasks: Backgro
         record_stage_event(lead_id, to_segment="C", event_type="created", metadata={"source": "manual"}, tenant_id=tenant_id, db=db)
         fire_trigger(background_tasks, lead_id, tenant_id, "lead_created", db=db)
 
-    sid = await send_whatsapp(phone, content, tenant_id=tenant_id)
+    sid = await send_whatsapp(phone, content, tenant_id=tenant_id, lead_id=lead_id)
     if not sid:
         meta_err = get_last_send_error() or "unknown error"
         # Note: outside 24h window, freeform text fails — Meta requires templates

@@ -75,7 +75,7 @@ async def run_due_follow_ups(limit: int = Query(20, ge=1, le=100), tenant_id: st
 
         try:
             message = generate_reengagement_message(job["lead_id"], job["cadence"])
-            sid = await send_whatsapp(lead_data["phone"], message, tenant_id=tenant_id)
+            sid = await send_whatsapp(lead_data["phone"], message, tenant_id=tenant_id, lead_id=job["lead_id"])
             if not sid:
                 raise RuntimeError("Channel send failed")
             db.table("messages").insert(

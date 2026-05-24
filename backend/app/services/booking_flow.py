@@ -168,9 +168,9 @@ def _get_step_prompt(state_name: str) -> str:
     return ""
 
 
-async def send_whatsapp_text(phone: str, text: str, tenant_id: str | None = None) -> None:
+async def send_whatsapp_text(phone: str, text: str, tenant_id: str | None = None, lead_id: str | None = None) -> None:
     from app.services.ai_reply import send_whatsapp
-    await send_whatsapp(phone, text, tenant_id=tenant_id)
+    await send_whatsapp(phone, text, tenant_id=tenant_id, lead_id=lead_id)
 
 
 def _create_draft_booking(lead_id: str, tenant_id: str, db) -> dict:
