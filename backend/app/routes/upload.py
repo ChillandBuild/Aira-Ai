@@ -522,7 +522,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             .is_("opt_in_source", "null") \
             .execute()
 
-    all_phones = [_normalize_phone(l.phone or "") for l in eligible if _normalize_phone(l.phone or "")]
+    all_phones = [_normalize_phone(l.phone or "") for l in eligible + rejected + invalid_leads if _normalize_phone(l.phone or "")]
     lead_rows = db.table("leads").select("id,phone,name").in_("phone", all_phones).eq("tenant_id", tenant_id).execute()
     phone_to_lead_id = {r["phone"]: r["id"] for r in (lead_rows.data or [])}
     phone_to_lead_name = {r["phone"]: r.get("name") for r in (lead_rows.data or [])}
