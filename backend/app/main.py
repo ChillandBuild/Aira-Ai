@@ -118,7 +118,7 @@ _auth = [Depends(get_current_user)]
 # Webhook routes — no auth (Meta/Twilio call directly)
 app.include_router(webhook.router, prefix="/webhook/whatsapp", tags=["webhook"])
 app.include_router(telegram.router, prefix="/webhook/telegram", tags=["telegram-webhook"])
-app.include_router(instagram.router, prefix="/instagram", tags=["instagram-webhook"])
+app.include_router(instagram.router, prefix="/webhook/instagram", tags=["instagram-webhook"])
 app.include_router(facebook.router, prefix="/webhook/facebook", tags=["facebook-webhook"])
 app.include_router(calls_public_router, prefix="/api/v1/calls", tags=["calls-telecmi"])
 app.include_router(bookings.public_router, prefix="/api/v1/bookings", tags=["bookings-webhook"])

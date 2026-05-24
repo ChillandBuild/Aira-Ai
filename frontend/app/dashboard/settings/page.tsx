@@ -269,7 +269,7 @@ function WebhookGuide({ sectionId, tenantId }: { sectionId: string; tenantId: st
     );
   }
   if (sectionId === "instagram") {
-    const url = tenantId ? `${API_URL}/instagram/${tenantId}` : null;
+    const url = tenantId ? `${API_URL}/webhook/instagram/${tenantId}` : null;
     return (
       <div className="mt-5 p-4 rounded-2xl bg-surface-subtle border border-border-subtle font-body text-xs text-ink-secondary space-y-2">
         <p className="font-semibold text-ink">Meta Webhook Configuration Guide:</p>

@@ -112,7 +112,7 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 ## Render Config (production)
 - Backend URL: `https://aira-ai-5tfr.onrender.com`
 - Webhook base: `https://aira-ai-5tfr.onrender.com/webhook/`
-- Instagram webhook: `https://aira-ai-5tfr.onrender.com/instagram/{tenant_id}`
+- Instagram webhook: `https://aira-ai-5tfr.onrender.com/webhook/instagram/{tenant_id}`
 - Facebook webhook: `https://aira-ai-5tfr.onrender.com/webhook/facebook/{tenant_id}`
 - Telegram webhook: `https://aira-ai-5tfr.onrender.com/webhook/telegram/{tenant_id}`
 
