@@ -109,6 +109,13 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 - WABA ID in app_settings: `meta_waba_id = 994218516456571`
 - Default tenant: `00000000-0000-0000-0000-000000000001`
 
+## Render Config (production)
+- Backend URL: `https://aira-ai-5tfr.onrender.com`
+- Webhook base: `https://aira-ai-5tfr.onrender.com/webhook/`
+- Instagram webhook: `https://aira-ai-5tfr.onrender.com/instagram/{tenant_id}`
+- Facebook webhook: `https://aira-ai-5tfr.onrender.com/webhook/facebook/{tenant_id}`
+- Telegram webhook: `https://aira-ai-5tfr.onrender.com/webhook/telegram/{tenant_id}`
+
 ## Task Router — Read This File Before Acting
 | Task involves | Read first |
 |---|---|
