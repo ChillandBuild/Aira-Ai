@@ -58,6 +58,34 @@ def _clean_text(value: str | None) -> str | None:
     return text or None
 
 
+def _map_meta_error(error_msg: str) -> str:
+    """Map Meta API error message to a short failure reason code."""
+    error_lower = (error_msg or "").lower()
+    if "invalid_phone" in error_lower or "invalid phone" in error_lower or ("phone number" in error_lower and "invalid" in error_lower):
+        return "invalid_number"
+    if "not_found" in error_lower or ("recipient" in error_lower and "not" in error_lower):
+        return "recipient_not_found"
+    if "rate" in error_lower and "limit" in error_lower:
+        return "rate_limit"
+    if "template" in error_lower and "paused" in error_lower:
+        return "template_paused"
+    if "template" in error_lower and "rejected" in error_lower:
+        return "template_rejected"
+    if "parameter" in error_lower or "param" in error_lower:
+        return "template_params_invalid"
+    if "message" in error_lower and "not sent" in error_lower:
+        return "message_not_sent"
+    if "blocked" in error_lower:
+        return "user_blocked"
+    if "undeliverable" in error_lower or "undelivered" in error_lower:
+        return "undeliverable"
+    if "session" in error_lower and "expired" in error_lower:
+        return "session_expired"
+    if "unsupported" in error_lower and "message" in error_lower:
+        return "unsupported_message"
+    return "api_error"
+
+
 def _to_float(value: str | None) -> float | None:
     text = _clean_text(value)
     if text is None:
@@ -542,6 +570,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 "phone": phone,
                 "name": lead_name,
                 "send_status": "opted_out_skip",
+                "fail_reason": "opted_out",
             })
             logger.info(f"Bulk-send skipped opted-out lead {phone}")
             continue
@@ -598,6 +627,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 except Exception as db_err:
                     logger.error(f"messages insert failed for {phone}: {db_err}")
         except Exception as e:
+            fail_reason = _map_meta_error(str(e))
             logger.error(f"Bulk-send failed for {phone}: {e}")
             failed += 1
             recipient_rows.append({
@@ -607,6 +637,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 "phone": phone,
                 "name": lead_name,
                 "send_status": "failed",
+                "fail_reason": fail_reason,
             })
 
     for rej_lead in rejected:
@@ -624,6 +655,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             "phone": phone,
             "name": lead_name,
             "send_status": "rejected",
+            "fail_reason": "opt_in_source_missing",
         })
 
     if recipient_rows:
@@ -732,7 +764,7 @@ async def get_failed_csv(
     db = get_supabase()
 
     recipients = db.table("broadcast_recipients") \
-        .select("lead_id, phone, name, send_status") \
+        .select("lead_id, phone, name, send_status, fail_reason") \
         .eq("tenant_id", tenant_id) \
         .eq("broadcast_id", broadcast_id) \
         .execute()
@@ -771,10 +803,10 @@ async def get_failed_csv(
                     lead_ids_fb = [r["lead_id"] for r in failed_msgs.data if r.get("lead_id")]
                     leads_fb = db.table("leads").select("id,phone,name").in_("id", lead_ids_fb).eq("tenant_id", tenant_id).execute()
                     output = io.StringIO()
-                    writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "opted_out_at", "broadcast_id", "broadcast_timestamp"])
+                    writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "fail_reason", "opted_out_at", "broadcast_id", "broadcast_timestamp"])
                     writer.writeheader()
                     for lead in (leads_fb.data or []):
-                        writer.writerow({"phone": lead.get("phone", ""), "name": lead.get("name", ""), "reason": "failed", "opted_out_at": "", "broadcast_id": broadcast_id, "broadcast_timestamp": broadcast_ts})
+                        writer.writerow({"phone": lead.get("phone", ""), "name": lead.get("name", ""), "reason": "failed", "fail_reason": "delivery_failed", "opted_out_at": "", "broadcast_id": broadcast_id, "broadcast_timestamp": broadcast_ts})
                     return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=failed_{broadcast_id[:8]}.csv"})
         except Exception as e:
             logger.warning(f"Fallback failed-csv lookup failed: {e}")
@@ -793,15 +825,22 @@ async def get_failed_csv(
             opted_out_map[row["id"]] = row.get("opted_out_at")
 
     failed_delivery_leads = set()
-    if lead_ids:
-        failed_msg_rows = db.table("messages") \
-            .select("lead_id") \
-            .in_("lead_id", lead_ids) \
-            .eq("direction", "outbound") \
-            .eq("delivery_status", "failed") \
-            .execute()
-        for row in (failed_msg_rows.data or []):
-            failed_delivery_leads.add(row["lead_id"])
+    if lead_ids and broadcast_timestamp:
+        try:
+            ts_dt = datetime.fromisoformat(broadcast_timestamp.replace("Z", "+00:00"))
+            window_end = (ts_dt + timedelta(minutes=10)).isoformat()
+            failed_msg_rows = db.table("messages") \
+                .select("lead_id") \
+                .in_("lead_id", lead_ids) \
+                .eq("direction", "outbound") \
+                .eq("delivery_status", "failed") \
+                .gte("created_at", broadcast_timestamp) \
+                .lte("created_at", window_end) \
+                .execute()
+            for row in (failed_msg_rows.data or []):
+                failed_delivery_leads.add(row["lead_id"])
+        except Exception as tw_err:
+            logger.warning(f"Failed-csv time-window query failed: {tw_err}")
 
     broadcast_timestamp = None
     try:
@@ -833,14 +872,18 @@ async def get_failed_csv(
         lead_id = r.get("lead_id")
 
         reason = None
+        fail_reason = None
         opted_out_at = None
 
         if send_status in ("failed", "rejected"):
             reason = send_status
+            fail_reason = r.get("fail_reason") or "api_error"
         elif lead_id in failed_delivery_leads:
             reason = "failed"
+            fail_reason = "delivery_failed"
         elif lead_id in opted_out_map:
             reason = "not_interested"
+            fail_reason = "opted_out"
             opted_out_at = opted_out_map[lead_id]
 
         if reason and phone not in seen_phones:
@@ -849,6 +892,7 @@ async def get_failed_csv(
                 "phone": phone,
                 "name": name,
                 "reason": reason,
+                "fail_reason": fail_reason or "",
                 "opted_out_at": opted_out_at or "",
                 "broadcast_id": broadcast_id,
                 "broadcast_timestamp": broadcast_timestamp,
@@ -858,7 +902,7 @@ async def get_failed_csv(
         return Response(content='{"message": "No failures detected for this broadcast"}', media_type="application/json", status_code=404)
 
     output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "opted_out_at", "broadcast_id", "broadcast_timestamp"])
+    writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "fail_reason", "opted_out_at", "broadcast_id", "broadcast_timestamp"])
     writer.writeheader()
     for row in failed_rows:
         writer.writerow(row)
@@ -1010,13 +1054,13 @@ async def refresh_broadcast_metrics(tenant_id: str = Depends(get_tenant_id)):
                         delivery_status = msg_status_by_lead.get(lead_id)
                         if delivery_status == "failed":
                             failed_count += 1
-                        elif delivery_status == "delivered":
+                        else:
                             sent_count += 1
-                            delivered_count += 1
-                        elif delivery_status == "read":
-                            sent_count += 1
-                            opened_count += 1
-                        # else: in-flight (no delivery webhook yet) — not counted
+                            if delivery_status == "delivered":
+                                delivered_count += 1
+                            elif delivery_status == "read":
+                                delivered_count += 1
+                                opened_count += 1
                     
                     record["sent"] = sent_count
                     record["delivered"] = delivered_count
