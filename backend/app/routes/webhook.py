@@ -319,13 +319,39 @@ async def whatsapp_webhook(
                     for status_update in value.get("statuses", []):
                         message_id = status_update.get("id")
                         status = status_update.get("status")
-                        
+
                         if message_id and status in ("delivered", "read", "failed"):
                             try:
-                                updated = db.table("messages") \
-                                    .update({"delivery_status": status}) \
-                                    .eq("meta_message_id", message_id) \
-                                    .execute()
+                                update_payload: dict = {"delivery_status": status}
+                                # Capture Meta error code + title on failed status — surfaced in failed CSV
+                                if status == "failed":
+                                    errs = status_update.get("errors") or []
+                                    if errs:
+                                        first = errs[0] or {}
+                                        err_code = first.get("code")
+                                        err_title = first.get("title") or first.get("message")
+                                        if err_code is not None:
+                                            update_payload["delivery_error_code"] = err_code
+                                        if err_title:
+                                            update_payload["delivery_error_title"] = err_title[:200]
+                                        logger.warning(
+                                            f"Meta delivery failure msg={message_id} code={err_code} title={err_title!r}"
+                                        )
+                                try:
+                                    updated = db.table("messages") \
+                                        .update(update_payload) \
+                                        .eq("meta_message_id", message_id) \
+                                        .execute()
+                                except Exception as col_err:
+                                    # Migration 061 may not be applied yet — retry without error columns
+                                    if "delivery_error_code" in str(col_err) or "delivery_error_title" in str(col_err):
+                                        logger.warning(f"Migration 061 not applied — saving status only: {col_err}")
+                                        updated = db.table("messages") \
+                                            .update({"delivery_status": status}) \
+                                            .eq("meta_message_id", message_id) \
+                                            .execute()
+                                    else:
+                                        raise
                                 logger.info(f"Message {message_id} status updated to {status}")
                                 # Mark lead as undeliverable so it's hidden from active views
                                 if status == "failed" and updated.data:

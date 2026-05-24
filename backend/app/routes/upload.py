@@ -861,18 +861,30 @@ def _classify_broadcast_outcomes(
     # Delivery status per lead, scoped to the broadcast time window
     # Window: -2 min to +10 min absorbs clock skew and webhook lag
     msg_status_by_lead: dict[str, str] = {}
+    msg_error_by_lead: dict[str, tuple[int | None, str | None]] = {}
     try:
         ts_dt = datetime.fromisoformat(broadcast_timestamp_iso.replace("Z", "+00:00"))
         window_start = (ts_dt - timedelta(minutes=2)).isoformat()
         window_end = (ts_dt + timedelta(minutes=10)).isoformat()
         if lead_ids:
-            msg_rows = db.table("messages") \
-                .select("lead_id, delivery_status") \
-                .in_("lead_id", lead_ids) \
-                .eq("direction", "outbound") \
-                .gte("created_at", window_start) \
-                .lte("created_at", window_end) \
-                .execute()
+            # Try to fetch error columns (migration 061); fall back if not yet applied
+            select_cols = "lead_id, delivery_status, delivery_error_code, delivery_error_title"
+            try:
+                msg_rows = db.table("messages") \
+                    .select(select_cols) \
+                    .in_("lead_id", lead_ids) \
+                    .eq("direction", "outbound") \
+                    .gte("created_at", window_start) \
+                    .lte("created_at", window_end) \
+                    .execute()
+            except Exception:
+                msg_rows = db.table("messages") \
+                    .select("lead_id, delivery_status") \
+                    .in_("lead_id", lead_ids) \
+                    .eq("direction", "outbound") \
+                    .gte("created_at", window_start) \
+                    .lte("created_at", window_end) \
+                    .execute()
             for msg in (msg_rows.data or []):
                 lid = msg.get("lead_id")
                 status = msg.get("delivery_status")
@@ -882,6 +894,11 @@ def _classify_broadcast_outcomes(
                     msg_status_by_lead[lid] = status
                 elif _DELIVERY_PRIORITY.get(status, -1) > _DELIVERY_PRIORITY.get(msg_status_by_lead[lid], -1):
                     msg_status_by_lead[lid] = status
+                if status == "failed":
+                    code = msg.get("delivery_error_code")
+                    title = msg.get("delivery_error_title")
+                    if code is not None or title:
+                        msg_error_by_lead[lid] = (code, title)
     except Exception as e:
         logger.warning(f"Classifier delivery-status lookup failed: {e}")
 
@@ -914,7 +931,21 @@ def _classify_broadcast_outcomes(
             delivery = msg_status_by_lead.get(lead_id) if lead_id else None
             if delivery == "failed":
                 reason = "failed"
-                fail_reason = "delivery_failed"
+                err = msg_error_by_lead.get(lead_id)
+                if err:
+                    code, title = err
+                    code_part = str(code) if code is not None else ""
+                    title_part = title or ""
+                    if code_part and title_part:
+                        fail_reason = f"delivery_failed:{code_part}:{title_part}"
+                    elif code_part:
+                        fail_reason = f"delivery_failed:{code_part}"
+                    elif title_part:
+                        fail_reason = f"delivery_failed:{title_part}"
+                    else:
+                        fail_reason = "delivery_failed"
+                else:
+                    fail_reason = "delivery_failed"
             elif delivery == "read":
                 sent += 1
                 delivered += 1
