@@ -379,6 +379,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
 
     eligible = []
     rejected = []
+    invalid_leads = []
     for lead in body.leads:
         source = (lead.opt_in_source or "").strip().lower()
         if not source or source == "manual":
@@ -484,7 +485,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
     for lead in eligible:
         phone = _normalize_phone(lead.phone or "")
         if not phone:
-            rejected.append(lead)
+            invalid_leads.append(lead)
             continue
         upsert_rows.append({
             "phone": phone,
@@ -651,6 +652,24 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             if _has_fail_reason:
                 row["fail_reason"] = fail_reason
             recipient_rows.append(row)
+
+    # Track invalid phone numbers separately so they appear in failed CSV
+    for inv_lead in invalid_leads:
+        raw_phone = (inv_lead.phone or "").strip()
+        if not raw_phone:
+            raw_phone = "N/A"
+        row = {
+            "tenant_id": tenant_id,
+            "broadcast_id": broadcast_id,
+            "lead_id": None,
+            "phone": raw_phone,
+            "name": _clean_text(inv_lead.name),
+            "send_status": "failed",
+        }
+        if _has_fail_reason:
+            row["fail_reason"] = "invalid_number"
+        recipient_rows.append(row)
+        failed += 1
 
     for rej_lead in rejected:
         phone = _normalize_phone(rej_lead.phone or "")
