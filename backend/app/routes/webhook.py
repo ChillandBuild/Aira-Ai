@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Form, Request, Response
@@ -6,6 +7,7 @@ from app.config import settings
 from app.services.growth import record_stage_event
 from app.services.failover import update_number_quality, handle_quality_red, handle_quality_yellow
 from app.services.automation_triggers import fire_trigger
+from app.services.meta_webhook_verify import verify_meta_signature
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -90,6 +92,22 @@ async def verify_webhook(request: Request):
     return Response(content="Forbidden", status_code=403)
 
 
+def _resolve_tenant_from_payload(payload: dict, db) -> str:
+    """Extract first phone_number_id from payload and look up its tenant."""
+    for entry in payload.get("entry", []):
+        for change in entry.get("changes", []):
+            value = change.get("value", {})
+            phone_id = (
+                value.get("metadata", {}).get("phone_number_id")
+                or value.get("phone_number_id", "")
+            )
+            if phone_id:
+                tenant = _get_tenant_id_for_meta_number(phone_id, db)
+                if tenant:
+                    return tenant
+    return "00000000-0000-0000-0000-000000000001"
+
+
 @router.post("")
 async def whatsapp_webhook(
     request: Request,
@@ -101,10 +119,20 @@ async def whatsapp_webhook(
 ):
     content_type = request.headers.get("content-type", "")
     if "application/json" in content_type:
+        raw_body = await request.body()
         try:
-            payload = await request.json()
+            payload = json.loads(raw_body)
         except Exception:
             payload = {}
+
+        # Verify Meta X-Hub-Signature-256 (fail-closed: drop if signature present but invalid)
+        signature = request.headers.get("x-hub-signature-256")
+        if signature:
+            db_sig = get_supabase()
+            tenant_for_sig = _resolve_tenant_from_payload(payload, db_sig)
+            if not verify_meta_signature(raw_body, signature, tenant_for_sig):
+                logger.warning(f"WhatsApp webhook: invalid signature for tenant={tenant_for_sig} — dropping")
+                return Response(content="OK", status_code=200)
         for entry in payload.get("entry", []):
             for change in entry.get("changes", []):
                 field = change.get("field")

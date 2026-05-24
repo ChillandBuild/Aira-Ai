@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import {
   MessageSquare, Phone, Sparkles, Eye, EyeOff,
   Save, AlertCircle, Loader2, CheckCircle2, ChevronDown, Send, Camera,
-  Copy, Check, Zap, XCircle,
+  Copy, Check, Zap, XCircle, Activity, RefreshCw,
 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
@@ -44,6 +44,21 @@ type ActivateResult = {
   success: boolean;
   message: string;
   detail?: string;
+};
+
+type ChannelHealth = {
+  last_event: string | null;
+};
+
+type TokenAlert = {
+  channel: string;
+  error: string;
+  created_at: string;
+};
+
+type WebhookHealth = {
+  health: Record<string, ChannelHealth>;
+  token_alerts: TokenAlert[];
 };
 
 const SECTIONS: SectionDef[] = [
@@ -248,6 +263,39 @@ function SecretField({
   );
 }
 
+function timeAgo(iso: string | null): string {
+  if (!iso) return "never";
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+function HealthBadge({ lastEvent, tokenAlert }: { lastEvent: string | null; tokenAlert?: TokenAlert }) {
+  if (tokenAlert) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-label font-semibold bg-red-100 text-red-700 border border-red-200">
+        <XCircle size={10} /> Token invalid
+      </span>
+    );
+  }
+  if (lastEvent) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-label font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+        <Activity size={10} /> {timeAgo(lastEvent)}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-label font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+      <Activity size={10} /> No events yet
+    </span>
+  );
+}
+
 function WebhookGuide({ sectionId, tenantId }: { sectionId: string; tenantId: string | null }) {
   if (sectionId === "whatsapp") {
     const url = `${API_URL}/webhook/whatsapp`;
@@ -321,6 +369,8 @@ export default function SettingsPage() {
   const [tenantId, setTenantId] = useState<string | null>(null);
   const [activating, setActivating] = useState<Record<string, boolean>>({});
   const [activateResults, setActivateResults] = useState<Record<string, ActivateResult>>({});
+  const [webhookHealth, setWebhookHealth] = useState<WebhookHealth | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -345,8 +395,20 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const loadHealth = useCallback(async () => {
+    setHealthLoading(true);
+    try {
+      const auth = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/settings/webhook-health`, { headers: auth });
+      if (res.ok) setWebhookHealth(await res.json());
+    } catch { /* non-critical */ } finally {
+      setHealthLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     load();
+    loadHealth();
     async function fetchTenantStatus() {
       try {
         const auth = await getAuthHeaders();
@@ -360,7 +422,7 @@ export default function SettingsPage() {
       }
     }
     fetchTenantStatus();
-  }, [load]);
+  }, [load, loadHealth]);
 
   function settingFor(key: string) {
     return settings.find(s => s.key === key);
@@ -492,6 +554,9 @@ export default function SettingsPage() {
             const isDirty = sectionDirty[section.id] ?? false;
             const isActivating = activating[section.id] ?? false;
             const activateResult = activateResults[section.id];
+            const channelHealth = webhookHealth?.health?.[section.id];
+            const tokenAlert = webhookHealth?.token_alerts?.find(a => a.channel === section.id);
+            const showHealthBadge = ["whatsapp", "instagram", "facebook"].includes(section.id);
 
             return (
               <div key={section.id} className="card rounded-3xl">
@@ -515,6 +580,9 @@ export default function SettingsPage() {
                         </span>
                       ) : (
                         <span className="badge badge-gray">Not configured</span>
+                      )}
+                      {showHealthBadge && channelHealth !== undefined && (
+                        <HealthBadge lastEvent={channelHealth.last_event} tokenAlert={tokenAlert} />
                       )}
                     </div>
                     <p className="font-body text-sm text-ink-muted mt-0.5">{section.description}</p>
@@ -587,6 +655,18 @@ export default function SettingsPage() {
                       </div>
                     )}
 
+                    {/* Token invalid alert */}
+                    {tokenAlert && (
+                      <div className="mt-4 flex items-start gap-2.5 p-3.5 rounded-2xl border bg-red-50 border-red-200 text-red-800 text-xs font-body">
+                        <XCircle size={14} className="flex-shrink-0 mt-0.5 text-red-500" />
+                        <div>
+                          <p className="font-semibold">Token invalid — {tokenAlert.channel} connection broken</p>
+                          <p className="mt-0.5 opacity-80">{tokenAlert.error} · Detected {timeAgo(tokenAlert.created_at)}</p>
+                          <p className="mt-1 opacity-70">Update your access token above and click Save Changes, then Validate &amp; Activate.</p>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Activation result */}
                     {activateResult && (
                       <div className={`mt-4 flex items-start gap-2.5 p-3.5 rounded-2xl border text-xs font-body ${
@@ -621,6 +701,17 @@ export default function SettingsPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-2">
+                        {showHealthBadge && (
+                          <button
+                            type="button"
+                            onClick={loadHealth}
+                            disabled={healthLoading}
+                            title="Refresh webhook health"
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl font-label text-sm font-medium border border-border text-ink-muted hover:text-ink-secondary hover:border-border transition-all"
+                          >
+                            <RefreshCw size={13} className={healthLoading ? "animate-spin" : ""} />
+                          </button>
+                        )}
                         {section.hasActivate && (
                           <button
                             type="button"

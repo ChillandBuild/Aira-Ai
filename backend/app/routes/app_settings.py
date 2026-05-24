@@ -168,6 +168,50 @@ async def update_settings(payload: SettingsUpdate, tenant_id: str = Depends(get_
     return {"updated": updated}
 
 
+@router.get("/webhook-health")
+async def webhook_health(tenant_id: str = Depends(get_tenant_id)):
+    """Return last inbound event timestamp per channel + recent token_invalid incidents."""
+    from datetime import datetime, timezone, timedelta
+    db = get_supabase()
+    health: dict = {}
+
+    for channel in ("whatsapp", "instagram", "facebook"):
+        row = (
+            db.table("messages")
+            .select("created_at")
+            .eq("tenant_id", tenant_id)
+            .eq("channel", channel)
+            .eq("direction", "inbound")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        last_at = row.data[0]["created_at"] if row.data else None
+        health[channel] = {"last_event": last_at}
+
+    # Token alerts: any token_invalid incidents in last 48h
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
+    alerts = (
+        db.table("incidents")
+        .select("type,detail,created_at")
+        .eq("tenant_id", tenant_id)
+        .eq("type", "token_invalid")
+        .gte("created_at", cutoff)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    token_alerts = []
+    for inc in (alerts.data or []):
+        detail = inc.get("detail") or {}
+        token_alerts.append({
+            "channel": detail.get("channel"),
+            "error": detail.get("error"),
+            "created_at": inc["created_at"],
+        })
+
+    return {"health": health, "token_alerts": token_alerts}
+
+
 @router.post("/activate")
 async def activate_channel(payload: ActivateChannelRequest, tenant_id: str = Depends(get_tenant_id)):
     """Validate Meta credentials and auto-subscribe webhook for whatsapp / instagram / facebook."""

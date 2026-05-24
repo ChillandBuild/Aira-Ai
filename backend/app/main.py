@@ -53,6 +53,105 @@ async def _process_scheduled_broadcasts() -> None:
         logger.error(f"Scheduled broadcast executor error: {e}")
 
 
+async def _check_token_health() -> None:
+    """APScheduler daily job: validate Meta tokens for all tenants, create incidents if invalid."""
+    import httpx
+    from app.db.supabase import get_supabase
+
+    db = get_supabase()
+    rows = (
+        db.table("app_settings")
+        .select("tenant_id,key,value")
+        .in_("key", [
+            "meta_access_token", "meta_phone_number_id",
+            "instagram_access_token", "instagram_page_id",
+            "facebook_access_token", "facebook_page_id",
+        ])
+        .not_.is_("value", "null")
+        .execute()
+    )
+    if not rows.data:
+        return
+
+    tenant_cfg: dict[str, dict] = {}
+    for row in rows.data:
+        tid = row["tenant_id"]
+        if tid not in tenant_cfg:
+            tenant_cfg[tid] = {}
+        tenant_cfg[tid][row["key"]] = row["value"]
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for tenant_id, cfg in tenant_cfg.items():
+            # WhatsApp
+            wa_token = cfg.get("meta_access_token")
+            wa_phone_id = cfg.get("meta_phone_number_id")
+            if wa_token and wa_phone_id:
+                try:
+                    r = await client.get(
+                        f"https://graph.facebook.com/v21.0/{wa_phone_id}",
+                        params={"fields": "display_phone_number", "access_token": wa_token},
+                    )
+                    data = r.json()
+                    if "error" in data:
+                        _create_token_incident(db, tenant_id, "whatsapp", data["error"].get("message", "Token invalid"))
+                except Exception as e:
+                    logger.warning(f"Token health check error tenant={tenant_id} channel=whatsapp: {e}")
+
+            # Instagram
+            ig_token = cfg.get("instagram_access_token")
+            if ig_token:
+                try:
+                    r = await client.get(
+                        "https://graph.facebook.com/v21.0/me",
+                        params={"fields": "name", "access_token": ig_token},
+                    )
+                    data = r.json()
+                    if "error" in data:
+                        _create_token_incident(db, tenant_id, "instagram", data["error"].get("message", "Token invalid"))
+                except Exception as e:
+                    logger.warning(f"Token health check error tenant={tenant_id} channel=instagram: {e}")
+
+            # Facebook
+            fb_token = cfg.get("facebook_access_token")
+            if fb_token:
+                try:
+                    r = await client.get(
+                        "https://graph.facebook.com/v21.0/me",
+                        params={"fields": "name", "access_token": fb_token},
+                    )
+                    data = r.json()
+                    if "error" in data:
+                        _create_token_incident(db, tenant_id, "facebook", data["error"].get("message", "Token invalid"))
+                except Exception as e:
+                    logger.warning(f"Token health check error tenant={tenant_id} channel=facebook: {e}")
+
+    logger.info(f"Token health check complete for {len(tenant_cfg)} tenant(s)")
+
+
+def _create_token_incident(db, tenant_id: str, channel: str, error_msg: str) -> None:
+    try:
+        from datetime import datetime, timezone, timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=23)).isoformat()
+        existing = (
+            db.table("incidents")
+            .select("id")
+            .eq("tenant_id", tenant_id)
+            .eq("type", "token_invalid")
+            .gte("created_at", cutoff)
+            .execute()
+        )
+        if existing.data:
+            return
+        db.table("incidents").insert({
+            "tenant_id": tenant_id,
+            "type": "token_invalid",
+            "detail": {"channel": channel, "error": error_msg},
+        }).execute()
+        logger.warning(f"Token invalid incident created: tenant={tenant_id} channel={channel}")
+    except Exception as e:
+        logger.error(f"Failed to create token incident: {e}")
+
+
 _scheduler = AsyncIOScheduler()
 
 
@@ -77,8 +176,15 @@ async def lifespan(app: FastAPI):
         id="scheduled-broadcasts",
         replace_existing=True,
     )
+    _scheduler.add_job(
+        _check_token_health,
+        trigger="interval",
+        hours=24,
+        id="token-health-check",
+        replace_existing=True,
+    )
     _scheduler.start()
-    logger.info("Automation scheduler started (every 5 min) + Broadcast scheduler (every 1 min)")
+    logger.info("Schedulers started: automation(5m) + broadcasts(1m) + token-health(24h)")
 
     yield
 
