@@ -107,6 +107,7 @@ export default function UploadPage() {
   const [scheduleType, setScheduleType] = useState<ScheduleType>("now");
   const [scheduleAt, setScheduleAt] = useState("");
   const [dripDays, setDripDays] = useState("");
+  const [variableMapping, setVariableMapping] = useState<string[]>([]); // column name per {{N}}
 
   const [sendLoading, setSendLoading] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -343,10 +344,13 @@ export default function UploadPage() {
 
       const leads = lines.slice(1).map((line) => {
         const cols = line.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
+        const extra_cols: Record<string, string> = {};
+        headers.forEach((h, i) => { extra_cols[h] = cols[i] ?? ""; });
         return {
           phone: phoneIdx >= 0 ? cols[phoneIdx] ?? "" : "",
           name: nameIdx >= 0 ? cols[nameIdx] ?? undefined : undefined,
           opt_in_source: optInSource,
+          extra_cols,
         };
       }).filter((l) => l.phone);
 
@@ -358,6 +362,7 @@ export default function UploadPage() {
         drip_days: scheduleType === "drip" && dripDays ? parseInt(dripDays, 10) : undefined,
         csv_file_url: csvFileUrl,
         csv_file_name: csvFileName,
+        variable_mapping: variableMapping.filter(Boolean),
       };
 
       const auth = await getAuthHeaders();
@@ -665,6 +670,56 @@ export default function UploadPage() {
                 </p>
               )}
             </div>
+
+            {/* ── Template Variable Mapping ─────────────────────────── */}
+            {templateName && parsedData && parsedData.columns.length > 0 && (
+              <div className="bg-surface-low border border-surface-mid rounded-xl p-4 space-y-3">
+                <div>
+                  <p className="font-label text-sm font-semibold text-on-surface uppercase tracking-widest">
+                    Template Variables <span className="normal-case font-normal text-on-surface-muted">(optional)</span>
+                  </p>
+                  <p className="font-body text-xs text-on-surface-muted mt-0.5">
+                    If your template uses <code className="bg-surface-mid px-1 rounded">{"{{1}}"}</code>, <code className="bg-surface-mid px-1 rounded">{"{{2}}"}</code>… placeholders, map each to a CSV column for personalisation.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {variableMapping.map((col, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <span className="font-mono text-sm text-on-surface-muted w-8 shrink-0">{`{{${idx + 1}}}`}</span>
+                      <select
+                        value={col}
+                        onChange={(e) => {
+                          const next = [...variableMapping];
+                          next[idx] = e.target.value;
+                          setVariableMapping(next);
+                        }}
+                        className="flex-1 bg-white border border-surface-mid rounded-lg px-3 py-1.5 font-body text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-tertiary/40"
+                      >
+                        <option value="">— pick a column —</option>
+                        {parsedData.columns.map(c => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setVariableMapping(variableMapping.filter((_, i) => i !== idx))}
+                        className="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setVariableMapping([...variableMapping, ""])}
+                    className="text-xs font-semibold text-tertiary hover:underline"
+                  >
+                    + Add variable
+                  </button>
+                </div>
+              </div>
+            )}
+            {/* ──────────────────────────────────────────────────────── */}
 
             <div>
               <label className="block font-label text-sm font-semibold text-on-surface uppercase tracking-widest mb-2">

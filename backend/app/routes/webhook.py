@@ -188,6 +188,28 @@ async def whatsapp_webhook(
                                 logger.warning(f"Auto-assign failed for lead {lead_id}: {e}")
                             fire_trigger(background_tasks, lead_id, tenant_id, "lead_created", db=db)
 
+                        # CTWA: capture Click-to-WhatsApp ad referral on first contact
+                        referral = msg.get("referral")
+                        if referral and referral.get("source_type") == "ad":
+                            try:
+                                from app.services.growth import get_or_create_campaign
+                                ad_id = referral.get("source_id", "")
+                                ads_ctx = referral.get("ads_context_data", {})
+                                ad_title = ads_ctx.get("ad_title") or referral.get("headline", "") or ad_id
+                                if ad_id:
+                                    campaign = get_or_create_campaign(
+                                        db=db,
+                                        tenant_id=tenant_id,
+                                        platform="whatsapp",
+                                        campaign_name=ad_title,
+                                        external_campaign_id=ad_id,
+                                    )
+                                    if campaign:
+                                        db.table("leads").update({"ad_campaign_id": campaign["id"]}).eq("id", lead_id).execute()
+                                        logger.info(f"CTWA referral: lead {lead_id} linked to ad campaign {campaign['id']} (ad_id={ad_id})")
+                            except Exception as ctwa_err:
+                                logger.warning(f"CTWA referral tracking failed for lead {lead_id}: {ctwa_err}")
+
                         already = db.table("messages").select("id").eq("meta_message_id", msg_id).limit(1).execute()
                         if already.data:
                             continue

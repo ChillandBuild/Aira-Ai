@@ -34,9 +34,9 @@ If you don't know a specific detail, say: "Let me connect you with our team who 
 """
 
 REENGAGEMENT_FALLBACKS = {
-    "1d": "Hi! Just checking in in case you still want help with admissions, fees, or course options. If you'd like, I can help you shortlist the right next step today.",
-    "1w": "Hi! Following up in case your study plans are still active. If you want updated guidance on courses, fees, or a campus visit, reply here and I’ll help you quickly.",
-    "1m": "Hi! Reaching out one last time in case admissions support is still useful. If you'd like fresh guidance on programs, fees, or booking a visit, just reply and we can pick this back up.",
+    "1d": "Hi! Just checking in — happy to help if you still have questions. Reply here and I can point you in the right direction today.",
+    "1w": "Hi! Following up in case you’re still exploring your options. If you’d like a quick update or want to take the next step, just reply and I’ll help.",
+    "1m": "Hi! One last check-in in case we can still be of help. If you’d like to pick things up where we left off, just send us a message.",
 }
 
 _prompt_cache: dict[str, tuple[float, str]] = {}
@@ -240,7 +240,7 @@ def generate_reengagement_message(lead_id: str, cadence: str, db=None) -> str:
         if (row.get("content") or "").strip()
     ) or "No prior conversation history available."
 
-    prompt = f"""You write proactive WhatsApp re-engagement messages for an education consultancy.
+    prompt = f"""You write proactive WhatsApp re-engagement messages for a business.
 
 Cadence: {cadence}
 Lead name: {lead_data.get("name") or "there"}

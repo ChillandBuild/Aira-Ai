@@ -260,6 +260,7 @@ class BulkLeadItem(BaseModel):
     phone: str
     name: Optional[str] = None
     opt_in_source: Optional[str] = None
+    extra_cols: dict[str, str] = {}  # all CSV columns keyed by header name
 
 
 class BulkSendRequest(BaseModel):
@@ -270,6 +271,7 @@ class BulkSendRequest(BaseModel):
     drip_days: Optional[int] = None
     csv_file_url: Optional[str] = None
     csv_file_name: Optional[str] = None
+    variable_mapping: list[str] = []  # ordered CSV column names for {{1}}, {{2}}, ...
 
 
 @router.post("/parse")
@@ -360,7 +362,57 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         raise HTTPException(status_code=400, detail="No eligible leads")
 
     db = get_supabase()
-    
+
+    # ── Scheduled / Drip: store and return early ─────────────────────────────
+    if body.schedule_type in ("scheduled", "drip"):
+        leads_payload = [l.model_dump() for l in eligible]
+        opt_in_src = _clean_text(eligible[0].opt_in_source) if eligible else "unknown"
+
+        if body.schedule_type == "scheduled" and body.schedule_at:
+            try:
+                fire_at = datetime.fromisoformat(body.schedule_at.replace("Z", "+00:00"))
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid schedule_at format")
+            db.table("scheduled_broadcasts").insert({
+                "tenant_id": tenant_id,
+                "template_name": body.template_name,
+                "schedule_type": "scheduled",
+                "fire_at": fire_at.isoformat(),
+                "leads_json": leads_payload,
+                "variable_mapping": body.variable_mapping,
+                "opt_in_source": opt_in_src,
+                "csv_file_url": body.csv_file_url,
+                "csv_file_name": body.csv_file_name,
+            }).execute()
+            return {"status": "scheduled", "fire_at": fire_at.isoformat(), "total": len(eligible)}
+
+        if body.schedule_type == "drip" and body.drip_days and body.drip_days > 0:
+            days = body.drip_days
+            batch_size = max(1, -(-len(eligible) // days))  # ceiling division
+            now = datetime.now(timezone.utc)
+            records = []
+            for i in range(days):
+                batch = eligible[i * batch_size:(i + 1) * batch_size]
+                if not batch:
+                    break
+                records.append({
+                    "tenant_id": tenant_id,
+                    "template_name": body.template_name,
+                    "schedule_type": "drip",
+                    "fire_at": (now + timedelta(days=i)).isoformat(),
+                    "leads_json": [l.model_dump() for l in batch],
+                    "variable_mapping": body.variable_mapping,
+                    "opt_in_source": opt_in_src,
+                    "csv_file_url": body.csv_file_url,
+                    "csv_file_name": body.csv_file_name,
+                })
+            if records:
+                db.table("scheduled_broadcasts").insert(records).execute()
+            return {"status": "drip_scheduled", "batches": len(records), "total": len(eligible)}
+
+        raise HTTPException(status_code=400, detail="schedule_at required for scheduled type, drip_days required for drip")
+    # ─────────────────────────────────────────────────────────────────────────
+
     number_rows = (
         db.table("phone_numbers")
         .select("*")
@@ -497,11 +549,14 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         try:
             components: list[dict] = []
             if has_vars:
-                lead_name_for_tpl = _clean_text(lead.name) or "Customer"
-                components = [{
-                    "type": "body",
-                    "parameters": [{"type": "text", "text": lead_name_for_tpl}]
-                }]
+                params = []
+                for col in (body.variable_mapping or []):
+                    val = (lead.extra_cols.get(col) or "").strip()
+                    params.append({"type": "text", "text": val or "Customer"})
+                if not params:
+                    # fallback: just substitute {{1}} with name
+                    params = [{"type": "text", "text": _clean_text(lead.name) or "Customer"}]
+                components = [{"type": "body", "parameters": params}]
 
             result = await send_template_message(
                 to_number=phone,

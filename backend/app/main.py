@@ -31,6 +31,28 @@ async def _process_automation_waits() -> None:
         logger.error(f"Automation scheduler error: {e}")
 
 
+async def _process_scheduled_broadcasts() -> None:
+    """APScheduler job: fire scheduled_broadcasts rows whose fire_at has passed."""
+    try:
+        from app.db.supabase import get_supabase
+        from app.services.broadcast_executor import execute_broadcast
+        db = get_supabase()
+        now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+        rows = (
+            db.table("scheduled_broadcasts")
+            .select("*")
+            .eq("status", "pending")
+            .lte("fire_at", now)
+            .limit(10)
+            .execute()
+        )
+        for row in (rows.data or []):
+            logger.info(f"Scheduled broadcast firing: id={row['id']} tenant={row['tenant_id']}")
+            await execute_broadcast(row)
+    except Exception as e:
+        logger.error(f"Scheduled broadcast executor error: {e}")
+
+
 _scheduler = AsyncIOScheduler()
 
 
@@ -48,8 +70,15 @@ async def lifespan(app: FastAPI):
         id="automation-pending",
         replace_existing=True,
     )
+    _scheduler.add_job(
+        _process_scheduled_broadcasts,
+        trigger="interval",
+        minutes=1,
+        id="scheduled-broadcasts",
+        replace_existing=True,
+    )
     _scheduler.start()
-    logger.info("Automation scheduler started (every 5 min)")
+    logger.info("Automation scheduler started (every 5 min) + Broadcast scheduler (every 1 min)")
 
     yield
 

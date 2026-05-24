@@ -1,0 +1,166 @@
+"""Execute a scheduled broadcast row from the scheduled_broadcasts table."""
+import csv
+import io
+import json
+import logging
+import re as _re
+from datetime import datetime, timezone
+
+import httpx
+
+from app.db.supabase import get_supabase
+from app.services.meta_cloud import send_template_message
+from app.services.outbound_router import get_best_number, increment_send_count
+
+logger = logging.getLogger(__name__)
+
+
+def _normalize_phone(raw: str) -> str:
+    digits = "".join(c for c in raw if c.isdigit())
+    if not digits:
+        return ""
+    if not digits.startswith("91") and len(digits) == 10:
+        digits = "91" + digits
+    return "+" + digits
+
+
+def _clean_text(val: str | None) -> str:
+    return (val or "").strip()
+
+
+async def execute_broadcast(row: dict) -> dict:
+    """Run a single scheduled_broadcasts row and return a result dict."""
+    row_id = row["id"]
+    tenant_id = row["tenant_id"]
+    template_name = row["template_name"]
+    variable_mapping: list[str] = row.get("variable_mapping") or []
+    opt_in_source = row.get("opt_in_source") or ""
+
+    db = get_supabase()
+
+    # Mark running
+    db.table("scheduled_broadcasts").update({"status": "running"}).eq("id", row_id).execute()
+
+    try:
+        leads_raw: list[dict] = row.get("leads_json") or []
+        if not leads_raw:
+            _finish(db, row_id, "done", {"sent": 0, "failed": 0, "note": "empty_leads"})
+            return {"sent": 0, "failed": 0}
+
+        # Get best number
+        number_rows = (
+            db.table("phone_numbers")
+            .select("*")
+            .eq("tenant_id", tenant_id)
+            .eq("role", "primary")
+            .eq("paused_outbound", False)
+            .execute()
+            .data
+        )
+        best_number = number_rows[0] if number_rows else await get_best_number(tenant_id)
+        if not best_number:
+            raise RuntimeError("No primary number available for scheduled broadcast")
+
+        # Fetch template metadata
+        tpl_lang = "en"
+        tpl_body = ""
+        tpl_row = (
+            db.table("message_templates")
+            .select("language,body_text")
+            .eq("name", template_name)
+            .eq("tenant_id", tenant_id)
+            .limit(1)
+            .execute()
+        )
+        if tpl_row.data:
+            tpl_lang = tpl_row.data[0].get("language") or "en"
+            tpl_body = tpl_row.data[0].get("body_text") or ""
+
+        has_vars = bool(_re.search(r"\{\{\d+\}\}", tpl_body))
+
+        # Opted-out phones
+        all_phones = [_normalize_phone(l.get("phone", "")) for l in leads_raw if _normalize_phone(l.get("phone", ""))]
+        opted_out_phones: set[str] = set()
+        if all_phones:
+            rows = db.table("leads").select("phone").in_("phone", all_phones).eq("tenant_id", tenant_id).eq("opted_out", True).execute()
+            opted_out_phones = {r["phone"] for r in (rows.data or [])}
+
+        lead_rows = db.table("leads").select("id,phone,name").in_("phone", all_phones).eq("tenant_id", tenant_id).execute()
+        phone_to_lead_id = {r["phone"]: r["id"] for r in (lead_rows.data or [])}
+
+        sent = 0
+        failed = 0
+        broadcast_id = row_id  # reuse scheduled_broadcast id as broadcast_id
+
+        for lead in leads_raw:
+            phone = _normalize_phone(lead.get("phone", ""))
+            if not phone or phone in opted_out_phones:
+                failed += 1
+                continue
+
+            lead_id = phone_to_lead_id.get(phone)
+            lead_name = _clean_text(lead.get("name"))
+            extra_cols: dict = lead.get("extra_cols") or {}
+
+            try:
+                components: list[dict] = []
+                if has_vars:
+                    params = []
+                    for col in (variable_mapping or []):
+                        val = extra_cols.get(col, "") or ""
+                        params.append({"type": "text", "text": val or "Customer"})
+                    if not params:
+                        params = [{"type": "text", "text": lead_name or "Customer"}]
+                    components = [{"type": "body", "parameters": params}]
+
+                await send_template_message(
+                    to_number=phone,
+                    template_name=template_name,
+                    lang_code=tpl_lang,
+                    components=components,
+                    phone_number_id=best_number.get("meta_phone_number_id"),
+                    tenant_id=tenant_id,
+                )
+                sent += 1
+
+                if lead_id:
+                    try:
+                        db.table("messages").insert({
+                            "lead_id": lead_id,
+                            "tenant_id": tenant_id,
+                            "direction": "outbound",
+                            "channel": "whatsapp",
+                            "content": f"[Template: {template_name}]",
+                            "is_ai_generated": False,
+                        }).execute()
+                    except Exception:
+                        pass
+
+            except Exception as e:
+                logger.error(f"Scheduled broadcast send failed for {phone}: {e}")
+                failed += 1
+
+        if sent > 0:
+            await increment_send_count(best_number["id"], delta=sent)
+
+        result = {"sent": sent, "failed": failed, "broadcast_id": broadcast_id}
+        _finish(db, row_id, "done", result)
+        logger.info(f"Scheduled broadcast {row_id}: sent={sent} failed={failed}")
+        return result
+
+    except Exception as exc:
+        logger.error(f"Scheduled broadcast {row_id} failed: {exc}")
+        _finish(db, row_id, "failed", None, error=str(exc))
+        return {"sent": 0, "failed": 0, "error": str(exc)}
+
+
+def _finish(db, row_id: str, status: str, result: dict | None, error: str | None = None) -> None:
+    update: dict = {
+        "status": status,
+        "executed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if result is not None:
+        update["result"] = json.dumps(result)
+    if error:
+        update["error"] = error
+    db.table("scheduled_broadcasts").update(update).eq("id", row_id).execute()
