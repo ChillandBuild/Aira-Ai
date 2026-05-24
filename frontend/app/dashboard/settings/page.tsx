@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import {
   MessageSquare, Phone, Sparkles, Eye, EyeOff,
   Save, AlertCircle, Loader2, CheckCircle2, ChevronDown, Send, Camera,
+  Copy, Check, Zap, XCircle,
 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
@@ -21,7 +22,7 @@ type FieldDef = {
   label: string;
   placeholder?: string;
   secret: boolean;
-  required?: boolean; // only required=true fields affect the "Connected" badge
+  required?: boolean;
   hint?: string;
 };
 
@@ -36,6 +37,13 @@ type SectionDef = {
   description: string;
   fields: FieldDef[];
   toggles?: ToggleDef[];
+  hasActivate?: boolean;
+};
+
+type ActivateResult = {
+  success: boolean;
+  message: string;
+  detail?: string;
 };
 
 const SECTIONS: SectionDef[] = [
@@ -46,8 +54,10 @@ const SECTIONS: SectionDef[] = [
     color: "#059669",
     bg: "#d1fae5",
     description: "Connect your WhatsApp Business Account to send and receive messages.",
+    hasActivate: true,
     fields: [
       { key: "meta_phone_number_id", label: "Phone Number ID", secret: false, required: true },
+      { key: "meta_waba_id", label: "WhatsApp Business Account ID (WABA ID)", secret: false, required: true, hint: "Found in Meta Business Manager → WhatsApp Accounts. Required for webhook subscription." },
       { key: "meta_access_token", label: "Permanent Access Token", secret: true, required: true },
       { key: "meta_webhook_verify_token", label: "Webhook Verify Token", secret: true, required: true, hint: "Pick any string. Paste the same value into Meta Developer App → Webhook → Verify Token (shared by WhatsApp, Instagram, Facebook)." },
       { key: "meta_app_secret", label: "Meta App Secret", secret: true, required: true, hint: "Meta Developer App → Settings → Basic → App Secret. Used to verify inbound Facebook + Instagram webhooks." },
@@ -71,6 +81,7 @@ const SECTIONS: SectionDef[] = [
     color: "#e1306c",
     bg: "#fdf2f8",
     description: "Connect your Instagram Business Account. Provide your credentials and register the webhook URL.",
+    hasActivate: true,
     fields: [
       { key: "instagram_page_id", label: "Instagram Page ID / Business Account ID", secret: false, required: true, hint: "Meta Business Manager Page ID or Instagram Business Account ID" },
       { key: "instagram_access_token", label: "Instagram Page Access Token", secret: true, required: true, hint: "Permanent page access token with instagram_manage_messages scope" },
@@ -83,6 +94,7 @@ const SECTIONS: SectionDef[] = [
     color: "#1877f2",
     bg: "#eff6ff",
     description: "Connect your Facebook Page to receive and reply to Messenger conversations.",
+    hasActivate: true,
     fields: [
       { key: "facebook_page_id", label: "Facebook Page ID", secret: false, required: true, hint: "Your Facebook Page's numeric ID from Page settings" },
       { key: "facebook_access_token", label: "Facebook Page Access Token", secret: true, required: true, hint: "Permanent page access token with pages_messaging scope" },
@@ -139,6 +151,28 @@ async function saveSettings(updates: SettingsMap): Promise<void> {
       if (attempt === 2) throw new Error("Server unreachable — please try again");
     }
   }
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        } catch {
+          /* clipboard not available */
+        }
+      }}
+      title="Copy to clipboard"
+      className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-label font-semibold transition-all border border-border bg-white text-ink-muted hover:text-primary hover:border-primary/40"
+    >
+      {copied ? <><Check size={11} className="text-emerald-600" />Copied</> : <><Copy size={11} />Copy</>}
+    </button>
+  );
 }
 
 function OutlinedField({
@@ -214,6 +248,67 @@ function SecretField({
   );
 }
 
+function WebhookGuide({ sectionId, tenantId }: { sectionId: string; tenantId: string | null }) {
+  if (sectionId === "whatsapp") {
+    const url = `${API_URL}/webhook/whatsapp`;
+    return (
+      <div className="mt-5 p-4 rounded-2xl bg-surface-subtle border border-border-subtle font-body text-xs text-ink-secondary space-y-2">
+        <p className="font-semibold text-ink">Meta Webhook Configuration Guide:</p>
+        <p>1. In your Meta Developer App, go to <strong>WhatsApp → Configuration</strong>.</p>
+        <p>2. Set the Callback URL to:</p>
+        <div className="flex items-center gap-2">
+          <div className="flex-1 p-2.5 rounded-xl bg-white border border-border font-mono text-xs select-all break-all text-primary font-medium">
+            {url}
+          </div>
+          <CopyButton text={url} />
+        </div>
+        <p>3. Set the Verify Token to the same value as your <strong>Webhook Verify Token</strong> above.</p>
+        <p>4. Subscribe to <strong>messages</strong> and <strong>message_status_updates</strong> fields.</p>
+        <p>5. After saving credentials, click <strong>Validate &amp; Activate</strong> to verify your token and auto-subscribe the webhook.</p>
+      </div>
+    );
+  }
+  if (sectionId === "instagram") {
+    const url = tenantId ? `${API_URL}/instagram/${tenantId}` : null;
+    return (
+      <div className="mt-5 p-4 rounded-2xl bg-surface-subtle border border-border-subtle font-body text-xs text-ink-secondary space-y-2">
+        <p className="font-semibold text-ink">Meta Webhook Configuration Guide:</p>
+        <p>1. In your Meta Developer App, add the <strong>Instagram Graph API</strong> product.</p>
+        <p>2. Set the Webhook Callback URL to:</p>
+        <div className="flex items-center gap-2">
+          <div className="flex-1 p-2.5 rounded-xl bg-white border border-border font-mono text-xs select-all break-all text-primary font-medium">
+            {url ?? "Retrieving webhook URL…"}
+          </div>
+          {url && <CopyButton text={url} />}
+        </div>
+        <p>3. Use the verify token you set in the WhatsApp section above.</p>
+        <p>4. Subscribe to <strong>messages</strong> Webhook event fields.</p>
+        <p>5. After saving credentials, click <strong>Validate &amp; Activate</strong> to auto-subscribe the webhook.</p>
+      </div>
+    );
+  }
+  if (sectionId === "facebook") {
+    const url = tenantId ? `${API_URL}/webhook/facebook/${tenantId}` : null;
+    return (
+      <div className="mt-5 p-4 rounded-2xl bg-surface-subtle border border-border-subtle font-body text-xs text-ink-secondary space-y-2">
+        <p className="font-semibold text-ink">Facebook Messenger Webhook Configuration Guide:</p>
+        <p>1. In your Meta Developer App, add the <strong>Messenger</strong> product and link your Page.</p>
+        <p>2. Set the Webhook Callback URL to:</p>
+        <div className="flex items-center gap-2">
+          <div className="flex-1 p-2.5 rounded-xl bg-white border border-border font-mono text-xs select-all break-all text-primary font-medium">
+            {url ?? "Retrieving webhook URL…"}
+          </div>
+          {url && <CopyButton text={url} />}
+        </div>
+        <p>3. Use the same verify token configured in the WhatsApp section (meta_webhook_verify_token).</p>
+        <p>4. Subscribe to <strong>messages</strong> Webhook event fields under your Page.</p>
+        <p>5. After saving credentials, click <strong>Validate &amp; Activate</strong> to auto-subscribe the webhook.</p>
+      </div>
+    );
+  }
+  return null;
+}
+
 type SaveState = "idle" | "dirty" | "saving" | "saved";
 
 export default function SettingsPage() {
@@ -224,6 +319,8 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [tenantId, setTenantId] = useState<string | null>(null);
+  const [activating, setActivating] = useState<Record<string, boolean>>({});
+  const [activateResults, setActivateResults] = useState<Record<string, ActivateResult>>({});
 
   const load = useCallback(async () => {
     try {
@@ -258,8 +355,8 @@ export default function SettingsPage() {
           const data = await res.json();
           if (data.tenant_id) setTenantId(data.tenant_id);
         }
-      } catch (e) {
-        console.error("Failed to load onboarding status", e);
+      } catch {
+        /* non-critical */
       }
     }
     fetchTenantStatus();
@@ -269,7 +366,6 @@ export default function SettingsPage() {
     return settings.find(s => s.key === key);
   }
 
-  // Per-section dirty check — true if any field has an unsaved change
   const sectionDirty = useMemo(() => {
     const map: Record<string, boolean> = {};
     SECTIONS.forEach(section => {
@@ -326,6 +422,47 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleActivate(channel: string) {
+    setActivating(a => ({ ...a, [channel]: true }));
+    setActivateResults(r => {
+      const next = { ...r };
+      delete next[channel];
+      return next;
+    });
+    try {
+      const auth = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/settings/activate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...auth },
+        body: JSON.stringify({ channel }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setActivateResults(r => ({ ...r, [channel]: { success: false, message: data.detail ?? "Activation failed" } }));
+      } else {
+        let detail = "";
+        if (channel === "whatsapp") {
+          detail = [
+            data.business_name,
+            data.phone_number,
+            data.subscribed ? "Webhook subscribed ✓" : "Add WABA ID to enable webhook subscription",
+          ].filter(Boolean).join(" · ");
+        } else {
+          detail = [
+            data.page_name,
+            data.page_id ? `ID: ${data.page_id}` : null,
+            data.subscribed ? "Webhook subscribed ✓" : "Webhook subscription failed — check token scopes",
+          ].filter(Boolean).join(" · ");
+        }
+        setActivateResults(r => ({ ...r, [channel]: { success: true, message: "Validated & connected", detail } }));
+      }
+    } catch {
+      setActivateResults(r => ({ ...r, [channel]: { success: false, message: "Network error — please try again" } }));
+    } finally {
+      setActivating(a => ({ ...a, [channel]: false }));
+    }
+  }
+
   return (
     <div>
       <div className="mb-7">
@@ -349,11 +486,12 @@ export default function SettingsPage() {
           {SECTIONS.map((section) => {
             const isCollapsed = !!collapsed[section.id];
             const allKeys = [...section.fields.map(f => f.key), ...(section.toggles?.map(t => t.key) ?? [])];
-            // Only required fields determine the Connected badge
             const requiredFields = section.fields.filter(f => f.required !== false);
             const isConfigured = requiredFields.every(f => settingFor(f.key)?.is_set);
             const saveState = saveStates[section.id] ?? "idle";
             const isDirty = sectionDirty[section.id] ?? false;
+            const isActivating = activating[section.id] ?? false;
+            const activateResult = activateResults[section.id];
 
             return (
               <div key={section.id} className="card rounded-3xl">
@@ -419,30 +557,9 @@ export default function SettingsPage() {
                       })}
                     </div>
 
-                    {section.id === "instagram" && (
-                      <div className="mt-5 p-4 rounded-2xl bg-surface-subtle border border-border-subtle font-body text-xs text-ink-secondary space-y-2">
-                        <p className="font-semibold text-ink">Meta Webhook Configuration Guide:</p>
-                        <p>1. In your Meta Developer App, add the <strong>Instagram Graph API</strong> product.</p>
-                        <p>2. Set the Webhook Callback URL to:</p>
-                        <div className="p-2.5 rounded-xl bg-white border border-border font-mono text-xs select-all break-all text-primary font-medium">
-                          {tenantId ? `${API_URL.replace("/api/v1", "/webhook")}/instagram/${tenantId}` : "Retrieving webhook URL..."}
-                        </div>
-                        <p>3. Use the verify token you chose or set in Meta Webhook configuration.</p>
-                        <p>4. Subscribe to <strong>messages</strong> Webhook event fields.</p>
-                      </div>
-                    )}
-
-                    {section.id === "facebook" && (
-                      <div className="mt-5 p-4 rounded-2xl bg-surface-subtle border border-border-subtle font-body text-xs text-ink-secondary space-y-2">
-                        <p className="font-semibold text-ink">Facebook Messenger Webhook Configuration Guide:</p>
-                        <p>1. In your Meta Developer App, add the <strong>Messenger</strong> product and link your Page.</p>
-                        <p>2. Set the Webhook Callback URL to:</p>
-                        <div className="p-2.5 rounded-xl bg-white border border-border font-mono text-xs select-all break-all text-primary font-medium">
-                          {tenantId ? `${API_URL.replace("/api/v1", "/webhook")}/facebook/${tenantId}` : "Retrieving webhook URL..."}
-                        </div>
-                        <p>3. Use the same verify token configured for your Meta app (meta_webhook_verify_token).</p>
-                        <p>4. Subscribe to <strong>messages</strong> Webhook event fields under your Page.</p>
-                      </div>
+                    {/* Webhook guides + copy buttons */}
+                    {(section.id === "whatsapp" || section.id === "instagram" || section.id === "facebook") && (
+                      <WebhookGuide sectionId={section.id} tenantId={tenantId} />
                     )}
 
                     {section.toggles && section.toggles.length > 0 && (
@@ -470,8 +587,26 @@ export default function SettingsPage() {
                       </div>
                     )}
 
+                    {/* Activation result */}
+                    {activateResult && (
+                      <div className={`mt-4 flex items-start gap-2.5 p-3.5 rounded-2xl border text-xs font-body ${
+                        activateResult.success
+                          ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                          : "bg-red-50 border-red-200 text-red-700"
+                      }`}>
+                        {activateResult.success
+                          ? <CheckCircle2 size={14} className="flex-shrink-0 mt-0.5 text-emerald-600" />
+                          : <XCircle size={14} className="flex-shrink-0 mt-0.5 text-red-500" />
+                        }
+                        <div>
+                          <p className="font-semibold">{activateResult.message}</p>
+                          {activateResult.detail && <p className="mt-0.5 opacity-80">{activateResult.detail}</p>}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Save row */}
-                    <div className="mt-6 flex items-center justify-between border-t border-border-subtle pt-5">
+                    <div className="mt-6 flex items-center justify-between border-t border-border-subtle pt-5 gap-3 flex-wrap">
                       <div className="min-h-[20px]">
                         {saveState === "saved" && (
                           <span className="inline-flex items-center gap-1.5 text-emerald-600 font-body text-sm font-medium">
@@ -485,25 +620,45 @@ export default function SettingsPage() {
                           <span className="text-[11px] text-amber-600 font-body font-medium">Unsaved changes</span>
                         )}
                       </div>
-                      <button
-                        onClick={() => handleSave(section.id, allKeys)}
-                        disabled={saveState === "saving" || saveState === "saved" || !isDirty}
-                        className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-label text-sm font-semibold transition-all ${
-                          saveState === "saved"
-                            ? "bg-emerald-100 text-emerald-700 cursor-default"
-                            : isDirty
-                            ? "bg-primary text-white hover:bg-primary/90"
-                            : "bg-surface-subtle text-ink-muted cursor-default"
-                        }`}
-                      >
-                        {saveState === "saving" ? (
-                          <><Loader2 size={14} className="animate-spin" />Saving…</>
-                        ) : saveState === "saved" ? (
-                          <><CheckCircle2 size={14} />Saved</>
-                        ) : (
-                          <><Save size={14} />Save Changes</>
+                      <div className="flex items-center gap-2">
+                        {section.hasActivate && (
+                          <button
+                            type="button"
+                            onClick={() => handleActivate(section.id)}
+                            disabled={isActivating || !isConfigured}
+                            title={!isConfigured ? "Save all required fields first" : "Validate credentials and subscribe webhook"}
+                            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-label text-sm font-semibold transition-all border ${
+                              isConfigured
+                                ? "border-violet-300 text-violet-700 bg-violet-50 hover:bg-violet-100"
+                                : "border-border text-ink-muted bg-surface-subtle cursor-not-allowed opacity-50"
+                            }`}
+                          >
+                            {isActivating
+                              ? <><Loader2 size={14} className="animate-spin" />Validating…</>
+                              : <><Zap size={14} />Validate &amp; Activate</>
+                            }
+                          </button>
                         )}
-                      </button>
+                        <button
+                          onClick={() => handleSave(section.id, allKeys)}
+                          disabled={saveState === "saving" || saveState === "saved" || !isDirty}
+                          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-label text-sm font-semibold transition-all ${
+                            saveState === "saved"
+                              ? "bg-emerald-100 text-emerald-700 cursor-default"
+                              : isDirty
+                              ? "bg-primary text-white hover:bg-primary/90"
+                              : "bg-surface-subtle text-ink-muted cursor-default"
+                          }`}
+                        >
+                          {saveState === "saving" ? (
+                            <><Loader2 size={14} className="animate-spin" />Saving…</>
+                          ) : saveState === "saved" ? (
+                            <><CheckCircle2 size={14} />Saved</>
+                          ) : (
+                            <><Save size={14} />Save Changes</>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </>
                 )}
