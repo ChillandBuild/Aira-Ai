@@ -841,6 +841,27 @@ async def get_failed_csv(
 
     lead_ids = [r["lead_id"] for r in recipients.data if r.get("lead_id")]
 
+    # Look up broadcast timestamp FIRST (needed for time-window queries below)
+    broadcast_timestamp = None
+    try:
+        history_row = db.table("app_settings") \
+            .select("value") \
+            .eq("tenant_id", tenant_id) \
+            .eq("key", "broadcast_history") \
+            .maybe_single() \
+            .execute()
+        if history_row and history_row.data and history_row.data.get("value"):
+            history = json.loads(history_row.data["value"])
+            for record in history:
+                if record.get("broadcast_id") == broadcast_id:
+                    broadcast_timestamp = record.get("timestamp")
+                    break
+    except Exception:
+        pass
+
+    if not broadcast_timestamp:
+        broadcast_timestamp = datetime.now(timezone.utc).isoformat()
+
     opted_out_map = {}
     if lead_ids:
         opted_out_rows = db.table("leads") \
@@ -868,26 +889,6 @@ async def get_failed_csv(
                 failed_delivery_leads.add(row["lead_id"])
         except Exception as tw_err:
             logger.warning(f"Failed-csv time-window query failed: {tw_err}")
-
-    broadcast_timestamp = None
-    try:
-        history_row = db.table("app_settings") \
-            .select("value") \
-            .eq("tenant_id", tenant_id) \
-            .eq("key", "broadcast_history") \
-            .maybe_single() \
-            .execute()
-        if history_row and history_row.data and history_row.data.get("value"):
-            history = json.loads(history_row.data["value"])
-            for record in history:
-                if record.get("broadcast_id") == broadcast_id:
-                    broadcast_timestamp = record.get("timestamp")
-                    break
-    except Exception:
-        pass
-
-    if not broadcast_timestamp:
-        broadcast_timestamp = datetime.now(timezone.utc).isoformat()
 
     failed_rows = []
     seen_phones = set()
