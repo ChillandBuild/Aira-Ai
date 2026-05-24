@@ -553,6 +553,14 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
     failed = 0
     recipient_rows = []
 
+    # Check if fail_reason column exists (migration 058 may not be applied yet)
+    _has_fail_reason = False
+    try:
+        db.table("broadcast_recipients").select("fail_reason").limit(1).execute()
+        _has_fail_reason = True
+    except Exception:
+        pass
+
     for lead in eligible:
         phone = _normalize_phone(lead.phone or "")
         if not phone:
@@ -563,15 +571,17 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
 
         if phone in opted_out_phones:
             failed += 1
-            recipient_rows.append({
+            row = {
                 "tenant_id": tenant_id,
                 "broadcast_id": broadcast_id,
                 "lead_id": lead_id,
                 "phone": phone,
                 "name": lead_name,
                 "send_status": "opted_out_skip",
-                "fail_reason": "opted_out",
-            })
+            }
+            if _has_fail_reason:
+                row["fail_reason"] = "opted_out"
+            recipient_rows.append(row)
             logger.info(f"Bulk-send skipped opted-out lead {phone}")
             continue
 
@@ -630,15 +640,17 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             fail_reason = _map_meta_error(str(e))
             logger.error(f"Bulk-send failed for {phone}: {e}")
             failed += 1
-            recipient_rows.append({
+            row = {
                 "tenant_id": tenant_id,
                 "broadcast_id": broadcast_id,
                 "lead_id": lead_id,
                 "phone": phone,
                 "name": lead_name,
                 "send_status": "failed",
-                "fail_reason": fail_reason,
-            })
+            }
+            if _has_fail_reason:
+                row["fail_reason"] = fail_reason
+            recipient_rows.append(row)
 
     for rej_lead in rejected:
         phone = _normalize_phone(rej_lead.phone or "")
@@ -648,15 +660,17 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         if not lead_id:
             continue
         lead_name = phone_to_lead_name.get(phone)
-        recipient_rows.append({
+        row = {
             "tenant_id": tenant_id,
             "broadcast_id": broadcast_id,
             "lead_id": lead_id,
             "phone": phone,
             "name": lead_name,
             "send_status": "rejected",
-            "fail_reason": "opt_in_source_missing",
-        })
+        }
+        if _has_fail_reason:
+            row["fail_reason"] = "opt_in_source_missing"
+        recipient_rows.append(row)
 
     if recipient_rows:
         for i in range(0, len(recipient_rows), 100):
@@ -763,8 +777,17 @@ async def get_failed_csv(
     """Generate a CSV of all failed/unreached/opted-out contacts for a broadcast."""
     db = get_supabase()
 
+    # Check if fail_reason column exists (migration 058 compat)
+    _has_fail_reason_csv = False
+    try:
+        db.table("broadcast_recipients").select("fail_reason").limit(1).execute()
+        _has_fail_reason_csv = True
+    except Exception:
+        pass
+
+    select_cols = "lead_id, phone, name, send_status, fail_reason" if _has_fail_reason_csv else "lead_id, phone, name, send_status"
     recipients = db.table("broadcast_recipients") \
-        .select("lead_id, phone, name, send_status, fail_reason") \
+        .select(select_cols) \
         .eq("tenant_id", tenant_id) \
         .eq("broadcast_id", broadcast_id) \
         .execute()
@@ -810,7 +833,11 @@ async def get_failed_csv(
                     return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=failed_{broadcast_id[:8]}.csv"})
         except Exception as e:
             logger.warning(f"Fallback failed-csv lookup failed: {e}")
-        return Response(content='{"message": "No tracking data available for this broadcast"}', media_type="application/json", status_code=404)
+        # Return empty CSV instead of 404 JSON
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "fail_reason", "opted_out_at", "broadcast_id", "broadcast_timestamp"])
+        writer.writeheader()
+        return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=failed_{broadcast_id[:8]}.csv"})
 
     lead_ids = [r["lead_id"] for r in recipients.data if r.get("lead_id")]
 
@@ -899,7 +926,17 @@ async def get_failed_csv(
             })
 
     if not failed_rows:
-        return Response(content='{"message": "No failures detected for this broadcast"}', media_type="application/json", status_code=404)
+        # Return empty CSV with headers instead of 404 — better UX
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "fail_reason", "opted_out_at", "broadcast_id", "broadcast_timestamp"])
+        writer.writeheader()
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename=failed_{broadcast_id[:8]}.csv"
+            }
+        )
 
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "fail_reason", "opted_out_at", "broadcast_id", "broadcast_timestamp"])
