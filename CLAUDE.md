@@ -1,71 +1,71 @@
 # Aira AI — Claude Code Operating Manual
 
 ## Identity
-Generic B2B SaaS — any business that does WhatsApp lead-gen + telecalling (not education-specific).
+Generic B2B SaaS — any business that does WhatsApp lead-gen + telecalling.
 North Star: no single block/flag/outage stops a client's lead-gen for >5 minutes.
 Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless asked.
 
 ## Build State
 | Component | Status |
 |---|---|
-| WhatsApp webhook (inbound/outbound) | ✅ Built |
+| WhatsApp webhook (inbound/outbound) | ✅ Built — X-Hub-Signature-256 verified |
 | AI reply pipeline (FAQ → Groq/Llama fallback) | ✅ Built — uses Groq, NOT Gemini |
 | Lead CRUD + CSV import | ✅ Built |
 | Lead scoring (1–10, Groq/Llama) | ✅ Built |
 | Segmentation A/B/C/D | ✅ Built |
 | Callers CRUD (create/edit/delete) | ✅ Built |
-| Manual dial via TeleCMI click-to-call | ✅ Built — migrated from Exotel → Twilio → TeleCMI |
+| Manual dial via TeleCMI click-to-call | ✅ Built |
 | AI coaching post-call (call_coach.py) | ✅ Built |
 | Call scoring (call_scorer.py) | ✅ Built |
 | Follow-up scheduler | ✅ Built |
 | Knowledge/FAQ base | ✅ Built |
 | AI Tune (integrated into Knowledge page tab) | ✅ Built |
 | Analytics page | ✅ Built — WhatsApp tab + Telecalling tab + funnel API |
-| Instagram webhook | ✅ Built — ENABLED, tenant-scoped, X-Hub-Signature-256 verified |
-| Telegram webhook + Bot API | ✅ Built — secret_token verified, per-tenant unique index |
-| Facebook Messenger webhook | ✅ Built — tenant-scoped, X-Hub-Signature-256 verified |
+| Instagram webhook | ✅ Built — tenant-scoped at /webhook/instagram/{tenant_id}, X-Hub-Signature-256 verified |
+| Telegram webhook + Bot API | ✅ Built — secret_token verified, per-tenant |
+| Facebook Messenger webhook | ✅ Built — tenant-scoped at /webhook/facebook/{tenant_id}, X-Hub-Signature-256 verified |
 | Provider abstraction layer | ✅ Built — meta_cloud.py + wati_cloud.py |
-| MetaCloudProvider adapter | ✅ Built — services/meta_cloud.py |
-| WatiProvider adapter | ✅ Built — services/wati_cloud.py |
 | phone_numbers table + pool management | ✅ Built — migration 009 + numbers.py |
 | Numbers page (frontend) | ✅ Built — dashboard/numbers/ |
 | opt_in_source on leads + bulk-send gating | ✅ Built — migration 010 + upload.py |
-| 7-step CSV upload upgrade | ✅ Built — upload.py + dashboard/upload/ |
+| 7-step CSV upload | ✅ Built — upload.py + dashboard/upload/ |
+| Multi-variable template personalization | ✅ Built — variable_mapping + extra_cols per lead |
+| Scheduled broadcasts (APScheduler) | ✅ Built — scheduled_broadcasts table, migration 057 |
+| Drip broadcasts | ✅ Built — schedule_type=drip, leads split over N days |
 | Meta quality webhook handler | ✅ Built — webhook.py + failover.py |
+| Auto-failover on RED quality | ✅ Built — handle_quality_red() wired in webhook.py |
 | Outbound router (pool-aware) | ✅ Built — services/outbound_router.py |
-| Auto-failover + migration notice | ✅ Built — failover.py |
 | Incidents page (frontend) | ✅ Built — dashboard/incidents/ |
-| lead_notes table + briefing modal | ✅ Built — migration 012 + lead_notes.py + telecalling modal |
-| Groq Whisper transcription + AI call summary | ✅ Built — call_summarizer.py + BackgroundTasks |
-| Notes page (/dashboard/notes) | ✅ Built — lead search, notes CRUD, AI summary cards, audio player |
-| Message Templates page | ✅ Built + Meta-connected — dashboard/templates/, routes/templates.py |
-| Template submission to Meta API | ✅ Built — uses meta_waba_id, WABA ID in app_settings |
-| Template approval webhook (Meta → dashboard) | ✅ Built — POST /api/v1/templates/webhook-status (public, no auth) |
-| Manual template sync | ✅ Built — POST /api/v1/templates/{id}/sync → polls Meta API |
-| Template Quick Reply buttons | ✅ Built — up to 3 buttons per template |
-| Template view modal | ✅ Built |
-| Template example values auto-inject | ✅ Built |
+| lead_notes table + briefing modal | ✅ Built — migration 012 + lead_notes.py |
+| Groq Whisper transcription + AI call summary | ✅ Built — call_summarizer.py |
+| Notes page (/dashboard/notes) | ✅ Built |
+| Message Templates page | ✅ Built — dashboard/templates/, routes/templates.py |
+| Template submission to Meta API | ✅ Built — uses meta_waba_id |
+| Template approval webhook | ✅ Built — POST /api/v1/templates/webhook-status |
+| Manual template sync | ✅ Built — POST /api/v1/templates/{id}/sync |
+| Template Quick Reply buttons | ✅ Built — up to 3 buttons |
 | Knowledge base (full-text injection, no embeddings) | ✅ Built — services/knowledge_service.py |
-| Reply source badge (FAQ / Knowledge Base / AI) | ✅ Built — messages.reply_source, chat-thread.tsx |
+| Reply source badge (FAQ / Knowledge Base / AI) | ✅ Built — messages.reply_source |
 | Callback scheduler | ✅ Built — follow_up_jobs cadence=callback |
-| Telecaller multi-tenancy (role-based access + lead assignment) | ✅ Built — migration 025 |
-| Hot lead alert system (score ≥7, 5-min escalation, in-app banner) | ✅ Built — migration 026 |
-| Lead assignment (manual admin + round-robin auto on new lead) | ✅ Built |
+| Telecaller multi-tenancy + role-based access | ✅ Built — migration 025 |
+| Hot lead alert system (score ≥7, 5-min escalation) | ✅ Built — migration 026 |
+| Lead assignment (manual + round-robin auto) | ✅ Built |
 | Team management page | ✅ Built — dashboard/team/, routes/team.py |
 | Onboarding flow | ✅ Built — dashboard/onboarding/, routes/onboarding.py |
 | App settings page | ✅ Built — dashboard/settings/, routes/app_settings.py |
-| Bookings table + auto-reference | ✅ Built — migration 029 |
-| Lead conversation state machine | ✅ Built — migration 030, booking_flow.py |
-| V2 WhatsApp booking automation | ✅ Built |
-| Razorpay payment service | ✅ Built — services/payment_razorpay.py |
+| Settings: webhook guides + copy buttons | ✅ Built — per-channel setup guide with correct URLs |
+| Settings: Validate & Activate | ✅ Built — POST /api/v1/settings/activate (validates token + subscribes webhook) |
+| Settings: webhook health check | ✅ Built — GET /api/v1/settings/webhook-health, health badge per channel |
+| Settings: token expiry alerts | ✅ Built — APScheduler daily job, token_invalid incidents |
+| CTWA referral auto-capture | ✅ Built — referral object parsed in webhook.py, linked to ad_campaign |
+| Bookings table + booking flow state machine | ✅ Built — migrations 029–030, booking_flow.py |
+| Razorpay payment links | ✅ Built — services/payment_razorpay.py |
 | Admin bookings dashboard | ✅ Built — dashboard/bookings/ |
-| CSV Indian number auto-format | ✅ Built |
-| Opt-out expanded | ✅ Built |
 | Multi-tenancy (app-layer) | ✅ Built — tenant_id on all tables |
 | Role-based access | ✅ Built — owner and caller roles |
-| WABA onboarding (self-service) | ❌ Not built — manual env config required |
-| Ruflo V3 multi-agent setup | ✅ Built — .claude/agents/, hooks, lefthook |
-| Cross-platform rules | ✅ Built — AI_RULES.md, .cursorrules, .windsurfrules, CODEX.md |
+| Automations engine | ✅ Built — migration 055, routes/automations.py |
+| Broadcast history + fail reason tracking | ✅ Built — migration 058_broadcast_fail_reason |
+| WABA onboarding (self-service) | ❌ Not built — manual env config only |
 
 ## Hard Invariants — Never Break
 1. **FAQ-first**: ai_reply.py checks FAQ table BEFORE any Groq/LLM call
@@ -76,10 +76,9 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 6. Call recordings → Supabase Storage only, never local disk
 7. Tenant isolation enforced at app layer via `get_tenant_and_role()` — DB-level RLS not yet enabled
 8. Bulk-send endpoint rejects leads with null opt_in_source
-9. **Booking flow states (immutable order)**: collecting_name → collecting_rasi → collecting_nakshatram → collecting_gotram → collecting_address → awaiting_payment → confirmed
-10. **Booking intent keywords** (frozenset in booking_flow.py): book, booking, register, enroll, புக், வேணும், பதிவு
-11. **Template submission** always uses `meta_waba_id` (NOT `meta_phone_number_id`)
-12. AI model is Groq `llama-3.3-70b-versatile` — do NOT add Gemini/OpenAI imports
+9. **Template submission** always uses `meta_waba_id` (NOT `meta_phone_number_id`)
+10. AI model is Groq `llama-3.3-70b-versatile` — do NOT add Gemini/OpenAI imports
+11. WhatsApp webhook verifies X-Hub-Signature-256 before processing — returns 200 but drops invalid
 
 ## Stack
 | Layer | Tech | Location |
@@ -91,15 +90,13 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | WhatsApp | Meta Cloud API Direct (primary) + WATI (secondary) | — |
 | Voice | TeleCMI click-to-call + recording | services/telecmi_client.py |
 | Payments | Razorpay Payment Links API | services/payment_razorpay.py |
-| Queue | Celery + Redis | — |
+| Scheduler | APScheduler (AsyncIO) — automations, broadcasts, token health | app/main.py |
 | Cache | Redis (FAQ prompt cache, 60s TTL) | — |
-| Agents | Ruflo V3 — 4 Aira agents + 98 base agents | .claude/agents/ |
-| Hooks | lefthook (git) + Claude Code + Cursor + Windsurf | lefthook.yml, .cursor/, .windsurf/ |
 
 ## Provider Decisions (locked)
 - WhatsApp primary: Meta Cloud API Direct
 - WhatsApp secondary: WATI
-- Voice: TeleCMI (migrated from Exotel → Twilio → TeleCMI)
+- Voice: TeleCMI
 - AI (replies + scoring): Groq / llama-3.3-70b-versatile (NOT Gemini)
 - Payments: Razorpay (Payment Links API — no SDK, direct httpx calls)
 
@@ -111,10 +108,17 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 
 ## Render Config (production)
 - Backend URL: `https://aira-ai-5tfr.onrender.com`
-- Webhook base: `https://aira-ai-5tfr.onrender.com/webhook/`
+- WhatsApp webhook: `https://aira-ai-5tfr.onrender.com/webhook/whatsapp`
 - Instagram webhook: `https://aira-ai-5tfr.onrender.com/webhook/instagram/{tenant_id}`
 - Facebook webhook: `https://aira-ai-5tfr.onrender.com/webhook/facebook/{tenant_id}`
 - Telegram webhook: `https://aira-ai-5tfr.onrender.com/webhook/telegram/{tenant_id}`
+
+## APScheduler Jobs (all in main.py)
+| Job | Interval | Purpose |
+|---|---|---|
+| _process_automation_waits | 5 min | Resume automation wait-step executions |
+| _process_scheduled_broadcasts | 1 min | Fire pending scheduled_broadcasts rows |
+| _check_token_health | 24 h | Validate Meta tokens, create token_invalid incidents |
 
 ## Task Router — Read This File Before Acting
 | Task involves | Read first |
@@ -123,9 +127,10 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Telecalling, TeleCMI, call logs, notes, briefing modal | .claude/context/telecalling.md |
 | Leads, scoring, segments, opt-in | .claude/context/leads.md |
 | Number pool, failover, Numbers page, Incidents page | .claude/context/resilience.md |
-| CSV upload, bulk send, 7-step flow | .claude/context/upload.md |
+| CSV upload, bulk send, scheduled/drip broadcasts | .claude/context/upload.md |
 | Bookings, booking flow, Razorpay payments | backend/app/services/booking_flow.py + routes/bookings.py |
 | WhatsApp templates, Meta template API | backend/app/routes/templates.py + services/meta_cloud.py |
+| Settings, channel activation, token health | backend/app/routes/app_settings.py |
 
 ## Agent Dispatch
 See AI_RULES.md — spawn sub-agents automatically for tasks with 2+ independent work units.
@@ -133,37 +138,42 @@ Parallel pattern: schema + API route + frontend page → all 3 in one message.
 
 ## Known Tech Debt
 - RLS DISABLED on 18 tables — app-layer tenant filter is only guard
-- Meta webhook signature not verified on webhook.py and templates.py
-- Razorpay payment links have no idempotency key
-- Booking automation amount not updated (₹500 flat, needs booking_type + dynamic pricing)
-- Bulk send via single number only (needs split across 2 numbers for 15k sends)
-- Numbers page auto-failover not wired (handle_quality_red() exists but not triggered)
-- ai_reply.py FALLBACK_PROMPT mentions "education consultancy" — update before going live
+- Booking automation amount hardcoded at ₹500 flat (needs booking_type + dynamic pricing)
+- Bulk send uses single number only
 
 ## Key File Locations
 | File | Purpose |
 |---|---|
-| backend/app/main.py | FastAPI entry, route registration |
-| backend/app/routes/webhook.py | WA webhook — inbound routing |
+| backend/app/main.py | FastAPI entry, route registration, all APScheduler jobs |
+| backend/app/routes/webhook.py | WA webhook — inbound routing + signature verification |
+| backend/app/routes/app_settings.py | Settings CRUD, activate channel, webhook health |
 | backend/app/routes/templates.py | Template CRUD + Meta submission |
 | backend/app/routes/bookings.py | Booking REST + Razorpay webhook |
+| backend/app/routes/upload.py | CSV upload, bulk send, scheduled/drip broadcasts |
 | backend/app/services/ai_reply.py | FAQ check → Groq reply pipeline |
 | backend/app/services/booking_flow.py | Booking state machine |
-| backend/app/services/payment_razorpay.py | Razorpay payment links |
+| backend/app/services/broadcast_executor.py | Executes a scheduled_broadcasts row |
+| backend/app/services/failover.py | Quality RED/YELLOW handlers + auto-failover |
+| backend/app/services/meta_webhook_verify.py | X-Hub-Signature-256 verification (shared by WA/IG/FB) |
 | backend/app/services/meta_cloud.py | Meta Cloud API |
 | backend/app/services/lead_scorer.py | Groq scoring (1–10) |
 | backend/app/services/telecmi_client.py | TeleCMI click-to-call |
 | backend/app/db/supabase.py | Supabase client singleton |
-| backend/supabase/migrations/ | All schema migrations 001–038 |
+| backend/supabase/migrations/ | All schema migrations 001–058 |
 | frontend/app/dashboard/ | All dashboard pages |
 
-## Migration Index (latest)
+## Migration Index (latest = 058)
 | Migration | What |
 |---|---|
-| 035 | phone_numbers messaging_tier constraint adds 250 |
-| 036 | broadcast_csvs_bucket |
-| 037 | message_delivery_status |
-| 038 | broadcast_tracking |
+| 051 | Telegram support — tg_user_id on leads |
+| 052 | Instagram dynamic credentials in app_settings |
+| 053 | Facebook support — fb_user_id on leads |
+| 054 | Multichannel security fixes (unique indexes) |
+| 055 | Automations engine table |
+| 056 | Automations: score threshold + follow-up trigger types |
+| 057 | scheduled_broadcasts table (APScheduler-based) |
+| 058_broadcast_fail_reason | fail_reason column on broadcast_recipients |
+| 058_incidents_token_health | incidents: tenant_id column + token_invalid/webhook_unhealthy types |
 
 ## Response Style
 - One sentence per progress update while working
