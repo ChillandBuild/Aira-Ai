@@ -394,6 +394,9 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
                     {formatIST((lead as ConversationLead).last_reply_at || lead.created_at)}
                   </span>
                 </div>
+                {lead.phone && (
+                  <p className="font-body text-[12px] text-on-surface-muted truncate mt-0.5">{formatPhone(lead.phone)}</p>
+                )}
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
                   {lead.needs_human_intervention && (
                     <span className="font-label text-[9px] font-bold tracking-wider text-white bg-red-500 px-1.5 py-0.5 rounded shadow-sm">ACTION</span>
