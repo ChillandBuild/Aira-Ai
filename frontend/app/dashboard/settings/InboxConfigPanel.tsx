@@ -6,7 +6,6 @@ import { API_URL, getAuthHeaders } from "@/lib/api";
 type InboxConfig = {
   enabled: boolean;
   auto_assign_enabled: boolean;
-  escalation_min_score: number;
   segments: string[];
   channels: string[];
   triggers: string[];
@@ -15,7 +14,6 @@ type InboxConfig = {
 const DEFAULT: InboxConfig = {
   enabled: false,
   auto_assign_enabled: false,
-  escalation_min_score: 7,
   segments: ["A"],
   channels: ["whatsapp", "instagram", "facebook", "telegram"],
   triggers: ["A", "B", "C", "E", "F"],
@@ -148,24 +146,6 @@ export function InboxConfigPanel() {
                 <div className="font-body text-xs text-ink-muted mt-0.5">Auto-assign escalated handovers to the active telecaller with fewest leads</div>
               </div>
             </label>
-          </div>
-
-          {/* Score threshold */}
-          <div>
-            <label className="font-label text-sm font-semibold text-ink block mb-1.5">
-              Hot Lead Score Threshold
-            </label>
-            <div className="flex items-center gap-3">
-              <input
-                type="number"
-                min={1}
-                max={10}
-                value={draft.escalation_min_score}
-                onChange={(e) => setDraft({ ...draft, escalation_min_score: Number(e.target.value) })}
-                className="w-24 px-3 py-2 rounded-xl border border-border bg-white font-body text-sm focus:outline-none focus:border-violet-400"
-              />
-              <span className="font-body text-sm text-ink-muted">When a lead&apos;s score crosses this value, escalate the chat to the inbox</span>
-            </div>
           </div>
 
           {/* Triggers */}

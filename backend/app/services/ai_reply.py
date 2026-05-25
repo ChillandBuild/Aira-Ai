@@ -673,8 +673,7 @@ async def generate_reply(
         )
         logger.info(f"Lead {lead_id} scored {new_score} → segment {new_segment}")
 
-        min_score = telecalling_cfg.get("escalation_min_score", 7)
-        if new_score >= min_score and (lead_data.get("score") or 5) < min_score:
+        if new_score >= 7 and (lead_data.get("score") or 5) < 7:
             # Module B — Telecalling: config-driven auto-assign + alert
             if should_assign_to_telecalling(telecalling_cfg, new_segment, channel):
                 if not lead_data.get("assigned_to"):

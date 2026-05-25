@@ -186,7 +186,6 @@ def reassign_backlog(caller_id: str, tenant_id: str) -> None:
 _INBOX_CONFIG_DEFAULT: dict = {
     "enabled": False,
     "auto_assign_enabled": False,
-    "escalation_min_score": 7,
     "segments": ["A"],
     "channels": ["whatsapp", "instagram", "facebook", "telegram"],
     "triggers": ["A", "B", "C", "E", "F"],
@@ -195,7 +194,6 @@ _INBOX_CONFIG_DEFAULT: dict = {
 _TELECALLING_CONFIG_DEFAULT: dict = {
     "enabled": False,
     "auto_assign_enabled": False,
-    "escalation_min_score": 7,
     "segments": ["A"],
     "channels": ["whatsapp"],
 }
