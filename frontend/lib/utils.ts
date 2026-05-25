@@ -19,3 +19,12 @@ export function timeAgo(dateStr: string) {
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
 }
+
+export function formatIST(dateStr: string): string {
+  return new Date(dateStr).toLocaleTimeString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}

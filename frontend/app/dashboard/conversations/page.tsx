@@ -6,9 +6,10 @@ import { ChatThread } from "@/components/chat-thread";
 import { MessageSquare } from "lucide-react";
 import { usePolling } from "@/hooks/usePolling";
 
-async function fetchConversations(): Promise<Lead[]> {
+async function fetchConversations(source?: string): Promise<Lead[]> {
   const auth = await getAuthHeaders();
-  const res = await fetch(`${API_URL}/api/v1/conversations?limit=50`, { headers: auth });
+  const qs = source ? `?limit=50&source=${source}` : "?limit=50";
+  const res = await fetch(`${API_URL}/api/v1/conversations${qs}`, { headers: auth });
   if (!res.ok) throw new Error(`conversations fetch failed: ${res.status}`);
   const data = await res.json();
   return data.leads ?? [];
@@ -18,12 +19,13 @@ export default function ConversationsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selected, setSelected] = useState<Lead | null>(null);
   const [error, setError] = useState(false);
+  const [platform, setPlatform] = useState<string>("whatsapp");
 
   const load = useCallback(() => {
-    fetchConversations()
+    fetchConversations(platform === "all" ? undefined : platform)
       .then((leads) => { setLeads(leads); setError(false); })
       .catch(() => setError(true));
-  }, []);
+  }, [platform]);
 
   useEffect(() => { load(); }, [load]);
   usePolling(load, 20000);
@@ -34,6 +36,8 @@ export default function ConversationsPage() {
         leads={leads}
         selectedId={selected?.id ?? null}
         onSelect={setSelected}
+        platform={platform}
+        onPlatformChange={setPlatform}
         onDeleted={(deletedIds) => {
           setLeads((prev) => prev.filter((l) => !deletedIds.includes(l.id)));
           if (selected && deletedIds.includes(selected.id)) {

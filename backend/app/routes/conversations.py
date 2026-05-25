@@ -6,15 +6,21 @@ from app.dependencies.tenant import get_tenant_and_role
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+VALID_SOURCES = {"whatsapp", "instagram", "facebook", "telegram"}
+
 
 @router.get("")
 async def list_conversations(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    source: str | None = Query(default=None),
     ctx: dict = Depends(get_tenant_and_role),
 ):
     db = get_supabase()
     tenant_id = ctx["tenant_id"]
+
+    if source and source not in VALID_SOURCES:
+        return {"leads": [], "total": 0}
 
     rpc_rows = db.rpc(
         "get_conversation_leads",
@@ -40,6 +46,9 @@ async def list_conversations(
         .neq("opted_out", True)
         .is_("deleted_at", "null")
     )
+
+    if source:
+        lead_query = lead_query.eq("source", source)
 
     # Callers only see conversations for their assigned leads
     if ctx.get("role") == "caller" and ctx.get("caller_id"):

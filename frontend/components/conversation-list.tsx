@@ -1,13 +1,13 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { api, Lead } from "@/lib/api";
 import { SegmentBadge } from "./segment-badge";
-import { timeAgo, formatPhone, cn } from "@/lib/utils";
+import { formatIST, formatPhone, cn } from "@/lib/utils";
 import { MessageCircle, Trash2, MoreVertical, Search, X, SearchX } from "lucide-react";
 import { toast } from "sonner";
 
 type ConversationLead = Lead & { last_reply_at?: string };
 
-function IgIcon({ size = 12, className = "" }: { size?: number; className?: string }) {
+function IgIcon({ size = 12, className = "" }: { size?: number | string; className?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
@@ -17,7 +17,7 @@ function IgIcon({ size = 12, className = "" }: { size?: number; className?: stri
   );
 }
 
-function TgIcon({ size = 12, className = "" }: { size?: number; className?: string }) {
+function TgIcon({ size = 12, className = "" }: { size?: number | string; className?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <line x1="22" y1="2" x2="11" y2="13" />
@@ -26,7 +26,7 @@ function TgIcon({ size = 12, className = "" }: { size?: number; className?: stri
   );
 }
 
-function FbIcon({ size = 12, className = "" }: { size?: number; className?: string }) {
+function FbIcon({ size = 12, className = "" }: { size?: number | string; className?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
       <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
@@ -34,8 +34,22 @@ function FbIcon({ size = 12, className = "" }: { size?: number; className?: stri
   );
 }
 
-const FILTERS = [
-  { label: "All", value: null },
+type PlatformFilter = "whatsapp" | "instagram" | "facebook" | "telegram" | "all";
+
+interface PlatformIconProps {
+  size?: number | string;
+  className?: string;
+}
+
+const PLATFORMS: { value: PlatformFilter; label: string; icon: React.FC<PlatformIconProps> }[] = [
+  { value: "whatsapp", label: "WhatsApp", icon: MessageCircle },
+  { value: "instagram", label: "Instagram", icon: IgIcon },
+  { value: "facebook", label: "Facebook", icon: FbIcon },
+  { value: "telegram", label: "Telegram", icon: TgIcon },
+  { value: "all", label: "All", icon: SearchX },
+];
+
+const SEGMENTS = [
   { label: "Hot", value: "A" },
   { label: "Warm", value: "B" },
   { label: "Cold", value: "C" },
@@ -47,9 +61,11 @@ interface Props {
   selectedId: string | null;
   onSelect: (lead: Lead) => void;
   onDeleted?: (ids: string[]) => void;
+  platform: string;
+  onPlatformChange: (platform: string) => void;
 }
 
-export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Props) {
+export function ConversationList({ leads, selectedId, onSelect, onDeleted, platform, onPlatformChange }: Props) {
   const [segment, setSegment] = useState<"A" | "B" | "C" | "D" | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
@@ -71,7 +87,8 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
 
   const visible = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    return (segment ? leads.filter((l) => l.segment === segment) : leads)
+    const base = platform === "all" ? leads : leads.filter((l) => l.source === platform);
+    return (segment ? base.filter((l) => l.segment === segment) : base)
       .filter((l) => {
         if (!q) return true;
         const name = l.name?.toLowerCase() || "";
@@ -85,7 +102,15 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
         const bTime = (b as ConversationLead).last_reply_at || b.created_at;
         return new Date(bTime).getTime() - new Date(aTime).getTime();
       });
-  }, [leads, segment, searchQuery]);
+  }, [leads, platform, segment, searchQuery]);
+
+  const platformCounts = useMemo(() => {
+    const counts: Record<string, number> = { whatsapp: 0, instagram: 0, facebook: 0, telegram: 0, all: leads.length };
+    for (const l of leads) {
+      if (l.source in counts) counts[l.source]++;
+    }
+    return counts;
+  }, [leads]);
 
   async function handleDeleteSelected() {
     if (!confirm(`Delete ${selectedIds.size} conversations?`)) return;
@@ -114,6 +139,28 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
   function cancelSelection() {
     setSelectionMode(false);
     setSelectedIds(new Set());
+  }
+
+  function getPlatformColor(source: string): string {
+    switch (source) {
+      case "whatsapp": return "text-green-500";
+      case "instagram": return "text-pink-500";
+      case "facebook": return "text-blue-600";
+      case "telegram": return "text-sky-500";
+      default: return "text-green-500";
+    }
+  }
+
+  function getPlatformBg(selected: boolean, source: string): string {
+    if (!selected) return "bg-surface-low text-on-surface-muted hover:bg-surface-mid hover:text-on-surface";
+    switch (source) {
+      case "whatsapp": return "bg-green-500 text-white shadow-sm";
+      case "instagram": return "bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-sm";
+      case "facebook": return "bg-blue-600 text-white shadow-sm";
+      case "telegram": return "bg-sky-500 text-white shadow-sm";
+      case "all": return "bg-tertiary text-white shadow-sm";
+      default: return "bg-tertiary text-white shadow-sm";
+    }
   }
 
   return (
@@ -193,7 +240,7 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
             </>
           )}
         </div>
-        
+
         <div className="relative mt-4 mb-4 group">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-muted group-focus-within:text-tertiary transition-colors" />
           <input
@@ -213,16 +260,44 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
           )}
         </div>
 
+        <div className="flex gap-1.5 flex-wrap mb-3">
+          {PLATFORMS.map((p) => {
+            const count = p.value === "all" ? platformCounts.all : (platformCounts[p.value] ?? 0);
+            const Icon = p.icon;
+            return (
+              <button
+                key={p.value}
+                onClick={() => onPlatformChange(p.value)}
+                className={cn(
+                  "px-2.5 py-1.5 rounded-lg font-label text-[11px] font-semibold transition-all duration-200 flex items-center gap-1.5",
+                  getPlatformBg(platform === p.value, p.value)
+                )}
+              >
+                <Icon size={12} className={platform === p.value ? "text-white" : getPlatformColor(p.value === "all" ? "whatsapp" : p.value)} />
+                {p.label === "WhatsApp" ? "WA" : p.label === "All" ? "All" : p.label.substring(0, 4)}
+                <span className={cn(
+                  "px-1.5 py-0.5 rounded-full text-[9px] font-bold min-w-[18px] text-center",
+                  platform === p.value
+                    ? "bg-white/20 text-white"
+                    : "bg-surface-mid text-on-surface-muted"
+                )}>
+                  {count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
         <div className="flex items-center justify-between mb-2">
           <p className="font-label text-xs font-medium text-on-surface-muted">{visible.length} leads</p>
         </div>
         <div className="flex gap-1.5 flex-wrap">
-          {FILTERS.map((f) => {
-            const count = f.value === null ? leads.length : leads.filter(l => l.segment === f.value).length;
+          {SEGMENTS.map((f) => {
+            const count = leads.filter(l => l.segment === f.value && (platform === "all" || l.source === platform)).length;
             return (
               <button
-                key={String(f.value)}
-                onClick={() => setSegment(f.value as typeof segment)}
+                key={f.value}
+                onClick={() => setSegment(segment === f.value ? null : f.value)}
                 className={cn(
                   "px-2.5 py-1 rounded-lg font-label text-[11px] font-semibold transition-all duration-200 flex items-center gap-1.5",
                   segment === f.value
@@ -252,11 +327,12 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
               <p className="font-display font-semibold text-[15px] text-on-surface">No conversations found</p>
               <p className="text-[13px] mt-1.5 leading-relaxed">Try adjusting your search query or switching filters to find what you&apos;re looking for.</p>
             </div>
-            {(searchQuery || segment) && (
+            {(searchQuery || segment || platform !== "whatsapp") && (
               <button
                 onClick={() => {
                   setSearchQuery("");
                   setSegment(null);
+                  onPlatformChange("whatsapp");
                 }}
                 className="mt-3 text-[13px] font-semibold text-tertiary hover:underline"
               >
@@ -304,7 +380,7 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted }: Pro
                     </span>
                   </div>
                   <span className="font-label text-[10px] font-medium text-on-surface-muted shrink-0 whitespace-nowrap">
-                    {timeAgo((lead as ConversationLead).last_reply_at || lead.created_at)}
+                    {formatIST((lead as ConversationLead).last_reply_at || lead.created_at)}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
