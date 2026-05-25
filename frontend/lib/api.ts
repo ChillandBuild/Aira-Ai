@@ -26,6 +26,7 @@ export interface Lead {
   ig_user_id?: string | null;
   fb_user_id?: string | null;
   created_at: string;
+  last_message_content?: string | null;
 }
 
 export interface Message {

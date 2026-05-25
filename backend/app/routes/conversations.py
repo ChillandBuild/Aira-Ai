@@ -28,6 +28,7 @@ async def list_conversations(
     total = int(rows[0].get("total", 0)) if rows else 0
     lead_ids = [r["lead_id"] for r in rows if r.get("lead_id")]
     last_reply_map = {r["lead_id"]: r["last_reply_at"] for r in rows if r.get("lead_id")}
+    last_message_map = {r["lead_id"]: r.get("last_message_content") for r in rows if r.get("lead_id")}
 
     if not lead_ids:
         return {"leads": [], "total": 0}
@@ -53,6 +54,7 @@ async def list_conversations(
         if lid in lead_map:
             lead = dict(lead_map[lid])
             lead["last_reply_at"] = last_reply_map.get(lid)
+            lead["last_message_content"] = last_message_map.get(lid)
             leads.append(lead)
 
     return {"leads": leads, "total": total}
