@@ -169,6 +169,28 @@ def update_status(tenant_id: str, payload: UpdateStatusPayload, _admin: dict = D
     return {"tenant_id": tenant_id, "status": payload.status}
 
 
+@router.post("/clients/{tenant_id}/wipe-leads")
+def wipe_leads(tenant_id: str, _admin: dict = Depends(get_system_admin)):
+    """Delete all leads and lead-related data for a tenant. Irreversible."""
+    db = get_supabase()
+    tenant = db.table("tenants").select("id,name").eq("id", tenant_id).maybe_single().execute()
+    if not tenant.data:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    # Clear dependent tables first (tenant-scoped) to avoid FK violations
+    for table in ("messages", "lead_notes", "hot_lead_alerts", "chat_handovers",
+                  "follow_up_jobs", "bookings", "broadcast_recipients"):
+        try:
+            db.table(table).delete().eq("tenant_id", tenant_id).execute()
+        except Exception as e:
+            logger.warning("wipe-leads: could not clear %s for tenant %s: %s", table, tenant_id, e)
+
+    result = db.table("leads").delete().eq("tenant_id", tenant_id).execute()
+    deleted = len(result.data or [])
+    logger.warning("OPERATOR WIPE: %d leads deleted for tenant %s (%s)", deleted, tenant_id, tenant.data["name"])
+    return {"deleted": deleted, "tenant_id": tenant_id}
+
+
 @router.post("/clients/{tenant_id}/reset-password")
 async def reset_password(tenant_id: str, _admin: dict = Depends(get_system_admin)):
     db = get_supabase()

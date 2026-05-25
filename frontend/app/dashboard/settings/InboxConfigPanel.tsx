@@ -29,9 +29,9 @@ const TRIGGER_LABELS: Record<string, { label: string; always?: boolean }> = {
 };
 
 const SEGMENT_LABELS: Record<string, string> = {
-  A: "Segment A — Hot",
-  B: "Segment B — Warm",
-  C: "Segment C — Cold",
+  A: "Hot",
+  B: "Warm",
+  C: "Cold",
 };
 
 const CHANNEL_LABELS: Record<string, string> = {

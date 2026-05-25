@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Plus, Pencil, RefreshCw, PowerOff, Power } from "lucide-react";
+import { Plus, Pencil, RefreshCw, PowerOff, Power, Trash2 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
 type ServiceTier = "whatsapp_only" | "telecalling_only" | "combined";
@@ -110,6 +110,18 @@ export default function OperatorPage() {
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to update status");
+    }
+  }
+
+  async function handleWipeLeads(client: Client) {
+    if (!confirm(`⚠️ Wipe ALL leads for "${client.name}"?\n\nThis permanently deletes every lead, message, note, and handover for this client. This cannot be undone.`)) return;
+    if (!confirm(`Second confirmation: permanently delete all leads for "${client.name}"?`)) return;
+    try {
+      const res = await apiFetch<{ deleted: number }>(`/api/v1/operator/clients/${client.id}/wipe-leads`, { method: "POST" });
+      setError(null);
+      alert(`Wiped ${res.deleted} leads for ${client.name}.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Wipe failed");
     }
   }
 
@@ -278,6 +290,13 @@ export default function OperatorPage() {
                         title={client.status === "active" ? "Suspend" : "Activate"}
                       >
                         {client.status === "active" ? <PowerOff size={13} /> : <Power size={13} />}
+                      </button>
+                      <button
+                        onClick={() => handleWipeLeads(client)}
+                        className="p-1.5 rounded hover:bg-red-50 text-gray-300 hover:text-red-600 transition-colors"
+                        title="Wipe all leads"
+                      >
+                        <Trash2 size={13} />
                       </button>
                     </div>
                   </td>
