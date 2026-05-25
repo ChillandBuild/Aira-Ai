@@ -6,6 +6,11 @@ from pydantic import BaseModel
 from app.db.supabase import get_supabase
 from app.config import settings as env_settings
 from app.dependencies.tenant import get_tenant_id
+from app.services.assignment import (
+    get_inbox_config, get_telecalling_config,
+    save_inbox_config, save_telecalling_config,
+    _INBOX_CONFIG_DEFAULT, _TELECALLING_CONFIG_DEFAULT,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -38,6 +43,23 @@ class SettingsUpdate(BaseModel):
 
 class ActivateChannelRequest(BaseModel):
     channel: str  # whatsapp | instagram | facebook
+
+
+class InboxConfigUpdate(BaseModel):
+    enabled: bool | None = None
+    auto_assign_enabled: bool | None = None
+    escalation_min_score: int | None = None
+    segments: list[str] | None = None
+    channels: list[str] | None = None
+    triggers: list[str] | None = None
+
+
+class TelecallingConfigUpdate(BaseModel):
+    enabled: bool | None = None
+    auto_assign_enabled: bool | None = None
+    escalation_min_score: int | None = None
+    segments: list[str] | None = None
+    channels: list[str] | None = None
 
 
 def _get_setting_value(db, tenant_id: str, key: str) -> str | None:
@@ -296,3 +318,56 @@ async def activate_channel(payload: ActivateChannelRequest, tenant_id: str = Dep
         "page_id": data.get("id"),
         "subscribed": subscribed,
     }
+
+
+@router.get("/inbox-config")
+async def get_inbox_config_route(tenant_id: str = Depends(get_tenant_id)):
+    return get_inbox_config(tenant_id)
+
+
+@router.patch("/inbox-config")
+async def patch_inbox_config(payload: InboxConfigUpdate, tenant_id: str = Depends(get_tenant_id)):
+    current = get_inbox_config(tenant_id)
+    patch = payload.model_dump(exclude_none=True)
+    valid_segs = {"A", "B", "C"}
+    if "segments" in patch:
+        bad = [s for s in patch["segments"] if s not in valid_segs]
+        if bad:
+            raise HTTPException(status_code=400, detail=f"Invalid segments: {bad}")
+    valid_ch = {"whatsapp", "instagram", "facebook", "telegram"}
+    if "channels" in patch:
+        bad = [c for c in patch["channels"] if c not in valid_ch]
+        if bad:
+            raise HTTPException(status_code=400, detail=f"Invalid channels: {bad}")
+    valid_tr = {"A", "B", "C", "D", "E", "F"}
+    if "triggers" in patch:
+        bad = [t for t in patch["triggers"] if t not in valid_tr]
+        if bad:
+            raise HTTPException(status_code=400, detail=f"Invalid triggers: {bad}")
+    merged = {**current, **patch}
+    save_inbox_config(tenant_id, merged)
+    return merged
+
+
+@router.get("/telecalling-config")
+async def get_telecalling_config_route(tenant_id: str = Depends(get_tenant_id)):
+    return get_telecalling_config(tenant_id)
+
+
+@router.patch("/telecalling-config")
+async def patch_telecalling_config(payload: TelecallingConfigUpdate, tenant_id: str = Depends(get_tenant_id)):
+    current = get_telecalling_config(tenant_id)
+    patch = payload.model_dump(exclude_none=True)
+    valid_segs = {"A", "B", "C"}
+    if "segments" in patch:
+        bad = [s for s in patch["segments"] if s not in valid_segs]
+        if bad:
+            raise HTTPException(status_code=400, detail=f"Invalid segments: {bad}")
+    valid_ch = {"whatsapp", "instagram", "facebook", "telegram"}
+    if "channels" in patch:
+        bad = [c for c in patch["channels"] if c not in valid_ch]
+        if bad:
+            raise HTTPException(status_code=400, detail=f"Invalid channels: {bad}")
+    merged = {**current, **patch}
+    save_telecalling_config(tenant_id, merged)
+    return merged

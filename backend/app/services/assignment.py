@@ -1,4 +1,5 @@
 # backend/app/services/assignment.py
+import json
 import logging
 from app.db.supabase import get_supabase
 
@@ -180,3 +181,114 @@ def reassign_backlog(caller_id: str, tenant_id: str) -> None:
     if ids_to_assign:
         db.table("leads").update({"assigned_to": caller_id}).in_("id", list(ids_to_assign)).execute()
         logger.info(f"Reassigned {len(ids_to_assign)} backlog leads to caller {caller_id} upon coming online.")
+
+
+_INBOX_CONFIG_DEFAULT: dict = {
+    "enabled": False,
+    "auto_assign_enabled": False,
+    "escalation_min_score": 7,
+    "segments": ["A"],
+    "channels": ["whatsapp", "instagram", "facebook", "telegram"],
+    "triggers": ["A", "B", "C", "E", "F"],
+}
+
+_TELECALLING_CONFIG_DEFAULT: dict = {
+    "enabled": False,
+    "auto_assign_enabled": False,
+    "escalation_min_score": 7,
+    "segments": ["A"],
+    "channels": ["whatsapp"],
+}
+
+
+def get_inbox_config(tenant_id: str) -> dict:
+    """Return inbox_config from app_settings, merged with defaults."""
+    db = get_supabase()
+    row = (
+        db.table("app_settings")
+        .select("value")
+        .eq("tenant_id", tenant_id)
+        .eq("key", "inbox_config")
+        .maybe_single()
+        .execute()
+    )
+    if row and row.data:
+        try:
+            stored = json.loads(row.data["value"])
+            return {**_INBOX_CONFIG_DEFAULT, **stored}
+        except Exception:
+            pass
+    return dict(_INBOX_CONFIG_DEFAULT)
+
+
+def get_telecalling_config(tenant_id: str) -> dict:
+    """Return telecalling_config from app_settings, merged with defaults."""
+    db = get_supabase()
+    row = (
+        db.table("app_settings")
+        .select("value")
+        .eq("tenant_id", tenant_id)
+        .eq("key", "telecalling_config")
+        .maybe_single()
+        .execute()
+    )
+    if row and row.data:
+        try:
+            stored = json.loads(row.data["value"])
+            return {**_TELECALLING_CONFIG_DEFAULT, **stored}
+        except Exception:
+            pass
+    return dict(_TELECALLING_CONFIG_DEFAULT)
+
+
+def save_inbox_config(tenant_id: str, config: dict) -> None:
+    """Persist inbox_config to app_settings."""
+    db = get_supabase()
+    db.table("app_settings").upsert(
+        {
+            "key": "inbox_config",
+            "value": json.dumps(config),
+            "tenant_id": tenant_id,
+            "is_secret": False,
+        },
+        on_conflict="tenant_id,key",
+    ).execute()
+
+
+def save_telecalling_config(tenant_id: str, config: dict) -> None:
+    """Persist telecalling_config to app_settings."""
+    db = get_supabase()
+    db.table("app_settings").upsert(
+        {
+            "key": "telecalling_config",
+            "value": json.dumps(config),
+            "tenant_id": tenant_id,
+            "is_secret": False,
+        },
+        on_conflict="tenant_id,key",
+    ).execute()
+
+
+def should_escalate_to_inbox(config: dict, trigger: str, segment: str, channel: str) -> bool:
+    """Return True if this event should create an inbox handover.
+    Trigger C (user asked for human) always fires regardless of config."""
+    if not config.get("enabled"):
+        return False
+    if trigger != "C" and trigger not in config.get("triggers", []):
+        return False
+    if segment not in config.get("segments", ["A"]):
+        return False
+    if channel not in config.get("channels", []):
+        return False
+    return True
+
+
+def should_assign_to_telecalling(config: dict, segment: str, channel: str) -> bool:
+    """Return True if this event should auto-assign to a telecaller."""
+    if not config.get("enabled") or not config.get("auto_assign_enabled"):
+        return False
+    if segment not in config.get("segments", ["A"]):
+        return False
+    if channel not in config.get("channels", ["whatsapp"]):
+        return False
+    return True

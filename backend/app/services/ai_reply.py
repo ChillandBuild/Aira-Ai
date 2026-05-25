@@ -9,7 +9,13 @@ from app.services.growth import record_stage_event, sync_follow_up_jobs
 from app.services.lead_scorer import score_message
 from app.services.segmentation import score_to_segment
 from app.services.knowledge_service import get_knowledge_context
-from app.services.assignment import auto_assign_lead
+from app.services.assignment import (
+    auto_assign_lead,
+    get_inbox_config,
+    get_telecalling_config,
+    should_escalate_to_inbox,
+    should_assign_to_telecalling,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -367,9 +373,48 @@ _ESCALATION_PHRASES = [
     "team will get back",
 ]
 
+_HUMAN_REQUEST_PHRASES = [
+    "talk to a person", "talk to agent", "talk to human", "talk to someone",
+    "speak to a person", "speak to agent", "speak to human", "speak to someone",
+    "human agent", "real person", "live agent", "connect me to",
+    "need to speak with", "want to talk to", "can i speak", "i need help",
+    "get me a human", "customer care", "customer support", "call me",
+]
+
+_GENERIC_FALLBACK_MARKERS = [
+    "we'll get back to you shortly",
+    "get back to you shortly",
+    "team will get back to you",
+]
+
+_TRIGGER_PRIORITY = ["C", "B", "A", "D", "F", "E"]
+_TRIGGER_REASONS: dict[str, str] = {
+    "C": "User requested a human agent",
+    "B": "AI failed to generate a response",
+    "A": "AI gave a generic fallback reply",
+    "D": "User repeated the same question",
+    "F": "AI indicated team will follow up",
+    "E": "Lead score crossed hot threshold",
+}
+
+
+def _is_similar(a: str, b: str, threshold: float = 0.6) -> bool:
+    """True if two messages share ≥threshold fraction of words (rough duplicate check)."""
+    wa = set(re.findall(r"\w+", a.lower()))
+    wb = set(re.findall(r"\w+", b.lower()))
+    if len(wa) < 3 or len(wb) < 3:
+        return False
+    return len(wa & wb) / max(len(wa), len(wb)) >= threshold
+
+
+def _is_generic_fallback(text: str) -> bool:
+    t = text.lower()
+    return any(marker in t for marker in _GENERIC_FALLBACK_MARKERS)
+
 
 def _trigger_chat_escalation(
-    lead_id: str, reason: str, tenant_id: str, assigned_to: str | None, db
+    lead_id: str, reason: str, tenant_id: str, assigned_to: str | None, db,
+    auto_assign: bool = False,
 ) -> None:
     existing = (
         db.table("chat_handovers")
@@ -381,6 +426,10 @@ def _trigger_chat_escalation(
     )
     if existing.data:
         return  # already has an open handover
+
+    # Round-robin auto-assign if no one is assigned yet
+    if assigned_to is None and auto_assign:
+        assigned_to = auto_assign_lead(lead_id, tenant_id)
 
     db.table("leads").update({
         "needs_human_attention": True,
@@ -394,7 +443,7 @@ def _trigger_chat_escalation(
         "reason": reason,
         "status": "pending",
     }).execute()
-    logger.info(f"Chat handover created for lead {lead_id}")
+    logger.info(f"Chat handover created for lead {lead_id} — reason: {reason[:60]}")
 
 
 async def generate_reply(
@@ -416,7 +465,7 @@ async def generate_reply(
     """
     db = get_supabase()
 
-    # Step 0: respect human-takeover flag
+    # Step 0: fetch lead + load module configs
     lead_row = (
         db.table("leads")
         .select("ai_enabled,score,segment,phone,converted_at,tenant_id,assigned_to,name")
@@ -425,6 +474,29 @@ async def generate_reply(
         .execute()
     )
     lead_data = lead_row.data or {}
+    tenant_id = lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001"
+    segment = lead_data.get("segment") or "C"
+    inbox_cfg = get_inbox_config(tenant_id)
+    telecalling_cfg = get_telecalling_config(tenant_id)
+    escalation_flags: set[str] = set()
+
+    # Trigger C: user explicitly asked for human (always fires, not config-gated)
+    if any(ph in message.lower() for ph in _HUMAN_REQUEST_PHRASES):
+        escalation_flags.add("C")
+        logger.info(f"Trigger C: lead {lead_id} asked for human agent")
+
+    # Pre-fetch recent thread (reused for trigger D + Groq chat below)
+    recent_thread = _recent_thread(db, lead_id, limit=8)
+
+    # Trigger D: user repeated the same question (AI not resolving it)
+    if "D" in inbox_cfg.get("triggers", []):
+        prev_inbound = next(
+            (r for r in recent_thread if r.get("direction") == "inbound"),
+            None,
+        )
+        if prev_inbound and _is_similar(message, prev_inbound.get("content", "")):
+            escalation_flags.add("D")
+            logger.info(f"Trigger D: lead {lead_id} repeated same question")
     if lead_data and lead_data.get("ai_enabled") is False:
         logger.info(f"Lead {lead_id} has AI disabled — skipping auto-reply")
         # Still rescore so the admin sees segment updates even while handling manually
@@ -486,9 +558,6 @@ async def generate_reply(
             if context_text:
                 system_prompt += "\n\nKNOWLEDGE BASE:\nUse the following documents to answer the user's question accurately. If the answer is not in the documents, say you will connect them with a team member.\n\n" + context_text
 
-            # Lead-specific context: name + segment let the model address the user naturally
-            # and calibrate tone (A=hot, C=cold). conversation_summary covers older turns
-            # that fell off the recent-thread window after compaction.
             lead_name = (lead_data.get("name") or "").strip()
             lead_segment = lead_data.get("segment") or "C"
             summary = _fetch_conversation_summary(db, lead_id)
@@ -506,11 +575,7 @@ async def generate_reply(
                 "If they write Tamil, reply Tamil. English → English. Never switch unless they do."
             )
 
-            # Build multi-turn chat: system + last ~8 messages (oldest first) as
-            # alternating user/assistant turns. The current message is already in
-            # the messages table (inserted by webhook.py before generate_reply runs),
-            # so it appears as the final user turn — no need to append it.
-            recent_thread = _recent_thread(db, lead_id, limit=8)
+            # recent_thread already fetched at step 0 (reuse — no extra DB call)
             chat_messages: list[dict] = [{"role": "system", "content": system_prompt}]
             for row in reversed(recent_thread):  # oldest first
                 content = (row.get("content") or "").strip()
@@ -519,19 +584,29 @@ async def generate_reply(
                 role = "assistant" if row.get("direction") == "outbound" else "user"
                 chat_messages.append({"role": role, "content": content})
 
-            # Defensive: if the current inbound message isn't the last user turn
-            # (race condition with the insert), append it so the model still sees it.
             if not chat_messages or chat_messages[-1].get("role") != "user" or chat_messages[-1].get("content") != message:
                 chat_messages.append({"role": "user", "content": message})
 
             reply_text = _groq_chat(chat_messages, max_tokens=300)
             is_ai = True
             reply_source = "knowledge" if context_text else "ai"
+
+            # Trigger A: AI gave a generic fallback reply
+            if _is_generic_fallback(reply_text):
+                escalation_flags.add("A")
+                logger.info(f"Trigger A: lead {lead_id} received generic fallback reply")
+            # Trigger F: AI reply contained escalation phrases
+            if any(phrase in reply_text.lower() for phrase in _ESCALATION_PHRASES):
+                escalation_flags.add("F")
+
         except Exception as e:
             logger.error(f"Groq reply failed for lead {lead_id}: {e}")
             reply_text = "Thank you for reaching out! We'll get back to you shortly."
             is_ai = False
             reply_source = "ai"
+            # Trigger B: AI/Groq exception — escalate so a human can pick up
+            escalation_flags.add("B")
+            logger.info(f"Trigger B: lead {lead_id} Groq exception — {e}")
 
     # Step 3: Dispatch to the correct channel
     if channel == "instagram":
@@ -564,6 +639,7 @@ async def generate_reply(
     }).execute()
 
     # Step 5: Re-score lead and update segment (with D-segment safety net)
+    new_segment = segment  # fallback if scoring fails
     try:
         current_score = lead_data.get("score", 5)
         from app.services.lead_scorer import score_with_safety_net
@@ -582,7 +658,7 @@ async def generate_reply(
                 to_segment=new_segment,
                 event_type="segment_changed",
                 metadata={"reason": f"{channel}_reply"},
-                tenant_id=lead_data.get("tenant_id"),
+                tenant_id=tenant_id,
                 db=db,
             )
         sync_follow_up_jobs(
@@ -592,34 +668,39 @@ async def generate_reply(
             converted_at=lead_data.get("converted_at"),
             ai_enabled=lead_data.get("ai_enabled", True),
             reason=f"{channel}_reply",
-            tenant_id=lead_data.get("tenant_id"),
+            tenant_id=tenant_id,
             db=db,
         )
         logger.info(f"Lead {lead_id} scored {new_score} → segment {new_segment}")
-        if new_score >= 7 and (lead_data.get("score") or 5) < 7:
-            # Voice Call Handoff trigger
-            if not lead_data.get("assigned_to"):
-                assigned_caller = auto_assign_lead(str(lead_id), lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001")
-                if assigned_caller:
-                    lead_data["assigned_to"] = assigned_caller
-            
-            try:
-                from app.routes.alerts import create_alert
-                create_alert(
-                    lead_id=str(lead_id),
-                    tenant_id=lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001",
-                    assigned_caller_id=lead_data.get("assigned_to"),
-                )
-            except Exception as alert_err:
-                logger.warning(f"Alert creation failed for lead {lead_id}: {alert_err}")
 
-            # Fire score_threshold automation trigger (non-blocking, no BackgroundTasks here)
+        min_score = telecalling_cfg.get("escalation_min_score", 7)
+        if new_score >= min_score and (lead_data.get("score") or 5) < min_score:
+            # Module B — Telecalling: config-driven auto-assign + alert
+            if should_assign_to_telecalling(telecalling_cfg, new_segment, channel):
+                if not lead_data.get("assigned_to"):
+                    assigned_caller = auto_assign_lead(str(lead_id), tenant_id)
+                    if assigned_caller:
+                        lead_data["assigned_to"] = assigned_caller
+                try:
+                    from app.routes.alerts import create_alert
+                    create_alert(
+                        lead_id=str(lead_id),
+                        tenant_id=tenant_id,
+                        assigned_caller_id=lead_data.get("assigned_to"),
+                    )
+                except Exception as alert_err:
+                    logger.warning(f"Alert creation failed for lead {lead_id}: {alert_err}")
+
+            # Module A — Inbox: trigger E (score crossed threshold)
+            escalation_flags.add("E")
+
+            # score_threshold automation trigger
             try:
                 from app.services.automation_triggers import _dispatch
                 import asyncio
                 asyncio.create_task(_dispatch(
                     lead_id=str(lead_id),
-                    tenant_id=lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001",
+                    tenant_id=tenant_id,
                     trigger_type="score_threshold",
                     message=message,
                     is_first_message=False,
@@ -630,15 +711,23 @@ async def generate_reply(
     except Exception as e:
         logger.error(f"Scoring update failed for lead {lead_id}: {e}")
 
-    # Step 6: Detect AI escalation and open a chat handover
-    if is_ai and any(phrase in reply_text.lower() for phrase in _ESCALATION_PHRASES):
+    # Step 6: Fire inbox escalation — config-driven, priority-ordered
+    # new_segment used so post-score segment is checked against inbox filter
+    active_triggers = [
+        t for t in _TRIGGER_PRIORITY
+        if t in escalation_flags and should_escalate_to_inbox(inbox_cfg, t, new_segment, channel)
+    ]
+    if active_triggers:
+        primary = active_triggers[0]
         try:
             _trigger_chat_escalation(
                 lead_id=str(lead_id),
-                reason=message[:200],
-                tenant_id=lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001",
+                reason=_TRIGGER_REASONS[primary],
+                tenant_id=tenant_id,
                 assigned_to=lead_data.get("assigned_to"),
                 db=db,
+                auto_assign=inbox_cfg.get("auto_assign_enabled", False),
             )
+            logger.info(f"Inbox escalation fired for lead {lead_id} — trigger {primary}")
         except Exception as e:
-            logger.error(f"Chat escalation trigger failed for lead {lead_id}: {e}")
+            logger.error(f"Inbox escalation failed for lead {lead_id}: {e}")
