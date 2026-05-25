@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getAuthHeaders, API_URL, Lead } from "@/lib/api";
 import { ConversationList } from "@/components/conversation-list";
 import { ChatThread } from "@/components/chat-thread";
-import { MessageSquare, ChevronLeft, ChevronRight } from "lucide-react";
+import { MessageSquare, ChevronRight } from "lucide-react";
 import { usePolling } from "@/hooks/usePolling";
 
 function getSidebarDefault(): boolean {
