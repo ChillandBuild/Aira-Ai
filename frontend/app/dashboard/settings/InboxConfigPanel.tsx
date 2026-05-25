@@ -22,12 +22,12 @@ const DEFAULT: InboxConfig = {
 };
 
 const TRIGGER_LABELS: Record<string, { label: string; always?: boolean }> = {
-  A: { label: "AI gave a generic fallback reply" },
-  B: { label: "AI / Groq exception (AI failure)" },
-  C: { label: "User explicitly asked for a human agent", always: true },
-  D: { label: "User repeated the same question twice" },
-  E: { label: "Lead score crossed hot threshold" },
-  F: { label: "AI reply contained escalation phrases" },
+  A: { label: "AI couldn't answer — sent a generic holding reply" },
+  B: { label: "AI failed completely (technical error)" },
+  C: { label: "User explicitly asked to speak to a person", always: true },
+  D: { label: "User repeated the same question (AI not resolving it)" },
+  E: { label: "Lead score crossed the hot threshold above" },
+  F: { label: "AI response indicated the team would follow up" },
 };
 
 const SEGMENT_LABELS: Record<string, string> = {
@@ -153,7 +153,7 @@ export function InboxConfigPanel() {
           {/* Score threshold */}
           <div>
             <label className="font-label text-sm font-semibold text-ink block mb-1.5">
-              Score Threshold for Trigger E
+              Hot Lead Score Threshold
             </label>
             <div className="flex items-center gap-3">
               <input
@@ -164,7 +164,7 @@ export function InboxConfigPanel() {
                 onChange={(e) => setDraft({ ...draft, escalation_min_score: Number(e.target.value) })}
                 className="w-24 px-3 py-2 rounded-xl border border-border bg-white font-body text-sm focus:outline-none focus:border-violet-400"
               />
-              <span className="font-body text-sm text-ink-muted">Lead score must cross this value to trigger inbox escalation (trigger E)</span>
+              <span className="font-body text-sm text-ink-muted">When a lead&apos;s score crosses this value, escalate the chat to the inbox</span>
             </div>
           </div>
 
@@ -187,9 +187,8 @@ export function InboxConfigPanel() {
                     className="mt-0.5 accent-violet-600"
                   />
                   <div>
-                    <span className="font-label text-xs font-semibold text-ink-muted uppercase mr-1.5">{key}</span>
                     <span className="font-body text-sm text-ink">{label}</span>
-                    {always && <span className="ml-2 text-xs text-amber-600 font-label">(always on — user intent)</span>}
+                    {always && <div className="text-xs text-amber-600 font-label mt-0.5">Always on — cannot be disabled (direct user request)</div>}
                   </div>
                 </label>
               ))}
