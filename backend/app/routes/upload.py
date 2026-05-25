@@ -1094,6 +1094,53 @@ async def get_broadcast_history(tenant_id: str = Depends(get_tenant_id)):
     return {"data": history}
 
 
+@router.get("/history-csv")
+async def download_broadcast_history_csv(tenant_id: str = Depends(get_tenant_id)):
+    """Download full broadcast history as CSV."""
+    db = get_supabase()
+    row = (
+        db.table("app_settings")
+        .select("value")
+        .eq("tenant_id", tenant_id)
+        .eq("key", "broadcast_history")
+        .maybe_single()
+        .execute()
+    )
+    history: list[dict] = []
+    if row and row.data and row.data.get("value"):
+        try:
+            history = json.loads(row.data["value"])
+        except Exception:
+            history = []
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=[
+        "broadcast_id", "timestamp", "template_name", "number_used",
+        "total_leads", "sent", "delivered", "opened", "failed",
+    ])
+    writer.writeheader()
+    for record in history:
+        writer.writerow({
+            "broadcast_id": record.get("broadcast_id", ""),
+            "timestamp": record.get("timestamp", ""),
+            "template_name": record.get("template_name", ""),
+            "number_used": record.get("number_used", ""),
+            "total_leads": record.get("total_leads", 0),
+            "sent": record.get("sent", 0),
+            "delivered": record.get("delivered", 0),
+            "opened": record.get("opened", 0),
+            "failed": record.get("failed", 0),
+        })
+
+    from datetime import datetime
+    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=broadcast_history_{date_str}.csv"},
+    )
+
+
 def _refresh_delivered_opened_timewindow(db, record, tenant_id, window_start, window_end):
     """Update delivered/opened counts via time-window fallback (legacy/compat)."""
     delivered_rows = db.table("messages") \

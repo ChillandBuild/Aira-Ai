@@ -192,6 +192,26 @@ export default function UploadPage() {
     }
   }
 
+  async function downloadHistoryCsv() {
+    try {
+      const auth = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/upload/history-csv`, { headers: auth });
+      if (!res.ok) throw new Error("Download failed");
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `broadcast_history_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Broadcast history downloaded");
+    } catch {
+      toast.error("Failed to download broadcast history");
+    }
+  }
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch broadcast history once on mount
@@ -919,6 +939,13 @@ export default function UploadPage() {
                     className="w-44 pl-9 pr-3 py-2 font-body text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-300 transition-all"
                   />
                 </div>
+                <button
+                  onClick={downloadHistoryCsv}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-lg font-label text-sm font-semibold hover:bg-emerald-600 transition-all shadow-sm"
+                >
+                  <Download size={14} />
+                  Download CSV
+                </button>
                 <div className="flex bg-white border border-gray-200 rounded-lg overflow-hidden">
                   {(["all", "failures", "clean"] as const).map((f) => (
                     <button
