@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { api, Lead } from "@/lib/api";
 import { SegmentBadge } from "./segment-badge";
 import { formatIST, formatPhone, cn } from "@/lib/utils";
-import { MessageCircle, Trash2, MoreVertical, Search, X, SearchX } from "lucide-react";
+import { MessageCircle, Trash2, MoreVertical, Search, X, SearchX, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 
 type ConversationLead = Lead & { last_reply_at?: string };
@@ -63,9 +63,10 @@ interface Props {
   onDeleted?: (ids: string[]) => void;
   platform: string;
   onPlatformChange: (platform: string) => void;
+  onCollapse?: () => void;
 }
 
-export function ConversationList({ leads, selectedId, onSelect, onDeleted, platform, onPlatformChange }: Props) {
+export function ConversationList({ leads, selectedId, onSelect, onDeleted, platform, onPlatformChange, onCollapse }: Props) {
   const [segment, setSegment] = useState<"A" | "B" | "C" | "D" | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
@@ -205,7 +206,17 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
             </div>
           ) : (
             <>
-              <h2 className="font-display text-lg font-bold text-tertiary tracking-tight">Conversations</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="font-display text-lg font-bold text-tertiary tracking-tight">Conversations</h2>
+                {onCollapse && (
+                  <button
+                    onClick={onCollapse}
+                    className="p-1 rounded-md hover:bg-surface-low text-on-surface-muted hover:text-on-surface transition-colors"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                )}
+              </div>
               <div className="relative" ref={menuRef}>
                 <button
                   onClick={() => setMenuOpen(!menuOpen)}

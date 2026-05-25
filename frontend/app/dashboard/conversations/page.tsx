@@ -3,8 +3,15 @@ import { useCallback, useEffect, useState } from "react";
 import { getAuthHeaders, API_URL, Lead } from "@/lib/api";
 import { ConversationList } from "@/components/conversation-list";
 import { ChatThread } from "@/components/chat-thread";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, ChevronLeft, ChevronRight } from "lucide-react";
 import { usePolling } from "@/hooks/usePolling";
+
+function getSidebarDefault(): boolean {
+  if (typeof window === "undefined") return true;
+  const stored = localStorage.getItem("sidebar_open");
+  if (stored !== null) return stored === "true";
+  return window.innerWidth >= 768;
+}
 
 async function fetchConversations(): Promise<Lead[]> {
   const auth = await getAuthHeaders();
@@ -19,6 +26,7 @@ export default function ConversationsPage() {
   const [selected, setSelected] = useState<Lead | null>(null);
   const [error, setError] = useState(false);
   const [platform, setPlatform] = useState<string>("whatsapp");
+  const [sidebarOpen, setSidebarOpen] = useState(getSidebarDefault);
 
   const load = useCallback(() => {
     fetchConversations()
@@ -29,21 +37,36 @@ export default function ConversationsPage() {
   useEffect(() => { load(); }, [load]);
   usePolling(load, 20000);
 
+  useEffect(() => {
+    localStorage.setItem("sidebar_open", String(sidebarOpen));
+  }, [sidebarOpen]);
+
   return (
     <div className="-m-8 h-screen flex">
-      <ConversationList
-        leads={leads}
-        selectedId={selected?.id ?? null}
-        onSelect={setSelected}
-        platform={platform}
-        onPlatformChange={setPlatform}
-        onDeleted={(deletedIds) => {
-          setLeads((prev) => prev.filter((l) => !deletedIds.includes(l.id)));
-          if (selected && deletedIds.includes(selected.id)) {
-            setSelected(null);
-          }
-        }}
-      />
+      <div className="relative flex-shrink-0 transition-all duration-300 ease-in-out" style={{ width: sidebarOpen ? 340 : 0, overflow: "hidden" }}>
+        <ConversationList
+          leads={leads}
+          selectedId={selected?.id ?? null}
+          onSelect={setSelected}
+          platform={platform}
+          onPlatformChange={setPlatform}
+          onCollapse={() => setSidebarOpen(false)}
+          onDeleted={(deletedIds) => {
+            setLeads((prev) => prev.filter((l) => !deletedIds.includes(l.id)));
+            if (selected && deletedIds.includes(selected.id)) {
+              setSelected(null);
+            }
+          }}
+        />
+      </div>
+      {!sidebarOpen && (
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-30 w-6 h-12 bg-surface border border-surface-mid border-l-0 rounded-r-lg flex items-center justify-center text-on-surface-muted hover:text-tertiary hover:bg-surface-low transition-colors shadow-md"
+        >
+          <ChevronRight size={14} />
+        </button>
+      )}
       {selected ? (
         <ChatThread
           lead={selected}
