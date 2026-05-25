@@ -110,7 +110,7 @@ def get_or_create_state(lead_id: str, tenant_id: str, db=None) -> dict:
                         if phone_number:
                             reengagement_msg = "🙏 Welcome back! How can I help you continue?"
                             import asyncio
-                            asyncio.create_task(send_whatsapp_text(phone=phone_number, text=reengagement_msg, tenant_id=tenant_id))
+                            asyncio.create_task(send_whatsapp_text(phone=phone_number, text=reengagement_msg, tenant_id=tenant_id, lead_id=lead_id))
                             logger.info(f"Re-engagement message sent to lead {lead_id}")
                     except Exception as reeng_err:
                         logger.error(f"Re-engagement message failed for lead {lead_id}: {reeng_err}")
@@ -168,9 +168,24 @@ def _get_step_prompt(state_name: str) -> str:
     return ""
 
 
-async def send_whatsapp_text(phone: str, text: str, tenant_id: str | None = None) -> None:
+async def send_whatsapp_text(phone: str, text: str, tenant_id: str | None = None, lead_id: str | None = None) -> None:
     from app.services.ai_reply import send_whatsapp
-    await send_whatsapp(phone, text, tenant_id=tenant_id)
+    mid = await send_whatsapp(phone, text, tenant_id=tenant_id)
+    if lead_id:
+        try:
+            db = get_supabase()
+            db.table("messages").insert({
+                "lead_id": lead_id,
+                "direction": "outbound",
+                "channel": "whatsapp",
+                "content": text,
+                "is_ai_generated": True,
+                "reply_source": "ai",
+                "meta_message_id": mid,
+                "tenant_id": tenant_id or "00000000-0000-0000-0000-000000000001",
+            }).execute()
+        except Exception as e:
+            logger.error(f"Failed to log booking flow message for lead {lead_id}: {e}")
 
 
 def _create_draft_booking(lead_id: str, tenant_id: str, db) -> dict:
@@ -216,7 +231,7 @@ async def start_booking_flow(
         "booking_id": booking["id"],
     }
     _upsert_state(state, db)
-    await send_whatsapp_text(phone=phone, text=_get_step_prompt("collecting_name"), tenant_id=tenant_id)
+    await send_whatsapp_text(phone=phone, text=_get_step_prompt("collecting_name"), tenant_id=tenant_id, lead_id=lead_id)
     logger.info(f"Booking flow started for lead {lead_id}, booking {booking['id']}")
 
 
@@ -236,7 +251,7 @@ async def advance_state(state: dict, message: str, phone: str, db=None) -> None:
     if next_state:
         state["state"] = next_state
         _upsert_state(state, db)
-        await send_whatsapp_text(phone=phone, text=_get_step_prompt(next_state), tenant_id=state.get("tenant_id"))
+        await send_whatsapp_text(phone=phone, text=_get_step_prompt(next_state), tenant_id=state.get("tenant_id"), lead_id=state.get("lead_id"))
     else:
         await _send_payment_link(state, phone, db)
 
@@ -297,7 +312,7 @@ async def _send_payment_link(state: dict, phone: str, db) -> None:
             f"💳 Click to pay and confirm your booking:\n{payment_url}\n\n"
             f"Reference: {booking_ref}"
         )
-        await send_whatsapp_text(phone=phone, text=summary, tenant_id=state.get("tenant_id"))
+        await send_whatsapp_text(phone=phone, text=summary, tenant_id=state.get("tenant_id"), lead_id=state.get("lead_id"))
         logger.info(f"Payment link sent to {phone} for booking {booking_id}")
 
     except Exception as e:
@@ -308,6 +323,7 @@ async def _send_payment_link(state: dict, phone: str, db) -> None:
             phone=phone,
             text="🙏 We have received your details! Our team will send you the payment link shortly.",
             tenant_id=state.get("tenant_id"),
+            lead_id=state.get("lead_id"),
         )
 
 
