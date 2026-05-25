@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, X, Trash2, Check, Clock, AlertCircle, RefreshCw, Send, Upload, Image as ImageIcon, FileText, MapPin, Phone, Globe, Copy, MessageSquare, Layers } from "lucide-react";
+import { Plus, X, Trash2, Check, Clock, AlertCircle, RefreshCw, Send, Upload, Image as ImageIcon, FileText, MapPin, Phone, Globe, Copy, MessageSquare, Layers, Shuffle } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -115,6 +115,12 @@ export default function TemplatesPage() {
   const [error, setError] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [viewTemplate, setViewTemplate] = useState<Template | null>(null);
+
+  // Variations state
+  const [variationsModalId, setVariationsModalId] = useState<string | null>(null);
+  const [variationsList, setVariationsList] = useState<string[]>([]);
+  const [newVariation, setNewVariation] = useState("");
+  const [variationsLoading, setVariationsLoading] = useState(false);
 
   // Form state
   const [title, setTitle] = useState("");
@@ -304,6 +310,52 @@ export default function TemplatesPage() {
     router.push(`/dashboard/upload?template=${encodeURIComponent(templateName)}`);
   }
 
+  async function openVariationsModal(id: string) {
+    setVariationsModalId(id);
+    setVariationsList([]);
+    setNewVariation("");
+    setVariationsLoading(true);
+    try {
+      const data = await apiFetch<{ id: string; variations: string[] }>(`/api/v1/templates/${id}/variations`);
+      setVariationsList(data.variations ?? []);
+    } catch {
+      setVariationsList([]);
+    } finally {
+      setVariationsLoading(false);
+    }
+  }
+
+  async function handleVariationRemove(id: string, name: string) {
+    const updated = variationsList.filter(v => v !== name);
+    setVariationsList(updated);
+    try {
+      const data = await apiFetch<{ id: string; variations: string[] }>(`/api/v1/templates/${id}/variations`, {
+        method: "PUT",
+        body: JSON.stringify({ variations: updated }),
+      });
+      setVariationsList(data.variations ?? updated);
+    } catch {
+      setVariationsList(prev => [...prev, name]);
+    }
+  }
+
+  async function handleVariationAdd(id: string) {
+    const trimmed = newVariation.trim();
+    if (!trimmed || variationsList.includes(trimmed)) return;
+    const updated = [...variationsList, trimmed];
+    setVariationsList(updated);
+    setNewVariation("");
+    try {
+      const data = await apiFetch<{ id: string; variations: string[] }>(`/api/v1/templates/${id}/variations`, {
+        method: "PUT",
+        body: JSON.stringify({ variations: updated }),
+      });
+      setVariationsList(data.variations ?? updated);
+    } catch {
+      setVariationsList(prev => prev.filter(v => v !== trimmed));
+    }
+  }
+
   const approved = templates.filter(t => t.status === "APPROVED");
   const pending  = templates.filter(t => t.status === "PENDING");
   const rejected = templates.filter(t => t.status === "REJECTED" || t.status === "PAUSED");
@@ -434,6 +486,13 @@ export default function TemplatesPage() {
                           </button>
                         )}
                         <button
+                          onClick={() => openVariationsModal(t.id)}
+                          className="p-1.5 rounded-lg hover:bg-violet-50 text-ink-muted hover:text-violet-600 transition-colors"
+                          title="Manage Variations"
+                        >
+                          <Shuffle size={13} />
+                        </button>
+                        <button
                           onClick={() => handleDelete(t.id)}
                           className="p-1.5 rounded-lg hover:bg-red-50 text-ink-muted hover:text-red-500 transition-colors"
                         >
@@ -521,6 +580,93 @@ export default function TemplatesPage() {
           </div>
         </div>
       )}
+
+      {/* ── Template Variations Modal ─────────────────────────────────────── */}
+      {variationsModalId && (() => {
+        const t = templates.find(x => x.id === variationsModalId);
+        return (
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl shadow-card-hover w-full max-w-md p-6">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-violet-50 flex items-center justify-center">
+                    <Shuffle size={15} className="text-violet-600" />
+                  </div>
+                  <div>
+                    <h2 className="font-display font-bold text-ink text-base leading-tight">Template Variations</h2>
+                    {t && <p className="font-mono text-[11px] text-ink-muted">{t.name}</p>}
+                  </div>
+                </div>
+                <button
+                  onClick={() => { setVariationsModalId(null); setVariationsList([]); setNewVariation(""); }}
+                  className="p-1.5 rounded-xl hover:bg-surface-subtle text-ink-muted"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <p className="font-body text-xs text-ink-muted mb-5 mt-3 leading-relaxed">
+                Add sibling templates that will be randomly rotated per lead in bulk broadcasts. This reduces identical message detection by Meta.
+              </p>
+
+              {/* Current variations list */}
+              {variationsLoading ? (
+                <div className="space-y-2 mb-4">
+                  {[...Array(2)].map((_, i) => (
+                    <div key={i} className="h-8 rounded-xl bg-surface-subtle animate-pulse" />
+                  ))}
+                </div>
+              ) : variationsList.length === 0 ? (
+                <div className="mb-4 p-4 rounded-2xl bg-surface-subtle text-center">
+                  <p className="font-body text-xs text-ink-muted">No variations yet. Broadcasts will use this template only.</p>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {variationsList.map(v => (
+                    <span
+                      key={v}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-50 text-violet-700 text-xs font-medium font-mono"
+                    >
+                      {v}
+                      <button
+                        onClick={() => handleVariationRemove(variationsModalId, v)}
+                        className="text-violet-400 hover:text-violet-700 transition-colors"
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Add new variation */}
+              <div className="flex gap-2">
+                <input
+                  value={newVariation}
+                  onChange={e => setNewVariation(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") handleVariationAdd(variationsModalId); }}
+                  placeholder="Enter template name"
+                  className="input flex-1 text-sm"
+                />
+                <button
+                  onClick={() => handleVariationAdd(variationsModalId)}
+                  disabled={!newVariation.trim()}
+                  className="btn-primary px-4 disabled:opacity-50"
+                >
+                  Add
+                </button>
+              </div>
+
+              <button
+                onClick={() => { setVariationsModalId(null); setVariationsList([]); setNewVariation(""); }}
+                className="w-full mt-4 py-2 rounded-2xl bg-surface-subtle hover:bg-border-subtle text-sm font-medium text-ink-secondary transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── New Template Modal ─────────────────────────────────────────────── */}
       {showModal && (

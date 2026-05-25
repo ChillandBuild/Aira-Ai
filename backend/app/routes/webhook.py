@@ -262,6 +262,14 @@ async def whatsapp_webhook(
                             "tenant_id": tenant_id,
                         }
                         db.table("messages").insert(insert_row).execute()
+
+                        # Reset engagement suppression counter on inbound reply
+                        if lead_id:
+                            try:
+                                db.table("leads").update({"outbound_no_reply_count": 0}).eq("id", lead_id).execute()
+                            except Exception:
+                                pass
+
                         if body:
                             fire_trigger(
                                 background_tasks, lead_id, tenant_id,

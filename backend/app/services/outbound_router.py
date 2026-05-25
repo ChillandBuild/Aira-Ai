@@ -6,6 +6,18 @@ logger = logging.getLogger(__name__)
 
 _TIER_DAILY_LIMITS: dict[int, int] = {1000: 1_000, 10000: 10_000, 100000: 100_000}
 
+_WARMUP_DAILY_CAPS: list[tuple[int, int]] = [
+    # (max_warm_up_day_inclusive, daily_cap)
+    (2, 50), (4, 75), (7, 100), (10, 150), (14, 250),
+]
+
+
+def _warmup_daily_cap(warm_up_day: int) -> int:
+    for max_day, cap in _WARMUP_DAILY_CAPS:
+        if warm_up_day <= max_day:
+            return cap
+    return 250
+
 
 async def get_best_number(tenant_id: str) -> dict | None:
     db = get_supabase()
@@ -38,6 +50,14 @@ async def get_best_number(tenant_id: str) -> dict | None:
     ]
     if not rows:
         logger.warning("All outbound numbers have hit their daily tier limit")
+        return None
+
+    rows = [
+        r for r in rows
+        if r.get("status") != "warming" or (r.get("daily_send_count") or 0) < _warmup_daily_cap(r.get("warm_up_day") or 0)
+    ]
+    if not rows:
+        logger.warning("All outbound numbers have hit their daily warm-up cap")
         return None
 
     rows.sort(key=_sort_key)

@@ -250,3 +250,25 @@ async def template_status_webhook(payload: dict):
             db.table("message_templates").update(updates).eq("meta_template_id", meta_id).execute()
             logger.info(f"Template {meta_id} status → {new_status}")
     return {"status": "ok"}
+
+
+class VariationsPayload(BaseModel):
+    variations: list[str]
+
+
+@router.get("/{template_id}/variations")
+async def get_template_variations(template_id: str, tenant_id: str = Depends(get_tenant_id)):
+    db = get_supabase()
+    row = db.table("message_templates").select("id,name,variations").eq("id", template_id).eq("tenant_id", tenant_id).execute()
+    if not row.data:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return {"id": template_id, "variations": row.data[0].get("variations") or []}
+
+
+@router.put("/{template_id}/variations")
+async def update_template_variations(template_id: str, payload: VariationsPayload, tenant_id: str = Depends(get_tenant_id)):
+    db = get_supabase()
+    result = db.table("message_templates").update({"variations": payload.variations}).eq("id", template_id).eq("tenant_id", tenant_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return {"id": template_id, "variations": payload.variations}

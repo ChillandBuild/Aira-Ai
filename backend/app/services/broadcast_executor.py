@@ -3,6 +3,7 @@ import csv
 import io
 import json
 import logging
+import random as _random
 import re as _re
 from datetime import datetime, timezone
 
@@ -61,12 +62,13 @@ async def execute_broadcast(row: dict) -> dict:
         if not best_number:
             raise RuntimeError("No primary number available for scheduled broadcast")
 
-        # Fetch template metadata
+        # Fetch template metadata (including variations for rotation)
         tpl_lang = "en"
         tpl_body = ""
+        tpl_variations: list[str] = []
         tpl_row = (
             db.table("message_templates")
-            .select("language,body_text")
+            .select("language,body_text,variations")
             .eq("name", template_name)
             .eq("tenant_id", tenant_id)
             .limit(1)
@@ -75,8 +77,25 @@ async def execute_broadcast(row: dict) -> dict:
         if tpl_row.data:
             tpl_lang = tpl_row.data[0].get("language") or "en"
             tpl_body = tpl_row.data[0].get("body_text") or ""
+            raw_variations = tpl_row.data[0].get("variations") or []
+            if isinstance(raw_variations, list):
+                tpl_variations = [v for v in raw_variations if isinstance(v, str) and v.strip()]
 
-        has_vars = bool(_re.search(r"\{\{\d+\}\}", tpl_body))
+        # Build pool: primary template + approved sibling variants
+        template_pool: list[tuple[str, str, str]] = [(template_name, tpl_lang, tpl_body)]
+        for sibling_name in tpl_variations:
+            sib_row = (
+                db.table("message_templates")
+                .select("language,body_text")
+                .eq("name", sibling_name)
+                .eq("tenant_id", tenant_id)
+                .limit(1)
+                .execute()
+            )
+            if sib_row.data:
+                sib_lang = sib_row.data[0].get("language") or "en"
+                sib_body = sib_row.data[0].get("body_text") or ""
+                template_pool.append((sibling_name, sib_lang, sib_body))
 
         # Opted-out phones
         all_phones = [_normalize_phone(l.get("phone", "")) for l in leads_raw if _normalize_phone(l.get("phone", ""))]
@@ -84,6 +103,12 @@ async def execute_broadcast(row: dict) -> dict:
         if all_phones:
             rows = db.table("leads").select("phone").in_("phone", all_phones).eq("tenant_id", tenant_id).eq("opted_out", True).execute()
             opted_out_phones = {r["phone"] for r in (rows.data or [])}
+
+        # Suppress leads with 3+ consecutive unreplied outbound messages
+        suppressed_phones: set[str] = set()
+        if all_phones:
+            supp_rows = db.table("leads").select("phone").in_("phone", all_phones).eq("tenant_id", tenant_id).gte("outbound_no_reply_count", 3).execute()
+            suppressed_phones = {r["phone"] for r in (supp_rows.data or [])}
 
         lead_rows = db.table("leads").select("id,phone,name").in_("phone", all_phones).eq("tenant_id", tenant_id).execute()
         phone_to_lead_id = {r["phone"]: r["id"] for r in (lead_rows.data or [])}
@@ -94,7 +119,7 @@ async def execute_broadcast(row: dict) -> dict:
 
         for lead in leads_raw:
             phone = _normalize_phone(lead.get("phone", ""))
-            if not phone or phone in opted_out_phones:
+            if not phone or phone in opted_out_phones or phone in suppressed_phones:
                 failed += 1
                 continue
 
@@ -102,9 +127,13 @@ async def execute_broadcast(row: dict) -> dict:
             lead_name = _clean_text(lead.get("name"))
             extra_cols: dict = lead.get("extra_cols") or {}
 
+            # Pick a random template from pool for this lead
+            chosen_name, chosen_lang, chosen_body = _random.choice(template_pool)
+            has_vars_this = bool(_re.search(r"\{\{\d+\}\}", chosen_body))
+
             try:
                 components: list[dict] = []
-                if has_vars:
+                if has_vars_this:
                     params = []
                     for col in (variable_mapping or []):
                         val = extra_cols.get(col, "") or ""
@@ -115,8 +144,8 @@ async def execute_broadcast(row: dict) -> dict:
 
                 await send_template_message(
                     to_number=phone,
-                    template_name=template_name,
-                    lang_code=tpl_lang,
+                    template_name=chosen_name,
+                    lang_code=chosen_lang,
                     components=components,
                     phone_number_id=best_number.get("meta_phone_number_id"),
                     tenant_id=tenant_id,
@@ -130,9 +159,13 @@ async def execute_broadcast(row: dict) -> dict:
                             "tenant_id": tenant_id,
                             "direction": "outbound",
                             "channel": "whatsapp",
-                            "content": f"[Template: {template_name}]",
+                            "content": f"[Template: {chosen_name}]",
                             "is_ai_generated": False,
                         }).execute()
+                    except Exception:
+                        pass
+                    try:
+                        db.rpc("increment_lead_no_reply_count", {"p_lead_id": lead_id}).execute()
                     except Exception:
                         pass
 
