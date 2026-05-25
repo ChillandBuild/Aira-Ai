@@ -1,8 +1,7 @@
 "use client";
 import { toast } from "sonner";
 import { useEffect, useState } from "react";
-import { api, Lead, Caller, SegmentTemplate, BroadcastResult, API_URL, getAuthHeaders } from "@/lib/api";
-import { SegmentBadge } from "@/components/segment-badge";
+import { api, Lead, Caller, SegmentTemplate, BroadcastResult } from "@/lib/api";
 import { Download, Send, Save, Pencil, Plus, X, Loader2 } from "lucide-react";
 import { timeAgo, formatPhone } from "@/lib/utils";
 import { useAuthRole } from "../contexts/AuthRoleContext";
@@ -63,6 +62,13 @@ function NameCell({ lead, onUpdate }: { lead: Lead; onUpdate: (l: Lead) => void 
 }
 
 const SEGMENTS = ["A", "B", "C", "D"] as const;
+
+const SEGMENT_LABELS: Record<string, string> = {
+  A: "Hot",
+  B: "Warm",
+  C: "Cold",
+  D: "Disqualified",
+};
 
 function ComposeModal({ onClose, onSent }: { onClose: () => void; onSent: () => void }) {
   const [phone, setPhone] = useState("");
@@ -173,46 +179,6 @@ function ComposeModal({ onClose, onSent }: { onClose: () => void; onSent: () => 
 }
 
 
-function ColdAssignmentToggle() {
-  const [enabled, setEnabled] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    getAuthHeaders().then(async (auth) => {
-      const res = await fetch(`${API_URL}/api/v1/callers/cold-assignment`, { headers: auth });
-      if (res.ok) setEnabled((await res.json()).enabled);
-      setLoading(false);
-    });
-  }, []);
-
-  async function toggle() {
-    const auth = await getAuthHeaders();
-    const next = !enabled;
-    setEnabled(next);
-    await fetch(`${API_URL}/api/v1/callers/cold-assignment`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", ...auth },
-      body: JSON.stringify({ enabled: next }),
-    });
-  }
-
-  if (loading) return null;
-
-  return (
-    <button
-      onClick={toggle}
-      className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-border-subtle bg-white hover:bg-surface-subtle transition-colors"
-    >
-      {/* pill toggle */}
-      <span className={`relative inline-flex w-8 h-[18px] rounded-full transition-colors duration-200 flex-shrink-0 ${enabled ? "bg-primary" : "bg-surface-mid"}`}>
-        <span className={`absolute top-[3px] left-[3px] w-3 h-3 bg-white rounded-full shadow-sm transition-transform duration-200 ${enabled ? "translate-x-[14px]" : "translate-x-0"}`} />
-      </span>
-      <span className="font-label text-xs font-semibold text-ink-muted whitespace-nowrap">
-        Cold lead auto-assign <span className={`ml-1 font-bold ${enabled ? "text-primary" : "text-ink-muted"}`}>{enabled ? "ON" : "OFF"}</span>
-      </span>
-    </button>
-  );
-}
 
 export default function LeadsPage() {
   const { role } = useAuthRole();
@@ -261,7 +227,7 @@ export default function LeadsPage() {
 
   async function broadcast() {
     if (!draft.trim()) return;
-    if (!confirm(`Send this message to every lead in Segment ${tab}?`)) return;
+    if (!confirm(`Send this message to all ${SEGMENT_LABELS[tab]} leads?`)) return;
     setBroadcasting(true);
     setLastResult(null);
     try {
@@ -281,9 +247,8 @@ export default function LeadsPage() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="font-display text-3xl font-bold text-tertiary">Leads</h1>
-            {role === "owner" && <ColdAssignmentToggle />}
           </div>
-          <p className="font-body text-on-surface-muted mt-1">Priority segments A → D</p>
+          <p className="font-body text-on-surface-muted mt-1">Hot · Warm · Cold · Disqualified</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -305,7 +270,7 @@ export default function LeadsPage() {
             className="flex items-center gap-2 px-4 py-2.5 bg-tertiary text-white rounded-xl font-label text-sm font-semibold hover:bg-tertiary/90 transition-colors"
           >
             <Download size={16} />
-            Export Segment {tab}
+            Export {SEGMENT_LABELS[tab]}
           </button>
         </div>
       </div>
@@ -326,7 +291,7 @@ export default function LeadsPage() {
               tab === seg ? "bg-surface shadow-card text-tertiary" : "text-on-surface-muted hover:text-on-surface"
             }`}
           >
-            Segment {seg}
+            {SEGMENT_LABELS[seg]}
           </button>
         ))}
       </div>
@@ -334,7 +299,7 @@ export default function LeadsPage() {
       <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15 mb-6">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-display text-sm font-bold text-tertiary">
-            Action Box — Segment {tab}
+            Action Box — {SEGMENT_LABELS[tab]} Leads
           </h2>
           {lastResult && (
             <p className="font-label text-xs text-on-surface-muted">
@@ -347,7 +312,7 @@ export default function LeadsPage() {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           rows={3}
-          placeholder={`Message to broadcast to Segment ${tab} leads…`}
+          placeholder={`Message to broadcast to ${SEGMENT_LABELS[tab]} leads…`}
           className="w-full px-4 py-3 bg-surface-low rounded-xl font-body text-sm text-on-surface border-0 focus:ring-2 focus:ring-tertiary resize-none"
         />
         <div className="flex gap-2 mt-3">
@@ -365,7 +330,7 @@ export default function LeadsPage() {
             className="flex items-center gap-2 px-4 py-2 bg-secondary text-white rounded-xl font-label text-xs font-semibold hover:bg-secondary/90 transition-colors disabled:opacity-50"
           >
             <Send size={14} />
-            {broadcasting ? "Sending…" : `Send to Segment ${tab}`}
+            {broadcasting ? "Sending…" : `Send to ${SEGMENT_LABELS[tab]}`}
           </button>
         </div>
       </div>
@@ -374,7 +339,7 @@ export default function LeadsPage() {
         {loading ? (
           <div className="p-8 text-center font-body text-on-surface-muted">Loading…</div>
         ) : leads.length === 0 ? (
-          <div className="p-8 text-center font-body text-on-surface-muted">No leads in Segment {tab}</div>
+          <div className="p-8 text-center font-body text-on-surface-muted">No {SEGMENT_LABELS[tab]} leads</div>
         ) : (
           <table className="w-full">
             <thead>
@@ -382,7 +347,7 @@ export default function LeadsPage() {
                 <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Contact/ID</th>
                 <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Name</th>
                 <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Score</th>
-                <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Segment</th>
+                <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Assigned To</th>
                 <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Source</th>
                 <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Added</th>
                 {role === "owner" && (
@@ -420,7 +385,15 @@ export default function LeadsPage() {
                       <span className="font-label text-xs text-on-surface-muted">{lead.score}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4"><SegmentBadge segment={lead.segment} /></td>
+                  <td className="px-6 py-4">
+                    {lead.assigned_to ? (
+                      <span className="font-label text-xs font-semibold text-ink">
+                        {callers.find((c) => c.id === lead.assigned_to)?.name ?? "Caller"}
+                      </span>
+                    ) : (
+                      <span className="font-label text-xs text-ink-muted">—</span>
+                    )}
+                  </td>
                   <td className="px-6 py-4 font-label text-xs text-on-surface-muted capitalize">{lead.source}</td>
                   <td className="px-6 py-4 font-label text-xs text-on-surface-muted">{timeAgo(lead.created_at)}</td>
                   {role === "owner" && (
