@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 import httpx
 from groq import Groq
@@ -26,6 +27,39 @@ def _groq_complete(prompt: str, max_tokens: int = 300) -> str:
         max_tokens=max_tokens,
     )
     return response.choices[0].message.content.strip()
+
+
+def _groq_chat(messages: list[dict], max_tokens: int = 300) -> str:
+    """Multi-turn chat completion. Pass an array of {role, content} dicts —
+    typically [system, user, assistant, user, ...] — so the model sees real history."""
+    if not _groq_client:
+        raise RuntimeError("GROQ_API_KEY not configured")
+    response = _groq_client.chat.completions.create(
+        model=_REPLY_MODEL,
+        messages=messages,
+        temperature=0.4,
+        max_tokens=max_tokens,
+    )
+    return response.choices[0].message.content.strip()
+
+
+def _fetch_conversation_summary(db, lead_id: str) -> str | None:
+    """Fetch the compacted conversation_summary from lead_conversation_state.
+    Returns None if no summary exists or on error."""
+    try:
+        row = (
+            db.table("lead_conversation_state")
+            .select("conversation_summary")
+            .eq("lead_id", str(lead_id))
+            .maybe_single()
+            .execute()
+        )
+        if row and row.data:
+            summary = (row.data.get("conversation_summary") or "").strip()
+            return summary or None
+    except Exception as e:
+        logger.warning(f"Conversation summary fetch failed for lead {lead_id}: {e}")
+    return None
 
 FALLBACK_PROMPT = """You are a helpful AI assistant. Answer customer queries warmly and accurately.
 Keep replies concise (2-3 sentences max).
@@ -84,20 +118,83 @@ def _recent_thread(db, lead_id: str, limit: int = 6) -> list[dict]:
         or []
     )
 
+_FAQ_MIN_KEYWORD_LEN = 3  # ignore "no", "ok", "hi" etc. at match time
+
+
 def _check_faq(message: str, db, tenant_id: str | None = None) -> str | None:
-    """Check FAQ table for a keyword match. Returns answer or None."""
+    """Pick the best-matching active FAQ for an inbound message.
+
+    Scoring (lexicographic — earlier signal dominates):
+      1. Distinct keywords matched with word boundary (\\bkeyword\\b)
+      2. Total length of matched keywords (longer phrase = more specific)
+      3. hit_count (battle-tested FAQs win ties)
+
+    Word-boundary matching prevents 'app' hitting 'happens', 'book' hitting
+    'facebook', etc. Returns the chosen FAQ's answer, or None if nothing matched.
+    """
     try:
-        message_lower = message.lower()
-        query = db.table("faqs").select("id,answer,keywords").eq("active", True)
+        message_lower = (message or "").lower()
+        if not message_lower:
+            return None
+
+        query = db.table("faqs").select("id,answer,keywords,hit_count,question").eq("active", True)
         if tenant_id:
             query = query.eq("tenant_id", tenant_id)
-        faqs = query.execute()
-        for faq in (faqs.data or []):
+        faqs = (query.execute().data or [])
+        # Stable iteration order so true ties always resolve to the same FAQ
+        faqs.sort(key=lambda f: str(f.get("id") or ""))
+
+        best_faq: dict | None = None
+        best_score: tuple[int, int, int] = (0, 0, -1)
+
+        for faq in faqs:
             keywords = faq.get("keywords") or []
-            if any(kw.lower() in message_lower for kw in keywords if kw):
-                # increment hit count
-                db.table("faqs").update({"hit_count": (faq.get("hit_count", 0) or 0) + 1}).eq("id", faq["id"]).execute()
-                return faq["answer"]
+            matched: set[str] = set()
+            for kw in keywords:
+                if not kw:
+                    continue
+                kw_lower = kw.lower().strip()
+                if len(kw_lower) < _FAQ_MIN_KEYWORD_LEN:
+                    continue
+                try:
+                    if re.search(rf"\b{re.escape(kw_lower)}\b", message_lower):
+                        matched.add(kw_lower)
+                except re.error:
+                    # Malformed keyword — fall back to safe substring check
+                    if kw_lower in message_lower:
+                        matched.add(kw_lower)
+
+            if not matched:
+                continue
+
+            score = (
+                len(matched),
+                sum(len(k) for k in matched),
+                faq.get("hit_count", 0) or 0,
+            )
+            if score > best_score:
+                best_score = score
+                best_faq = faq
+
+        if not best_faq:
+            return None
+
+        logger.info(
+            "FAQ matched id=%s q=%r score=(kw=%d chars=%d hits=%d)",
+            best_faq.get("id"),
+            best_faq.get("question"),
+            best_score[0],
+            best_score[1],
+            best_score[2],
+        )
+        try:
+            db.table("faqs").update(
+                {"hit_count": (best_faq.get("hit_count", 0) or 0) + 1}
+            ).eq("id", best_faq["id"]).execute()
+        except Exception as e:
+            logger.warning(f"FAQ hit_count update failed: {e}")
+        return best_faq["answer"]
+
     except Exception as e:
         logger.error(f"FAQ check failed: {e}")
     return None
@@ -322,7 +419,7 @@ async def generate_reply(
     # Step 0: respect human-takeover flag
     lead_row = (
         db.table("leads")
-        .select("ai_enabled,score,segment,phone,converted_at,tenant_id,assigned_to")
+        .select("ai_enabled,score,segment,phone,converted_at,tenant_id,assigned_to,name")
         .eq("id", str(lead_id))
         .maybe_single()
         .execute()
@@ -389,14 +486,45 @@ async def generate_reply(
             if context_text:
                 system_prompt += "\n\nKNOWLEDGE BASE:\nUse the following documents to answer the user's question accurately. If the answer is not in the documents, say you will connect them with a team member.\n\n" + context_text
 
-            full_prompt = (
-                system_prompt
-                + "\n\nIMPORTANT: Always reply in the SAME language the user wrote in. "
-                "If they write in Tamil, reply in Tamil. If they write in English, reply in English. "
-                "Never switch language unless the user switches first."
-                + "\n\nLead message: " + message
+            # Lead-specific context: name + segment let the model address the user naturally
+            # and calibrate tone (A=hot, C=cold). conversation_summary covers older turns
+            # that fell off the recent-thread window after compaction.
+            lead_name = (lead_data.get("name") or "").strip()
+            lead_segment = lead_data.get("segment") or "C"
+            summary = _fetch_conversation_summary(db, lead_id)
+
+            lead_facts: list[str] = []
+            if lead_name:
+                lead_facts.append(f"Lead name: {lead_name}")
+            lead_facts.append(f"Current segment: {lead_segment} (A=hot, B=warm, C=cold, D=disqualified)")
+            if summary:
+                lead_facts.append(f"Earlier conversation summary:\n{summary}")
+            system_prompt += "\n\nLEAD CONTEXT:\n" + "\n".join(lead_facts)
+
+            system_prompt += (
+                "\n\nLANGUAGE RULE: Reply in the SAME language the user just wrote in. "
+                "If they write Tamil, reply Tamil. English → English. Never switch unless they do."
             )
-            reply_text = _groq_complete(full_prompt, max_tokens=300)
+
+            # Build multi-turn chat: system + last ~8 messages (oldest first) as
+            # alternating user/assistant turns. The current message is already in
+            # the messages table (inserted by webhook.py before generate_reply runs),
+            # so it appears as the final user turn — no need to append it.
+            recent_thread = _recent_thread(db, lead_id, limit=8)
+            chat_messages: list[dict] = [{"role": "system", "content": system_prompt}]
+            for row in reversed(recent_thread):  # oldest first
+                content = (row.get("content") or "").strip()
+                if not content:
+                    continue
+                role = "assistant" if row.get("direction") == "outbound" else "user"
+                chat_messages.append({"role": role, "content": content})
+
+            # Defensive: if the current inbound message isn't the last user turn
+            # (race condition with the insert), append it so the model still sees it.
+            if not chat_messages or chat_messages[-1].get("role") != "user" or chat_messages[-1].get("content") != message:
+                chat_messages.append({"role": "user", "content": message})
+
+            reply_text = _groq_chat(chat_messages, max_tokens=300)
             is_ai = True
             reply_source = "knowledge" if context_text else "ai"
         except Exception as e:

@@ -5,7 +5,10 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 _client = Groq(api_key=settings.groq_api_key) if settings.groq_api_key else None
-_SCORER_MODEL = "llama-3.1-8b-instant"
+# Upgraded from llama-3.1-8b-instant: the 8b model frequently misreads short
+# acknowledgments ("ok", "yes", "tell me more") inside a booking flow as low-intent.
+# The 70b model interprets these in the context of the booking state and prior turns.
+_SCORER_MODEL = "llama-3.3-70b-versatile"
 
 SCORING_PROMPT = """You are a lead scoring assistant for a B2B sales team.
 
