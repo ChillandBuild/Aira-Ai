@@ -1,7 +1,8 @@
 "use client";
 import { toast } from "sonner";
 import { useEffect, useRef, useState } from "react";
-import { Plus, X, Pencil, Trash2, ChevronDown, PauseCircle, PlayCircle, Star, RefreshCw } from "lucide-react";
+import { Plus, X, Pencil, Check, Trash2, PauseCircle, PlayCircle, Star, RefreshCw, Activity } from "lucide-react";
+import Link from "next/link";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
 type PhoneNumber = {
@@ -12,7 +13,7 @@ type PhoneNumber = {
   role: "primary" | "standby" | "archived";
   status: "active" | "warming" | "restricted" | "archived";
   quality_rating: "green" | "yellow" | "red";
-  messaging_tier: 1000 | 10000 | 100000;
+  messaging_tier: number;
   daily_send_count: number;
   warm_up_day: number;
   paused_outbound: boolean;
@@ -23,6 +24,12 @@ const QUALITY_COLOR: Record<PhoneNumber["quality_rating"], string> = {
   green: "bg-emerald-400",
   yellow: "bg-amber-400",
   red: "bg-red-400",
+};
+
+const QUALITY_LABEL: Record<PhoneNumber["quality_rating"], string> = {
+  green: "High",
+  yellow: "Medium",
+  red: "Low",
 };
 
 const ROLE_STYLES: Record<PhoneNumber["role"], string> = {
@@ -75,84 +82,6 @@ const numbersApi = {
     apiFetch<PhoneNumber>(`/api/v1/numbers/${id}/sync-meta`, { method: "POST" }),
 };
 
-function ActionMenu({
-  num,
-  onSetPrimary,
-  onTogglePause,
-  onRename,
-  onSync,
-  syncing,
-}: {
-  num: PhoneNumber;
-  onSetPrimary: () => void;
-  onTogglePause: () => void;
-  onRename: () => void;
-  onSync: () => void;
-  syncing: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
-
-  const canSetPrimary = num.role !== "primary" && num.role !== "archived";
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg hover:bg-surface-mid transition-colors font-label text-xs text-on-surface-muted hover:text-on-surface"
-      >
-        Actions
-        <ChevronDown size={12} />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 w-48 bg-surface rounded-xl shadow-card ring-1 ring-[#c4c7c7]/20 py-1">
-          {canSetPrimary && (
-            <button
-              onClick={() => { setOpen(false); onSetPrimary(); }}
-              className="w-full flex items-center gap-2 px-3 py-2 font-label text-xs text-on-surface hover:bg-surface-low transition-colors"
-            >
-              <Star size={12} className="text-blue-500" />
-              Set as Primary
-            </button>
-          )}
-          <button
-            onClick={() => { setOpen(false); onTogglePause(); }}
-            className="w-full flex items-center gap-2 px-3 py-2 font-label text-xs text-on-surface hover:bg-surface-low transition-colors"
-          >
-            {num.paused_outbound
-              ? <PlayCircle size={12} className="text-green-600" />
-              : <PauseCircle size={12} className="text-amber-600" />}
-            {num.paused_outbound ? "Resume Outbound" : "Pause Outbound"}
-          </button>
-          <button
-            onClick={() => { setOpen(false); onRename(); }}
-            className="w-full flex items-center gap-2 px-3 py-2 font-label text-xs text-on-surface hover:bg-surface-low transition-colors"
-          >
-            <Pencil size={12} className="text-on-surface-muted" />
-            Rename
-          </button>
-          <button
-            onClick={() => { setOpen(false); onSync(); }}
-            disabled={syncing}
-            className="w-full flex items-center gap-2 px-3 py-2 font-label text-xs text-on-surface hover:bg-surface-low transition-colors disabled:opacity-50"
-          >
-            <RefreshCw size={12} className={`text-blue-500 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Syncing…" : "Sync from Meta"}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function NumbersPage() {
   const [numbers, setNumbers] = useState<PhoneNumber[]>([]);
   const [loading, setLoading] = useState(true);
@@ -163,10 +92,14 @@ export default function NumbersPage() {
   const [addMetaId, setAddMetaId] = useState("");
   const [adding, setAdding] = useState(false);
 
+  // Inline rename state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [saving, setSaving] = useState(false);
+  const editInputRef = useRef<HTMLInputElement>(null);
+
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [pausingId, setPausingId] = useState<string | null>(null);
 
   async function reload() {
     const rows = await numbersApi.list();
@@ -180,6 +113,33 @@ export default function NumbersPage() {
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
+
+  // Focus input when entering edit mode
+  useEffect(() => {
+    if (editingId && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [editingId]);
+
+  function startRename(num: PhoneNumber) {
+    setEditingId(num.id);
+    setEditName(num.display_name);
+  }
+
+  async function saveRename(id: string) {
+    if (!editName.trim()) return;
+    setSaving(true);
+    try {
+      await numbersApi.update(id, { display_name: editName.trim() });
+      await reload();
+      setEditingId(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Rename failed");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function handleAdd() {
     if (!addNumber.trim() || !addDisplayName.trim()) return;
@@ -207,36 +167,22 @@ export default function NumbersPage() {
     try {
       await numbersApi.update(id, { role: "primary" });
       await reload();
+      toast.success("Set as primary number");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Update failed");
     }
   }
 
   async function handleTogglePause(num: PhoneNumber) {
+    setPausingId(num.id);
     try {
       await numbersApi.update(num.id, { paused_outbound: !num.paused_outbound });
       await reload();
+      toast.success(num.paused_outbound ? "Outbound resumed" : "Outbound paused");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Update failed");
-    }
-  }
-
-  function startRename(num: PhoneNumber) {
-    setEditingId(num.id);
-    setEditName(num.display_name);
-  }
-
-  async function saveRename(id: string) {
-    if (!editName.trim()) return;
-    setSaving(true);
-    try {
-      await numbersApi.update(id, { display_name: editName.trim() });
-      await reload();
-      setEditingId(null);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Rename failed");
     } finally {
-      setSaving(false);
+      setPausingId(null);
     }
   }
 
@@ -254,7 +200,7 @@ export default function NumbersPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("This will archive the number. It will no longer send or receive messages.")) return;
+    if (!confirm("Delete this number? It will no longer send or receive messages.")) return;
     try {
       await numbersApi.remove(id);
       await reload();
@@ -268,12 +214,21 @@ export default function NumbersPage() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="font-display text-3xl font-bold text-tertiary">WhatsApp Numbers</h1>
-        <p className="font-body text-on-surface-muted mt-1">Manage sender numbers, warm-up, and outbound routing</p>
+      <div className="mb-8 flex items-start justify-between">
+        <div>
+          <h1 className="font-display text-3xl font-bold text-tertiary">WhatsApp Numbers</h1>
+          <p className="font-body text-on-surface-muted mt-1">Manage sender numbers, warm-up, and outbound routing</p>
+        </div>
+        <Link
+          href="/dashboard/numbers/health"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface border border-surface-mid hover:bg-surface-low transition-colors font-label text-xs text-on-surface-muted hover:text-on-surface"
+        >
+          <Activity size={13} />
+          Health Dashboard
+        </Link>
       </div>
 
-      <div className="bg-surface rounded-card p-8 shadow-card ring-1 ring-[#c4c7c7]/15">
+      <div className="bg-surface rounded-card shadow-card ring-1 ring-[#c4c7c7]/15 p-8">
         <div className="flex items-center justify-between mb-6">
           <h2 className="font-display text-lg font-bold text-tertiary">Number Pool</h2>
           <button
@@ -292,141 +247,183 @@ export default function NumbersPage() {
             No numbers yet. Click &quot;Add Number&quot; to get started.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-surface-mid">
-                  {["Display Name", "Number", "Provider", "Role", "Status", "Quality", "Sends Today / Limit", "Warm-up", "Actions"].map((h) => (
-                    <th key={h} className="pb-3 pr-4 font-label text-xs font-semibold text-on-surface-muted whitespace-nowrap">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map((num) => {
-                  const isEditing = editingId === num.id;
-                  return (
-                    <tr key={num.id} className="border-b border-surface-mid/50 hover:bg-surface-low transition-colors">
-                      <td className="py-3 pr-4">
-                        {isEditing ? (
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              value={editName}
-                              onChange={(e) => setEditName(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") saveRename(num.id);
-                                if (e.key === "Escape") setEditingId(null);
-                              }}
-                              autoFocus
-                              className="px-2 py-1 rounded-lg bg-surface border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary w-36"
-                            />
-                            <button
-                              onClick={() => saveRename(num.id)}
-                              disabled={saving}
-                              className="px-2 py-1 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 disabled:opacity-50 transition-colors"
-                            >
-                              {saving ? "…" : "Save"}
-                            </button>
-                            <button
-                              onClick={() => setEditingId(null)}
-                              className="p-1 rounded-lg hover:bg-surface-mid transition-colors text-on-surface-muted"
-                            >
-                              <X size={12} />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-body text-sm font-semibold text-on-surface">
-                              {num.display_name}
-                            </span>
-                            {num.paused_outbound && (
-                              <span className="px-1.5 py-0.5 rounded font-label text-[10px] bg-amber-100 text-amber-700">
-                                paused
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-3 pr-4 font-label text-xs text-on-surface-muted whitespace-nowrap">
-                        {num.number}
-                      </td>
-                      <td className="py-3 pr-4">
-                        <span className="font-label text-xs text-on-surface capitalize">
-                          Meta Cloud
+          <div className="space-y-3">
+            {visible.map((num) => {
+              const isEditing = editingId === num.id;
+              const isSyncing = syncingId === num.id;
+              const isPausing = pausingId === num.id;
+              const sendPct = num.messaging_tier > 0
+                ? Math.min((num.daily_send_count / num.messaging_tier) * 100, 100)
+                : 0;
+
+              return (
+                <div
+                  key={num.id}
+                  className="rounded-xl border border-surface-mid bg-surface-low/40 p-4 hover:bg-surface-low transition-colors"
+                >
+                  {/* Row 1: name + role + status + quality */}
+                  <div className="flex items-center gap-3 mb-3">
+                    {/* Inline-editable name */}
+                    {isEditing ? (
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <input
+                          ref={editInputRef}
+                          type="text"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") saveRename(num.id);
+                            if (e.key === "Escape") setEditingId(null);
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg bg-surface border border-tertiary font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary min-w-0 w-48"
+                        />
+                        <button
+                          onClick={() => saveRename(num.id)}
+                          disabled={saving}
+                          className="p-1.5 rounded-lg bg-tertiary text-white hover:bg-tertiary/90 disabled:opacity-50 transition-colors"
+                          title="Save"
+                        >
+                          <Check size={12} />
+                        </button>
+                        <button
+                          onClick={() => setEditingId(null)}
+                          className="p-1.5 rounded-lg hover:bg-surface-mid transition-colors text-on-surface-muted"
+                          title="Cancel"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => startRename(num)}
+                        className="flex items-center gap-1.5 group min-w-0"
+                        title="Click to rename"
+                      >
+                        <span className="font-body text-sm font-semibold text-on-surface group-hover:text-tertiary transition-colors truncate">
+                          {num.display_name}
                         </span>
-                      </td>
-                      <td className="py-3 pr-4">
-                        <span className={`px-2.5 py-1 rounded-full font-label text-xs font-semibold capitalize ${ROLE_STYLES[num.role]}`}>
-                          {num.role}
-                        </span>
-                      </td>
-                      <td className="py-3 pr-4">
-                        {num.status === "warming" ? (
-                          <span className={`px-2.5 py-1 rounded-full font-label text-xs font-semibold ${STATUS_STYLES.warming}`}>
-                            Day {num.warm_up_day}/{WARM_UP_TARGET}
-                          </span>
-                        ) : (
-                          <span className={`px-2.5 py-1 rounded-full font-label text-xs font-semibold capitalize ${STATUS_STYLES[num.status]}`}>
-                            {num.status}
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 pr-4">
-                        <span className={`w-2 h-2 rounded-full inline-block ${QUALITY_COLOR[num.quality_rating]}`} />
-                      </td>
-                      <td className="py-3 pr-4 font-label text-xs text-on-surface whitespace-nowrap">
-                        {num.daily_send_count.toLocaleString()} / {num.messaging_tier.toLocaleString()}
-                      </td>
-                      <td className="py-3 pr-4">
-                        {num.status === "warming" ? (
-                          <div className="w-20">
-                            <div className="h-1.5 rounded-full bg-surface-mid overflow-hidden">
-                              <div
-                                className="h-full rounded-full bg-amber-400"
-                                style={{ width: `${Math.min((num.warm_up_day / WARM_UP_TARGET) * 100, 100)}%` }}
-                              />
-                            </div>
-                            <p className="font-label text-[10px] text-on-surface-muted mt-0.5">
-                              Day {num.warm_up_day}/{WARM_UP_TARGET}
-                            </p>
-                          </div>
-                        ) : (
-                          <span className="font-label text-xs text-on-surface-muted">—</span>
-                        )}
-                      </td>
-                      <td className="py-3">
-                        {!isEditing && (
-                          <div className="flex items-center gap-1">
-                            <ActionMenu
-                              num={num}
-                              onSetPrimary={() => handleSetPrimary(num.id)}
-                              onTogglePause={() => handleTogglePause(num)}
-                              onRename={() => startRename(num)}
-                              onSync={() => handleSyncMeta(num.id)}
-                              syncing={syncingId === num.id}
-                            />
-                            <button
-                              onClick={() => handleDelete(num.id)}
-                              disabled={activeCount === 1 && num.status === "active"}
-                              title={activeCount === 1 && num.status === "active" ? "Cannot delete last active number" : undefined}
-                              className="p-1.5 rounded-lg hover:bg-red-50 text-ink-muted hover:text-red-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        <Pencil size={11} className="text-on-surface-muted opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                      </button>
+                    )}
+
+                    <span className="font-label text-xs text-on-surface-muted whitespace-nowrap">{num.number}</span>
+
+                    {/* Role */}
+                    <span className={`px-2 py-0.5 rounded-full font-label text-[11px] font-semibold capitalize ${ROLE_STYLES[num.role]}`}>
+                      {num.role}
+                    </span>
+
+                    {/* Status */}
+                    <span className={`px-2 py-0.5 rounded-full font-label text-[11px] font-semibold ${STATUS_STYLES[num.status]}`}>
+                      {num.status === "warming" ? `Warming · Day ${num.warm_up_day}/${WARM_UP_TARGET}` : num.status}
+                    </span>
+
+                    {/* Quality */}
+                    <span className="flex items-center gap-1">
+                      <span className={`w-2 h-2 rounded-full inline-block flex-shrink-0 ${QUALITY_COLOR[num.quality_rating]}`} />
+                      <span className="font-label text-[11px] text-on-surface-muted">{QUALITY_LABEL[num.quality_rating]}</span>
+                    </span>
+
+                    {/* Paused badge */}
+                    {num.paused_outbound && (
+                      <span className="px-2 py-0.5 rounded-full font-label text-[11px] bg-amber-100 text-amber-700 font-semibold">
+                        Paused
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Row 2: sends bar + warm-up + actions */}
+                  <div className="flex items-center gap-4">
+                    {/* Daily sends bar */}
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-label text-[11px] text-on-surface-muted whitespace-nowrap">
+                        {num.daily_send_count.toLocaleString()} / {num.messaging_tier.toLocaleString()} today
+                      </span>
+                      <div className="w-24 h-1.5 rounded-full bg-surface-mid overflow-hidden flex-shrink-0">
+                        <div
+                          className={`h-full rounded-full transition-all ${sendPct > 80 ? "bg-red-400" : sendPct > 50 ? "bg-amber-400" : "bg-emerald-400"}`}
+                          style={{ width: `${sendPct}%` }}
+                        />
+                      </div>
+                      <span className="font-label text-[11px] text-on-surface-muted">{Math.round(sendPct)}%</span>
+                    </div>
+
+                    {/* Warm-up bar */}
+                    {num.status === "warming" && (
+                      <div className="flex items-center gap-2">
+                        <span className="font-label text-[11px] text-on-surface-muted whitespace-nowrap">Warm-up</span>
+                        <div className="w-20 h-1.5 rounded-full bg-surface-mid overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-amber-400"
+                            style={{ width: `${Math.min((num.warm_up_day / WARM_UP_TARGET) * 100, 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Spacer */}
+                    <div className="flex-1" />
+
+                    {/* Action buttons — always visible, never in a dropdown */}
+
+                    {/* Set as Primary */}
+                    {num.role !== "primary" && num.role !== "archived" && (
+                      <button
+                        onClick={() => handleSetPrimary(num.id)}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-600 font-label text-[11px] font-semibold transition-colors"
+                        title="Set as primary number"
+                      >
+                        <Star size={11} />
+                        Set Primary
+                      </button>
+                    )}
+
+                    {/* Pause / Resume — prominent */}
+                    <button
+                      onClick={() => handleTogglePause(num)}
+                      disabled={isPausing}
+                      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border font-label text-[11px] font-semibold transition-colors disabled:opacity-50 ${
+                        num.paused_outbound
+                          ? "border-green-200 bg-green-50 hover:bg-green-100 text-green-700"
+                          : "border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-700"
+                      }`}
+                      title={num.paused_outbound ? "Resume outbound messaging" : "Pause outbound messaging"}
+                    >
+                      {num.paused_outbound
+                        ? <><PlayCircle size={12} /> Resume</>
+                        : <><PauseCircle size={12} /> Pause</>
+                      }
+                    </button>
+
+                    {/* Sync from Meta */}
+                    <button
+                      onClick={() => handleSyncMeta(num.id)}
+                      disabled={isSyncing}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-surface-mid bg-surface hover:bg-surface-low text-on-surface-muted hover:text-on-surface font-label text-[11px] font-semibold transition-colors disabled:opacity-50"
+                      title="Pull latest quality rating and tier from Meta"
+                    >
+                      <RefreshCw size={11} className={isSyncing ? "animate-spin" : ""} />
+                      {isSyncing ? "Syncing…" : "Sync Meta"}
+                    </button>
+
+                    {/* Delete */}
+                    <button
+                      onClick={() => handleDelete(num.id)}
+                      disabled={activeCount === 1 && num.status === "active"}
+                      title={activeCount === 1 && num.status === "active" ? "Cannot delete last active number" : "Delete number"}
+                      className="p-1.5 rounded-lg hover:bg-red-50 text-on-surface-muted hover:text-red-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
+      {/* Add Number Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-surface rounded-card p-8 shadow-card w-full max-w-md ring-1 ring-[#c4c7c7]/20">
@@ -442,18 +439,13 @@ export default function NumbersPage() {
 
             <div className="space-y-4">
               <div>
-                <label className="block font-label text-xs font-semibold text-on-surface-muted mb-1.5">
-                  Provider
-                </label>
+                <label className="block font-label text-xs font-semibold text-on-surface-muted mb-1.5">Provider</label>
                 <div className="w-full px-3 py-2 rounded-lg bg-surface-low border border-surface-mid font-body text-sm text-on-surface-muted">
                   Meta Cloud API
                 </div>
               </div>
-
               <div>
-                <label className="block font-label text-xs font-semibold text-on-surface-muted mb-1.5">
-                  Phone Number
-                </label>
+                <label className="block font-label text-xs font-semibold text-on-surface-muted mb-1.5">Phone Number</label>
                 <input
                   type="tel"
                   placeholder="+919876543210"
@@ -462,11 +454,8 @@ export default function NumbersPage() {
                   className="w-full px-3 py-2 rounded-lg bg-surface-low border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary"
                 />
               </div>
-
               <div>
-                <label className="block font-label text-xs font-semibold text-on-surface-muted mb-1.5">
-                  Display Name
-                </label>
+                <label className="block font-label text-xs font-semibold text-on-surface-muted mb-1.5">Display Name</label>
                 <input
                   type="text"
                   placeholder="e.g. Aira Main"
@@ -475,11 +464,8 @@ export default function NumbersPage() {
                   className="w-full px-3 py-2 rounded-lg bg-surface-low border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary"
                 />
               </div>
-
               <div>
-                <label className="block font-label text-xs font-semibold text-on-surface-muted mb-1.5">
-                  Meta Phone Number ID
-                </label>
+                <label className="block font-label text-xs font-semibold text-on-surface-muted mb-1.5">Meta Phone Number ID</label>
                 <input
                   type="text"
                   placeholder="From Meta Business Manager"
@@ -488,7 +474,6 @@ export default function NumbersPage() {
                   className="w-full px-3 py-2 rounded-lg bg-surface-low border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary"
                 />
               </div>
-
               <button
                 onClick={handleAdd}
                 disabled={adding || !addNumber.trim() || !addDisplayName.trim()}
