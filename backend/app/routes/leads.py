@@ -237,6 +237,19 @@ async def toggle_ai(lead_id: UUID, payload: AiToggle, tenant_id: str = Depends(g
     return updated
 
 
+@router.patch("/{lead_id}/pin")
+async def toggle_pin(lead_id: UUID, tenant_id: str = Depends(get_tenant_id)):
+    db = get_supabase()
+    existing = db.table("leads").select("pinned_at").eq("id", str(lead_id)).eq("tenant_id", tenant_id).maybe_single().execute()
+    if not existing.data:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    new_pinned = None if existing.data.get("pinned_at") else "now()"
+    result = db.table("leads").update({"pinned_at": new_pinned}).eq("id", str(lead_id)).eq("tenant_id", tenant_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return result.data[0]
+
+
 @router.post("/{lead_id}/send")
 async def send_human_message(lead_id: UUID, payload: HumanMessage, tenant_id: str = Depends(get_tenant_id)):
     content = (payload.content or "").strip()

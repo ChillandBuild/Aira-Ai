@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { getAuthHeaders, API_URL, Lead } from "@/lib/api";
+import { getAuthHeaders, API_URL, Lead, api } from "@/lib/api";
 import { ConversationList } from "@/components/conversation-list";
 import { ChatThread } from "@/components/chat-thread";
 import { MessageSquare, ChevronRight } from "lucide-react";
@@ -19,6 +19,12 @@ async function fetchConversations(): Promise<Lead[]> {
   if (!res.ok) throw new Error(`conversations fetch failed: ${res.status}`);
   const data = await res.json();
   return data.leads ?? [];
+}
+
+function togglePinInList(leads: Lead[], leadId: string): Lead[] {
+  return leads.map((l) =>
+    l.id === leadId ? { ...l, pinned_at: l.pinned_at ? null : new Date().toISOString() } : l
+  );
 }
 
 export default function ConversationsPage() {
@@ -41,16 +47,40 @@ export default function ConversationsPage() {
     localStorage.setItem("sidebar_open", String(sidebarOpen));
   }, [sidebarOpen]);
 
+  function handleSelect(lead: Lead) {
+    setSelected(lead);
+  }
+
+  function handlePin(id: string) {
+    setLeads((prev) => togglePinInList(prev, id));
+    api.leads.pin(id).catch(() => {});
+  }
+
+  function handlePinSelected(ids: string[]) {
+    setLeads((prev) => {
+      let next = prev;
+      for (const id of ids) {
+        next = togglePinInList(next, id);
+      }
+      return next;
+    });
+    for (const id of ids) {
+      api.leads.pin(id).catch(() => {});
+    }
+  }
+
   return (
     <div className="-m-8 h-screen flex">
       <div className="relative flex-shrink-0 transition-all duration-300 ease-in-out" style={{ width: sidebarOpen ? 340 : 0, overflow: "hidden" }}>
         <ConversationList
           leads={leads}
           selectedId={selected?.id ?? null}
-          onSelect={setSelected}
+          onSelect={handleSelect}
           platform={platform}
           onPlatformChange={setPlatform}
           onCollapse={() => setSidebarOpen(false)}
+          onPin={handlePin}
+          onPinSelected={handlePinSelected}
           onDeleted={(deletedIds) => {
             setLeads((prev) => prev.filter((l) => !deletedIds.includes(l.id)));
             if (selected && deletedIds.includes(selected.id)) {

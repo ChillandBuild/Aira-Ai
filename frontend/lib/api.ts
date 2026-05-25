@@ -27,6 +27,7 @@ export interface Lead {
   fb_user_id?: string | null;
   created_at: string;
   last_message_content?: string | null;
+  pinned_at?: string | null;
 }
 
 export interface Message {
@@ -378,6 +379,10 @@ export const api = {
     clearChat: (id: string) =>
       apiFetch<{ success: boolean; message: string }>(`/api/v1/leads/${id}/clear-chat`, {
         method: "DELETE",
+      }),
+    pin: (id: string) =>
+      apiFetch<Lead>(`/api/v1/leads/${id}/pin`, {
+        method: "PATCH",
       }),
     messages: async (id: string) => {
       const res = await apiFetch<Message[] | { data: Message[] }>(`/api/v1/leads/${id}/messages`);

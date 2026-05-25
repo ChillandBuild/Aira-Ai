@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { api, Lead } from "@/lib/api";
 import { SegmentBadge } from "./segment-badge";
 import { formatIST, formatPhone, cn } from "@/lib/utils";
-import { MessageCircle, Trash2, MoreVertical, Search, X, SearchX, ChevronLeft } from "lucide-react";
+import { MessageCircle, Trash2, MoreVertical, Search, X, SearchX, ChevronLeft, Pin } from "lucide-react";
 import { toast } from "sonner";
 
 type ConversationLead = Lead & { last_reply_at?: string };
@@ -64,9 +64,11 @@ interface Props {
   platform: string;
   onPlatformChange: (platform: string) => void;
   onCollapse?: () => void;
+  onPin?: (id: string) => void;
+  onPinSelected?: (ids: string[]) => void;
 }
 
-export function ConversationList({ leads, selectedId, onSelect, onDeleted, platform, onPlatformChange, onCollapse }: Props) {
+export function ConversationList({ leads, selectedId, onSelect, onDeleted, platform, onPlatformChange, onCollapse, onPin, onPinSelected }: Props) {
   const [segment, setSegment] = useState<"A" | "B" | "C" | "D" | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
@@ -97,6 +99,12 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
         return name.includes(q) || phone.includes(q);
       })
       .sort((a, b) => {
+        const aPinned = a.pinned_at ? 1 : 0;
+        const bPinned = b.pinned_at ? 1 : 0;
+        if (aPinned !== bPinned) return bPinned - aPinned;
+        if (aPinned && bPinned) {
+          return new Date(b.pinned_at!).getTime() - new Date(a.pinned_at!).getTime();
+        }
         if (a.needs_human_intervention && !b.needs_human_intervention) return -1;
         if (!a.needs_human_intervention && b.needs_human_intervention) return 1;
         const aTime = (a as ConversationLead).last_reply_at || a.created_at;
@@ -192,6 +200,15 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
                 >
                   Cancel
                 </button>
+                {selectedIds.size > 0 && onPinSelected && (
+                  <button
+                    onClick={() => onPinSelected(Array.from(selectedIds))}
+                    className="flex items-center gap-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 text-[11px] font-semibold ml-2 px-2 py-1 rounded-md transition-colors"
+                  >
+                    <Pin size={12} />
+                    Pin
+                  </button>
+                )}
                 {selectedIds.size > 0 && (
                   <button
                     onClick={handleDeleteSelected}
@@ -389,6 +406,19 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
                     )}>
                       {lead.name || formatPhone(lead.phone) || (lead.source === "instagram" ? "Instagram lead" : lead.source === "telegram" ? "Telegram lead" : lead.source === "facebook" ? "Facebook lead" : "WhatsApp lead")}
                     </span>
+                    {onPin && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onPin(lead.id); }}
+                        className={cn(
+                          "shrink-0 p-0.5 rounded transition-colors",
+                          lead.pinned_at
+                            ? "text-amber-500 hover:text-amber-600"
+                            : "text-on-surface-muted opacity-0 group-hover:opacity-100 hover:text-on-surface"
+                        )}
+                      >
+                        <Pin size={13} className={lead.pinned_at ? "fill-current" : ""} />
+                      </button>
+                    )}
                   </div>
                   <span className="font-label text-[10px] font-medium text-on-surface-muted shrink-0 whitespace-nowrap">
                     {formatIST((lead as ConversationLead).last_reply_at || lead.created_at)}
