@@ -106,8 +106,9 @@ export default function NumberHealthPage() {
 
   async function load() {
     try {
-      const numbersData = await apiFetch<PhoneNumber[]>("/api/v1/numbers");
-      setNumbers(Array.isArray(numbersData) ? numbersData : []);
+      const numbersData = await apiFetch<{ data: PhoneNumber[] } | PhoneNumber[]>("/api/v1/numbers");
+      const list = Array.isArray(numbersData) ? numbersData : (numbersData as { data: PhoneNumber[] }).data ?? [];
+      setNumbers(list);
     } catch {
       setNumbers([]);
     }
