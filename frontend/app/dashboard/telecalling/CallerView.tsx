@@ -8,8 +8,9 @@ import BriefingModal from "./components/briefing-modal";
 import LiveNotesPane from "./components/live-notes-pane";
 import NotesHistoryModal from "./components/notes-history-modal";
 import { fetchNotes, fetchTodayCallbacks, fetchTodayCompletedCallbacks, markCallbackDone, saveNote } from "./lib/notes-api";
-import type { ActiveCallCtx, CallbackJob, NotesResponse } from "./types";
+import type { CallbackJob, NotesResponse } from "./types";
 import { usePolling } from "@/hooks/usePolling";
+import { useActiveCall } from "../contexts/ActiveCallContext";
 
 
 
@@ -46,7 +47,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   const [viewingNotes, setViewingNotes] = useState<NotesResponse | null>(null);
   const [viewingLoading, setViewingLoading] = useState(false);
   const [historyLead, setHistoryLead] = useState<Lead | null>(null);
-  const [activeCallCtx, setActiveCallCtx] = useState<ActiveCallCtx | null>(null);
+  const { activeCall: activeCallCtx, setActiveCall: setActiveCallCtx } = useActiveCall();
 
 
 

@@ -148,7 +148,7 @@ async def today_callbacks(tenant_id: str = Depends(get_tenant_id)):
 
     result = []
     for job in (jobs.data or []):
-        lead = db.table("leads").select("id,name,phone,segment").eq(
+        lead = db.table("leads").select("id,name,phone,segment,assigned_to").eq(
             "id", job["lead_id"]
         ).eq("tenant_id", tenant_id).maybe_single().execute()
         result.append({**job, "lead": (lead and lead.data) or {}})
@@ -179,7 +179,7 @@ async def today_completed_callbacks(tenant_id: str = Depends(get_tenant_id)):
 
     result = []
     for job in (jobs.data or []):
-        lead = db.table("leads").select("id,name,phone,segment").eq(
+        lead = db.table("leads").select("id,name,phone,segment,assigned_to").eq(
             "id", job["lead_id"]
         ).eq("tenant_id", tenant_id).maybe_single().execute()
         result.append({**job, "lead": (lead and lead.data) or {}})

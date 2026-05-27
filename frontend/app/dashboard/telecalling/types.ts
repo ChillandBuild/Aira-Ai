@@ -33,5 +33,5 @@ export interface CallbackJob {
   scheduled_for: string;
   message_preview: string | null;
   status: string;
-  lead: { id: string; name: string | null; phone: string; segment: string };
+  lead: { id: string; name: string | null; phone: string; segment: string; assigned_to?: string | null };
 }

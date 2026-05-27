@@ -8,7 +8,7 @@ import {
 import { api, Caller, Lead, API_URL, getAuthHeaders } from "@/lib/api";
 import { formatPhone } from "@/lib/utils";
 import LiveNotesPane from "./components/live-notes-pane";
-import type { ActiveCallCtx } from "./types";
+import { useActiveCall } from "../contexts/ActiveCallContext";
 
 function ScoreBar({ score }: { score: number }) {
   const pct = Math.round((score / 10) * 100);
@@ -32,7 +32,7 @@ export default function AdminView() {
   const [totalCallsToday, setTotalCallsToday] = useState(0);
   const [totalConversionsToday, setTotalConversionsToday] = useState(0);
 
-  const [activeCallCtx, setActiveCallCtx] = useState<ActiveCallCtx | null>(null);
+  const { activeCall: activeCallCtx, setActiveCall: setActiveCallCtx } = useActiveCall();
   const [topLeads, setTopLeads] = useState<Lead[]>([]);
   const [dialingLeadId, setDialingLeadId] = useState<string | null>(null);
 

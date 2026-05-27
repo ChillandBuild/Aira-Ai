@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/sidebar";
 import { AuthRoleProvider } from "./contexts/AuthRoleContext";
 import { ActiveCallProvider } from "./contexts/ActiveCallContext";
 import { CalendarPanel } from "@/components/CalendarPanel";
+import { CallbackNotifier } from "@/components/CallbackNotifier";
 import { Calendar } from "lucide-react";
 import { API_URL } from "@/lib/api";
 
@@ -22,6 +23,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthRoleProvider>
       <ActiveCallProvider>
+        <CallbackNotifier />
         <div className="flex min-h-screen bg-background">
           <Sidebar />
 
