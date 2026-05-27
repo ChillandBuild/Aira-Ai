@@ -581,6 +581,19 @@ export const api = {
     telecalling: () => apiFetch<TelecallingAnalytics>(`/api/v1/analytics/telecalling`),
     funnel: () => apiFetch<FunnelAnalytics>(`/api/v1/analytics/funnel`),
   },
+  insights: {
+    whatsapp: (params?: { range?: string; since?: string; until?: string; source?: string }) => {
+      const qs = new URLSearchParams();
+      if (params?.range) qs.set("range", params.range);
+      if (params?.since) qs.set("since", params.since);
+      if (params?.until) qs.set("until", params.until);
+      if (params?.source) qs.set("source", params.source);
+      const q = qs.toString();
+      return apiFetch(`/api/v1/insights/whatsapp${q ? `?${q}` : ""}`);
+    },
+    sync: () => apiFetch(`/api/v1/insights/sync`, { method: "POST" }),
+    trends: (range = "30d") => apiFetch(`/api/v1/insights/trends?range=${range}`),
+  },
   followUps: {
     summary: () => apiFetch<FollowUpSummary>(`/api/v1/follow-ups/summary`),
     run: (limit = 20) =>

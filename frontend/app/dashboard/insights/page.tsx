@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
-import { ChevronDown, Download, Calendar, Info } from "lucide-react";
+import { ChevronDown, Download, Calendar, Info, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 type CostEntry = { conversations: number; cost_inr: number };
 type CostMap = Record<string, CostEntry>;
@@ -21,6 +22,17 @@ type InsightsNumber = {
   cost_by_category: CostMap;
   free_by_type: CostMap;
   paid_by_category: CostMap;
+  snapshots?: SnapshotRow[];
+};
+
+type SnapshotRow = {
+  snapshot_date: string;
+  sent: number;
+  delivered: number;
+  read: number;
+  received: number;
+  total_cost_inr: number;
+  quality_rating: string;
 };
 
 type InsightsResponse = {
@@ -34,6 +46,21 @@ type InsightsResponse = {
     free_by_type: CostMap;
     paid_by_category: CostMap;
   };
+  range: { since: string; until: string };
+};
+
+type TrendDay = {
+  date: string;
+  sent: number;
+  delivered: number;
+  read: number;
+  received: number;
+  cost_inr: number;
+  quality_rating: string;
+};
+
+type TrendsResponse = {
+  daily: TrendDay[];
   range: { since: string; until: string };
 };
 
@@ -70,15 +97,35 @@ function formatDateRange(since: string, until: string): string {
   return `${fmt(s)} – ${fmt(u)}`;
 }
 
+function formatDate(d: string): string {
+  return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+}
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return "Never";
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
 export default function InsightsPage() {
   const [data, setData] = useState<InsightsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSynced, setLastSynced] = useState<string | null>(null);
   const [range, setRange] = useState<"7d" | "30d" | "custom">("7d");
   const [selectedNumbers, setSelectedNumbers] = useState<string[]>(["all"]);
   const [showNumberDropdown, setShowNumberDropdown] = useState(false);
   const [showRangeDropdown, setShowRangeDropdown] = useState(false);
   const [customSince, setCustomSince] = useState("");
   const [customUntil, setCustomUntil] = useState("");
+  const [trends, setTrends] = useState<TrendsResponse | null>(null);
+  const [trendsRange, setTrendsRange] = useState<"7d" | "30d">("30d");
+  const [trendsLoading, setTrendsLoading] = useState(false);
 
   const fetchInsights = useCallback(async (since?: string, until?: string) => {
     setLoading(true);
@@ -106,9 +153,49 @@ export default function InsightsPage() {
     }
   }, [range]);
 
+  const fetchTrends = useCallback(async (r: "7d" | "30d") => {
+    setTrendsLoading(true);
+    try {
+      const auth = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/insights/trends?range=${r}`, { headers: auth });
+      if (res.ok) {
+        setTrends(await res.json());
+      }
+    } catch (e) {
+      console.error("Failed to fetch trends:", e);
+    } finally {
+      setTrendsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchInsights();
-  }, [fetchInsights]);
+    fetchTrends(trendsRange);
+  }, [fetchInsights, fetchTrends, trendsRange]);
+
+  async function handleSync() {
+    setSyncing(true);
+    try {
+      const auth = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/insights/sync`, {
+        method: "POST",
+        headers: auth,
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setLastSynced(new Date().toISOString());
+        toast.success(`Synced ${json.total} number(s)`);
+        await fetchInsights();
+        await fetchTrends(trendsRange);
+      } else {
+        toast.error("Sync failed");
+      }
+    } catch {
+      toast.error("Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   function handleRangeChange(r: "7d" | "30d" | "custom") {
     setRange(r);
@@ -143,7 +230,6 @@ export default function InsightsPage() {
   const isAllSelected = selectedNumbers.includes("all");
   const displayNumbers = isAllSelected ? data?.numbers || [] : (data?.numbers || []).filter((n) => selectedNumbers.includes(n.meta_phone_number_id));
 
-  // Aggregate displayed numbers
   const agg = {
     sent: 0,
     delivered: 0,
@@ -183,6 +269,8 @@ export default function InsightsPage() {
 
   const rangeLabel = range === "7d" ? "Last 7 days" : range === "30d" ? "Last 30 days" : "Custom range";
 
+  const maxTrendCost = trends?.daily.reduce((max, d) => Math.max(max, d.cost_inr), 0) || 0;
+
   return (
     <div>
       <div className="mb-6">
@@ -190,10 +278,8 @@ export default function InsightsPage() {
         <p className="font-body text-on-surface-muted mt-1">Message pricing and delivery analytics from Meta</p>
       </div>
 
-      {/* Filters bar */}
       <div className="bg-surface rounded-card p-4 shadow-card ring-1 ring-[#c4c7c7]/15 mb-6">
         <div className="flex items-center gap-3 flex-wrap">
-          {/* Phone number selector */}
           <div className="relative">
             <button
               onClick={() => setShowNumberDropdown(!showNumberDropdown)}
@@ -225,12 +311,10 @@ export default function InsightsPage() {
             )}
           </div>
 
-          {/* Country selector (static) */}
           <div className="px-3 py-2 rounded-lg bg-surface-low border border-surface-mid font-label text-xs text-on-surface-muted">
             All countries
           </div>
 
-          {/* Date range */}
           <div className="relative">
             <button
               onClick={() => setShowRangeDropdown(!showRangeDropdown)}
@@ -280,16 +364,27 @@ export default function InsightsPage() {
 
           <div className="flex-1" />
 
-          {/* Export button */}
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface-low border border-surface-mid font-label text-xs text-on-surface hover:bg-surface-mid transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
+            {syncing ? "Syncing…" : "Sync from Meta"}
+          </button>
+
           <button className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface-low border border-surface-mid font-label text-xs text-on-surface hover:bg-surface-mid transition-colors">
             <Download size={12} />
             Export
             <ChevronDown size={12} />
           </button>
         </div>
+
+        {lastSynced && (
+          <p className="font-label text-[10px] text-on-surface-muted mt-2">Last synced: {timeAgo(lastSynced)}</p>
+        )}
       </div>
 
-      {/* Disclaimer */}
       <p className="font-label text-[11px] text-on-surface-muted mb-4">
         Note: All insights data is approximate and may differ from what&apos;s shown on your invoices due to small variations in data processing.
       </p>
@@ -300,9 +395,7 @@ export default function InsightsPage() {
         <p className="font-body text-sm text-on-surface-muted">No phone numbers configured. Add a number in Settings to see insights.</p>
       ) : (
         <div className="space-y-4">
-          {/* Row 1: All messages, Messages delivered, Free messages delivered */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* All messages */}
             <div className="bg-surface rounded-card p-5 shadow-card ring-1 ring-[#c4c7c7]/15">
               <h3 className="font-label text-xs font-semibold text-purple-700 mb-3 flex items-center gap-1">
                 <span className="w-4 h-0.5 bg-purple-600 rounded" />
@@ -330,7 +423,6 @@ export default function InsightsPage() {
               </div>
             </div>
 
-            {/* Messages delivered */}
             <div className="bg-surface rounded-card p-5 shadow-card ring-1 ring-[#c4c7c7]/15">
               <h3 className="font-label text-xs font-semibold text-green-700 mb-3 flex items-center gap-1">
                 <span className="w-4 h-0.5 bg-green-600 rounded" />
@@ -352,7 +444,6 @@ export default function InsightsPage() {
               </div>
             </div>
 
-            {/* Free messages delivered */}
             <div className="bg-surface rounded-card p-5 shadow-card ring-1 ring-[#c4c7c7]/15">
               <h3 className="font-label text-xs font-semibold text-purple-700 mb-3 flex items-center gap-1">
                 <span className="w-4 h-0.5 bg-purple-600 rounded" />
@@ -377,9 +468,7 @@ export default function InsightsPage() {
             </div>
           </div>
 
-          {/* Row 2: Paid messages delivered, Approximate total charges */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Paid messages delivered */}
             <div className="bg-surface rounded-card p-5 shadow-card ring-1 ring-[#c4c7c7]/15">
               <h3 className="font-label text-xs font-semibold text-purple-700 mb-3 flex items-center gap-1">
                 <span className="w-4 h-0.5 bg-purple-600 rounded" />
@@ -401,7 +490,6 @@ export default function InsightsPage() {
               </div>
             </div>
 
-            {/* Approximate total charges */}
             <div className="bg-surface rounded-card p-5 shadow-card ring-1 ring-[#c4c7c7]/15">
               <h3 className="font-label text-xs font-semibold text-purple-700 mb-3 flex items-center gap-1">
                 <span className="w-4 h-0.5 bg-purple-600 rounded" />
@@ -422,6 +510,92 @@ export default function InsightsPage() {
                 ))}
               </div>
             </div>
+          </div>
+
+          {/* Trends section */}
+          <div className="bg-surface rounded-card shadow-card ring-1 ring-[#c4c7c7]/15">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-surface-mid">
+              <h3 className="font-display text-base font-bold text-tertiary">Trends</h3>
+              <div className="flex gap-1">
+                {(["7d", "30d"] as const).map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setTrendsRange(r)}
+                    className={cn(
+                      "px-3 py-1 rounded-lg font-label text-xs font-semibold transition-colors",
+                      trendsRange === r ? "bg-tertiary text-white" : "bg-surface-low text-on-surface-muted hover:bg-surface-mid"
+                    )}
+                  >
+                    {r === "7d" ? "7D" : "30D"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {trendsLoading ? (
+              <p className="px-5 py-4 font-body text-sm text-on-surface-muted">Loading trends…</p>
+            ) : !trends || trends.daily.length === 0 ? (
+              <p className="px-5 py-4 font-body text-sm text-on-surface-muted">No trend data yet. Click &quot;Sync from Meta&quot; to fetch historical data.</p>
+            ) : (
+              <div className="p-5 space-y-4">
+                {/* Cost bar chart */}
+                <div>
+                  <p className="font-label text-xs font-semibold text-on-surface-muted mb-2">Daily Cost (₹)</p>
+                  <div className="space-y-1">
+                    {trends.daily.slice().reverse().map((d) => {
+                      const pct = maxTrendCost > 0 ? (d.cost_inr / maxTrendCost) * 100 : 0;
+                      return (
+                        <div key={d.date} className="flex items-center gap-3">
+                          <span className="font-label text-[11px] text-on-surface-muted w-14 text-right">{formatDate(d.date)}</span>
+                          <div className="flex-1 h-4 bg-surface-low rounded overflow-hidden">
+                            <div
+                              className="h-full rounded bg-purple-500 transition-all"
+                              style={{ width: `${Math.max(pct, 2)}%` }}
+                            />
+                          </div>
+                          <span className="font-label text-[11px] font-semibold text-on-surface w-20 text-right">{formatINR(d.cost_inr)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Trends table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-surface-mid">
+                        {["Date", "Sent", "Delivered", "Cost (₹)", "Quality"].map((h) => (
+                          <th key={h} className="pb-2 pr-4 font-label text-[10px] font-semibold text-on-surface-muted uppercase tracking-wider">
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {trends.daily.slice().reverse().map((d) => (
+                        <tr key={d.date} className="border-b border-surface-mid/50">
+                          <td className="py-2 pr-4 font-label text-xs text-on-surface">{formatDate(d.date)}</td>
+                          <td className="py-2 pr-4 font-label text-xs text-on-surface">{d.sent}</td>
+                          <td className="py-2 pr-4 font-label text-xs text-on-surface">{d.delivered}</td>
+                          <td className="py-2 pr-4 font-label text-xs font-semibold text-on-surface">{formatINR(d.cost_inr)}</td>
+                          <td className="py-2">
+                            <span className={cn(
+                              "font-label text-[10px] font-bold px-1.5 py-0.5 rounded",
+                              d.quality_rating === "HIGH" ? "bg-green-100 text-green-700" :
+                              d.quality_rating === "MEDIUM" ? "bg-amber-100 text-amber-700" :
+                              "bg-red-100 text-red-700"
+                            )}>
+                              {d.quality_rating}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
