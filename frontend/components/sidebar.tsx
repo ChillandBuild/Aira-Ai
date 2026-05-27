@@ -8,7 +8,7 @@ import { usePolling } from "@/hooks/usePolling";
 import {
   LayoutDashboard, MessageSquare, Users, Settings, Phone,
   BarChart2, Upload, BookOpen, Layers, FileCheck, StickyNote,
-  LogOut, Inbox, Zap,
+  LogOut, Inbox, Zap, TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AiraLogo } from "./logo";
@@ -30,10 +30,11 @@ const OWNER_NAV: NavItem[] = [
   { href: "/dashboard/telecalling", icon: Phone, label: "Telecalling", feature: "telecalling" },
   { href: "/dashboard/notes", icon: StickyNote, label: "Notes", feature: "telecalling" },
   { href: "/dashboard/knowledge", icon: BookOpen, label: "Knowledge", feature: "whatsapp" },
-  { href: "/dashboard/numbers", icon: Layers, label: "Numbers", feature: "whatsapp" },
+  { href: "/dashboard/numbers", icon: Layers, label: "Numbers", feature: "telecalling" },
   { href: "/dashboard/templates", icon: FileCheck, label: "Templates", feature: "whatsapp" },
   { href: "/dashboard/automations", icon: Zap, label: "Automations" },
   { href: "/dashboard/analytics", icon: BarChart2, label: "Analytics" },
+  { href: "/dashboard/insights", icon: TrendingUp, label: "Insights", feature: "whatsapp" },
   { href: "/dashboard/team", icon: Users, label: "Team" },
 ];
 

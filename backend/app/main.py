@@ -8,7 +8,7 @@ from app.dependencies.auth import get_current_user
 
 import os
 from app.config import settings
-from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team, media, alerts, todos, bookings, conversations, operator, chat_handovers, telegram, instagram, facebook, automations
+from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team, media, alerts, todos, bookings, conversations, operator, chat_handovers, telegram, instagram, facebook, automations, insights
 from app.routes.calls import public_router as calls_public_router
 
 # Configure logging
@@ -51,17 +51,6 @@ async def _process_scheduled_broadcasts() -> None:
             await execute_broadcast(row)
     except Exception as e:
         logger.error(f"Scheduled broadcast executor error: {e}")
-
-
-async def _generate_daily_digests() -> None:
-    """APScheduler daily job: generate coaching digest for every active caller (runs at 14:00 UTC / 7:30 PM IST)."""
-    from datetime import date, timedelta, timezone as tz
-    from app.services.call_digest import generate_all_digests
-    yesterday = date.today() - timedelta(days=0)  # today's date (job runs at EOD)
-    try:
-        await generate_all_digests(yesterday)
-    except Exception as e:
-        logger.error(f"Daily digest job error: {e}")
 
 
 async def _check_token_health() -> None:
@@ -139,54 +128,6 @@ async def _check_token_health() -> None:
     logger.info(f"Token health check complete for {len(tenant_cfg)} tenant(s)")
 
 
-async def _sync_all_number_quality():
-    """APScheduler daily job: pull quality_rating + messaging_tier from Meta for all numbers that have meta_phone_number_id set."""
-    from app.db.supabase import get_supabase
-    from app.services.meta_cloud import get_number_quality
-    from datetime import datetime, timezone
-
-    _QUALITY_MAP = {"HIGH": "green", "MEDIUM": "yellow", "LOW": "red"}
-    _TIER_MAP_STR = {
-        "TIER_50": 250, "TIER_250": 250, "TIER_1K": 1000,
-        "TIER_10K": 10000, "TIER_100K": 100000, "UNLIMITED": 100000,
-    }
-    db = get_supabase()
-    rows = db.table("phone_numbers").select("id,tenant_id,meta_phone_number_id,quality_rating,messaging_tier,status,warm_up_day,last_reset_at").neq("meta_phone_number_id", None).neq("status", "archived").execute().data or []
-    now = datetime.now(timezone.utc)
-    for row in rows:
-        try:
-            meta_pid = row["meta_phone_number_id"]
-            tenant_id = row["tenant_id"]
-            meta_data = await get_number_quality(phone_number_id=meta_pid, tenant_id=tenant_id)
-            raw_quality = meta_data.get("quality_rating", "")
-            new_quality = _QUALITY_MAP.get(raw_quality.upper(), row["quality_rating"])
-            new_tier = meta_data.get("messaging_tier") or row["messaging_tier"]
-            updates = {"quality_rating": new_quality, "messaging_tier": new_tier, "daily_send_count": 0, "last_reset_at": now.isoformat()}
-            last_reset_raw = row.get("last_reset_at")
-            days_elapsed = 0
-            if last_reset_raw:
-                from datetime import datetime as _dt
-                last_reset = _dt.fromisoformat(last_reset_raw.replace("Z", "+00:00"))
-                days_elapsed = max(0, (now - last_reset).days)
-            if row["status"] == "warming" and days_elapsed > 0:
-                new_day = min(row["warm_up_day"] + days_elapsed, 14)
-                updates["warm_up_day"] = new_day
-                if new_day >= 14:
-                    updates["status"] = "active"
-            db.table("phone_numbers").update(updates).eq("id", row["id"]).execute()
-            # Write quality history row
-            db.table("phone_number_quality_history").insert({
-                "phone_number_id": row["id"],
-                "tenant_id": tenant_id,
-                "quality_rating": new_quality,
-                "messaging_tier": new_tier,
-                "recorded_at": now.isoformat(),
-            }).execute()
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).error(f"Quality sync failed for number {row['id']}: {e}")
-
-
 def _create_token_incident(db, tenant_id: str, channel: str, error_msg: str) -> None:
     try:
         from datetime import datetime, timezone, timedelta
@@ -242,23 +183,8 @@ async def lifespan(app: FastAPI):
         id="token-health-check",
         replace_existing=True,
     )
-    _scheduler.add_job(
-        _sync_all_number_quality,
-        trigger="interval",
-        hours=24,
-        id="number-quality-sync",
-        replace_existing=True,
-    )
-    _scheduler.add_job(
-        _generate_daily_digests,
-        trigger="cron",
-        hour=14,
-        minute=0,
-        id="daily-caller-digests",
-        replace_existing=True,
-    )
     _scheduler.start()
-    logger.info("Schedulers started: automation(5m) + broadcasts(1m) + token-health(24h) + quality-sync(24h) + digests(daily 14:00 UTC)")
+    logger.info("Schedulers started: automation(5m) + broadcasts(1m) + token-health(24h)")
 
     yield
 
@@ -332,4 +258,5 @@ app.include_router(conversations.router, prefix="/api/v1/conversations", tags=["
 app.include_router(operator.router, prefix="/api/v1/operator", tags=["operator"])
 app.include_router(chat_handovers.router, prefix="/api/v1/chat-handovers", tags=["chat-handovers"], dependencies=_auth)
 app.include_router(automations.router, prefix="/api/v1/automations", tags=["automations"], dependencies=_auth)
+app.include_router(insights.router, prefix="/api/v1/insights", tags=["insights"], dependencies=_auth)
 

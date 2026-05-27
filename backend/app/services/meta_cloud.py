@@ -401,6 +401,33 @@ async def get_number_quality(
     }
 
 
+async def get_whatsapp_insights(
+    phone_number_id: str,
+    access_token: str,
+    since: int,
+    until: int,
+) -> list[dict]:
+    """Fetch WhatsApp message insights from Meta Cloud API.
+    Returns list of metric dicts with name, period, values.
+    """
+    url = f"{_GRAPH_BASE}/{phone_number_id}/insights"
+    params = {
+        "metric": "cost,delivered,read,sent",
+        "since": since,
+        "until": until,
+    }
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.get(
+            url,
+            params=params,
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+    if not resp.is_success:
+        logger.error("get_whatsapp_insights failed: %s %s", resp.status_code, resp.text)
+        return []
+    return resp.json().get("data", [])
+
+
 async def get_template_status(
     waba_id: str,
     template_name: str,
@@ -455,3 +482,141 @@ async def list_all_templates(
             params = {}  # params are embedded in next_url cursor
 
     return templates
+
+
+async def get_whatsapp_insights(
+    phone_number_id: Optional[str] = None,
+    access_token: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    since: Optional[str] = None,
+    until: Optional[str] = None,
+) -> dict:
+    """
+    Fetch WhatsApp insights from Meta API for a phone number.
+    Returns delivery metrics and cost breakdown by conversation category.
+    """
+    pid, tok = _creds(phone_number_id, access_token, tenant_id)
+    url = f"{_GRAPH_BASE}/{pid}/insights"
+    params: dict = {
+        "metric": "cost,delivered,read,sent",
+        "granularity": "HALF_HOUR",
+    }
+    if since:
+        params["since"] = since
+    if until:
+        params["until"] = until
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.get(
+            url,
+            params=params,
+            headers={"Authorization": f"Bearer {tok}"},
+        )
+    if not resp.is_success:
+        logger.error("get_whatsapp_insights failed: %s %s", resp.status_code, resp.text)
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+
+    data = resp.json().get("data", [])
+    return _parse_insights_response(data)
+
+
+def _parse_insights_response(raw_data: list[dict]) -> dict:
+    """Parse Meta insights API response into structured format."""
+    result: dict = {
+        "sent": 0,
+        "delivered": 0,
+        "read": 0,
+        "received": 0,  # Meta doesn't provide received directly; we track inbound separately
+        "cost_by_category": {
+            "marketing": {"conversations": 0, "cost_usd": 0.0},
+            "utility": {"conversations": 0, "cost_usd": 0.0},
+            "authentication": {"conversations": 0, "cost_usd": 0.0},
+            "authentication_international": {"conversations": 0, "cost_usd": 0.0},
+            "ai_provider": {"conversations": 0, "cost_usd": 0.0},
+            "service": {"conversations": 0, "cost_usd": 0.0},
+        },
+        "free_by_type": {
+            "customer_service": {"conversations": 0, "cost_usd": 0.0},
+            "entry_point": {"conversations": 0, "cost_usd": 0.0},
+        },
+        "paid_by_category": {
+            "marketing": {"conversations": 0, "cost_usd": 0.0},
+            "utility": {"conversations": 0, "cost_usd": 0.0},
+            "authentication": {"conversations": 0, "cost_usd": 0.0},
+            "authentication_international": {"conversations": 0, "cost_usd": 0.0},
+            "ai_provider": {"conversations": 0, "cost_usd": 0.0},
+        },
+    }
+
+    for metric in raw_data:
+        name = metric.get("name")
+        values = metric.get("values", [])
+
+        if name == "sent":
+            for v in values:
+                val = v.get("value", 0)
+                if isinstance(val, dict):
+                    result["sent"] += val.get("total", 0)
+                else:
+                    result["sent"] += val
+
+        elif name == "delivered":
+            for v in values:
+                val = v.get("value", 0)
+                if isinstance(val, dict):
+                    result["delivered"] += val.get("total", 0)
+                else:
+                    result["delivered"] += val
+
+        elif name == "read":
+            for v in values:
+                val = v.get("value", 0)
+                if isinstance(val, dict):
+                    result["read"] += val.get("total", 0)
+                else:
+                    result["read"] += val
+
+        elif name == "cost":
+            for v in values:
+                val = v.get("value", {})
+                if not isinstance(val, dict):
+                    continue
+
+                category = val.get("conversation_category", "")
+                conv_type = val.get("conversation_type", "")
+                cost = float(val.get("total_cost", 0))
+                conversations = int(val.get("total_conversations", 0))
+
+                # Map category keys
+                cat_key = category.lower().replace("-", "_") if category else ""
+                if cat_key == "authentication-international":
+                    cat_key = "authentication_international"
+
+                # Free conversations (service + free entry point)
+                if conv_type == "free_tier" or conv_type == "free_entry_point":
+                    if category.lower() == "service":
+                        result["free_by_type"]["customer_service"]["conversations"] += conversations
+                        result["free_by_type"]["customer_service"]["cost_usd"] += cost
+                    elif conv_type == "free_entry_point":
+                        result["free_by_type"]["entry_point"]["conversations"] += conversations
+                        result["free_by_type"]["entry_point"]["cost_usd"] += cost
+                    # Also add to cost_by_category for service
+                    if cat_key in result["cost_by_category"]:
+                        result["cost_by_category"][cat_key]["conversations"] += conversations
+                        result["cost_by_category"][cat_key]["cost_usd"] += cost
+
+                # Paid conversations
+                elif conv_type == "paid":
+                    if cat_key in result["paid_by_category"]:
+                        result["paid_by_category"][cat_key]["conversations"] += conversations
+                        result["paid_by_category"][cat_key]["cost_usd"] += cost
+                    if cat_key in result["cost_by_category"]:
+                        result["cost_by_category"][cat_key]["conversations"] += conversations
+                        result["cost_by_category"][cat_key]["cost_usd"] += cost
+
+                # All conversations (regardless of type)
+                elif cat_key in result["cost_by_category"]:
+                    result["cost_by_category"][cat_key]["conversations"] += conversations
+                    result["cost_by_category"][cat_key]["cost_usd"] += cost
+
+    return result
