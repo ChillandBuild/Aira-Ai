@@ -89,7 +89,7 @@ export function Sidebar() {
 
   if (roleLoading) {
     return (
-      <aside className="fixed left-0 top-0 h-full w-[220px] bg-[#fcfcfc] z-20 shadow-sidebar border-r border-zinc-200/50" />
+      <aside className="fixed left-0 top-0 h-full w-[220px] bg-background z-20" />
     );
   }
 
@@ -108,19 +108,19 @@ export function Sidebar() {
   const showTc = expandedGroups.Telecalling || isTcActive;
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-[220px] bg-[#fcfcfc] flex flex-col z-20 shadow-sidebar border-r border-zinc-200/50 select-none">
+    <aside className="fixed left-0 top-0 h-full w-[220px] bg-background flex flex-col z-20 select-none">
       {/* Brand */}
       <div className="px-5 py-5 flex items-center gap-3">
         <AiraLogo size={34} />
         <div>
           <span
-            className="block text-zinc-900 font-display font-bold tracking-tight leading-none text-[15px]"
+            className="block text-zinc-900 font-display font-bold tracking-tight leading-none text-[16px]"
             style={{ letterSpacing: "-0.03em" }}
           >
-            Aira<span className="text-zinc-400 ml-0.5 font-normal">AI</span>
+            Aira<span className="text-zinc-500 ml-0.5 font-normal">AI</span>
           </span>
           <span
-            className="block text-zinc-400 font-label uppercase"
+            className="block text-zinc-500 font-label uppercase"
             style={{ fontSize: "0.55rem", letterSpacing: "0.1em", marginTop: "3px" }}
           >
             Lead Intelligence
@@ -128,7 +128,7 @@ export function Sidebar() {
         </div>
       </div>
 
-      <div className="mx-5 h-px bg-zinc-200/60" />
+      <div className="mx-5 h-px bg-zinc-300/60" />
 
       <div className="flex-grow overflow-y-auto px-3 py-4 space-y-1.5 scrollbar-thin">
         {/* TOP LEVEL: Overview */}
@@ -136,13 +136,13 @@ export function Sidebar() {
           <Link
             href="/dashboard"
             className={cn(
-              "flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-150 group",
+              "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-150 group",
               pathname === "/dashboard"
-                ? "bg-zinc-100 text-zinc-950 font-semibold"
-                : "text-zinc-600 hover:bg-zinc-100/60 hover:text-zinc-950"
+                ? "bg-zinc-200/70 text-zinc-950"
+                : "text-zinc-700 hover:bg-zinc-200/40 hover:text-zinc-950"
             )}
           >
-            <LayoutDashboard size={15} className={pathname === "/dashboard" ? "text-zinc-900" : "text-zinc-400 group-hover:text-zinc-600"} />
+            <LayoutDashboard size={16} className={pathname === "/dashboard" ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
             <span>Dashboard</span>
           </Link>
         )}
@@ -152,13 +152,13 @@ export function Sidebar() {
           <Link
             href="/dashboard/leads"
             className={cn(
-              "flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-150 group",
+              "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-150 group",
               pathname.startsWith("/dashboard/leads")
-                ? "bg-zinc-100 text-zinc-950 font-semibold"
-                : "text-zinc-600 hover:bg-zinc-100/60 hover:text-zinc-950"
+                ? "bg-zinc-200/70 text-zinc-950"
+                : "text-zinc-700 hover:bg-zinc-200/40 hover:text-zinc-950"
             )}
           >
-            <Users size={15} className={pathname.startsWith("/dashboard/leads") ? "text-zinc-900" : "text-zinc-400 group-hover:text-zinc-600"} />
+            <Users size={16} className={pathname.startsWith("/dashboard/leads") ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
             <span>Leads</span>
           </Link>
         )}
@@ -169,13 +169,13 @@ export function Sidebar() {
             <button
               onClick={() => toggleGroup("WhatsApp")}
               className={cn(
-                "flex items-center gap-3 px-3 py-2 w-full rounded-xl text-[13px] font-medium text-left transition-all group",
-                isWaActive ? "text-zinc-950 font-semibold" : "text-zinc-600 hover:bg-zinc-100/40"
+                "flex items-center gap-3 px-3 py-2 w-full rounded-xl text-sm font-semibold text-left transition-all group",
+                isWaActive ? "text-zinc-950" : "text-zinc-700 hover:bg-zinc-200/40"
               )}
             >
-              <MessageSquare size={15} className={isWaActive ? "text-zinc-900" : "text-zinc-400 group-hover:text-zinc-600"} />
+              <MessageSquare size={16} className={isWaActive ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
               <span className="flex-1">WhatsApp</span>
-              {showWa ? <ChevronDown size={14} className="text-zinc-400" /> : <ChevronRight size={14} className="text-zinc-400" />}
+              {showWa ? <ChevronDown size={14} className="text-zinc-500" /> : <ChevronRight size={14} className="text-zinc-500" />}
             </button>
 
             {/* Tree items */}
@@ -187,23 +187,23 @@ export function Sidebar() {
                   const badgeCount = item.badgeType === "inbox" && inboxCount > 0 ? inboxCount : null;
 
                   return (
-                    <div key={item.href} className="relative pl-6 flex items-center h-8.5">
+                    <div key={item.href} className="relative pl-6 flex items-center h-9">
                       {/* Curved branch lines */}
                       <div
                         className={cn(
-                          "absolute left-3 w-px bg-zinc-200",
-                          isLast ? "top-0 h-4" : "-top-1 bottom-0"
+                          "absolute left-3 w-px bg-zinc-300/80",
+                          isLast ? "top-0 h-4.5" : "-top-1 bottom-0"
                         )}
                       />
-                      <div className="absolute left-3 top-1/2 -translate-y-1 w-3 h-3.5 border-l border-b border-zinc-200 rounded-bl-lg" />
+                      <div className="absolute left-3 top-1/2 -translate-y-1 w-3.5 h-3.5 border-l border-b border-zinc-300/80 rounded-bl-lg" />
 
                       <Link
                         href={item.href}
                         className={cn(
-                          "flex items-center gap-2.5 ml-2.5 px-3 py-1.5 w-[150px] rounded-lg text-xs transition-all duration-150 group",
+                          "flex items-center gap-2.5 ml-3.5 px-3 py-1.5 w-[145px] rounded-xl text-[13px] transition-all duration-150 group",
                           active
-                            ? "bg-white shadow-sm border border-zinc-200/50 text-zinc-950 font-semibold"
-                            : "text-zinc-500 hover:text-zinc-950 hover:bg-zinc-100/40"
+                            ? "bg-white shadow-md border border-zinc-200/80 text-zinc-950 font-bold"
+                            : "text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200/40"
                         )}
                       >
                         <span className="truncate flex-1">{item.label}</span>
@@ -227,13 +227,13 @@ export function Sidebar() {
             <button
               onClick={() => toggleGroup("Telecalling")}
               className={cn(
-                "flex items-center gap-3 px-3 py-2 w-full rounded-xl text-[13px] font-medium text-left transition-all group",
-                isTcActive ? "text-zinc-950 font-semibold" : "text-zinc-600 hover:bg-zinc-100/40"
+                "flex items-center gap-3 px-3 py-2 w-full rounded-xl text-sm font-semibold text-left transition-all group",
+                isTcActive ? "text-zinc-950" : "text-zinc-700 hover:bg-zinc-200/40"
               )}
             >
-              <Phone size={15} className={isTcActive ? "text-zinc-900" : "text-zinc-400 group-hover:text-zinc-600"} />
+              <Phone size={16} className={isTcActive ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
               <span className="flex-1">Telecalling</span>
-              {showTc ? <ChevronDown size={14} className="text-zinc-400" /> : <ChevronRight size={14} className="text-zinc-400" />}
+              {showTc ? <ChevronDown size={14} className="text-zinc-500" /> : <ChevronRight size={14} className="text-zinc-500" />}
             </button>
 
             {/* Tree items */}
@@ -244,23 +244,23 @@ export function Sidebar() {
                   const isLast = idx === tcGroupItems.length - 1;
 
                   return (
-                    <div key={item.href} className="relative pl-6 flex items-center h-8.5">
+                    <div key={item.href} className="relative pl-6 flex items-center h-9">
                       {/* Curved branch lines */}
                       <div
                         className={cn(
-                          "absolute left-3 w-px bg-zinc-200",
-                          isLast ? "top-0 h-4" : "-top-1 bottom-0"
+                          "absolute left-3 w-px bg-zinc-300/80",
+                          isLast ? "top-0 h-4.5" : "-top-1 bottom-0"
                         )}
                       />
-                      <div className="absolute left-3 top-1/2 -translate-y-1 w-3 h-3.5 border-l border-b border-zinc-200 rounded-bl-lg" />
+                      <div className="absolute left-3 top-1/2 -translate-y-1 w-3.5 h-3.5 border-l border-b border-zinc-300/80 rounded-bl-lg" />
 
                       <Link
                         href={item.href}
                         className={cn(
-                          "flex items-center gap-2.5 ml-2.5 px-3 py-1.5 w-[150px] rounded-lg text-xs transition-all duration-150 group",
+                          "flex items-center gap-2.5 ml-3.5 px-3 py-1.5 w-[145px] rounded-xl text-[13px] transition-all duration-150 group",
                           active
-                            ? "bg-white shadow-sm border border-zinc-200/50 text-zinc-950 font-semibold"
-                            : "text-zinc-500 hover:text-zinc-950 hover:bg-zinc-100/40"
+                            ? "bg-white shadow-md border border-zinc-200/80 text-zinc-950 font-bold"
+                            : "text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200/40"
                         )}
                       >
                         <span className="truncate flex-1">{item.label}</span>
@@ -278,13 +278,13 @@ export function Sidebar() {
           <Link
             href="/dashboard/automations"
             className={cn(
-              "flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-150 group",
+              "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-150 group",
               pathname.startsWith("/dashboard/automations")
-                ? "bg-zinc-100 text-zinc-950 font-semibold"
-                : "text-zinc-600 hover:bg-zinc-100/60 hover:text-zinc-950"
+                ? "bg-zinc-200/70 text-zinc-950"
+                : "text-zinc-700 hover:bg-zinc-200/40 hover:text-zinc-950"
             )}
           >
-            <Zap size={15} className={pathname.startsWith("/dashboard/automations") ? "text-zinc-900" : "text-zinc-400 group-hover:text-zinc-600"} />
+            <Zap size={16} className={pathname.startsWith("/dashboard/automations") ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
             <span>Automations</span>
           </Link>
         )}
@@ -294,13 +294,13 @@ export function Sidebar() {
           <Link
             href="/dashboard/analytics"
             className={cn(
-              "flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-150 group",
+              "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-150 group",
               pathname.startsWith("/dashboard/analytics")
-                ? "bg-zinc-100 text-zinc-950 font-semibold"
-                : "text-zinc-600 hover:bg-zinc-100/60 hover:text-zinc-950"
+                ? "bg-zinc-200/70 text-zinc-950"
+                : "text-zinc-700 hover:bg-zinc-200/40 hover:text-zinc-950"
             )}
           >
-            <BarChart2 size={15} className={pathname.startsWith("/dashboard/analytics") ? "text-zinc-900" : "text-zinc-400 group-hover:text-zinc-600"} />
+            <BarChart2 size={16} className={pathname.startsWith("/dashboard/analytics") ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
             <span>Analytics</span>
           </Link>
         )}
@@ -310,13 +310,13 @@ export function Sidebar() {
           <Link
             href="/dashboard/team"
             className={cn(
-              "flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-150 group",
+              "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-150 group",
               pathname.startsWith("/dashboard/team")
-                ? "bg-zinc-100 text-zinc-950 font-semibold"
-                : "text-zinc-600 hover:bg-zinc-100/60 hover:text-zinc-950"
+                ? "bg-zinc-200/70 text-zinc-950"
+                : "text-zinc-700 hover:bg-zinc-200/40 hover:text-zinc-950"
             )}
           >
-            <Users size={15} className={pathname.startsWith("/dashboard/team") ? "text-zinc-900" : "text-zinc-400 group-hover:text-zinc-600"} />
+            <Users size={16} className={pathname.startsWith("/dashboard/team") ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
             <span>Team</span>
           </Link>
         )}
@@ -324,30 +324,30 @@ export function Sidebar() {
 
       {/* Footer Actions */}
       <div className="px-3 pb-4 space-y-1.5">
-        <div className="mx-2 mb-2 h-px bg-zinc-200/60" />
+        <div className="mx-2 mb-2 h-px bg-zinc-300/60" />
 
         {role === "owner" && (
           <Link
             href="/dashboard/settings"
             className={cn(
-              "flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-150 group",
+              "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-150 group",
               pathname.startsWith("/dashboard/settings")
-                ? "bg-zinc-100 text-zinc-950 font-semibold"
-                : "text-zinc-600 hover:bg-zinc-100/60 hover:text-zinc-950"
+                ? "bg-zinc-200/70 text-zinc-950"
+                : "text-zinc-700 hover:bg-zinc-200/40 hover:text-zinc-950"
             )}
           >
-            <Settings size={15} className={pathname.startsWith("/dashboard/settings") ? "text-zinc-900" : "text-zinc-400 group-hover:text-zinc-600"} />
+            <Settings size={16} className={pathname.startsWith("/dashboard/settings") ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
             <span>Settings</span>
           </Link>
         )}
 
         <div className="px-2 pt-1">
-          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-100">
+          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50">
             <span className="relative flex h-1.5 w-1.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
             </span>
-            <span className="font-label text-emerald-600 font-bold tracking-wider" style={{ fontSize: "0.55rem" }}>
+            <span className="font-label text-emerald-700 font-bold tracking-wider" style={{ fontSize: "0.55rem" }}>
               ALL SYSTEMS ONLINE
             </span>
           </div>
