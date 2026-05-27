@@ -1,7 +1,7 @@
 "use client";
 import { toast } from "sonner";
 import { useEffect, useRef, useState } from "react";
-import { Plus, X, Pencil, Check, Trash2, PauseCircle, PlayCircle, Star, RefreshCw, Activity } from "lucide-react";
+import { Plus, X, Pencil, Check, Trash2, PauseCircle, PlayCircle, Star, RefreshCw, Activity, Info, ChevronDown, ChevronUp } from "lucide-react";
 import Link from "next/link";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
@@ -45,7 +45,17 @@ const STATUS_STYLES: Record<PhoneNumber["status"], string> = {
   archived: "bg-surface-mid text-on-surface-muted opacity-60",
 };
 
-const WARM_UP_TARGET = 14;
+// Messaging tier labels — based on Meta's current (2025/2026) portfolio-level limits
+const TIER_LABELS: Record<number, string> = {
+  250: "250 / day · Unverified",
+  1000: "1,000 / day · Tier 1",
+  2000: "2,000 / day · Tier 1",
+  10000: "10,000 / day · Tier 2",
+  100000: "100,000 / day · Tier 3",
+};
+function getTierLabel(tier: number): string {
+  return TIER_LABELS[tier] ?? `${tier.toLocaleString()} / day`;
+}
 
 async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
   const authHeaders = await getAuthHeaders();
@@ -56,6 +66,79 @@ async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
   if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
   return res.json();
 }
+
+// ── Tier Guide Banner ─────────────────────────────────────────────────────────
+function TierGuide() {
+  const [open, setOpen] = useState(false);
+
+  const tiers = [
+    { limit: "250 / day", label: "Unverified", color: "bg-red-100 text-red-700", trigger: "Default on registration" },
+    { limit: "2,000 / day", label: "Tier 1", color: "bg-amber-100 text-amber-700", trigger: "Complete Meta Business Verification" },
+    { limit: "10,000 / day", label: "Tier 2", color: "bg-blue-100 text-blue-700", trigger: "Auto-upgrade: ≥50% usage in 7 days + High/Medium quality" },
+    { limit: "100,000 / day", label: "Tier 3", color: "bg-violet-100 text-violet-700", trigger: "Auto-upgrade: same criteria" },
+    { limit: "Unlimited", label: "Unlimited", color: "bg-emerald-100 text-emerald-700", trigger: "Auto-upgrade: same criteria" },
+  ];
+
+  return (
+    <div className="mb-6 rounded-xl border border-blue-100 bg-blue-50/60 overflow-hidden">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-blue-50 transition-colors"
+      >
+        <span className="flex items-center gap-2">
+          <Info size={14} className="text-blue-500 shrink-0" />
+          <span className="font-label text-sm font-semibold text-blue-800">
+            How WhatsApp messaging limits work
+          </span>
+          <span className="font-body text-xs text-blue-500">· Updated 2025/2026</span>
+        </span>
+        {open ? (
+          <ChevronUp size={14} className="text-blue-400 shrink-0" />
+        ) : (
+          <ChevronDown size={14} className="text-blue-400 shrink-0" />
+        )}
+      </button>
+
+      {open && (
+        <div className="px-5 pb-5 border-t border-blue-100">
+          <p className="font-body text-xs text-blue-700 mt-3 mb-4 leading-relaxed">
+            Meta uses a <strong>portfolio-level</strong> tier system (since Oct 2025). All numbers in your portfolio share the same tier.
+            There is <strong>no fixed 14-day period</strong> — upgrades are automatic based on quality + usage.
+          </p>
+
+          {/* Tier table */}
+          <div className="space-y-2 mb-4">
+            {tiers.map((t) => (
+              <div key={t.label} className="flex items-center gap-3">
+                <span className={`px-2 py-0.5 rounded-full font-label text-[11px] font-semibold whitespace-nowrap ${t.color}`}>
+                  {t.label}
+                </span>
+                <span className="font-label text-xs font-bold text-on-surface whitespace-nowrap">{t.limit}</span>
+                <span className="font-body text-xs text-on-surface-muted">{t.trigger}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Key rules */}
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { icon: "✅", text: "Submit Meta Business Verification immediately after adding a number" },
+              { icon: "✅", text: "Send only to opted-in, warm contacts — avoid cold outreach" },
+              { icon: "✅", text: "Use ≥50% of your daily limit each week to trigger auto-upgrades" },
+              { icon: "❌", text: "Don't blast cold lists — spam reports drop your quality rating instantly" },
+            ].map((r, i) => (
+              <div key={i} className="flex items-start gap-1.5 bg-white/70 rounded-lg p-2.5">
+                <span className="text-xs shrink-0 mt-0.5">{r.icon}</span>
+                <span className="font-body text-[11px] text-on-surface-muted leading-relaxed">{r.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 const numbersApi = {
   list: () =>
@@ -214,10 +297,10 @@ export default function NumbersPage() {
 
   return (
     <div>
-      <div className="mb-8 flex items-start justify-between">
+      <div className="mb-6 flex items-start justify-between">
         <div>
           <h1 className="font-display text-3xl font-bold text-tertiary">WhatsApp Numbers</h1>
-          <p className="font-body text-on-surface-muted mt-1">Manage sender numbers, warm-up, and outbound routing</p>
+          <p className="font-body text-on-surface-muted mt-1">Manage sender numbers and outbound routing</p>
         </div>
         <Link
           href="/dashboard/numbers/health"
@@ -227,6 +310,9 @@ export default function NumbersPage() {
           Health Dashboard
         </Link>
       </div>
+
+      {/* Messaging Tier Guide */}
+      <TierGuide />
 
       <div className="bg-surface rounded-card shadow-card ring-1 ring-[#c4c7c7]/15 p-8">
         <div className="flex items-center justify-between mb-6">
@@ -313,10 +399,7 @@ export default function NumbersPage() {
                       {num.role}
                     </span>
 
-                    {/* Status */}
-                    <span className={`px-2 py-0.5 rounded-full font-label text-[11px] font-semibold ${STATUS_STYLES[num.status]}`}>
-                      {num.status === "warming" ? `Warming · Day ${num.warm_up_day}/${WARM_UP_TARGET}` : num.status}
-                    </span>
+
 
                     {/* Quality */}
                     <span className="flex items-center gap-1">
@@ -348,18 +431,12 @@ export default function NumbersPage() {
                       <span className="font-label text-[11px] text-on-surface-muted">{Math.round(sendPct)}%</span>
                     </div>
 
-                    {/* Warm-up bar */}
-                    {num.status === "warming" && (
-                      <div className="flex items-center gap-2">
-                        <span className="font-label text-[11px] text-on-surface-muted whitespace-nowrap">Warm-up</span>
-                        <div className="w-20 h-1.5 rounded-full bg-surface-mid overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-amber-400"
-                            style={{ width: `${Math.min((num.warm_up_day / WARM_UP_TARGET) * 100, 100)}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
+                    {/* Tier label */}
+                    <span className="font-label text-[11px] text-on-surface-muted whitespace-nowrap">
+                      {getTierLabel(num.messaging_tier)}
+                    </span>
+
+
 
                     {/* Spacer */}
                     <div className="flex-1" />
@@ -427,7 +504,7 @@ export default function NumbersPage() {
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-surface rounded-card p-8 shadow-card w-full max-w-md ring-1 ring-[#c4c7c7]/20">
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-bold text-tertiary">Add Number</h2>
               <button
                 onClick={() => setShowAddModal(false)}
@@ -435,6 +512,24 @@ export default function NumbersPage() {
               >
                 <X size={16} />
               </button>
+            </div>
+
+            {/* What happens after you add */}
+            <div className="mb-5 p-3.5 rounded-xl bg-amber-50 border border-amber-100">
+              <p className="font-label text-xs font-bold text-amber-800 mb-2">⚡ After registering, your number starts at 250 msgs/day</p>
+              <ol className="space-y-1">
+                {[
+                  "Complete Meta Business Verification → instantly unlocks 2,000/day",
+                  "Send quality messages to warm, opted-in contacts only",
+                  "Maintain High/Medium quality rating (avoid spam reports)",
+                  "Usage ≥ 50% of limit over 7 days → Meta auto-upgrades to 10,000/day",
+                ].map((step, i) => (
+                  <li key={i} className="flex items-start gap-1.5">
+                    <span className="font-label text-[10px] font-bold text-amber-600 mt-0.5 shrink-0">{i + 1}.</span>
+                    <span className="font-body text-[11px] text-amber-700">{step}</span>
+                  </li>
+                ))}
+              </ol>
             </div>
 
             <div className="space-y-4">
