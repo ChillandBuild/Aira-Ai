@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { api, Lead } from "@/lib/api";
 import { SegmentBadge } from "./segment-badge";
 import { formatIST, formatPhone, cn } from "@/lib/utils";
-import { MessageCircle, Trash2, MoreVertical, Search, X, SearchX, ChevronLeft, Pin } from "lucide-react";
+import { MessageCircle, Trash2, MoreVertical, Search, X, SearchX, ChevronLeft, Pin, Filter, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 const AVATAR_COLORS = [
@@ -86,15 +86,18 @@ interface Props {
   onCollapse?: () => void;
   onPin?: (id: string) => void;
   onPinSelected?: (ids: string[]) => void;
+  onRefresh?: () => void;
 }
 
-export function ConversationList({ leads, selectedId, onSelect, onDeleted, platform, onPlatformChange, onCollapse, onPin, onPinSelected }: Props) {
+export function ConversationList({ leads, selectedId, onSelect, onDeleted, platform, onPlatformChange, onCollapse, onPin, onPinSelected, onRefresh }: Props) {
   const [segment, setSegment] = useState<"A" | "B" | "C" | "D" | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -170,6 +173,13 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
     setSelectedIds(new Set());
   }
 
+  function handleRefresh() {
+    if (!onRefresh || isRefreshing) return;
+    setIsRefreshing(true);
+    onRefresh();
+    setTimeout(() => setIsRefreshing(false), 900);
+  }
+
   function getPlatformColor(source: string): string {
     switch (source) {
       case "whatsapp": return "text-green-500";
@@ -194,176 +204,154 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
 
   return (
     <div className="w-[340px] flex-shrink-0 bg-surface border-r border-surface-mid flex flex-col h-full shadow-[2px_0_10px_rgba(0,0,0,0.02)] z-10 relative">
-      <div className="px-5 py-5 border-b border-surface-mid relative bg-surface z-10">
-        <div className="flex items-center justify-between">
-          {selectionMode ? (
-            <div className="flex items-center justify-between w-full">
-              <span className="font-display text-sm font-semibold text-tertiary">
-                {selectedIds.size} selected
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    if (selectedIds.size === visible.length && visible.length > 0) {
-                      setSelectedIds(new Set());
-                    } else {
-                      setSelectedIds(new Set(visible.map(l => l.id)));
-                    }
-                  }}
-                  className="text-[11px] font-semibold text-tertiary hover:text-tertiary/80 transition-colors"
-                >
-                  {selectedIds.size === visible.length && visible.length > 0 ? "Deselect All" : "Select All"}
+      <div className="px-4 py-3 border-b border-surface-mid bg-surface relative z-10">
+        {selectionMode ? (
+          /* ── Selection mode bar ── */
+          <div className="flex items-center justify-between py-1">
+            <span className="font-display text-sm font-semibold text-tertiary">{selectedIds.size} selected</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setSelectedIds(selectedIds.size === visible.length && visible.length > 0 ? new Set() : new Set(visible.map(l => l.id)))}
+                className="text-[11px] font-semibold text-tertiary hover:text-tertiary/80 transition-colors"
+              >
+                {selectedIds.size === visible.length && visible.length > 0 ? "Deselect All" : "Select All"}
+              </button>
+              <button onClick={cancelSelection} className="text-[11px] font-semibold text-on-surface-muted hover:text-on-surface transition-colors ml-1">
+                Cancel
+              </button>
+              {selectedIds.size > 0 && onPinSelected && (
+                <button onClick={() => onPinSelected(Array.from(selectedIds))} className="flex items-center gap-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 text-[11px] font-semibold ml-2 px-2 py-1 rounded-md transition-colors">
+                  <Pin size={12} /> Pin
                 </button>
-                <button
-                  onClick={cancelSelection}
-                  className="text-[11px] font-semibold text-on-surface-muted hover:text-on-surface transition-colors ml-1"
-                >
-                  Cancel
+              )}
+              {selectedIds.size > 0 && (
+                <button onClick={handleDeleteSelected} disabled={isDeleting} className="flex items-center gap-1.5 text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-50 text-[11px] font-semibold ml-2 px-2 py-1 rounded-md transition-colors">
+                  <Trash2 size={12} /> {isDeleting ? "..." : "Delete"}
                 </button>
-                {selectedIds.size > 0 && onPinSelected && (
-                  <button
-                    onClick={() => onPinSelected(Array.from(selectedIds))}
-                    className="flex items-center gap-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 text-[11px] font-semibold ml-2 px-2 py-1 rounded-md transition-colors"
-                  >
-                    <Pin size={12} />
-                    Pin
-                  </button>
-                )}
-                {selectedIds.size > 0 && (
-                  <button
-                    onClick={handleDeleteSelected}
-                    disabled={isDeleting}
-                    className="flex items-center gap-1.5 text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-50 text-[11px] font-semibold ml-2 px-2 py-1 rounded-md transition-colors"
-                  >
-                    <Trash2 size={12} />
-                    {isDeleting ? "..." : "Delete"}
-                  </button>
-                )}
-              </div>
+              )}
             </div>
-          ) : (
-            <>
-              <div className="flex items-center gap-2">
-                <h2 className="font-display text-lg font-bold text-tertiary tracking-tight">Conversations</h2>
+          </div>
+        ) : (
+          <>
+            {/* ── Title row ── */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-1.5">
+                <h2 className="font-display text-base font-bold text-on-surface tracking-tight">Conversations</h2>
                 {onCollapse && (
-                  <button
-                    onClick={onCollapse}
-                    className="p-1 rounded-md hover:bg-surface-low text-on-surface-muted hover:text-on-surface transition-colors"
-                  >
-                    <ChevronLeft size={16} />
+                  <button onClick={onCollapse} className="p-1 rounded-md hover:bg-surface-low text-on-surface-muted hover:text-on-surface transition-colors">
+                    <ChevronLeft size={15} />
                   </button>
                 )}
               </div>
               <div className="relative" ref={menuRef}>
-                <button
-                  onClick={() => setMenuOpen(!menuOpen)}
-                  className="p-1.5 rounded-md hover:bg-surface-low text-on-surface-muted hover:text-on-surface transition-colors"
-                >
-                  <MoreVertical size={16} />
+                <button onClick={() => setMenuOpen(!menuOpen)} className="p-1.5 rounded-md hover:bg-surface-low text-on-surface-muted hover:text-on-surface transition-colors">
+                  <MoreVertical size={15} />
                 </button>
                 {menuOpen && (
-                  <div className="absolute right-0 top-full mt-1 w-32 bg-surface border border-surface-mid rounded-xl shadow-xl overflow-hidden z-20 py-1.5">
-                    <button
-                      onClick={() => {
-                        setSelectionMode(true);
-                        setMenuOpen(false);
-                      }}
-                      className="w-full text-left px-4 py-2 text-[13px] font-medium text-on-surface hover:bg-surface-low transition-colors flex items-center justify-between group"
-                    >
+                  <div className="absolute right-0 top-full mt-1 w-36 bg-surface border border-surface-mid rounded-xl shadow-xl overflow-hidden z-20 py-1.5">
+                    <button onClick={() => { setSelectionMode(true); setMenuOpen(false); }} className="w-full text-left px-4 py-2 text-[13px] font-medium text-on-surface hover:bg-surface-low transition-colors">
                       Select chats
                     </button>
-                    <button
-                      onClick={() => {
-                        setSelectionMode(true);
-                        setSelectedIds(new Set(visible.map(l => l.id)));
-                        setMenuOpen(false);
-                      }}
-                      className="w-full text-left px-4 py-2 text-[13px] font-medium text-on-surface hover:bg-surface-low transition-colors flex items-center justify-between group"
-                    >
+                    <button onClick={() => { setSelectionMode(true); setSelectedIds(new Set(visible.map(l => l.id))); setMenuOpen(false); }} className="w-full text-left px-4 py-2 text-[13px] font-medium text-on-surface hover:bg-surface-low transition-colors">
                       Select all
                     </button>
                   </div>
                 )}
               </div>
-            </>
-          )}
-        </div>
+            </div>
 
-        <div className="relative mt-4 mb-4 group">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-muted group-focus-within:text-tertiary transition-colors" />
-          <input
-            type="text"
-            placeholder="Search conversations..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-8 py-2 bg-surface-low border border-surface-mid rounded-xl text-sm text-on-surface placeholder:text-on-surface-muted focus:outline-none focus:ring-2 focus:ring-tertiary/20 focus:border-tertiary transition-all"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-muted hover:text-on-surface p-0.5 rounded-full hover:bg-surface-mid transition-colors"
-            >
-              <X size={12} />
-            </button>
-          )}
-        </div>
-
-        <div className="flex gap-1.5 flex-wrap mb-3">
-          {PLATFORMS.map((p) => {
-            const count = p.value === "all" ? platformCounts.all : (platformCounts[p.value] ?? 0);
-            const Icon = p.icon;
-            return (
-              <button
-                key={p.value}
-                onClick={() => onPlatformChange(p.value)}
-                className={cn(
-                  "px-2.5 py-1.5 rounded-lg font-label text-[11px] font-semibold transition-all duration-200 flex items-center gap-1.5",
-                  getPlatformBg(platform === p.value, p.value)
+            {/* ── Search + Filter + Refresh row ── */}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 group">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-muted group-focus-within:text-tertiary transition-colors" />
+                <input
+                  type="text"
+                  placeholder="Search conversations..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-7 py-2 bg-surface-low border border-surface-mid rounded-xl text-[13px] text-on-surface placeholder:text-on-surface-muted focus:outline-none focus:ring-2 focus:ring-tertiary/20 focus:border-tertiary transition-all"
+                />
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-muted hover:text-on-surface p-0.5 rounded-full hover:bg-surface-mid transition-colors">
+                    <X size={11} />
+                  </button>
                 )}
-              >
-                <Icon size={12} className={platform === p.value ? "text-white" : getPlatformColor(p.value === "all" ? "whatsapp" : p.value)} />
-                {p.label === "WhatsApp" ? "WA" : p.label === "All" ? "All" : p.label.substring(0, 4)}
-                <span className={cn(
-                  "px-1.5 py-0.5 rounded-full text-[9px] font-bold min-w-[18px] text-center",
-                  platform === p.value
-                    ? "bg-white/20 text-white"
-                    : "bg-surface-mid text-on-surface-muted"
-                )}>
-                  {count}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-
-        <div className="flex items-center justify-between mb-2">
-          <p className="font-label text-xs font-medium text-on-surface-muted">{visible.length} leads</p>
-        </div>
-        <div className="flex gap-1.5 flex-wrap">
-          {SEGMENTS.map((f) => {
-            const count = leads.filter(l => l.segment === f.value && (platform === "all" || l.source === platform)).length;
-            return (
+              </div>
               <button
-                key={f.value}
-                onClick={() => setSegment(segment === f.value ? null : f.value)}
+                onClick={() => setFiltersOpen((v) => !v)}
+                title="Filters"
                 className={cn(
-                  "px-2.5 py-1 rounded-lg font-label text-[11px] font-semibold transition-all duration-200 flex items-center gap-1.5",
-                  segment === f.value
+                  "w-9 h-9 rounded-xl flex items-center justify-center transition-colors shrink-0 relative",
+                  filtersOpen
                     ? "bg-tertiary text-white shadow-sm"
-                    : "bg-surface-low text-on-surface-muted hover:bg-surface-mid hover:text-on-surface"
+                    : "bg-surface-low border border-surface-mid text-on-surface-muted hover:bg-surface-mid"
                 )}
               >
-                {f.label}
-                <span className={cn(
-                  "px-1.5 py-0.5 rounded-full text-[9px] font-bold min-w-[18px] text-center",
-                  segment === f.value ? "bg-white/20 text-white" : "bg-surface-mid text-on-surface-muted"
-                )}>
-                  {count}
-                </span>
+                <Filter size={14} />
+                {(segment !== null || platform !== "whatsapp") && !filtersOpen && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-tertiary rounded-full" />
+                )}
               </button>
-            )
-          })}
-        </div>
+              <button
+                onClick={handleRefresh}
+                title="Refresh"
+                disabled={isRefreshing}
+                className="w-9 h-9 rounded-xl bg-surface-low border border-surface-mid flex items-center justify-center text-on-surface-muted hover:bg-surface-mid transition-colors shrink-0 disabled:opacity-60"
+              >
+                <RefreshCw size={14} className={isRefreshing ? "animate-spin" : ""} />
+              </button>
+            </div>
+
+            {/* ── Collapsible filter panel ── */}
+            {filtersOpen && (
+              <div className="mt-3 space-y-3 pb-1">
+                <div className="flex gap-1.5 flex-wrap">
+                  {PLATFORMS.map((p) => {
+                    const count = p.value === "all" ? platformCounts.all : (platformCounts[p.value] ?? 0);
+                    const Icon = p.icon;
+                    return (
+                      <button
+                        key={p.value}
+                        onClick={() => onPlatformChange(p.value)}
+                        className={cn(
+                          "px-2.5 py-1.5 rounded-lg font-label text-[11px] font-semibold transition-all duration-200 flex items-center gap-1.5",
+                          getPlatformBg(platform === p.value, p.value)
+                        )}
+                      >
+                        <Icon size={11} className={platform === p.value ? "text-white" : getPlatformColor(p.value === "all" ? "whatsapp" : p.value)} />
+                        {p.label === "WhatsApp" ? "WA" : p.label === "All" ? "All" : p.label.substring(0, 4)}
+                        <span className={cn("px-1.5 py-0.5 rounded-full text-[9px] font-bold min-w-[18px] text-center", platform === p.value ? "bg-white/20 text-white" : "bg-surface-mid text-on-surface-muted")}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex gap-1.5 flex-wrap">
+                  {SEGMENTS.map((f) => {
+                    const count = leads.filter(l => l.segment === f.value && (platform === "all" || l.source === platform)).length;
+                    return (
+                      <button
+                        key={f.value}
+                        onClick={() => setSegment(segment === f.value ? null : f.value)}
+                        className={cn(
+                          "px-2.5 py-1 rounded-lg font-label text-[11px] font-semibold transition-all duration-200 flex items-center gap-1.5",
+                          segment === f.value ? "bg-tertiary text-white shadow-sm" : "bg-surface-low text-on-surface-muted hover:bg-surface-mid hover:text-on-surface"
+                        )}
+                      >
+                        {f.label}
+                        <span className={cn("px-1.5 py-0.5 rounded-full text-[9px] font-bold min-w-[18px] text-center", segment === f.value ? "bg-white/20 text-white" : "bg-surface-mid text-on-surface-muted")}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="font-label text-[11px] text-on-surface-muted">{visible.length} conversations</p>
+              </div>
+            )}
+          </>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto bg-surface-low/30">
         {visible.length === 0 ? (

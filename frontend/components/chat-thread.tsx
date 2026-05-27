@@ -9,7 +9,7 @@ import {
   Bot, User, CheckCircle2, Send, PowerOff, Power,
   AlertTriangle, Pencil, MessageCircle, Trash2,
   Paperclip, Mic, MicOff, FileText, Image as ImageIcon,
-  Music, Video, Download, X, Eraser, MoreVertical,
+  Music, Video, Download, X, Eraser, MoreVertical, Plus,
 } from "lucide-react";
 
 const AVATAR_COLORS = [
@@ -534,38 +534,7 @@ export function ChatThread({
           </p>
         </div>
 
-        {/* AI toggle */}
-        <button
-          onClick={toggleAI}
-          disabled={toggling}
-          className={cn(
-            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-label text-xs font-semibold transition-colors disabled:opacity-40 shrink-0",
-            aiEnabled
-              ? "bg-surface-low text-on-surface-muted hover:bg-surface-mid border border-surface-mid"
-              : "bg-amber-100 text-amber-700 hover:bg-amber-200 border border-amber-200"
-          )}
-          title={aiEnabled ? "Pause AI and take over" : "Resume AI auto-reply"}
-        >
-          {aiEnabled ? <Power size={13} /> : <PowerOff size={13} />}
-          {toggling ? "…" : aiEnabled ? "AI On" : "AI Off"}
-        </button>
-
-        {/* Convert button / badge */}
-        {converted ? (
-          <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-100 text-green-700 font-label text-xs font-semibold shrink-0">
-            <CheckCircle2 size={13} /> Converted
-          </span>
-        ) : (
-          <button
-            onClick={markConverted}
-            disabled={converting}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-tertiary text-white font-label text-xs font-semibold hover:bg-tertiary/90 disabled:opacity-40 shrink-0"
-          >
-            <CheckCircle2 size={13} /> {converting ? "Saving…" : "Convert"}
-          </button>
-        )}
-
-        {/* ⋯ dropdown — Clear + Delete */}
+        {/* ⋯ dropdown — AI toggle + Clear + Delete */}
         <div className="relative shrink-0" ref={dropdownRef}>
           <button
             onClick={() => setDropdownOpen((v) => !v)}
@@ -575,7 +544,28 @@ export function ChatThread({
             <MoreVertical size={16} />
           </button>
           {dropdownOpen && (
-            <div className="absolute right-0 top-full mt-1 w-40 bg-surface border border-surface-mid rounded-xl shadow-xl overflow-hidden z-30 py-1.5">
+            <div className="absolute right-0 top-full mt-1 w-44 bg-surface border border-surface-mid rounded-xl shadow-xl overflow-hidden z-30 py-1.5">
+              <button
+                onClick={() => { setDropdownOpen(false); toggleAI(); }}
+                disabled={toggling}
+                className={cn(
+                  "w-full text-left px-4 py-2 text-[13px] font-medium transition-colors flex items-center gap-2 disabled:opacity-40",
+                  aiEnabled ? "text-amber-600 hover:bg-amber-50" : "text-emerald-600 hover:bg-emerald-50"
+                )}
+              >
+                {aiEnabled ? <PowerOff size={13} /> : <Power size={13} />}
+                {toggling ? "Updating…" : aiEnabled ? "Pause AI" : "Resume AI"}
+              </button>
+              {!converted && (
+                <button
+                  onClick={() => { setDropdownOpen(false); markConverted(); }}
+                  disabled={converting}
+                  className="w-full text-left px-4 py-2 text-[13px] font-medium text-tertiary hover:bg-tertiary/5 transition-colors flex items-center gap-2 disabled:opacity-40"
+                >
+                  <CheckCircle2 size={13} /> {converting ? "Saving…" : "Mark Converted"}
+                </button>
+              )}
+              <div className="border-t border-surface-mid my-1" />
               <button
                 onClick={() => { setDropdownOpen(false); clearChat(); }}
                 disabled={clearing}
@@ -612,26 +602,19 @@ export function ChatThread({
       </div>
 
       {/* Input area */}
-      <div className="border-t border-surface-mid bg-surface px-6 py-3">
-        {outsideWindow && !aiEnabled && current.source === "whatsapp" && (
+      <div className="border-t border-surface-mid bg-surface px-4 py-3">
+        {outsideWindow && current.source === "whatsapp" && (
           <div className="mb-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800">
-            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+            <AlertTriangle size={13} className="mt-0.5 shrink-0" />
             <p className="font-label text-[11px] leading-snug">
-              Outside 24-hour session window
-              {lastInbound ? ` (last inbound ${Math.round(hoursSinceInbound)}h ago)` : " (no inbound yet)"}
-              . Free-form messages may be blocked by WhatsApp — only approved templates go through reliably.
+              Outside 24-hour window{lastInbound ? ` (last inbound ${Math.round(hoursSinceInbound)}h ago)` : ""}. Only approved templates go through reliably.
             </p>
           </div>
         )}
-        {!aiEnabled && !outsideWindow && (
+        {!aiEnabled && (
           <p className="font-label text-[11px] text-amber-700 mb-2">
             AI is paused — your replies go directly to the lead.
           </p>
-        )}
-
-        {/* File preview */}
-        {selectedFile && (
-          <FilePreview file={selectedFile} onRemove={() => { setSelectedFile(null); setFileCaption(""); }} />
         )}
 
         {/* Hidden file input */}
@@ -648,53 +631,41 @@ export function ChatThread({
         />
 
         {selectedFile ? (
-          /* Send media mode */
-          <div className="flex items-end gap-2">
-            <input
-              value={fileCaption}
-              onChange={(e) => setFileCaption(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") sendMedia(); }}
-              placeholder="Add a caption (optional)…"
-              disabled={sending}
-              className="flex-1 px-3 py-2 rounded-lg bg-surface-low border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary disabled:opacity-50"
-            />
-            <button
-              onClick={sendMedia}
-              disabled={sending}
-              className="px-4 py-2 rounded-lg bg-tertiary text-white font-label text-sm font-semibold hover:bg-tertiary/90 disabled:opacity-40 flex items-center gap-1.5"
-            >
-              <Send size={14} /> {sending ? "Sending…" : "Send File"}
-            </button>
+          /* File preview + send */
+          <div className="space-y-2">
+            <FilePreview file={selectedFile} onRemove={() => { setSelectedFile(null); setFileCaption(""); }} />
+            <div className="flex items-center gap-2 bg-surface-low border border-surface-mid rounded-2xl px-4 py-2">
+              <input
+                value={fileCaption}
+                onChange={(e) => setFileCaption(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") sendMedia(); }}
+                placeholder="Add a caption (optional)…"
+                disabled={sending}
+                className="flex-1 bg-transparent font-body text-sm focus:outline-none disabled:opacity-50"
+              />
+              <button
+                onClick={sendMedia}
+                disabled={sending}
+                className="w-8 h-8 rounded-full bg-tertiary text-white flex items-center justify-center shrink-0 hover:bg-tertiary/90 disabled:opacity-40 transition-colors"
+              >
+                <Send size={14} />
+              </button>
+            </div>
           </div>
         ) : (
-          /* Text + media buttons row */
-          <div className="flex items-end gap-2">
-            {/* Attachment button */}
-            {canSendMedia && (
+          /* Main input bar */
+          <div className="flex items-center gap-2 bg-surface-low border border-surface-mid rounded-2xl px-3 py-2 focus-within:border-tertiary focus-within:ring-2 focus-within:ring-tertiary/15 transition-all">
+            {canSendMedia ? (
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isRecording}
-                title="Attach file (PDF, DOCX, image, audio, video)"
-                className="p-2 rounded-lg text-on-surface-muted hover:text-tertiary hover:bg-tertiary/10 transition-colors disabled:opacity-40 shrink-0 self-center"
+                title="Attach file"
+                className="p-1 text-on-surface-muted hover:text-tertiary transition-colors disabled:opacity-40 shrink-0"
               >
-                <Paperclip size={18} />
+                <Plus size={18} />
               </button>
-            )}
-
-            {/* Voice note button */}
-            {canSendMedia && (
-              <button
-                onClick={isRecording ? stopRecording : startRecording}
-                title={isRecording ? "Stop recording" : "Record voice note"}
-                className={cn(
-                  "p-2 rounded-lg transition-colors shrink-0 self-center",
-                  isRecording
-                    ? "text-red-600 bg-red-50 hover:bg-red-100 animate-pulse"
-                    : "text-on-surface-muted hover:text-tertiary hover:bg-tertiary/10"
-                )}
-              >
-                {isRecording ? <MicOff size={18} /> : <Mic size={18} />}
-              </button>
+            ) : (
+              <div className="w-1" />
             )}
 
             <textarea
@@ -703,23 +674,37 @@ export function ChatThread({
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply(); }
               }}
-              placeholder={
-                isRecording
-                  ? "Recording… click 🔴 to stop"
-                  : aiEnabled
-                    ? "Take over: pause AI first, then type…"
-                    : `Type a message via ${isInstagram ? "Instagram DM" : isTelegram ? "Telegram message" : isFacebook ? "Facebook Messenger" : "WhatsApp"} (Enter to send, Shift+Enter for newline)`
-              }
-              rows={2}
-              disabled={aiEnabled || sending || isRecording}
-              className="flex-1 px-3 py-2 rounded-lg bg-surface-low border border-surface-mid font-body text-sm resize-none focus:outline-none focus:ring-2 focus:ring-tertiary disabled:opacity-50"
+              placeholder={isRecording ? "Recording… tap 🔴 to stop" : "Type a message…"}
+              rows={1}
+              disabled={sending || isRecording}
+              className="flex-1 bg-transparent font-body text-[13.5px] resize-none focus:outline-none disabled:opacity-50 max-h-28 leading-relaxed"
+              style={{ minHeight: "24px" }}
+              onInput={(e) => {
+                const t = e.currentTarget;
+                t.style.height = "auto";
+                t.style.height = `${Math.min(t.scrollHeight, 112)}px`;
+              }}
             />
+
+            {canSendMedia && (
+              <button
+                onClick={isRecording ? stopRecording : startRecording}
+                title={isRecording ? "Stop recording" : "Voice note"}
+                className={cn(
+                  "p-1.5 rounded-full transition-colors shrink-0",
+                  isRecording ? "text-red-600 bg-red-50 animate-pulse" : "text-on-surface-muted hover:text-tertiary"
+                )}
+              >
+                {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
+              </button>
+            )}
+
             <button
               onClick={sendReply}
-              disabled={aiEnabled || sending || !draft.trim() || isRecording}
-              className="px-4 py-2 h-[56px] rounded-lg bg-tertiary text-white font-label text-sm font-semibold hover:bg-tertiary/90 disabled:opacity-40 flex items-center gap-1.5"
+              disabled={sending || !draft.trim() || isRecording}
+              className="w-8 h-8 rounded-full bg-tertiary text-white flex items-center justify-center shrink-0 hover:bg-tertiary/90 disabled:opacity-40 transition-colors"
             >
-              <Send size={14} /> {sending ? "Sending…" : "Send"}
+              <Send size={13} />
             </button>
           </div>
         )}

@@ -96,6 +96,7 @@ export default function ConversationsPage() {
           platform={platform}
           onPlatformChange={setPlatform}
           onCollapse={() => setSidebarOpen(false)}
+          onRefresh={load}
           onPin={handlePin}
           onPinSelected={handlePinSelected}
           onDeleted={(deletedIds) => {
