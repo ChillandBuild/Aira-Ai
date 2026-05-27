@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { ChevronDown, Download, Calendar, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -80,7 +80,7 @@ export default function InsightsPage() {
   const [customSince, setCustomSince] = useState("");
   const [customUntil, setCustomUntil] = useState("");
 
-  async function fetchInsights(since?: string, until?: string) {
+  const fetchInsights = useCallback(async (since?: string, until?: string) => {
     setLoading(true);
     try {
       const auth = await getAuthHeaders();
@@ -95,7 +95,6 @@ export default function InsightsPage() {
       if (res.ok) {
         const json = await res.json();
         setData(json);
-        // Default select all numbers
         if (json.numbers.length > 0) {
           setSelectedNumbers(["all"]);
         }
@@ -105,11 +104,11 @@ export default function InsightsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [range]);
 
   useEffect(() => {
     fetchInsights();
-  }, []);
+  }, [fetchInsights]);
 
   function handleRangeChange(r: "7d" | "30d" | "custom") {
     setRange(r);
@@ -141,7 +140,6 @@ export default function InsightsPage() {
     setSelectedNumbers(["all"]);
   }
 
-  const allIds = data?.numbers.map((n) => n.meta_phone_number_id) || [];
   const isAllSelected = selectedNumbers.includes("all");
   const displayNumbers = isAllSelected ? data?.numbers || [] : (data?.numbers || []).filter((n) => selectedNumbers.includes(n.meta_phone_number_id));
 
@@ -293,7 +291,7 @@ export default function InsightsPage() {
 
       {/* Disclaimer */}
       <p className="font-label text-[11px] text-on-surface-muted mb-4">
-        Note: All insights data is approximate and may differ from what's shown on your invoices due to small variations in data processing.
+        Note: All insights data is approximate and may differ from what&apos;s shown on your invoices due to small variations in data processing.
       </p>
 
       {loading ? (
