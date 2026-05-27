@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id
+from app.routes.app_settings import _get_setting_value
 from app.services.meta_cloud import get_number_quality, get_whatsapp_insights
 
 logger = logging.getLogger(__name__)
@@ -121,6 +122,17 @@ async def whatsapp_insights(
         .execute()
     )
     numbers = numbers_result.data or []
+
+    # Fallback: if phone_numbers pool is empty, synthesise from app_settings
+    if not numbers:
+        meta_pid = _get_setting_value(db, tenant_id, "meta_phone_number_id")
+        if meta_pid:
+            numbers = [{
+                "id": None,
+                "number": meta_pid,
+                "display_name": "Primary number",
+                "meta_phone_number_id": meta_pid,
+            }]
 
     if source == "db":
         return await _from_db(db, tenant_id, numbers, since_iso, until_iso)
