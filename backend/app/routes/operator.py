@@ -28,12 +28,21 @@ def operator_me(user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Access denied.")
     return {"is_system_admin": True, "user_id": user["user_id"]}
 
-ServiceTier = Literal["whatsapp_only", "telecalling_only", "combined"]
+ServiceTier = Literal[
+    "whatsapp_only", "telecalling_only", "combined",
+    "whatsapp_instagram", "whatsapp_facebook", "whatsapp_telegram",
+    "omnichannel", "omnichannel_telecalling",
+]
 
 _FEATURE_MAP: dict[str, list[str]] = {
-    "whatsapp_only": ["whatsapp"],
-    "telecalling_only": ["telecalling"],
-    "combined": ["whatsapp", "telecalling"],
+    "whatsapp_only":         ["whatsapp"],
+    "telecalling_only":      ["telecalling"],
+    "combined":              ["whatsapp", "telecalling"],
+    "whatsapp_instagram":    ["whatsapp", "instagram"],
+    "whatsapp_facebook":     ["whatsapp", "facebook"],
+    "whatsapp_telegram":     ["whatsapp", "telegram"],
+    "omnichannel":           ["whatsapp", "instagram", "facebook", "telegram"],
+    "omnichannel_telecalling": ["whatsapp", "instagram", "facebook", "telegram", "telecalling"],
 }
 
 _SETTING_KEYS: list[tuple[str, bool]] = [

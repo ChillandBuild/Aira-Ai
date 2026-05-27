@@ -1,9 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import {
-  MessageSquare, Phone, Sparkles, Eye, EyeOff,
-  Save, AlertCircle, Loader2, CheckCircle2, ChevronDown, Send, Camera,
-  Copy, Check, Zap, XCircle, Activity, RefreshCw,
+  Phone, Sparkles, Eye, EyeOff, Save, AlertCircle, Loader2, CheckCircle2, ChevronDown
 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { InboxConfigPanel } from "./InboxConfigPanel";
@@ -33,90 +31,15 @@ type ToggleDef = { key: string; label: string; description: string };
 type SectionDef = {
   id: string;
   label: string;
-  icon: typeof MessageSquare;
+  icon: typeof Phone;
   color: string;
   bg: string;
   description: string;
   fields: FieldDef[];
   toggles?: ToggleDef[];
-  hasActivate?: boolean;
-};
-
-type ActivateResult = {
-  success: boolean;
-  message: string;
-  detail?: string;
-};
-
-type ChannelHealth = {
-  last_event: string | null;
-};
-
-type TokenAlert = {
-  channel: string;
-  error: string;
-  created_at: string;
-};
-
-type WebhookHealth = {
-  health: Record<string, ChannelHealth>;
-  token_alerts: TokenAlert[];
 };
 
 const SECTIONS: SectionDef[] = [
-  {
-    id: "whatsapp",
-    label: "WhatsApp (Meta Cloud API)",
-    icon: MessageSquare,
-    color: "#059669",
-    bg: "#d1fae5",
-    description: "Connect your WhatsApp Business Account to send and receive messages.",
-    hasActivate: true,
-    fields: [
-      { key: "meta_phone_number_id", label: "Phone Number ID", secret: false, required: true },
-      { key: "meta_waba_id", label: "WhatsApp Business Account ID (WABA ID)", secret: false, required: true, hint: "Found in Meta Business Manager → WhatsApp Accounts. Required for webhook subscription." },
-      { key: "meta_access_token", label: "Permanent Access Token", secret: true, required: true },
-      { key: "meta_webhook_verify_token", label: "Webhook Verify Token", secret: true, required: true, hint: "Pick any string. Paste the same value into Meta Developer App → Webhook → Verify Token (shared by WhatsApp, Instagram, Facebook)." },
-      { key: "meta_app_secret", label: "Meta App Secret", secret: true, required: true, hint: "Meta Developer App → Settings → Basic → App Secret. Used to verify inbound Facebook + Instagram webhooks." },
-    ],
-  },
-  {
-    id: "telegram",
-    label: "Telegram (Bot API)",
-    icon: Send,
-    color: "#0284c7",
-    bg: "#e0f2fe",
-    description: "Connect your Telegram Bot. The webhook URL is registered automatically when saving.",
-    fields: [
-      { key: "telegram_bot_token", label: "Telegram Bot Token", secret: true, required: true, hint: "Obtain this token from @BotFather on Telegram" },
-    ],
-  },
-  {
-    id: "instagram",
-    label: "Instagram (Direct Messages)",
-    icon: Camera,
-    color: "#e1306c",
-    bg: "#fdf2f8",
-    description: "Connect your Instagram Business Account. Provide your credentials and register the webhook URL.",
-    hasActivate: true,
-    fields: [
-      { key: "instagram_page_id", label: "Instagram Page ID / Business Account ID", secret: false, required: true, hint: "Meta Business Manager Page ID or Instagram Business Account ID" },
-      { key: "instagram_access_token", label: "Instagram Page Access Token", secret: true, required: true, hint: "Permanent page access token with instagram_manage_messages scope" },
-    ],
-  },
-  {
-    id: "facebook",
-    label: "Facebook Messenger",
-    icon: MessageSquare,
-    color: "#1877f2",
-    bg: "#eff6ff",
-    description: "Connect your Facebook Page to receive and reply to Messenger conversations.",
-    hasActivate: true,
-    fields: [
-      { key: "facebook_page_id", label: "Facebook Page ID", secret: false, required: true, hint: "Your Facebook Page's numeric ID from Page settings" },
-      { key: "facebook_access_token", label: "Facebook Page Access Token", secret: true, required: true, hint: "Permanent page access token with pages_messaging scope" },
-    ],
-  },
   {
     id: "voice",
     label: "Voice Calling (TeleCMI)",
@@ -168,28 +91,6 @@ async function saveSettings(updates: SettingsMap): Promise<void> {
       if (attempt === 2) throw new Error("Server unreachable — please try again");
     }
   }
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(text);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
-        } catch {
-          /* clipboard not available */
-        }
-      }}
-      title="Copy to clipboard"
-      className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-label font-semibold transition-all border border-border bg-white text-ink-muted hover:text-primary hover:border-primary/40"
-    >
-      {copied ? <><Check size={11} className="text-emerald-600" />Copied</> : <><Copy size={11} />Copy</>}
-    </button>
-  );
 }
 
 function OutlinedField({
@@ -265,100 +166,6 @@ function SecretField({
   );
 }
 
-function timeAgo(iso: string | null): string {
-  if (!iso) return "never";
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
-}
-
-function HealthBadge({ lastEvent, tokenAlert }: { lastEvent: string | null; tokenAlert?: TokenAlert }) {
-  if (tokenAlert) {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-label font-semibold bg-red-100 text-red-700 border border-red-200">
-        <XCircle size={10} /> Token invalid
-      </span>
-    );
-  }
-  if (lastEvent) {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-label font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-        <Activity size={10} /> {timeAgo(lastEvent)}
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-label font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-      <Activity size={10} /> No events yet
-    </span>
-  );
-}
-
-function WebhookGuide({ sectionId, tenantId }: { sectionId: string; tenantId: string | null }) {
-  if (sectionId === "whatsapp") {
-    const url = `${API_URL}/webhook/whatsapp`;
-    return (
-      <div className="mt-5 p-4 rounded-2xl bg-surface-subtle border border-border-subtle font-body text-xs text-ink-secondary space-y-2">
-        <p className="font-semibold text-ink">Meta Webhook Configuration Guide:</p>
-        <p>1. In your Meta Developer App, go to <strong>WhatsApp → Configuration</strong>.</p>
-        <p>2. Set the Callback URL to:</p>
-        <div className="flex items-center gap-2">
-          <div className="flex-1 p-2.5 rounded-xl bg-white border border-border font-mono text-xs select-all break-all text-primary font-medium">
-            {url}
-          </div>
-          <CopyButton text={url} />
-        </div>
-        <p>3. Set the Verify Token to the same value as your <strong>Webhook Verify Token</strong> above.</p>
-        <p>4. Subscribe to <strong>messages</strong> and <strong>message_status_updates</strong> fields.</p>
-        <p>5. After saving credentials, click <strong>Validate &amp; Activate</strong> to verify your token and auto-subscribe the webhook.</p>
-      </div>
-    );
-  }
-  if (sectionId === "instagram") {
-    const url = tenantId ? `${API_URL}/webhook/instagram/${tenantId}` : null;
-    return (
-      <div className="mt-5 p-4 rounded-2xl bg-surface-subtle border border-border-subtle font-body text-xs text-ink-secondary space-y-2">
-        <p className="font-semibold text-ink">Meta Webhook Configuration Guide:</p>
-        <p>1. In your Meta Developer App, add the <strong>Instagram Graph API</strong> product.</p>
-        <p>2. Set the Webhook Callback URL to:</p>
-        <div className="flex items-center gap-2">
-          <div className="flex-1 p-2.5 rounded-xl bg-white border border-border font-mono text-xs select-all break-all text-primary font-medium">
-            {url ?? "Retrieving webhook URL…"}
-          </div>
-          {url && <CopyButton text={url} />}
-        </div>
-        <p>3. Use the verify token you set in the WhatsApp section above.</p>
-        <p>4. Subscribe to <strong>messages</strong> Webhook event fields.</p>
-        <p>5. After saving credentials, click <strong>Validate &amp; Activate</strong> to auto-subscribe the webhook.</p>
-      </div>
-    );
-  }
-  if (sectionId === "facebook") {
-    const url = tenantId ? `${API_URL}/webhook/facebook/${tenantId}` : null;
-    return (
-      <div className="mt-5 p-4 rounded-2xl bg-surface-subtle border border-border-subtle font-body text-xs text-ink-secondary space-y-2">
-        <p className="font-semibold text-ink">Facebook Messenger Webhook Configuration Guide:</p>
-        <p>1. In your Meta Developer App, add the <strong>Messenger</strong> product and link your Page.</p>
-        <p>2. Set the Webhook Callback URL to:</p>
-        <div className="flex items-center gap-2">
-          <div className="flex-1 p-2.5 rounded-xl bg-white border border-border font-mono text-xs select-all break-all text-primary font-medium">
-            {url ?? "Retrieving webhook URL…"}
-          </div>
-          {url && <CopyButton text={url} />}
-        </div>
-        <p>3. Use the same verify token configured in the WhatsApp section (meta_webhook_verify_token).</p>
-        <p>4. Subscribe to <strong>messages</strong> Webhook event fields under your Page.</p>
-        <p>5. After saving credentials, click <strong>Validate &amp; Activate</strong> to auto-subscribe the webhook.</p>
-      </div>
-    );
-  }
-  return null;
-}
-
 type SaveState = "idle" | "dirty" | "saving" | "saved";
 
 export default function SettingsPage() {
@@ -368,11 +175,6 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const [tenantId, setTenantId] = useState<string | null>(null);
-  const [activating, setActivating] = useState<Record<string, boolean>>({});
-  const [activateResults, setActivateResults] = useState<Record<string, ActivateResult>>({});
-  const [webhookHealth, setWebhookHealth] = useState<WebhookHealth | null>(null);
-  const [healthLoading, setHealthLoading] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -397,34 +199,9 @@ export default function SettingsPage() {
     }
   }, []);
 
-  const loadHealth = useCallback(async () => {
-    setHealthLoading(true);
-    try {
-      const auth = await getAuthHeaders();
-      const res = await fetch(`${API_URL}/api/v1/settings/webhook-health`, { headers: auth });
-      if (res.ok) setWebhookHealth(await res.json());
-    } catch { /* non-critical */ } finally {
-      setHealthLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     load();
-    loadHealth();
-    async function fetchTenantStatus() {
-      try {
-        const auth = await getAuthHeaders();
-        const res = await fetch(`${API_URL}/api/v1/onboarding/status`, { headers: auth });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.tenant_id) setTenantId(data.tenant_id);
-        }
-      } catch {
-        /* non-critical */
-      }
-    }
-    fetchTenantStatus();
-  }, [load, loadHealth]);
+  }, [load]);
 
   function settingFor(key: string) {
     return settings.find(s => s.key === key);
@@ -486,52 +263,11 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleActivate(channel: string) {
-    setActivating(a => ({ ...a, [channel]: true }));
-    setActivateResults(r => {
-      const next = { ...r };
-      delete next[channel];
-      return next;
-    });
-    try {
-      const auth = await getAuthHeaders();
-      const res = await fetch(`${API_URL}/api/v1/settings/activate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...auth },
-        body: JSON.stringify({ channel }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setActivateResults(r => ({ ...r, [channel]: { success: false, message: data.detail ?? "Activation failed" } }));
-      } else {
-        let detail = "";
-        if (channel === "whatsapp") {
-          detail = [
-            data.business_name,
-            data.phone_number,
-            data.subscribed ? "Webhook subscribed ✓" : "Add WABA ID to enable webhook subscription",
-          ].filter(Boolean).join(" · ");
-        } else {
-          detail = [
-            data.page_name,
-            data.page_id ? `ID: ${data.page_id}` : null,
-            data.subscribed ? "Webhook subscribed ✓" : "Webhook subscription failed — check token scopes",
-          ].filter(Boolean).join(" · ");
-        }
-        setActivateResults(r => ({ ...r, [channel]: { success: true, message: "Validated & connected", detail } }));
-      }
-    } catch {
-      setActivateResults(r => ({ ...r, [channel]: { success: false, message: "Network error — please try again" } }));
-    } finally {
-      setActivating(a => ({ ...a, [channel]: false }));
-    }
-  }
-
   return (
     <div>
       <div className="mb-7">
         <h1 className="page-title">Settings</h1>
-        <p className="page-subtitle">Connect your services and configure AI behaviour.</p>
+        <p className="page-subtitle">Configure global parameters, voice calling and AI behavior.</p>
       </div>
 
       {error && (
@@ -556,11 +292,6 @@ export default function SettingsPage() {
             const isConfigured = requiredFields.every(f => settingFor(f.key)?.is_set);
             const saveState = saveStates[section.id] ?? "idle";
             const isDirty = sectionDirty[section.id] ?? false;
-            const isActivating = activating[section.id] ?? false;
-            const activateResult = activateResults[section.id];
-            const channelHealth = webhookHealth?.health?.[section.id];
-            const tokenAlert = webhookHealth?.token_alerts?.find(a => a.channel === section.id);
-            const showHealthBadge = ["whatsapp", "instagram", "facebook"].includes(section.id);
 
             return (
               <div key={section.id} className="card rounded-3xl">
@@ -580,13 +311,10 @@ export default function SettingsPage() {
                       </h2>
                       {isConfigured ? (
                         <span className="badge badge-green inline-flex items-center gap-1">
-                          <CheckCircle2 size={10} /> Connected
+                          <CheckCircle2 size={10} /> Configured
                         </span>
                       ) : (
                         <span className="badge badge-gray">Not configured</span>
-                      )}
-                      {showHealthBadge && channelHealth !== undefined && (
-                        <HealthBadge lastEvent={channelHealth.last_event} tokenAlert={tokenAlert} />
                       )}
                     </div>
                     <p className="font-body text-sm text-ink-muted mt-0.5">{section.description}</p>
@@ -629,11 +357,6 @@ export default function SettingsPage() {
                       })}
                     </div>
 
-                    {/* Webhook guides + copy buttons */}
-                    {(section.id === "whatsapp" || section.id === "instagram" || section.id === "facebook") && (
-                      <WebhookGuide sectionId={section.id} tenantId={tenantId} />
-                    )}
-
                     {section.toggles && section.toggles.length > 0 && (
                       <div className="mt-4 space-y-3">
                         {section.toggles.map((toggle) => {
@@ -659,36 +382,6 @@ export default function SettingsPage() {
                       </div>
                     )}
 
-                    {/* Token invalid alert */}
-                    {tokenAlert && (
-                      <div className="mt-4 flex items-start gap-2.5 p-3.5 rounded-2xl border bg-red-50 border-red-200 text-red-800 text-xs font-body">
-                        <XCircle size={14} className="flex-shrink-0 mt-0.5 text-red-500" />
-                        <div>
-                          <p className="font-semibold">Token invalid — {tokenAlert.channel} connection broken</p>
-                          <p className="mt-0.5 opacity-80">{tokenAlert.error} · Detected {timeAgo(tokenAlert.created_at)}</p>
-                          <p className="mt-1 opacity-70">Update your access token above and click Save Changes, then Validate &amp; Activate.</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Activation result */}
-                    {activateResult && (
-                      <div className={`mt-4 flex items-start gap-2.5 p-3.5 rounded-2xl border text-xs font-body ${
-                        activateResult.success
-                          ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                          : "bg-red-50 border-red-200 text-red-700"
-                      }`}>
-                        {activateResult.success
-                          ? <CheckCircle2 size={14} className="flex-shrink-0 mt-0.5 text-emerald-600" />
-                          : <XCircle size={14} className="flex-shrink-0 mt-0.5 text-red-500" />
-                        }
-                        <div>
-                          <p className="font-semibold">{activateResult.message}</p>
-                          {activateResult.detail && <p className="mt-0.5 opacity-80">{activateResult.detail}</p>}
-                        </div>
-                      </div>
-                    )}
-
                     {/* Save row */}
                     <div className="mt-6 flex items-center justify-between border-t border-border-subtle pt-5 gap-3 flex-wrap">
                       <div className="min-h-[20px]">
@@ -705,35 +398,6 @@ export default function SettingsPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        {showHealthBadge && (
-                          <button
-                            type="button"
-                            onClick={loadHealth}
-                            disabled={healthLoading}
-                            title="Refresh webhook health"
-                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl font-label text-sm font-medium border border-border text-ink-muted hover:text-ink-secondary hover:border-border transition-all"
-                          >
-                            <RefreshCw size={13} className={healthLoading ? "animate-spin" : ""} />
-                          </button>
-                        )}
-                        {section.hasActivate && (
-                          <button
-                            type="button"
-                            onClick={() => handleActivate(section.id)}
-                            disabled={isActivating || !isConfigured}
-                            title={!isConfigured ? "Save all required fields first" : "Validate credentials and subscribe webhook"}
-                            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-label text-sm font-semibold transition-all border ${
-                              isConfigured
-                                ? "border-violet-300 text-violet-700 bg-violet-50 hover:bg-violet-100"
-                                : "border-border text-ink-muted bg-surface-subtle cursor-not-allowed opacity-50"
-                            }`}
-                          >
-                            {isActivating
-                              ? <><Loader2 size={14} className="animate-spin" />Validating…</>
-                              : <><Zap size={14} />Validate &amp; Activate</>
-                            }
-                          </button>
-                        )}
                         <button
                           onClick={() => handleSave(section.id, allKeys)}
                           disabled={saveState === "saving" || saveState === "saved" || !isDirty}
