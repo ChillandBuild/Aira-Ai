@@ -6,6 +6,7 @@ import { ChatThread } from "@/components/chat-thread";
 import { LeadDetailsPanel } from "@/components/lead-details-panel";
 import { MessageSquare, ChevronRight, ChevronLeft } from "lucide-react";
 import { usePolling } from "@/hooks/usePolling";
+import { toast } from "sonner";
 
 function getSidebarDefault(): boolean {
   if (typeof window === "undefined") return true;
@@ -65,8 +66,16 @@ export default function ConversationsPage() {
   }
 
   function handlePin(id: string) {
-    setLeads((prev) => togglePinInList(prev, id));
-    api.leads.pin(id).catch(() => {});
+    setLeads((prev) => {
+      const current = prev.find((l) => l.id === id);
+      if (!current) return prev;
+      const toggled = togglePinInList(prev, id);
+      api.leads.pin(id).catch(() => {
+        setLeads((rollback) => togglePinInList(rollback, id));
+        toast.error("Failed to pin/unpin contact");
+      });
+      return toggled;
+    });
   }
 
   function handlePinSelected(ids: string[]) {
@@ -78,7 +87,10 @@ export default function ConversationsPage() {
       return next;
     });
     for (const id of ids) {
-      api.leads.pin(id).catch(() => {});
+      api.leads.pin(id).catch(() => {
+        setLeads((rollback) => togglePinInList(rollback, id));
+        toast.error("Failed to pin/unpin contact");
+      });
     }
   }
 

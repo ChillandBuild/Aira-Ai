@@ -43,6 +43,7 @@ class Lead(LeadBase):
     id: UUID
     created_at: datetime
     updated_at: datetime
+    pinned_at: Optional[datetime] = None
     model_config = {"from_attributes": True}
 
 # --- Message Models ---
