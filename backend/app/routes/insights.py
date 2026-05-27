@@ -47,8 +47,8 @@ async def _sync_number_to_db(db, tenant_id: str, meta_pid: str, display_name: st
 
     for day_offset in range(days + 1):
         day = since_date + timedelta(days=day_offset)
-        day_since = day.replace(hour=0, minute=0, second=0).isoformat()
-        day_until = day.replace(hour=23, minute=59, second=59).isoformat()
+        day_since = datetime(day.year, day.month, day.day, 0, 0, 0, tzinfo=timezone.utc).isoformat()
+        day_until = datetime(day.year, day.month, day.day, 23, 59, 59, tzinfo=timezone.utc).isoformat()
 
         try:
             insights = await get_whatsapp_insights(

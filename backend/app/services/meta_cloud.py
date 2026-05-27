@@ -401,33 +401,6 @@ async def get_number_quality(
     }
 
 
-async def get_whatsapp_insights(
-    phone_number_id: str,
-    access_token: str,
-    since: int,
-    until: int,
-) -> list[dict]:
-    """Fetch WhatsApp message insights from Meta Cloud API.
-    Returns list of metric dicts with name, period, values.
-    """
-    url = f"{_GRAPH_BASE}/{phone_number_id}/insights"
-    params = {
-        "metric": "cost,delivered,read,sent",
-        "since": since,
-        "until": until,
-    }
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.get(
-            url,
-            params=params,
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
-    if not resp.is_success:
-        logger.error("get_whatsapp_insights failed: %s %s", resp.status_code, resp.text)
-        return []
-    return resp.json().get("data", [])
-
-
 async def get_template_status(
     waba_id: str,
     template_name: str,
