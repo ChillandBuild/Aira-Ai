@@ -3,20 +3,20 @@
 @tailwind utilities;
 
 :root {
-  --bg: #f8f8f9;
+  --bg: #e4e5e8;
   --surface: #ffffff;
-  --surface-mid: #e0e7ff;
-  --surface-low: #e0e7ff;
+  --surface-mid: #d8d9dc;
+  --surface-low: #dddee1;
   --primary: #1e1b4b;
   --primary-dark: #0f0d2b;
   --primary-light: #e0e7ff;
   --ink: #0f172a;
   --ink-secondary: #475569;
-  --ink-muted: #94a3b8;
-  --border: #e2e8f0;
-  --border-subtle: #f1f5f9;
+  --ink-muted: #8a92a0;
+  --border: #d0d1d5;
+  --border-subtle: #d8d9dc;
   --radius-card: 1.25rem;
-  --shadow-card: 0 1px 3px rgba(0,0,0,0.03), 0 8px 32px rgba(30,27,75,0.04);
+  --shadow-card: 0 2px 6px rgba(0,0,0,0.07), 0 10px 28px rgba(0,0,0,0.08);
 }
 
 * {
@@ -44,14 +44,14 @@ body {
     border-radius: var(--radius-card);
     padding: 1.5rem;
     box-shadow: var(--shadow-card);
-    border: 1px solid rgba(226,232,240,0.8);
+    border: 1px solid rgba(255,255,255,0.6);
   }
   .card-hover {
     transition: box-shadow 0.2s ease, transform 0.2s ease;
   }
   .card-hover:hover {
-    box-shadow: 0 4px 12px rgba(0,0,0,0.04), 0 16px 48px rgba(30,27,75,0.08);
-    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.09), 0 20px 48px rgba(0,0,0,0.10);
+    transform: translateY(-2px);
   }
 
   /* Stat number */

@@ -9,11 +9,11 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "#f8f8f9",
+        background: "#e4e5e8",
         surface: "#ffffff",
-        "surface-mid": "#e0e7ff",
-        "surface-low": "#e0e7ff",
-        "surface-subtle": "#f8f8f9",
+        "surface-mid": "#d8d9dc",
+        "surface-low": "#dddee1",
+        "surface-subtle": "#d8d9dc",
 
         primary: "#1e1b4b",
         "primary-dark": "#0f0d2b",
@@ -24,8 +24,8 @@ const config: Config = {
         "ink-secondary": "#475569",
         "ink-muted": "#94a3b8",
 
-        border: "#e2e8f0",
-        "border-subtle": "#f1f5f9",
+        border: "#d0d1d5",
+        "border-subtle": "#d8d9dc",
 
         // legacy aliases mapped to new cohesive values
         secondary: "#1e1b4b",
@@ -43,14 +43,14 @@ const config: Config = {
         label: ["var(--font-dm-sans)", "sans-serif"],
       },
       boxShadow: {
-        card: "0 1px 3px rgba(0,0,0,0.03), 0 8px 32px rgba(30,27,75,0.04)",
-        "card-hover": "0 4px 12px rgba(0,0,0,0.04), 0 16px 48px rgba(30,27,75,0.08)",
-        sidebar: "2px 0 20px rgba(0,0,0,0.06), 1px 0 0 rgba(0,0,0,0.04)",
-        sm: "0 1px 3px rgba(0,0,0,0.04)",
-        // Neomorphic shadows
-        "neo-active": "5px 5px 14px rgba(0,0,0,0.09), -3px -3px 10px rgba(255,255,255,0.95)",
-        "neo-hover":  "3px 3px 8px rgba(0,0,0,0.06), -2px -2px 6px rgba(255,255,255,0.80)",
-        "neo-inset":  "inset 2px 2px 6px rgba(0,0,0,0.07), inset -2px -2px 5px rgba(255,255,255,0.85)",
+        card: "0 2px 6px rgba(0,0,0,0.07), 0 10px 28px rgba(0,0,0,0.08)",
+        "card-hover": "0 6px 16px rgba(0,0,0,0.09), 0 20px 48px rgba(0,0,0,0.10)",
+        sidebar: "none",
+        sm: "0 1px 4px rgba(0,0,0,0.08)",
+        // Neomorphic shadows — tuned for #e4e5e8 gray field
+        "neo-active": "6px 6px 18px rgba(0,0,0,0.14), -4px -4px 12px rgba(255,255,255,0.95)",
+        "neo-hover":  "3px 3px 10px rgba(0,0,0,0.09), -2px -2px 7px rgba(255,255,255,0.85)",
+        "neo-inset":  "inset 2px 2px 7px rgba(0,0,0,0.09), inset -2px -2px 6px rgba(255,255,255,0.90)",
       },
       borderRadius: {
         card: "1.25rem",
@@ -59,9 +59,9 @@ const config: Config = {
         "3xl": "1.25rem",
       },
       backgroundImage: {
-        "indigo-subtle": "linear-gradient(135deg, #f8f8f9 0%, #e0e7ff 100%)",
+        "indigo-subtle": "linear-gradient(135deg, #e4e5e8 0%, #d8daff 100%)",
         "brand-gradient": "linear-gradient(135deg, #6366f1 0%, #14b8a6 100%)",
-        "warm-base": "linear-gradient(180deg, #f8f8f9 0%, #f1f5f9 100%)",
+        "warm-base": "linear-gradient(180deg, #e4e5e8 0%, #dddee1 100%)",
       },
     },
   },

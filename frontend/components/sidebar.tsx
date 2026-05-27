@@ -62,7 +62,7 @@ function LogoutButton() {
   return (
     <button
       onClick={handleLogout}
-      className="flex items-center gap-3 px-4 py-2.5 w-full rounded-xl text-[#94a3b8] hover:bg-white/70 hover:text-[#1a1a2e] transition-all duration-150 font-label text-sm font-medium"
+      className="flex items-center gap-3 px-4 py-2.5 w-full rounded-xl text-[#8a92a0] hover:text-[#1a1a2e] transition-colors duration-150 font-label text-sm font-medium"
     >
       <LogOut size={16} />
       Sign out
@@ -91,7 +91,7 @@ export function Sidebar() {
 
   if (roleLoading) {
     return (
-      <aside className="fixed left-0 top-0 h-full w-[220px] bg-[#eeeff2] z-20 shadow-sidebar" />
+      <aside className="fixed left-0 top-0 h-full w-[220px] bg-transparent z-20" />
     );
   }
 
@@ -101,7 +101,7 @@ export function Sidebar() {
   );
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-[220px] bg-[#eeeff2] flex flex-col z-20 shadow-sidebar">
+    <aside className="fixed left-0 top-0 h-full w-[220px] bg-transparent flex flex-col z-20">
       {/* Brand */}
       <div className="px-5 py-5 flex items-center gap-3">
         <AiraLogo size={36} />
@@ -121,7 +121,7 @@ export function Sidebar() {
         </div>
       </div>
 
-      <div className="mx-5 h-px bg-black/[0.06]" />
+      <div className="mx-5 h-px bg-black/[0.10]" />
 
       <p className="px-5 pt-4 pb-1 font-label text-[#94a3b8] uppercase tracking-widest" style={{ fontSize: "0.55rem" }}>
         Workspace
@@ -138,18 +138,15 @@ export function Sidebar() {
               className={cn(
                 "flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all duration-150 group relative",
                 active
-                  ? "bg-white text-[#1a1a2e] font-medium shadow-neo-active"
-                  : "text-[#94a3b8] hover:bg-white/70 hover:text-[#1a1a2e] hover:shadow-neo-hover"
+                  ? "bg-white text-[#1a1a2e] font-semibold shadow-neo-active"
+                  : "text-[#8a92a0] hover:text-[#1a1a2e] transition-colors"
               )}
             >
-              {active && (
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-gradient-to-b from-[#6366f1] to-[#14b8a6]" />
-              )}
               <Icon
-                size={16}
+                size={17}
                 className={cn(
                   "transition-colors duration-150 flex-shrink-0",
-                  active ? "text-[#6366f1]" : "text-[#b0b8c8] group-hover:text-[#475569]"
+                  active ? "text-[#6366f1]" : "text-[#aab0bb] group-hover:text-[#475569]"
                 )}
               />
               <span className="font-body text-sm flex-1">{label}</span>
@@ -164,7 +161,7 @@ export function Sidebar() {
       </nav>
 
       <div className="px-3 pb-4 space-y-0.5">
-        <div className="mx-2 mb-2 h-px bg-black/[0.06]" />
+        <div className="mx-2 mb-2 h-px bg-black/[0.10]" />
 
         {role === "owner" && BOTTOM_NAV.map(({ href, icon: Icon, label }) => {
           const active = pathname.startsWith(href);
@@ -175,15 +172,15 @@ export function Sidebar() {
               className={cn(
                 "flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all duration-150 group",
                 active
-                  ? "bg-white text-[#1a1a2e] font-medium shadow-neo-active"
-                  : "text-[#94a3b8] hover:bg-white/70 hover:text-[#1a1a2e] hover:shadow-neo-hover"
+                  ? "bg-white text-[#1a1a2e] font-semibold shadow-neo-active"
+                  : "text-[#8a92a0] hover:text-[#1a1a2e] transition-colors"
               )}
             >
               <Icon
-                size={16}
+                size={17}
                 className={cn(
                   "flex-shrink-0 transition-colors duration-150",
-                  active ? "text-[#6366f1]" : "text-[#b0b8c8] group-hover:text-[#475569]"
+                  active ? "text-[#6366f1]" : "text-[#aab0bb] group-hover:text-[#475569]"
                 )}
               />
               <span className="font-body text-sm">{label}</span>
@@ -192,7 +189,7 @@ export function Sidebar() {
         })}
 
         <div className="px-2 pt-2">
-          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg shadow-neo-inset bg-[#eeeff2]">
+          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg shadow-neo-inset bg-[#e4e5e8]">
             <span className="relative flex h-1.5 w-1.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
@@ -202,7 +199,7 @@ export function Sidebar() {
             </span>
           </div>
         </div>
-        <div className="mt-auto pt-3 border-t border-black/[0.06] px-0">
+        <div className="mt-auto pt-3 border-t border-black/[0.10] px-0">
           <LogoutButton />
         </div>
       </div>
