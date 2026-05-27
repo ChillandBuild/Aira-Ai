@@ -40,9 +40,7 @@ const config: Config = {
       fontFamily: {
         display: ["var(--font-bricolage)", "sans-serif"],
         body: ["var(--font-dm-sans)", "sans-serif"],
-        label: ["var(--font-syne)", "sans-serif"],
-        // legacy aliases
-        mono: ["var(--font-syne)", "monospace"],
+        label: ["var(--font-dm-sans)", "sans-serif"],
       },
       boxShadow: {
         card: "0 1px 3px rgba(0,0,0,0.04), 0 8px 32px rgba(5,150,105,0.06)",
