@@ -9,7 +9,6 @@ from app.dependencies.auth import get_current_user
 import os
 from app.config import settings
 from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team, media, alerts, todos, bookings, conversations, operator, chat_handovers, telegram, instagram, facebook, automations
-from app.routes import numbers_health
 from app.routes.calls import public_router as calls_public_router
 
 # Configure logging
@@ -298,7 +297,6 @@ app.include_router(knowledge.router, prefix="/api/v1/knowledge", tags=["knowledg
 app.include_router(system.router, prefix="/api/v1/system", tags=["system"], dependencies=_auth)
 app.include_router(follow_ups.router, prefix="/api/v1/follow-ups", tags=["follow-ups"], dependencies=_auth)
 app.include_router(numbers.router, prefix="/api/v1/numbers", tags=["numbers"], dependencies=_auth)
-app.include_router(numbers_health.router, prefix="/api/v1/numbers", tags=["numbers-health"], dependencies=_auth)
 app.include_router(incidents.router, prefix="/api/v1/incidents", tags=["incidents"], dependencies=_auth)
 app.include_router(lead_notes.router, prefix="/api/v1/lead-notes", tags=["lead-notes"], dependencies=_auth)
 app.include_router(voice_numbers.router, prefix="/api/v1/voice-numbers", tags=["voice-numbers"], dependencies=_auth)

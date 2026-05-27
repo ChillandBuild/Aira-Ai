@@ -1,8 +1,7 @@
 "use client";
 import { toast } from "sonner";
 import { useEffect, useRef, useState } from "react";
-import { Plus, X, Pencil, Check, Trash2, PauseCircle, PlayCircle, Star, RefreshCw, Activity, Info, ChevronDown, ChevronUp } from "lucide-react";
-import Link from "next/link";
+import { Plus, X, Pencil, Check, Trash2, PauseCircle, PlayCircle, Star, RefreshCw, Info, ChevronDown, ChevronUp } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
 type PhoneNumber = {
@@ -295,13 +294,6 @@ export default function NumbersPage() {
           <h1 className="font-display text-3xl font-bold text-tertiary">WhatsApp Numbers</h1>
           <p className="font-body text-on-surface-muted mt-1">Manage sender numbers and outbound routing</p>
         </div>
-        <Link
-          href="/dashboard/numbers/health"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface border border-surface-mid hover:bg-surface-low transition-colors font-label text-xs text-on-surface-muted hover:text-on-surface"
-        >
-          <Activity size={13} />
-          Health Dashboard
-        </Link>
       </div>
 
       {/* Messaging Tier Guide */}
