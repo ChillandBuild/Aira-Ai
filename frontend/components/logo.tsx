@@ -1,23 +1,21 @@
 export function AiraLogo({ size = 36 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="aira-logo-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#6366f1" />
-          <stop offset="100%" stopColor="#14b8a6" />
-        </linearGradient>
-      </defs>
-      <rect width="36" height="36" rx="10" fill="url(#aira-logo-gradient)" />
-      {/* Chat bubble shape */}
-      <path
-        d="M8.5 12C8.5 10.067 10.067 8.5 12 8.5H24C25.933 8.5 27.5 10.067 27.5 12V19.5C27.5 21.433 25.933 23 24 23H21L18 27.5L15 23H12C10.067 23 8.5 21.433 8.5 19.5V12Z"
-        fill="white"
-        fillOpacity="0.95"
-      />
-      {/* Spark dots with gradient-matching colors */}
-      <circle cx="14" cy="15.75" r="1.4" fill="#6366f1" />
-      <circle cx="18" cy="15.75" r="1.4" fill="#3b82f6" />
-      <circle cx="22" cy="15.75" r="1.4" fill="#14b8a6" />
+      {/* Base black circle */}
+      <circle cx="18" cy="18" r="17" fill="#18181b" stroke="#18181b" strokeWidth="1" />
+      {/* Shaded Quadrants for a premium lens/geometric effect */}
+      {/* Top Left */}
+      <path d="M18 18V2.5C9.44 2.5 2.5 9.44 2.5 18H18Z" fill="white" fillOpacity="0.12" />
+      {/* Top Right */}
+      <path d="M18 18H33.5C33.5 9.44 26.56 2.5 18 2.5V18Z" fill="white" fillOpacity="0.22" />
+      {/* Bottom Right */}
+      <path d="M18 18V33.5C26.56 33.5 33.5 26.56 33.5 18H18Z" fill="white" fillOpacity="0.05" />
+      {/* Bottom Left is left plain dark background */}
+      {/* Fine dividing lines */}
+      <line x1="18" y1="2.5" x2="18" y2="33.5" stroke="#18181b" strokeWidth="1.5" />
+      <line x1="2.5" y1="18" x2="33.5" y2="18" stroke="#18181b" strokeWidth="1.5" />
+      <line x1="18" y1="2.5" x2="18" y2="33.5" stroke="white" strokeOpacity="0.15" strokeWidth="0.75" />
+      <line x1="2.5" y1="18" x2="33.5" y2="18" stroke="white" strokeOpacity="0.15" strokeWidth="0.75" />
     </svg>
   );
 }
