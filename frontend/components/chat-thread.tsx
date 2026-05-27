@@ -8,8 +8,8 @@ import { usePolling } from "@/hooks/usePolling";
 import {
   Bot, User, CheckCircle2, Send, PowerOff, Power,
   AlertTriangle, Pencil, MessageCircle, Trash2,
-  Paperclip, Mic, MicOff, FileText, Image as ImageIcon,
-  Music, Video, Download, X, Eraser, MoreVertical, Plus,
+  Plus, Mic, MicOff, FileText, Image as ImageIcon,
+  Music, Video, Download, X, Eraser, MoreVertical,
 } from "lucide-react";
 
 const AVATAR_COLORS = [
