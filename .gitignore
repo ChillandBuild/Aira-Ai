@@ -39,3 +39,4 @@ ruvector.db
 frontend/test-results/
 *.tsbuildinfo
 test_leads.csv
+.mcp.json
