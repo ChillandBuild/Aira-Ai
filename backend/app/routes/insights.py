@@ -186,22 +186,22 @@ async def _from_db(db, tenant_id: str, numbers: list, since_iso: str, until_iso:
 
 async def _from_meta(db, tenant_id: str, numbers: list, since_iso: str, until_iso: str):
     """Fetch insights from Meta API and store snapshot for today."""
+    # messages table has no phone_number_id column — count total inbound WA messages for the tenant
     msgs_result = (
         db.table("messages")
-        .select("phone_number_id")
+        .select("id", count="exact")
         .eq("tenant_id", tenant_id)
         .eq("direction", "inbound")
+        .eq("channel", "whatsapp")
         .gte("created_at", since_iso)
         .lte("created_at", until_iso)
         .execute()
     )
-    received_by_phone: dict[str, int] = {}
-    for m in (msgs_result.data or []):
-        pid = m.get("phone_number_id", "")
-        received_by_phone[pid] = received_by_phone.get(pid, 0) + 1
+    total_received = msgs_result.count or 0
 
     results = []
     totals = _empty_totals()
+    totals["received"] = total_received
 
     for num in numbers:
         meta_pid = num.get("meta_phone_number_id")
@@ -221,9 +221,6 @@ async def _from_meta(db, tenant_id: str, numbers: list, since_iso: str, until_is
             quality = {"quality_rating": "UNKNOWN", "messaging_tier": 0}
             insights = {}
 
-        received = received_by_phone.get(meta_pid, 0)
-        totals["received"] += received
-
         cost_by_cat = _convert_costs(insights.get("cost_by_category", {}))
         free_by_type = _convert_costs(insights.get("free_by_type", {}))
         paid_by_cat = _convert_costs(insights.get("paid_by_category", {}))
@@ -237,7 +234,7 @@ async def _from_meta(db, tenant_id: str, numbers: list, since_iso: str, until_is
             "sent": insights.get("sent", 0),
             "delivered": insights.get("delivered", 0),
             "read": insights.get("read", 0),
-            "received": received,
+            "received": 0,  # no phone_number_id on messages; total is in totals.received
             "cost_by_category": cost_by_cat,
             "free_by_type": free_by_type,
             "paid_by_category": paid_by_cat,
@@ -269,7 +266,7 @@ async def _from_meta(db, tenant_id: str, numbers: list, since_iso: str, until_is
             "sent": insights.get("sent", 0),
             "delivered": insights.get("delivered", 0),
             "read": insights.get("read", 0),
-            "received": received,
+            "received": 0,
             "cost_by_category": insights.get("cost_by_category", {}),
             "free_by_type": insights.get("free_by_type", {}),
             "paid_by_category": insights.get("paid_by_category", {}),
