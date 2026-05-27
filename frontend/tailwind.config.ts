@@ -45,8 +45,12 @@ const config: Config = {
       boxShadow: {
         card: "0 1px 3px rgba(0,0,0,0.03), 0 8px 32px rgba(30,27,75,0.04)",
         "card-hover": "0 4px 12px rgba(0,0,0,0.04), 0 16px 48px rgba(30,27,75,0.08)",
-        sidebar: "4px 0 24px rgba(0,0,0,0.03)",
+        sidebar: "2px 0 20px rgba(0,0,0,0.06), 1px 0 0 rgba(0,0,0,0.04)",
         sm: "0 1px 3px rgba(0,0,0,0.04)",
+        // Neomorphic shadows
+        "neo-active": "5px 5px 14px rgba(0,0,0,0.09), -3px -3px 10px rgba(255,255,255,0.95)",
+        "neo-hover":  "3px 3px 8px rgba(0,0,0,0.06), -2px -2px 6px rgba(255,255,255,0.80)",
+        "neo-inset":  "inset 2px 2px 6px rgba(0,0,0,0.07), inset -2px -2px 5px rgba(255,255,255,0.85)",
       },
       borderRadius: {
         card: "1.25rem",
