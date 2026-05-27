@@ -66,7 +66,7 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Automations engine | ✅ Built — migration 055, routes/automations.py |
 | Broadcast history + fail reason tracking | ✅ Built — migration 058_broadcast_fail_reason |
 | Carousel templates (2–10 cards via Meta API) | ✅ Built — migration 060, dashboard/templates/carousel/ |
-| WABA onboarding (self-service) | ❌ Not built — manual env config only |
+| WABA onboarding (self-service) | ✅ Built — WABA ID + Phone Number ID configurable in Settings UI |
 
 ## Hard Invariants — Never Break
 1. **FAQ-first**: ai_reply.py checks FAQ table BEFORE any Groq/LLM call

@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { Trash2, UserPlus, Phone, Pencil, Check, X } from "lucide-react";
 import { api, TeamMember } from "@/lib/api";
+import WinnerBanner from "./WinnerBanner";
 
 function InlineEditCell({
   callerId,
@@ -128,6 +129,8 @@ export default function TeamPage() {
           <UserPlus size={14} /> Add Telecaller
         </button>
       </div>
+
+      <WinnerBanner />
 
       {showInvite && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">

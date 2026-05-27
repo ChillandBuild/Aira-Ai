@@ -443,6 +443,11 @@ export const api = {
       apiFetch<CallerStats>(`/api/v1/callers/my-stats`),
     statusSummary: (id: string) =>
       apiFetch<{ active_minutes_today: number; idle_minutes_today: number; current_status: string; since: string }>(`/api/v1/callers/${id}/status-summary`),
+    winners: () =>
+      apiFetch<{
+        daily: { caller_id: string; name: string; value: number; label: string } | null;
+        monthly: { caller_id: string; name: string; value: number; calls_this_month: number; label: string } | null;
+      }>(`/api/v1/callers/winners`),
   },
   calls: {
     initiate: (target: { leadId?: string; phone?: string }, callerId?: string) =>

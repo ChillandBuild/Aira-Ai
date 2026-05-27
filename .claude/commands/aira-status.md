@@ -14,15 +14,11 @@ AIRA AI — REMAINING BACKLOG
 ════════════════════════════
 HIGH PRIORITY
   [ ] Cold lead assignment toggle — cold_assignment_enabled in app_settings,
-      C-segment gate in assignment logic, toggle on /leads page header
+      C-segment gate in assignment.py, toggle on /leads page header
 
 TECH DEBT
   [ ] RLS on 18 tables — app-layer tenant filter is only guard, DB-level RLS not enabled
   [ ] Booking dynamic pricing — amount hardcoded at ₹500, needs booking_type + per-type pricing
-
-LATER / PHASE 2
-  [ ] WABA self-service onboarding — currently manual env config only
-  [ ] WA reminder on callback — send lead a WhatsApp reminder when callback is scheduled
 ```
 
 ## 2. Copy-Paste Session Starter
@@ -41,8 +37,5 @@ Today I want to work on: [FILL IN]
 
 ## 3. Quick Memory Audit Reminder
 
-Print:
-```
-Memory files last updated: [check mtime of files in ~/.claude/projects/-Users-prem-Documents-Aira-Ai/memory/]
-If anything above is wrong → tell me and I'll update the memory files.
-```
+Check mtimes of files in ~/.claude/projects/-Users-prem-Documents-Aira-Ai/memory/ and list each file with its age. Flag any older than 7 days with ⚠️.
+End with: "If anything above is wrong → tell me and I'll update the memory files."

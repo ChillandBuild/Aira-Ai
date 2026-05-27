@@ -295,6 +295,99 @@ async def list_caller_logs(caller_id: UUID, tenant_id: str = Depends(get_tenant_
     return {"data": result.data or []}
 
 
+# ── Winners (daily & monthly leaderboard) ────────────────────────────────────
+
+
+@router.get("/winners")
+async def get_winners(tenant_id: str = Depends(get_tenant_id)):
+    """
+    Return the daily winner (most conversions today) and monthly winner
+    (highest overall_score this month) for the tenant's callers.
+    Both fields can be None if no eligible callers exist.
+    """
+    db = get_supabase()
+    now = datetime.now(timezone.utc)
+
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+    # ── Daily winner: most conversions today ──────────────────────────────────
+    daily_logs = (
+        db.table("call_logs")
+        .select("caller_id")
+        .eq("tenant_id", tenant_id)
+        .eq("outcome", "converted")
+        .gte("created_at", today_start)
+        .execute()
+    )
+
+    daily_winner = None
+    if daily_logs.data:
+        counts: dict[str, int] = {}
+        for row in daily_logs.data:
+            cid = row.get("caller_id")
+            if cid:
+                counts[cid] = counts.get(cid, 0) + 1
+        if counts:
+            top_cid = max(counts, key=lambda k: counts[k])
+            caller_row = (
+                db.table("callers")
+                .select("id,name,overall_score")
+                .eq("id", top_cid)
+                .eq("tenant_id", tenant_id)
+                .eq("active", True)
+                .maybe_single()
+                .execute()
+            )
+            if caller_row.data:
+                daily_winner = {
+                    "caller_id": top_cid,
+                    "name": caller_row.data.get("name", "Unknown"),
+                    "value": counts[top_cid],
+                    "label": "conversions today",
+                }
+
+    # ── Monthly winner: highest overall_score (active callers) ────────────────
+    # Also compute calls this month for display
+    month_logs = (
+        db.table("call_logs")
+        .select("caller_id")
+        .eq("tenant_id", tenant_id)
+        .gte("created_at", month_start)
+        .execute()
+    )
+
+    month_call_counts: dict[str, int] = {}
+    for row in (month_logs.data or []):
+        cid = row.get("caller_id")
+        if cid:
+            month_call_counts[cid] = month_call_counts.get(cid, 0) + 1
+
+    top_callers = (
+        db.table("callers")
+        .select("id,name,overall_score")
+        .eq("tenant_id", tenant_id)
+        .eq("active", True)
+        .order("overall_score", desc=True)
+        .limit(1)
+        .execute()
+    )
+
+    monthly_winner = None
+    if top_callers.data:
+        best = top_callers.data[0]
+        cid = best["id"]
+        monthly_winner = {
+            "caller_id": cid,
+            "name": best.get("name", "Unknown"),
+            "value": float(best.get("overall_score") or 0),
+            "calls_this_month": month_call_counts.get(cid, 0),
+            "label": "overall score",
+        }
+
+    return {"daily": daily_winner, "monthly": monthly_winner}
+
+
 @router.get("/{caller_id}/coaching")
 async def get_coaching(caller_id: UUID, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
