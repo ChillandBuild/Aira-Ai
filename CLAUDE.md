@@ -137,9 +137,14 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 Spawn sub-agents automatically for tasks with 2+ independent work units.
 Parallel pattern: schema + API route + frontend page → all 3 in one message.
 
+## Settings Page — Fully Configurable
+All channel credentials (WhatsApp/Instagram/Facebook/Telegram/TeleCMI/Groq) editable in Settings UI.
+InboxConfigPanel: escalation on/off, auto-assign, per-trigger (A–F), per-segment (A/B/C/D).
+TelecallingConfigPanel: module on/off, auto-assign, per-segment assignment (A/B/C/D), channels.
+
 ## Known Tech Debt
 - RLS DISABLED on 18 tables — app-layer tenant filter is only guard
-- Booking automation amount hardcoded at ₹500 flat (needs booking_type + dynamic pricing)
+- Booking amount hardcoded at ₹500 flat (needs booking_type + dynamic pricing)
 
 ## Key File Locations
 | File | Purpose |

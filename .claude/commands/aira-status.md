@@ -12,11 +12,7 @@ Read the current state from memory and CLAUDE.md, then print:
 ```
 AIRA AI — REMAINING BACKLOG
 ════════════════════════════
-HIGH PRIORITY
-  [ ] Cold lead assignment toggle — cold_assignment_enabled in app_settings,
-      C-segment gate in assignment.py, toggle on /leads page header
-
-TECH DEBT
+TECH DEBT (only real items left)
   [ ] RLS on 18 tables — app-layer tenant filter is only guard, DB-level RLS not enabled
   [ ] Booking dynamic pricing — amount hardcoded at ₹500, needs booking_type + per-type pricing
 ```
