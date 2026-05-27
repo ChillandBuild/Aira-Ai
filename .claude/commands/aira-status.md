@@ -1,14 +1,25 @@
 ---
 name: aira-status
-description: Show Aira AI current backlog, recent decisions, and a copy-paste session starter prompt
+description: Session-end checklist — save memories, audit stale files, show backlog and session starter
 ---
 
-When this skill is invoked, output the following in this exact order:
+When this skill is invoked, do the following in order:
 
-## 1. Remaining Backlog
+## Step 1 — Save session memories
+Review this conversation and save anything worth remembering:
+- New decisions, architectural choices, fixes
+- Corrections to previously wrong memory
+- Patterns or rules learned
+Write to ~/.claude/projects/-Users-prem-Documents-Aira-Ai/memory/ using the Write tool.
 
-Read the current state from memory and CLAUDE.md, then print:
+## Step 2 — Audit all memory files
+Check every file in ~/.claude/projects/-Users-prem-Documents-Aira-Ai/memory/:
+- Delete anything no longer true
+- Update stale facts
+- Merge duplicates
+- Update MEMORY.md index to match
 
+## Step 3 — Print remaining backlog
 ```
 AIRA AI — REMAINING BACKLOG
 ════════════════════════════
@@ -17,10 +28,7 @@ TECH DEBT (only real items left)
   [ ] Booking dynamic pricing — amount hardcoded at ₹500, needs booking_type + per-type pricing
 ```
 
-## 2. Copy-Paste Session Starter
-
-Print this block exactly (user will copy-paste it as their first message in a new session):
-
+## Step 4 — Print copy-paste session starter
 ```
 Continue building Aira AI.
 
@@ -30,8 +38,3 @@ All routes: /api/v1/. Tenant isolation via get_tenant_and_role().
 
 Today I want to work on: [FILL IN]
 ```
-
-## 3. Quick Memory Audit Reminder
-
-Check mtimes of files in ~/.claude/projects/-Users-prem-Documents-Aira-Ai/memory/ and list each file with its age. Flag any older than 7 days with ⚠️.
-End with: "If anything above is wrong → tell me and I'll update the memory files."
