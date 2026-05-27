@@ -129,6 +129,16 @@
         ]
       }
     ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '💾 SESSION END — do both before closing:\\n1. Save anything worth remembering from this session (new decisions, fixes, patterns, corrections)\\n2. Audit all memory files — update stale facts, delete anything no longer true, merge duplicates'"
+          }
+        ]
+      }
+    ],
     "Notification": [
       {
         "hooks": [
