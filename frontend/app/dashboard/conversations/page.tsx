@@ -40,7 +40,7 @@ export default function ConversationsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selected, setSelected] = useState<Lead | null>(null);
   const [error, setError] = useState(false);
-  const [platform, setPlatform] = useState<string>("whatsapp");
+  const [platform, setPlatform] = useState<string>("all");
   const [sidebarOpen, setSidebarOpen] = useState(getSidebarDefault);
   const [detailsOpen, setDetailsOpen] = useState(getDetailsPanelDefault);
 

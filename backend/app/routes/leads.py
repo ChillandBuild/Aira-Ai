@@ -240,18 +240,10 @@ async def toggle_ai(lead_id: UUID, payload: AiToggle, tenant_id: str = Depends(g
 @router.patch("/{lead_id}/pin")
 async def toggle_pin(lead_id: UUID, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
-    existing = db.table("leads").select("pinned_at").eq("id", str(lead_id)).eq("tenant_id", tenant_id).maybe_single().execute()
-    if not existing.data:
+    result = db.rpc("toggle_lead_pin", {"p_lead_id": str(lead_id), "p_tenant_id": tenant_id}).execute()
+    if not result.data:
         raise HTTPException(status_code=404, detail="Lead not found")
-    new_pinned = None if existing.data.get("pinned_at") else "now()"
-    try:
-        db.table("leads").update({"pinned_at": new_pinned}).eq("id", str(lead_id)).eq("tenant_id", tenant_id).execute()
-    except Exception:
-        pass
-    updated = db.table("leads").select("*").eq("id", str(lead_id)).eq("tenant_id", tenant_id).maybe_single().execute()
-    if not updated.data:
-        raise HTTPException(status_code=404, detail="Lead not found")
-    return updated.data
+    return result.data[0]
 
 
 @router.post("/{lead_id}/send")
