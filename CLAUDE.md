@@ -26,7 +26,7 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Facebook Messenger webhook | ✅ Built — tenant-scoped at /webhook/facebook/{tenant_id}, X-Hub-Signature-256 verified |
 | Provider abstraction layer | ✅ Built — meta_cloud.py + wati_cloud.py |
 | phone_numbers table + pool management | ✅ Built — migration 009 + numbers.py |
-| Numbers page (frontend) | ✅ Built — dashboard/numbers/ |
+| Numbers page (frontend) | ✅ Built — dashboard/numbers/ (outdated health sub-page deleted) |
 | opt_in_source on leads + bulk-send gating | ✅ Built — migration 010 + upload.py |
 | 7-step CSV upload | ✅ Built — upload.py + dashboard/upload/ |
 | Multi-variable template personalization | ✅ Built — variable_mapping + extra_cols per lead |
@@ -46,7 +46,7 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Template Quick Reply buttons | ✅ Built — up to 3 buttons |
 | Knowledge base (full-text injection, no embeddings) | ✅ Built — services/knowledge_service.py |
 | Reply source badge (FAQ / Knowledge Base / AI) | ✅ Built — messages.reply_source |
-| Callback scheduler | ✅ Built — follow_up_jobs cadence=callback |
+| Callback scheduler & reminders | ✅ Built — follow_up_jobs cadence=callback, in-app due reminders + 60s polling |
 | Telecaller multi-tenancy + role-based access | ✅ Built — migration 025 |
 | Hot lead alert system (score ≥7, 5-min escalation) | ✅ Built — migration 026 |
 | Lead assignment (manual + round-robin auto) | ✅ Built |
@@ -120,6 +120,7 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | _process_automation_waits | 5 min | Resume automation wait-step executions |
 | _process_scheduled_broadcasts | 1 min | Fire pending scheduled_broadcasts rows |
 | _check_token_health | 24 h | Validate Meta tokens, create token_invalid incidents |
+| _sync_all_number_quality | 24 h | Sync Meta number quality rating & limits |
 
 ## Task Router — Read This File Before Acting
 | Task involves | Read first |
