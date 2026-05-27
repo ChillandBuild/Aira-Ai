@@ -7,6 +7,7 @@ from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id, get_tenant_and_role
 from app.services.assignment import is_round_robin_enabled, set_round_robin_enabled, reassign_backlog
 from app.services.call_coach import coaching_tip
+from app.services.call_scorer import MIN_MONTHLY_CALLS
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -363,29 +364,72 @@ async def get_winners(tenant_id: str = Depends(get_tenant_id)):
         if cid:
             month_call_counts[cid] = month_call_counts.get(cid, 0) + 1
 
-    top_callers = (
-        db.table("callers")
-        .select("id,name,overall_score")
-        .eq("tenant_id", tenant_id)
-        .eq("active", True)
-        .order("overall_score", desc=True)
-        .limit(1)
-        .execute()
-    )
+    # Only callers who have done enough calls this month are eligible.
+    # Prevents a caller with 2 lucky converted calls from beating someone
+    # who worked the full month.
+    eligible_ids = [
+        cid for cid, count in month_call_counts.items()
+        if count >= MIN_MONTHLY_CALLS
+    ]
 
     monthly_winner = None
-    if top_callers.data:
-        best = top_callers.data[0]
-        cid = best["id"]
-        monthly_winner = {
-            "caller_id": cid,
-            "name": best.get("name", "Unknown"),
-            "value": float(best.get("overall_score") or 0),
-            "calls_this_month": month_call_counts.get(cid, 0),
-            "label": "overall score",
-        }
+    if eligible_ids:
+        top_callers = (
+            db.table("callers")
+            .select("id,name,overall_score")
+            .eq("tenant_id", tenant_id)
+            .eq("active", True)
+            .in_("id", eligible_ids)
+            .order("overall_score", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if top_callers.data:
+            best = top_callers.data[0]
+            cid = best["id"]
+            monthly_winner = {
+                "caller_id": cid,
+                "name": best.get("name", "Unknown"),
+                "value": float(best.get("overall_score") or 0),
+                "calls_this_month": month_call_counts.get(cid, 0),
+                "label": "overall score",
+            }
 
     return {"daily": daily_winner, "monthly": monthly_winner}
+
+
+# ── Daily coaching digest ─────────────────────────────────────────────────────
+
+@router.get("/{caller_id}/digest")
+async def get_digest(
+    caller_id: UUID,
+    tenant_id: str = Depends(get_tenant_id),
+    days: int = 7,
+):
+    """Return the last N days of coaching digests for a caller."""
+    db = get_supabase()
+    rows = (
+        db.table("caller_digests")
+        .select("digest_date,call_count,stats,coaching_report,created_at")
+        .eq("caller_id", str(caller_id))
+        .eq("tenant_id", tenant_id)
+        .order("digest_date", desc=True)
+        .limit(days)
+        .execute()
+    )
+    return {"data": rows.data or []}
+
+
+@router.post("/{caller_id}/digest/generate")
+async def trigger_digest(
+    caller_id: UUID,
+    tenant_id: str = Depends(get_tenant_id),
+):
+    """Manually trigger today's digest for a caller (owner only, for testing)."""
+    from datetime import date as _date
+    from app.services.call_digest import generate_daily_digest
+    await generate_daily_digest(str(caller_id), tenant_id, _date.today())
+    return {"ok": True}
 
 
 @router.get("/{caller_id}/coaching")

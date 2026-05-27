@@ -109,3 +109,64 @@ async def evaluate_call(transcript: str) -> dict:
     except Exception as e:
         logger.error(f"Groq evaluate_call failed: {e}")
         return {}
+
+
+# ── Single-pass analysis (summary + evaluation in one LLM call) ────────
+
+_ANALYZE_SYSTEM = "You are analyzing a B2B sales call transcript. Extract lead info and evaluate the caller's performance in one pass."
+
+_ANALYZE_USER = (
+    "{lead_line}"
+    "Transcript:\n{transcript}\n\n"
+    "Return valid JSON only with ALL of these keys:\n"
+    "Summary fields:\n"
+    "- product: product/service the lead was interested in\n"
+    "- budget: budget mentioned (or null)\n"
+    "- timeline: timeline/deadline mentioned (or null)\n"
+    "- next_action: recommended next action\n"
+    "- sentiment: one of 'positive', 'neutral', 'negative'\n"
+    "Evaluation fields:\n"
+    "- talk_ratio: integer 0-100, estimated % of time the caller was speaking\n"
+    "- objection_handling: one of 'good', 'average', 'poor'\n"
+    "- outcome_clarity: 'yes' if call ended with a clear next step, 'no' otherwise\n"
+    "- overall_score: integer 1-10 for overall call quality\n"
+    "- coaching_tip: one specific actionable improvement for the caller (max 50 words)"
+)
+
+_SUMMARY_KEYS = {"product", "budget", "timeline", "next_action", "sentiment"}
+_EVAL_KEYS = {"talk_ratio", "objection_handling", "outcome_clarity", "overall_score", "coaching_tip"}
+
+
+async def analyze_call(transcript: str, lead_name: str | None = None) -> tuple[dict, dict]:
+    """Single LLM pass returning (summary_dict, evaluation_dict).
+
+    Replaces calling summarize_call + evaluate_call separately.
+    Falls back to ({}, {}) on any error.
+    """
+    if not transcript or not _client:
+        return {}, {}
+
+    lead_line = f"Lead name: {lead_name}\n\n" if lead_name else ""
+    user_prompt = _ANALYZE_USER.format(lead_line=lead_line, transcript=transcript)
+
+    try:
+        response = await _client.chat.completions.create(
+            model=_SUMMARY_MODEL,
+            messages=[
+                {"role": "system", "content": _ANALYZE_SYSTEM},
+                {"role": "user", "content": user_prompt},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.2,
+            max_tokens=500,
+        )
+        data = json.loads(response.choices[0].message.content)
+        summary = {k: data[k] for k in _SUMMARY_KEYS if k in data}
+        evaluation = {k: data[k] for k in _EVAL_KEYS if k in data}
+        return summary, evaluation
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse Groq analyze_call JSON: {e}")
+        return {}, {}
+    except Exception as e:
+        logger.error(f"Groq analyze_call failed: {e}")
+        return {}, {}

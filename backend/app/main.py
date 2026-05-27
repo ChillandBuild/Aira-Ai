@@ -53,6 +53,17 @@ async def _process_scheduled_broadcasts() -> None:
         logger.error(f"Scheduled broadcast executor error: {e}")
 
 
+async def _generate_daily_digests() -> None:
+    """APScheduler daily job: generate coaching digest for every active caller (runs at 14:00 UTC / 7:30 PM IST)."""
+    from datetime import date, timedelta, timezone as tz
+    from app.services.call_digest import generate_all_digests
+    yesterday = date.today() - timedelta(days=0)  # today's date (job runs at EOD)
+    try:
+        await generate_all_digests(yesterday)
+    except Exception as e:
+        logger.error(f"Daily digest job error: {e}")
+
+
 async def _check_token_health() -> None:
     """APScheduler daily job: validate Meta tokens for all tenants, create incidents if invalid."""
     import httpx
@@ -238,8 +249,16 @@ async def lifespan(app: FastAPI):
         id="number-quality-sync",
         replace_existing=True,
     )
+    _scheduler.add_job(
+        _generate_daily_digests,
+        trigger="cron",
+        hour=14,
+        minute=0,
+        id="daily-caller-digests",
+        replace_existing=True,
+    )
     _scheduler.start()
-    logger.info("Schedulers started: automation(5m) + broadcasts(1m) + token-health(24h) + quality-sync(24h)")
+    logger.info("Schedulers started: automation(5m) + broadcasts(1m) + token-health(24h) + quality-sync(24h) + digests(daily 14:00 UTC)")
 
     yield
 

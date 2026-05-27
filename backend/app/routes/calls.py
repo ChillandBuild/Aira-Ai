@@ -13,7 +13,7 @@ from app.config_dynamic import get_setting
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id, get_tenant_and_role
 from app.services.call_scorer import score_from_outcome, recompute_caller_score
-from app.services.call_summarizer import transcribe_recording, summarize_call, evaluate_call
+from app.services.call_summarizer import transcribe_recording, summarize_call, evaluate_call, analyze_call
 from app.services.growth import record_stage_event, sync_follow_up_jobs
 from app.services.telecmi_client import initiate_click2call
 from app.services.voice_router import get_best_voice_number, increment_voice_call_count
@@ -277,69 +277,115 @@ async def telecmi_live_events(request: Request):
 
 # ── Recording Processing ─────────────────────────────────────────────
 
+# Max concurrent Groq (Whisper + LLM) requests — prevents rate-limit failures
+# when many calls end at the same time (shift end, break, etc.)
+_GROQ_SEMAPHORE = asyncio.Semaphore(5)
+
+
 async def _process_telecmi_recording(call_log_id: str, recording_url: str) -> None:
     """Download TeleCMI recording and run AI summarization."""
-    db = get_supabase()
+    async with _GROQ_SEMAPHORE:
+        db = get_supabase()
 
-    for attempt in range(1, 4):
-        delay = 10 * attempt
-        logger.info(f"Recording download attempt {attempt}/3 for {call_log_id} — waiting {delay}s")
-        await asyncio.sleep(delay)
-        try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                resp = await client.get(recording_url)
-                if resp.status_code == 404:
-                    logger.warning(f"Recording not ready yet (attempt {attempt}): {recording_url}")
-                    continue
-                resp.raise_for_status()
-                audio_bytes = resp.content
+        for attempt in range(1, 4):
+            delay = 10 * attempt
+            logger.info(f"Recording download attempt {attempt}/3 for {call_log_id} — waiting {delay}s")
+            await asyncio.sleep(delay)
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    resp = await client.get(recording_url)
+                    if resp.status_code == 404:
+                        logger.warning(f"Recording not ready yet (attempt {attempt}): {recording_url}")
+                        continue
+                    resp.raise_for_status()
+                    audio_bytes = resp.content
 
-            storage_path = f"{call_log_id}.mp3"
-            db.storage.from_("call-recordings").upload(
-                storage_path,
-                audio_bytes,
-                {"content-type": "audio/mpeg", "upsert": "true"},
-            )
-            public_url = db.storage.from_("call-recordings").get_public_url(storage_path)
-            db.table("call_logs").update({"recording_url": public_url}).eq("id", call_log_id).execute()
-            logger.info(f"Recording saved for {call_log_id}: {public_url}")
+                storage_path = f"{call_log_id}.mp3"
+                db.storage.from_("call-recordings").upload(
+                    storage_path,
+                    audio_bytes,
+                    {"content-type": "audio/mpeg", "upsert": "true"},
+                )
+                public_url = db.storage.from_("call-recordings").get_public_url(storage_path)
+                db.table("call_logs").update({"recording_url": public_url}).eq("id", call_log_id).execute()
+                logger.info(f"Recording saved for {call_log_id}: {public_url}")
 
-            # Run AI summarization
-            await _run_summarization(call_log_id, public_url)
-            return
+                # Run AI summarization
+                await _run_summarization(call_log_id, public_url)
+                return
 
-        except Exception as e:
-            logger.error(f"Recording attempt {attempt} failed for {call_log_id}: {e}")
+            except Exception as e:
+                logger.error(f"Recording attempt {attempt} failed for {call_log_id}: {e}")
 
-    logger.error(f"All recording attempts failed for {call_log_id}")
+        logger.error(f"All recording attempts failed for {call_log_id}")
+
+
+_SKIP_OUTCOMES = {"no_answer", "voicemail"}
+_MIN_CALL_DURATION_SECONDS = 30
 
 
 async def _run_summarization(call_log_id: str, recording_url: str) -> None:
     try:
+        db = get_supabase()
+
+        # ── Gate: skip dead calls (no conversation to analyze) ───────────
+        call_row = (
+            db.table("call_logs")
+            .select("outcome,duration_seconds,lead_id,caller_id")
+            .eq("id", call_log_id)
+            .maybe_single()
+            .execute()
+        )
+        call_data = (call_row.data or {})
+        outcome = call_data.get("outcome")
+        duration = call_data.get("duration_seconds") or 0
+
+        if outcome in _SKIP_OUTCOMES:
+            logger.info(f"Skipping AI analysis for {call_log_id}: outcome={outcome}")
+            return
+        if duration < _MIN_CALL_DURATION_SECONDS:
+            logger.info(f"Skipping AI analysis for {call_log_id}: duration={duration}s < {_MIN_CALL_DURATION_SECONDS}s")
+            return
+
+        # ── Transcribe ───────────────────────────────────────────────────
         transcript = await transcribe_recording(recording_url)
         if not transcript:
             return
-        summary = await summarize_call(transcript)
-        db = get_supabase()
-        db.table("call_logs").update({
-            "transcript": transcript,
-            "ai_summary": summary,
-        }).eq("id", call_log_id).execute()
-        evaluation = await evaluate_call(transcript)
+
+        # ── Single-pass analysis (summary + evaluation) ──────────────────
+        lead_id = call_data.get("lead_id")
+        lead_name: str | None = None
+        if lead_id:
+            lead_row = db.table("leads").select("name").eq("id", lead_id).maybe_single().execute()
+            lead_name = (lead_row.data or {}).get("name")
+
+        summary, evaluation = await analyze_call(transcript, lead_name=lead_name)
+
+        updates: dict = {"transcript": transcript}
+        if summary:
+            updates["ai_summary"] = summary
         if evaluation:
-            db.table("call_logs").update({"evaluation": evaluation}).eq("id", call_log_id).execute()
+            updates["evaluation"] = evaluation
             logger.info(f"Call evaluation stored for {call_log_id}: score={evaluation.get('overall_score')}")
-        if summary.get("next_action"):
-            log_row = db.table("call_logs").select("lead_id").eq("id", call_log_id).maybe_single().execute()
-            lead_id = (log_row.data or {}).get("lead_id")
-            if lead_id:
-                db.table("lead_notes").insert({
-                    "lead_id": lead_id,
-                    "call_log_id": call_log_id,
-                    "content": f"AI Summary: {summary.get('next_action', '')}",
-                    "structured": summary,
-                    "is_pinned": False,
-                }).execute()
+
+        db.table("call_logs").update(updates).eq("id", call_log_id).execute()
+
+        if summary.get("next_action") and lead_id:
+            db.table("lead_notes").insert({
+                "lead_id": lead_id,
+                "call_log_id": call_log_id,
+                "content": f"AI Summary: {summary.get('next_action', '')}",
+                "structured": summary,
+                "is_pinned": False,
+            }).execute()
+
+        # ── Re-score caller now that AI evaluation is stored ─────────────
+        # The first recompute (at outcome-set time) only had the outcome score.
+        # Now that evaluation JSONB is persisted, blend it in.
+        caller_id = call_data.get("caller_id")
+        if caller_id and evaluation:
+            recompute_caller_score(caller_id, db)
+
         logger.info(f"Summarization complete for {call_log_id}")
     except Exception as e:
         logger.error(f"Summarization failed for {call_log_id}: {e}")
