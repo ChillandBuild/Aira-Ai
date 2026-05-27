@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
@@ -457,6 +458,18 @@ async def list_all_templates(
     return templates
 
 
+def _iso_to_unix(iso_str: Optional[str]) -> Optional[int]:
+    if not iso_str:
+        return None
+    try:
+        dt = datetime.fromisoformat(iso_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp())
+    except Exception:
+        return None
+
+
 async def get_whatsapp_insights(
     phone_number_id: Optional[str] = None,
     access_token: Optional[str] = None,
@@ -466,130 +479,106 @@ async def get_whatsapp_insights(
 ) -> dict:
     """
     Fetch WhatsApp insights from Meta API for a phone number.
-    Returns delivery metrics and cost breakdown by conversation category.
+    Uses two endpoints:
+      - /{pid}?fields=analytics  → sent/delivered/read
+      - /{waba_id}/conversation_analytics → conversation cost by category
     """
     pid, tok = _creds(phone_number_id, access_token, tenant_id)
-    url = f"{_GRAPH_BASE}/{pid}/insights"
-    params: dict = {
-        "metric": "cost,delivered,read,sent",
-        "granularity": "HALF_HOUR",
-    }
-    if since:
-        params["since"] = since
-    if until:
-        params["until"] = until
+    waba_id = get_setting("meta_waba_id", tenant_id=tenant_id)
+    result = _empty_insights_result()
+
+    since_ts = _iso_to_unix(since)
+    until_ts = _iso_to_unix(until)
+
+    headers = {"Authorization": f"Bearer {tok}"}
+
+    # ── 1. Delivery analytics (sent / delivered / read) ──────────────────────
+    if since_ts and until_ts:
+        fields = f"analytics.since({since_ts}).until({until_ts}).granularity(DAY)"
+    else:
+        fields = "analytics"
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.get(
-            url,
-            params=params,
-            headers={"Authorization": f"Bearer {tok}"},
+            f"{_GRAPH_BASE}/{pid}",
+            params={"fields": fields},
+            headers=headers,
         )
-    if not resp.is_success:
-        logger.error("get_whatsapp_insights failed: %s %s", resp.status_code, resp.text)
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    if resp.is_success:
+        analytics = resp.json().get("analytics", {})
+        for dp in analytics.get("data_points", []):
+            result["sent"] += dp.get("sent", 0)
+            result["delivered"] += dp.get("delivered", 0)
+            result["read"] += dp.get("read", 0)
+    else:
+        logger.warning("analytics field failed for %s: %s %s", pid, resp.status_code, resp.text)
 
-    data = resp.json().get("data", [])
-    return _parse_insights_response(data)
-
-
-def _parse_insights_response(raw_data: list[dict]) -> dict:
-    """Parse Meta insights API response into structured format."""
-    result: dict = {
-        "sent": 0,
-        "delivered": 0,
-        "read": 0,
-        "received": 0,  # Meta doesn't provide received directly; we track inbound separately
-        "cost_by_category": {
-            "marketing": {"conversations": 0, "cost_usd": 0.0},
-            "utility": {"conversations": 0, "cost_usd": 0.0},
-            "authentication": {"conversations": 0, "cost_usd": 0.0},
-            "authentication_international": {"conversations": 0, "cost_usd": 0.0},
-            "ai_provider": {"conversations": 0, "cost_usd": 0.0},
-            "service": {"conversations": 0, "cost_usd": 0.0},
-        },
-        "free_by_type": {
-            "customer_service": {"conversations": 0, "cost_usd": 0.0},
-            "entry_point": {"conversations": 0, "cost_usd": 0.0},
-        },
-        "paid_by_category": {
-            "marketing": {"conversations": 0, "cost_usd": 0.0},
-            "utility": {"conversations": 0, "cost_usd": 0.0},
-            "authentication": {"conversations": 0, "cost_usd": 0.0},
-            "authentication_international": {"conversations": 0, "cost_usd": 0.0},
-            "ai_provider": {"conversations": 0, "cost_usd": 0.0},
-        },
-    }
-
-    for metric in raw_data:
-        name = metric.get("name")
-        values = metric.get("values", [])
-
-        if name == "sent":
-            for v in values:
-                val = v.get("value", 0)
-                if isinstance(val, dict):
-                    result["sent"] += val.get("total", 0)
-                else:
-                    result["sent"] += val
-
-        elif name == "delivered":
-            for v in values:
-                val = v.get("value", 0)
-                if isinstance(val, dict):
-                    result["delivered"] += val.get("total", 0)
-                else:
-                    result["delivered"] += val
-
-        elif name == "read":
-            for v in values:
-                val = v.get("value", 0)
-                if isinstance(val, dict):
-                    result["read"] += val.get("total", 0)
-                else:
-                    result["read"] += val
-
-        elif name == "cost":
-            for v in values:
-                val = v.get("value", {})
-                if not isinstance(val, dict):
-                    continue
-
-                category = val.get("conversation_category", "")
-                conv_type = val.get("conversation_type", "")
-                cost = float(val.get("total_cost", 0))
-                conversations = int(val.get("total_conversations", 0))
-
-                # Map category keys
-                cat_key = category.lower().replace("-", "_") if category else ""
-                if cat_key == "authentication-international":
-                    cat_key = "authentication_international"
-
-                # Free conversations (service + free entry point)
-                if conv_type == "free_tier" or conv_type == "free_entry_point":
-                    if category.lower() == "service":
-                        result["free_by_type"]["customer_service"]["conversations"] += conversations
-                        result["free_by_type"]["customer_service"]["cost_usd"] += cost
-                    elif conv_type == "free_entry_point":
-                        result["free_by_type"]["entry_point"]["conversations"] += conversations
-                        result["free_by_type"]["entry_point"]["cost_usd"] += cost
-                    # Also add to cost_by_category for service
-                    if cat_key in result["cost_by_category"]:
-                        result["cost_by_category"][cat_key]["conversations"] += conversations
-                        result["cost_by_category"][cat_key]["cost_usd"] += cost
-
-                # Paid conversations
-                elif conv_type == "paid":
-                    if cat_key in result["paid_by_category"]:
-                        result["paid_by_category"][cat_key]["conversations"] += conversations
-                        result["paid_by_category"][cat_key]["cost_usd"] += cost
-                    if cat_key in result["cost_by_category"]:
-                        result["cost_by_category"][cat_key]["conversations"] += conversations
-                        result["cost_by_category"][cat_key]["cost_usd"] += cost
-
-                # All conversations (regardless of type)
-                elif cat_key in result["cost_by_category"]:
-                    result["cost_by_category"][cat_key]["conversations"] += conversations
-                    result["cost_by_category"][cat_key]["cost_usd"] += cost
+    # ── 2. Conversation cost analytics (pricing by category) ─────────────────
+    if waba_id and since_ts and until_ts:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{_GRAPH_BASE}/{waba_id}/conversation_analytics",
+                params={
+                    "start": since_ts,
+                    "end": until_ts,
+                    "granularity": "DAILY",
+                    "phone_numbers": json.dumps([pid]),
+                    "dimensions": json.dumps(["conversation_category", "conversation_type"]),
+                },
+                headers=headers,
+            )
+        if resp.is_success:
+            for bucket in resp.json().get("conversation_analytics", {}).get("data", []):
+                for dp in bucket.get("data_points", []):
+                    _accumulate_cost(result, dp)
+        else:
+            logger.warning("conversation_analytics failed for waba %s: %s %s", waba_id, resp.status_code, resp.text)
 
     return result
+
+
+def _empty_insights_result() -> dict:
+    return {
+        "sent": 0, "delivered": 0, "read": 0, "received": 0,
+        "cost_by_category": {k: {"conversations": 0, "cost_usd": 0.0} for k in
+                             ("marketing", "utility", "authentication",
+                              "authentication_international", "ai_provider", "service")},
+        "free_by_type": {k: {"conversations": 0, "cost_usd": 0.0} for k in
+                         ("customer_service", "entry_point")},
+        "paid_by_category": {k: {"conversations": 0, "cost_usd": 0.0} for k in
+                             ("marketing", "utility", "authentication",
+                              "authentication_international", "ai_provider")},
+    }
+
+
+def _accumulate_cost(result: dict, dp: dict) -> None:
+    """Map one conversation_analytics data_point into the result dict."""
+    category = (dp.get("conversation_category") or "").lower().replace("-", "_")
+    conv_type = (dp.get("conversation_type") or "").lower()
+    cost = float(dp.get("cost", 0))
+    conversations = int(dp.get("conversation", 0))
+
+    if category == "authentication_international_rates":
+        category = "authentication_international"
+
+    is_free = conv_type in ("free_tier", "free_entry_point", "referral_conversion")
+
+    if is_free:
+        if category == "service" or conv_type == "free_tier":
+            result["free_by_type"]["customer_service"]["conversations"] += conversations
+            result["free_by_type"]["customer_service"]["cost_usd"] += cost
+        elif conv_type == "free_entry_point":
+            result["free_by_type"]["entry_point"]["conversations"] += conversations
+            result["free_by_type"]["entry_point"]["cost_usd"] += cost
+        if category in result["cost_by_category"]:
+            result["cost_by_category"][category]["conversations"] += conversations
+            result["cost_by_category"][category]["cost_usd"] += cost
+    else:
+        if category in result["paid_by_category"]:
+            result["paid_by_category"][category]["conversations"] += conversations
+            result["paid_by_category"][category]["cost_usd"] += cost
+        if category in result["cost_by_category"]:
+            result["cost_by_category"][category]["conversations"] += conversations
+            result["cost_by_category"][category]["cost_usd"] += cost
+
+
