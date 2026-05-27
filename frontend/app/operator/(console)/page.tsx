@@ -3,7 +3,15 @@ import { useEffect, useState } from "react";
 import { Plus, Pencil, RefreshCw, PowerOff, Power, Trash2 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
-type ServiceTier = "whatsapp_only" | "telecalling_only" | "combined";
+type ServiceTier =
+  | "whatsapp_only"
+  | "telecalling_only"
+  | "combined"
+  | "whatsapp_instagram"
+  | "whatsapp_facebook"
+  | "whatsapp_telegram"
+  | "omnichannel"
+  | "omnichannel_telecalling";
 
 type Client = {
   id: string;
@@ -14,16 +22,29 @@ type Client = {
   owner_user_id: string | null;
 };
 
-const SERVICE_LABELS: Record<string, string> = {
-  whatsapp_only: "WhatsApp Only",
-  telecalling_only: "Telecalling Only",
-  combined: "Combined",
+const SERVICE_LABELS: Record<ServiceTier, string> = {
+  whatsapp_only:           "WhatsApp Only",
+  telecalling_only:        "Telecalling Only",
+  combined:                "WhatsApp + Telecalling",
+  whatsapp_instagram:      "WhatsApp + Instagram",
+  whatsapp_facebook:       "WhatsApp + Facebook",
+  whatsapp_telegram:       "WhatsApp + Telegram",
+  omnichannel:             "Omnichannel (WA + IG + FB + TG)",
+  omnichannel_telecalling: "Omnichannel + Telecalling",
 };
 
-function featuresToService(features: string[]): string {
-  if (features.includes("whatsapp") && features.includes("telecalling")) return "combined";
-  if (features.includes("whatsapp")) return "whatsapp_only";
-  if (features.includes("telecalling")) return "telecalling_only";
+function featuresToService(features: string[]): ServiceTier {
+  const has = (f: string) => features.includes(f);
+  const wa = has("whatsapp"), tc = has("telecalling");
+  const ig = has("instagram"), fb = has("facebook"), tg = has("telegram");
+  if (wa && tc && ig && fb && tg) return "omnichannel_telecalling";
+  if (wa && ig && fb && tg)       return "omnichannel";
+  if (wa && ig)                   return "whatsapp_instagram";
+  if (wa && fb)                   return "whatsapp_facebook";
+  if (wa && tg)                   return "whatsapp_telegram";
+  if (wa && tc)                   return "combined";
+  if (wa)                         return "whatsapp_only";
+  if (tc)                         return "telecalling_only";
   return "combined";
 }
 
@@ -202,9 +223,9 @@ export default function OperatorPage() {
                   value={service} onChange={e => setService(e.target.value as ServiceTier)}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
-                  <option value="combined">Combined (WhatsApp + Telecalling)</option>
-                  <option value="whatsapp_only">WhatsApp Only</option>
-                  <option value="telecalling_only">Telecalling Only</option>
+                  {(Object.entries(SERVICE_LABELS) as [ServiceTier, string][]).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
                 </select>
               </div>
               <div className="flex gap-2 pt-2">
@@ -224,13 +245,13 @@ export default function OperatorPage() {
             <h2 className="text-lg font-bold text-gray-900 mb-1">Edit Service</h2>
             <p className="text-sm text-gray-500 mb-4">{editClient.name}</p>
             <div className="space-y-2">
-              {(["combined", "whatsapp_only", "telecalling_only"] as ServiceTier[]).map(tier => (
+              {(Object.entries(SERVICE_LABELS) as [ServiceTier, string][]).map(([tier, label]) => (
                 <button
                   key={tier}
                   onClick={() => handleUpdateService(editClient.id, tier)}
                   className="w-full text-left px-4 py-3 rounded-lg border border-gray-200 text-sm hover:border-indigo-400 hover:bg-indigo-50 transition-colors"
                 >
-                  {SERVICE_LABELS[tier]}
+                  {label}
                 </button>
               ))}
             </div>
