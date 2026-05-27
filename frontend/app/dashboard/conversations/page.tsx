@@ -3,7 +3,8 @@ import { useCallback, useEffect, useState } from "react";
 import { getAuthHeaders, API_URL, Lead, api } from "@/lib/api";
 import { ConversationList } from "@/components/conversation-list";
 import { ChatThread } from "@/components/chat-thread";
-import { MessageSquare, ChevronRight } from "lucide-react";
+import { LeadDetailsPanel } from "@/components/lead-details-panel";
+import { MessageSquare, ChevronRight, ChevronLeft } from "lucide-react";
 import { usePolling } from "@/hooks/usePolling";
 
 function getSidebarDefault(): boolean {
@@ -11,6 +12,13 @@ function getSidebarDefault(): boolean {
   const stored = localStorage.getItem("sidebar_open");
   if (stored !== null) return stored === "true";
   return window.innerWidth >= 768;
+}
+
+function getDetailsPanelDefault(): boolean {
+  if (typeof window === "undefined") return true;
+  const stored = localStorage.getItem("lead_details_open");
+  if (stored !== null) return stored === "true";
+  return window.innerWidth >= 1280;
 }
 
 async function fetchConversations(): Promise<Lead[]> {
@@ -33,6 +41,7 @@ export default function ConversationsPage() {
   const [error, setError] = useState(false);
   const [platform, setPlatform] = useState<string>("whatsapp");
   const [sidebarOpen, setSidebarOpen] = useState(getSidebarDefault);
+  const [detailsOpen, setDetailsOpen] = useState(getDetailsPanelDefault);
 
   const load = useCallback(() => {
     fetchConversations()
@@ -46,6 +55,10 @@ export default function ConversationsPage() {
   useEffect(() => {
     localStorage.setItem("sidebar_open", String(sidebarOpen));
   }, [sidebarOpen]);
+
+  useEffect(() => {
+    localStorage.setItem("lead_details_open", String(detailsOpen));
+  }, [detailsOpen]);
 
   function handleSelect(lead: Lead) {
     setSelected(lead);
@@ -70,8 +83,12 @@ export default function ConversationsPage() {
   }
 
   return (
-    <div className="-m-8 h-screen flex">
-      <div className="relative flex-shrink-0 transition-all duration-300 ease-in-out" style={{ width: sidebarOpen ? 340 : 0, overflow: "hidden" }}>
+    <div className="-m-8 h-screen flex relative">
+      {/* ── Left: Conversation list ── */}
+      <div
+        className="relative flex-shrink-0 transition-all duration-300 ease-in-out"
+        style={{ width: sidebarOpen ? 340 : 0, overflow: "hidden" }}
+      >
         <ConversationList
           leads={leads}
           selectedId={selected?.id ?? null}
@@ -89,6 +106,8 @@ export default function ConversationsPage() {
           }}
         />
       </div>
+
+      {/* Left collapse toggle */}
       {!sidebarOpen && (
         <button
           onClick={() => setSidebarOpen(true)}
@@ -97,6 +116,8 @@ export default function ConversationsPage() {
           <ChevronRight size={14} />
         </button>
       )}
+
+      {/* ── Center: Chat thread ── */}
       {selected ? (
         <ChatThread
           lead={selected}
@@ -104,6 +125,7 @@ export default function ConversationsPage() {
             setLeads((prev) => prev.filter((l) => l.id !== id));
             setSelected(null);
           }}
+          onLeadUpdate={(updated) => setSelected(updated)}
         />
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center text-on-surface-muted gap-3">
@@ -111,6 +133,27 @@ export default function ConversationsPage() {
           <p className="font-body text-sm">Select a conversation to view messages</p>
           {error && <p className="font-body text-sm text-red-500">Failed to load conversations. Retrying…</p>}
         </div>
+      )}
+
+      {/* ── Right: Lead details panel ── */}
+      {selected && (
+        <>
+          {detailsOpen ? (
+            <LeadDetailsPanel
+              lead={selected}
+              onCollapse={() => setDetailsOpen(false)}
+              onLeadUpdate={(updated) => setSelected(updated)}
+            />
+          ) : (
+            <button
+              onClick={() => setDetailsOpen(true)}
+              title="Show contact details"
+              className="absolute right-0 top-1/2 -translate-y-1/2 z-30 w-6 h-12 bg-surface border border-surface-mid border-r-0 rounded-l-lg flex items-center justify-center text-on-surface-muted hover:text-tertiary hover:bg-surface-low transition-colors shadow-md"
+            >
+              <ChevronLeft size={14} />
+            </button>
+          )}
+        </>
       )}
     </div>
   );

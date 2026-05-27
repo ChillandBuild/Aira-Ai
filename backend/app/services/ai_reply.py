@@ -7,7 +7,7 @@ from app.config import settings
 from app.db.supabase import get_supabase
 from app.services.growth import record_stage_event, sync_follow_up_jobs
 from app.services.lead_scorer import score_message
-from app.services.segmentation import score_to_segment
+from app.services.segmentation import score_to_segment, parse_thresholds
 from app.services.knowledge_service import get_knowledge_context
 from app.services.assignment import (
     auto_assign_lead,
@@ -502,23 +502,33 @@ async def generate_reply(
         # Still rescore so the admin sees segment updates even while handling manually
         try:
             current_score = lead_data.get("score", 5)
+            _tid = lead_data.get("tenant_id")
             from app.services.lead_scorer import score_with_safety_net
+            from app.config_dynamic import get_setting
             new_score = await score_with_safety_net(
-                message, current_score, context_block or "", db, str(lead_id)
+                message, current_score, context_block or "", db, str(lead_id), tenant_id=_tid
             )
-            new_segment = score_to_segment(new_score)
+            _thresholds = parse_thresholds(get_setting("scoring_segment_thresholds", tenant_id=_tid))
+            new_segment = score_to_segment(new_score, thresholds=_thresholds)
             db.table("leads").update({
                 "score": new_score,
                 "segment": new_segment,
             }).eq("id", str(lead_id)).execute()
-            if new_segment != lead_data.get("segment"):
+            _score_meta = {
+                "new_score": new_score,
+                "prev_score": current_score,
+                "message_snippet": message[:150],
+                "channel": channel,
+                "reason": "ai_disabled_inbound",
+            }
+            if new_segment != lead_data.get("segment") or new_score != current_score:
                 record_stage_event(
                     lead_id,
                     from_segment=lead_data.get("segment"),
                     to_segment=new_segment,
-                    event_type="segment_changed",
-                    metadata={"reason": "ai_disabled_inbound"},
-                    tenant_id=lead_data.get("tenant_id"),
+                    event_type="segment_changed" if new_segment != lead_data.get("segment") else "score_updated",
+                    metadata=_score_meta,
+                    tenant_id=_tid,
                     db=db,
                 )
             sync_follow_up_jobs(
@@ -528,7 +538,7 @@ async def generate_reply(
                 converted_at=lead_data.get("converted_at"),
                 ai_enabled=False,
                 reason="ai_disabled",
-                tenant_id=lead_data.get("tenant_id"),
+                tenant_id=_tid,
                 db=db,
             )
         except Exception as e:
@@ -643,21 +653,30 @@ async def generate_reply(
     try:
         current_score = lead_data.get("score", 5)
         from app.services.lead_scorer import score_with_safety_net
+        from app.config_dynamic import get_setting as _gs
         new_score = await score_with_safety_net(
-            message, current_score, context_block or "", db, str(lead_id)
+            message, current_score, context_block or "", db, str(lead_id), tenant_id=tenant_id
         )
-        new_segment = score_to_segment(new_score)
+        _thresholds = parse_thresholds(_gs("scoring_segment_thresholds", tenant_id=tenant_id))
+        new_segment = score_to_segment(new_score, thresholds=_thresholds)
         db.table("leads").update({
             "score": new_score,
             "segment": new_segment,
         }).eq("id", str(lead_id)).execute()
-        if new_segment != lead_data.get("segment"):
+        _score_meta = {
+            "new_score": new_score,
+            "prev_score": current_score,
+            "message_snippet": message[:150],
+            "channel": channel,
+            "reason": f"{channel}_reply",
+        }
+        if new_segment != lead_data.get("segment") or new_score != current_score:
             record_stage_event(
                 lead_id,
                 from_segment=lead_data.get("segment"),
                 to_segment=new_segment,
-                event_type="segment_changed",
-                metadata={"reason": f"{channel}_reply"},
+                event_type="segment_changed" if new_segment != lead_data.get("segment") else "score_updated",
+                metadata=_score_meta,
                 tenant_id=tenant_id,
                 db=db,
             )

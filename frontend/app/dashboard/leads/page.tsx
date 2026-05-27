@@ -377,10 +377,7 @@ export default function LeadsPage() {
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
                       <div className="w-16 h-1.5 rounded-full bg-surface-mid overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-secondary"
-                          style={{ width: `${lead.score * 10}%` }}
-                        />
+                        <div className="h-full rounded-full bg-secondary transition-all" style={{ width: `${lead.score * 10}%` }} />
                       </div>
                       <span className="font-label text-xs text-on-surface-muted">{lead.score}</span>
                     </div>

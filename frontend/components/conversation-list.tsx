@@ -5,6 +5,26 @@ import { formatIST, formatPhone, cn } from "@/lib/utils";
 import { MessageCircle, Trash2, MoreVertical, Search, X, SearchX, ChevronLeft, Pin } from "lucide-react";
 import { toast } from "sonner";
 
+const AVATAR_COLORS = [
+  "bg-violet-500", "bg-blue-500", "bg-indigo-500", "bg-cyan-500",
+  "bg-teal-500", "bg-pink-500", "bg-rose-500", "bg-orange-500",
+  "bg-amber-500", "bg-emerald-500",
+];
+
+function getAvatarColor(id: string): string {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) & 0xffffffff;
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+function getInitials(lead: Lead): string {
+  if (lead.name) return lead.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
+  if (lead.phone) return lead.phone.slice(-2);
+  return "??";
+}
+
 type ConversationLead = Lead & { last_reply_at?: string };
 
 function IgIcon({ size = 12, className = "" }: { size?: number | string; className?: string }) {
@@ -374,71 +394,91 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
               key={lead.id}
               onClick={() => onSelect(lead)}
               className={cn(
-                "w-full text-left px-5 py-4 border-b border-surface-mid/50 transition-all hover:bg-surface-low group flex gap-3 relative",
-                selectedId === lead.id ? "bg-surface-low before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 before:bg-tertiary" : ""
+                "w-full text-left px-4 py-3.5 border-b border-surface-mid/40 transition-all duration-150 group flex items-start gap-3 relative",
+                selectedId === lead.id
+                  ? "bg-surface before:absolute before:left-0 before:top-0 before:bottom-0 before:w-[3px] before:bg-tertiary"
+                  : "hover:bg-surface"
               )}
             >
               {selectionMode && (
-                <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
+                <div className="pt-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                   <input
                     type="checkbox"
                     checked={selectedIds.has(lead.id)}
                     onChange={(e) => toggleSelect(lead.id, e as unknown as React.MouseEvent)}
-                    className="cursor-pointer w-4 h-4 rounded border-surface-mid text-tertiary focus:ring-tertiary transition-colors"
+                    className="cursor-pointer w-4 h-4 rounded border-surface-mid text-tertiary focus:ring-tertiary"
                   />
                 </div>
               )}
+
+              {/* Avatar with channel badge */}
+              <div className="relative shrink-0 mt-0.5">
+                <div className={cn("w-9 h-9 rounded-full flex items-center justify-center text-white font-semibold text-xs select-none", getAvatarColor(lead.id))}>
+                  {getInitials(lead)}
+                </div>
+                <div className="absolute -bottom-0.5 -right-0.5 w-[16px] h-[16px] rounded-full bg-surface border border-surface flex items-center justify-center shadow-sm">
+                  {lead.source === "instagram" ? (
+                    <IgIcon size={9} className="text-pink-500" />
+                  ) : lead.source === "telegram" ? (
+                    <TgIcon size={9} className="text-sky-500" />
+                  ) : lead.source === "facebook" ? (
+                    <FbIcon size={9} className="text-blue-600" />
+                  ) : (
+                    <MessageCircle size={9} className="text-green-500" />
+                  )}
+                </div>
+              </div>
+
+              {/* Content */}
               <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-2 mb-1">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    {lead.source === "instagram" ? (
-                      <IgIcon size={13} className="shrink-0 text-pink-500 drop-shadow-sm" />
-                    ) : lead.source === "telegram" ? (
-                      <TgIcon size={13} className="shrink-0 text-sky-500 drop-shadow-sm" />
-                    ) : lead.source === "facebook" ? (
-                      <FbIcon size={13} className="shrink-0 text-blue-600 drop-shadow-sm" />
-                    ) : (
-                      <MessageCircle size={13} className="shrink-0 text-green-500 drop-shadow-sm" />
-                    )}
+                {/* Row 1: name + timestamp */}
+                <div className="flex items-center justify-between gap-2 mb-0.5">
+                  <div className="flex items-center gap-1 min-w-0">
                     <span className={cn(
-                      "font-display text-[14px] font-semibold truncate",
-                      selectedId === lead.id ? "text-tertiary" : "text-on-surface group-hover:text-tertiary transition-colors"
+                      "font-display text-[13px] font-semibold truncate",
+                      selectedId === lead.id ? "text-tertiary" : "text-on-surface"
                     )}>
-                      {lead.name || formatPhone(lead.phone) || (lead.source === "instagram" ? "Instagram lead" : lead.source === "telegram" ? "Telegram lead" : lead.source === "facebook" ? "Facebook lead" : "WhatsApp lead")}
+                      {lead.name || formatPhone(lead.phone) || "Unknown"}
                     </span>
-                    {onPin && (
+                    {lead.pinned_at ? (
+                      <Pin size={10} className="text-amber-500 fill-current shrink-0" />
+                    ) : onPin ? (
                       <button
                         onClick={(e) => { e.stopPropagation(); onPin(lead.id); }}
-                        className={cn(
-                          "shrink-0 p-0.5 rounded transition-colors",
-                          lead.pinned_at
-                            ? "text-amber-500 hover:text-amber-600"
-                            : "text-on-surface-muted opacity-0 group-hover:opacity-100 hover:text-on-surface"
-                        )}
+                        className="shrink-0 p-0.5 rounded opacity-0 group-hover:opacity-100 text-on-surface-muted hover:text-amber-500 transition-all"
                       >
-                        <Pin size={13} className={lead.pinned_at ? "fill-current" : ""} />
+                        <Pin size={10} />
                       </button>
-                    )}
+                    ) : null}
                   </div>
-                  <span className="font-label text-[10px] font-medium text-on-surface-muted shrink-0 whitespace-nowrap">
+                  <span className="font-label text-[10px] text-on-surface-muted shrink-0 whitespace-nowrap">
                     {formatIST((lead as ConversationLead).last_reply_at || lead.created_at)}
                   </span>
                 </div>
-                {lead.phone && (
-                  <p className="font-body text-[12px] text-on-surface-muted truncate mt-0.5">{formatPhone(lead.phone)}</p>
-                )}
-                {lead.last_message_content && (
-                  <p className="font-body text-[12px] text-on-surface-muted/70 truncate mt-1">{lead.last_message_content}</p>
-                )}
-                <div className="flex items-center gap-2 mt-2 flex-wrap">
+
+                {/* Row 2: last message */}
+                <p className="font-body text-[11.5px] text-on-surface-muted truncate leading-snug mb-1.5">
+                  {lead.last_message_content || (lead.phone ? formatPhone(lead.phone) : "No messages yet")}
+                </p>
+
+                {/* Row 3: status badges */}
+                <div className="flex items-center gap-1.5">
                   {lead.needs_human_intervention && (
-                    <span className="font-label text-[9px] font-bold tracking-wider text-white bg-red-500 px-1.5 py-0.5 rounded shadow-sm">ACTION</span>
+                    <span className="font-label text-[9px] font-bold text-white bg-red-500 px-1.5 py-0.5 rounded-full">ACTION</span>
                   )}
+                  <span className={cn(
+                    "font-label text-[10px] font-semibold px-1.5 py-0.5 rounded-full",
+                    lead.ai_enabled !== false
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-amber-50 text-amber-700"
+                  )}>
+                    {lead.ai_enabled !== false ? "Bot" : "You"}
+                  </span>
                   <SegmentBadge segment={lead.segment} />
                   {lead.opted_out ? (
-                    <span className="font-label text-[9px] font-bold tracking-wider text-red-500 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded">STOP</span>
+                    <span className="font-label text-[9px] font-bold text-red-500 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded-full">STOP</span>
                   ) : (
-                    <span className="font-label text-[11px] font-medium text-on-surface-muted">Score {lead.score}/10</span>
+                    <span className="font-label text-[10px] text-on-surface-muted font-medium">{lead.score}</span>
                   )}
                 </div>
               </div>

@@ -9,8 +9,28 @@ import {
   Bot, User, CheckCircle2, Send, PowerOff, Power,
   AlertTriangle, Pencil, MessageCircle, Trash2,
   Paperclip, Mic, MicOff, FileText, Image as ImageIcon,
-  Music, Video, Download, X, Eraser,
+  Music, Video, Download, X, Eraser, MoreVertical,
 } from "lucide-react";
+
+const AVATAR_COLORS = [
+  "bg-violet-500", "bg-blue-500", "bg-indigo-500", "bg-cyan-500",
+  "bg-teal-500", "bg-pink-500", "bg-rose-500", "bg-orange-500",
+  "bg-amber-500", "bg-emerald-500",
+];
+
+function getAvatarColor(id: string): string {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) & 0xffffffff;
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+function getInitials(name: string | null, phone: string | null): string {
+  if (name) return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
+  if (phone) return phone.slice(-2);
+  return "?";
+}
 
 function IgIcon({ size = 10, className = "" }: { size?: number; className?: string }) {
   return (
@@ -196,7 +216,15 @@ function FilePreview({ file, onRemove }: { file: File; onRemove: () => void }) {
 }
 
 // ─── Main ChatThread component ────────────────────────────────────────────────
-export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: string) => void }) {
+export function ChatThread({
+  lead,
+  onDeleted,
+  onLeadUpdate,
+}: {
+  lead: Lead;
+  onDeleted?: (id: string) => void;
+  onLeadUpdate?: (updated: Lead) => void;
+}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [current, setCurrent] = useState<Lead>(lead);
@@ -209,6 +237,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
   const [sendError, setSendError] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
+  const [dropdownOpen, setDropdownOpen] = useState(false);
 
   // Media state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -218,6 +247,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setCurrent(lead);
@@ -228,6 +258,28 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
     setFileCaption("");
   }, [lead.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Sync fields that the right panel may update externally
+  useEffect(() => {
+    setCurrent((prev) => ({
+      ...prev,
+      ai_enabled: lead.ai_enabled,
+      converted_at: lead.converted_at,
+      name: lead.name,
+      score: lead.score,
+      segment: lead.segment,
+    }));
+  }, [lead.ai_enabled, lead.converted_at, lead.name, lead.score, lead.segment]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   async function saveName() {
     const trimmed = nameDraft.trim();
     setEditingName(false);
@@ -235,6 +287,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
     try {
       const updated = await api.leads.update(lead.id, { name: trimmed });
       setCurrent(updated);
+      onLeadUpdate?.(updated);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Rename failed");
     }
@@ -246,6 +299,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
     try {
       const updated = await api.leads.convert(lead.id);
       setCurrent(updated);
+      onLeadUpdate?.(updated);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed");
     } finally { setConverting(false); }
@@ -282,6 +336,7 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
     try {
       const updated = await api.leads.toggleAI(lead.id, !current.ai_enabled);
       setCurrent(updated);
+      onLeadUpdate?.(updated);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Toggle failed");
     } finally { setToggling(false); }
@@ -428,10 +483,13 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
   return (
     <div className="flex-1 flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-surface-mid bg-surface flex items-center gap-3">
-        <div className="w-9 h-9 rounded-full bg-tertiary-bg flex items-center justify-center">
-          <User size={16} className="text-tertiary" />
+      <div className="px-5 py-3 border-b border-surface-mid bg-surface flex items-center gap-3">
+        {/* Avatar */}
+        <div className={cn("w-9 h-9 rounded-full flex items-center justify-center text-white font-semibold text-sm shrink-0 select-none", getAvatarColor(lead.id))}>
+          {getInitials(current.name, current.phone)}
         </div>
+
+        {/* Name + subtitle */}
         <div className="flex-1 min-w-0">
           {editingName ? (
             <input
@@ -452,40 +510,36 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
               className="group flex items-center gap-1.5 text-left"
               title="Click to rename"
             >
-              <span className="font-body text-sm font-semibold text-on-surface truncate">
+              <span className="font-body text-[14px] font-semibold text-on-surface truncate">
                 {current.name || current.phone || "Unknown"}
               </span>
-              <Pencil size={11} className="opacity-0 group-hover:opacity-60 text-on-surface-muted" />
+              <Pencil size={11} className="opacity-0 group-hover:opacity-50 text-on-surface-muted shrink-0" />
             </button>
           )}
-          <p className="font-label text-xs text-on-surface-muted flex items-center gap-1.5">
+          <p className="font-label text-[11px] text-on-surface-muted flex items-center gap-1">
             {isInstagram ? (
-              <span className="inline-flex items-center gap-1 text-pink-500 font-semibold">
-                <IgIcon size={10} /> Instagram
-              </span>
+              <span className="inline-flex items-center gap-0.5 text-pink-500 font-semibold"><IgIcon size={9} /> Instagram</span>
             ) : isTelegram ? (
-              <span className="inline-flex items-center gap-1 text-sky-500 font-semibold">
-                <TgIcon size={10} /> Telegram
-              </span>
+              <span className="inline-flex items-center gap-0.5 text-sky-500 font-semibold"><TgIcon size={9} /> Telegram</span>
             ) : isFacebook ? (
-              <span className="inline-flex items-center gap-1 text-blue-600 font-semibold">
-                <FbIcon size={10} /> Facebook
-              </span>
+              <span className="inline-flex items-center gap-0.5 text-blue-600 font-semibold"><FbIcon size={9} /> Facebook</span>
             ) : (
-              <span className="inline-flex items-center gap-1 text-green-600 font-semibold">
-                <MessageCircle size={10} /> WhatsApp
-              </span>
+              <span className="inline-flex items-center gap-0.5 text-green-600 font-semibold"><MessageCircle size={9} /> WhatsApp</span>
             )}
-            · {current.name && current.phone ? `${current.phone} · ` : ""}Score {current.score}/10 · Segment {current.segment}
-            {!aiEnabled && <span className="ml-2 text-amber-600 font-semibold">· You are handling this thread</span>}
+            <span className="text-on-surface-muted/50">·</span>
+            <span>Score {current.score}/10</span>
+            <span className="text-on-surface-muted/50">·</span>
+            <span>Seg {current.segment}</span>
+            {!aiEnabled && <span className="text-amber-600 font-semibold ml-1">· Handling</span>}
           </p>
         </div>
 
+        {/* AI toggle */}
         <button
           onClick={toggleAI}
           disabled={toggling}
           className={cn(
-            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-label text-xs font-semibold transition-colors disabled:opacity-40",
+            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-label text-xs font-semibold transition-colors disabled:opacity-40 shrink-0",
             aiEnabled
               ? "bg-surface-low text-on-surface-muted hover:bg-surface-mid border border-surface-mid"
               : "bg-amber-100 text-amber-700 hover:bg-amber-200 border border-amber-200"
@@ -493,40 +547,52 @@ export function ChatThread({ lead, onDeleted }: { lead: Lead; onDeleted?: (id: s
           title={aiEnabled ? "Pause AI and take over" : "Resume AI auto-reply"}
         >
           {aiEnabled ? <Power size={13} /> : <PowerOff size={13} />}
-          {toggling ? "…" : aiEnabled ? "AI On" : "AI Paused"}
+          {toggling ? "…" : aiEnabled ? "AI On" : "AI Off"}
         </button>
 
+        {/* Convert button / badge */}
         {converted ? (
-          <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-100 text-green-700 font-label text-xs font-semibold">
+          <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-100 text-green-700 font-label text-xs font-semibold shrink-0">
             <CheckCircle2 size={13} /> Converted
           </span>
         ) : (
           <button
             onClick={markConverted}
             disabled={converting}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-tertiary text-white font-label text-xs font-semibold hover:bg-tertiary/90 disabled:opacity-40"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-tertiary text-white font-label text-xs font-semibold hover:bg-tertiary/90 disabled:opacity-40 shrink-0"
           >
-            <CheckCircle2 size={13} /> {converting ? "Saving…" : "Mark Converted"}
+            <CheckCircle2 size={13} /> {converting ? "Saving…" : "Convert"}
           </button>
         )}
 
-        <button
-          onClick={clearChat}
-          disabled={clearing}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-100 font-label text-xs font-semibold disabled:opacity-40 border border-orange-100"
-          title="Clear chat history (lead is kept, AI re-enabled)"
-        >
-          <Eraser size={13} /> {clearing ? "Clearing…" : "Clear Chat"}
-        </button>
-
-        <button
-          onClick={deleteConversation}
-          disabled={deleting}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 font-label text-xs font-semibold disabled:opacity-40 border border-red-100"
-          title="Delete conversation"
-        >
-          <Trash2 size={13} /> {deleting ? "Deleting…" : "Delete"}
-        </button>
+        {/* ⋯ dropdown — Clear + Delete */}
+        <div className="relative shrink-0" ref={dropdownRef}>
+          <button
+            onClick={() => setDropdownOpen((v) => !v)}
+            className="p-1.5 rounded-lg hover:bg-surface-low text-on-surface-muted hover:text-on-surface transition-colors"
+            title="More actions"
+          >
+            <MoreVertical size={16} />
+          </button>
+          {dropdownOpen && (
+            <div className="absolute right-0 top-full mt-1 w-40 bg-surface border border-surface-mid rounded-xl shadow-xl overflow-hidden z-30 py-1.5">
+              <button
+                onClick={() => { setDropdownOpen(false); clearChat(); }}
+                disabled={clearing}
+                className="w-full text-left px-4 py-2 text-[13px] font-medium text-orange-600 hover:bg-orange-50 transition-colors flex items-center gap-2 disabled:opacity-40"
+              >
+                <Eraser size={13} /> {clearing ? "Clearing…" : "Clear Chat"}
+              </button>
+              <button
+                onClick={() => { setDropdownOpen(false); deleteConversation(); }}
+                disabled={deleting}
+                className="w-full text-left px-4 py-2 text-[13px] font-medium text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2 disabled:opacity-40"
+              >
+                <Trash2 size={13} /> {deleting ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Messages */}

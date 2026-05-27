@@ -425,3 +425,21 @@ async def manual_compact(lead_id: UUID, tenant_id: str = Depends(get_tenant_id))
         return {"summary": summary, "status": "compacted"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Compaction failed: {str(e)}")
+
+
+@router.get("/{lead_id}/score-history")
+async def score_history(lead_id: UUID, ctx: dict = Depends(get_tenant_and_role)):
+    """Return score change events for a lead, newest first. Max 20."""
+    tenant_id = ctx["tenant_id"]
+    db = get_supabase()
+    result = (
+        db.table("lead_stage_events")
+        .select("id,event_type,from_segment,to_segment,metadata,created_at")
+        .eq("lead_id", str(lead_id))
+        .eq("tenant_id", tenant_id)
+        .in_("event_type", ["segment_changed", "score_updated"])
+        .order("created_at", desc=True)
+        .limit(20)
+        .execute()
+    )
+    return {"data": result.data or []}

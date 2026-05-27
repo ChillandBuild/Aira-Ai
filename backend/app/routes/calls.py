@@ -72,7 +72,7 @@ async def initiate_call(payload: InitiateCall, ctx: dict = Depends(get_tenant_an
             try:
                 new_lead = db.table("leads").insert({
                     "phone": lead_phone,
-                    "source": "manual_dial",
+                    "source": "manual",
                     "score": 5,
                     "segment": "C",
                     "tenant_id": tenant_id,
@@ -104,7 +104,7 @@ async def initiate_call(payload: InitiateCall, ctx: dict = Depends(get_tenant_an
         raise HTTPException(status_code=400, detail="No active voice numbers in pool")
 
     log_insert = db.table("call_logs").insert({
-        "lead_id": str(payload.lead_id) if payload.lead_id else None,
+        "lead_id": matched_lead_id,
         "caller_id": str(payload.caller_id) if payload.caller_id else None,
         "status": "initiated",
         "tenant_id": tenant_id,

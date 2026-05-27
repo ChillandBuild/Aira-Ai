@@ -5,18 +5,17 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 _client = Groq(api_key=settings.groq_api_key) if settings.groq_api_key else None
-# Upgraded from llama-3.1-8b-instant: the 8b model frequently misreads short
-# acknowledgments ("ok", "yes", "tell me more") inside a booking flow as low-intent.
-# The 70b model interprets these in the context of the booking state and prior turns.
 _SCORER_MODEL = "llama-3.3-70b-versatile"
+
+_DEFAULT_RUBRIC = """- 9-10: High intent — asked for pricing, demo, or ready to buy, confirmed booking, completed booking flow
+- 7-8: Warm — asking detailed questions, comparing options, multiple follow-ups, actively providing requested information
+- 5-6: Neutral — general inquiry, first contact, acknowledgment without commitment
+- 1-4: Low — no reply, said not interested, irrelevant message, dismissive"""
 
 SCORING_PROMPT = """You are a lead scoring assistant for a B2B sales team.
 
-Score this WhatsApp message from a prospect (1-10 integer):
-- 9-10: High intent — asked for pricing, demo, or ready to buy, confirmed booking, completed booking flow
-- 7-8: Warm — asking detailed questions, comparing options, multiple follow-ups, actively providing requested information
-- 5-6: Neutral — general inquiry, first contact, acknowledgment without commitment
-- 1-4: Low — no reply, said not interested, irrelevant message, dismissive
+Score this message from a prospect (1-10 integer):
+{rubric}
 
 IMPORTANT: Use the context to understand the message.
 - A short reply like "ok", "yes", or "thank you" AFTER completing a booking flow or providing requested info = high intent (8-10)
@@ -33,16 +32,34 @@ Message: "{message}"
 Reply with ONLY a single integer between 1 and 10. No explanation."""
 
 
-async def score_message(message: str, current_score: int = 5, context_block: str | None = None) -> int:
+def _get_rubric(tenant_id: str | None) -> str:
+    if not tenant_id:
+        return _DEFAULT_RUBRIC
+    try:
+        from app.config_dynamic import get_setting
+        custom = get_setting("scoring_rubric", tenant_id=tenant_id)
+        return custom.strip() if custom and custom.strip() else _DEFAULT_RUBRIC
+    except Exception:
+        return _DEFAULT_RUBRIC
+
+
+async def score_message(
+    message: str,
+    current_score: int = 5,
+    context_block: str | None = None,
+    tenant_id: str | None = None,
+) -> int:
     if not _client:
         logger.warning("GROQ_API_KEY not configured — skipping scoring")
         return current_score
     try:
+        rubric = _get_rubric(tenant_id)
         context = context_block or "No prior conversation context available."
         prompt = SCORING_PROMPT.format(
+            rubric=rubric,
             context_block=context,
             current_score=current_score,
-            message=message
+            message=message,
         )
         response = _client.chat.completions.create(
             model=_SCORER_MODEL,
@@ -62,27 +79,22 @@ async def score_with_safety_net(
     current_score: int,
     context_block: str,
     db,
-    lead_id: str
+    lead_id: str,
+    tenant_id: str | None = None,
 ) -> int:
-    """
-    Two-pass scoring:
-    1. First pass: normal scoring with standard context
-    2. If score < 5 (Segment D), trigger safety net re-evaluation with full context
-    """
-    # First pass
-    first_score = await score_message(message, current_score, context_block)
-    
+    """Two-pass scoring with D-segment safety net."""
+    first_score = await score_message(message, current_score, context_block, tenant_id=tenant_id)
+
     if first_score >= 5:
-        return first_score  # Not Segment D, accept score
-    
-    # D-segment safety net: re-evaluate with full context
+        return first_score
+
     logger.info(f"Lead {lead_id} scored {first_score} (Segment D) — triggering safety net re-evaluation")
-    
+
     from app.services.context_builder import build_scorer_context
     full_context = build_scorer_context(lead_id, db, force_full_context=True)
-    
-    second_score = await score_message(message, current_score, full_context)
-    
+
+    second_score = await score_message(message, current_score, full_context, tenant_id=tenant_id)
+
     logger.info(f"Safety net re-evaluation: {first_score} → {second_score}")
-    
+
     return second_score
