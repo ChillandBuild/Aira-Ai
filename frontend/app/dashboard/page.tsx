@@ -248,7 +248,7 @@ export default function DashboardPage() {
   const aiPct = totalReplies > 0 ? Math.round(((aiVsHuman?.ai ?? 0) / totalReplies) * 100) : 0;
 
   return (
-    <div>
+    <div className="animate-slide-up">
       <div className="mb-7">
         <h1 className="page-title">{greet()}</h1>
         <p className="page-subtitle">Here&apos;s what&apos;s happening with your leads.</p>

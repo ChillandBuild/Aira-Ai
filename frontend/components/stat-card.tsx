@@ -17,7 +17,7 @@ export function StatCard({ label, value, sub, accent }: StatCardProps) {
           ? "border-transparent text-white"
           : "bg-surface"
       )}
-      style={accent ? { background: "linear-gradient(135deg, #059669 0%, #047857 100%)" } : {}}
+      style={accent ? { background: "linear-gradient(135deg, #6366f1 0%, #14b8a6 100%)" } : {}}
     >
       <p className={cn(
         "stat-label mb-3",

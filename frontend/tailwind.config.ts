@@ -9,33 +9,33 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "#f7f6f3",
+        background: "#f8f8f9",
         surface: "#ffffff",
-        "surface-mid": "#ecfdf5",
-        "surface-low": "#f0fdf4",
-        "surface-subtle": "#fafaf8",
+        "surface-mid": "#e0e7ff",
+        "surface-low": "#e0e7ff",
+        "surface-subtle": "#f8f8f9",
 
-        primary: "#059669",
-        "primary-dark": "#047857",
-        "primary-light": "#d1fae5",
-        "primary-muted": "#a7f3d0",
+        primary: "#1e1b4b",
+        "primary-dark": "#0f0d2b",
+        "primary-light": "#e0e7ff",
+        "primary-muted": "#c7d2fe",
 
-        ink: "#111827",
-        "ink-secondary": "#4b5563",
-        "ink-muted": "#9ca3af",
+        ink: "#0f172a",
+        "ink-secondary": "#475569",
+        "ink-muted": "#94a3b8",
 
-        border: "#e5e7eb",
-        "border-subtle": "#f3f4f6",
+        border: "#e2e8f0",
+        "border-subtle": "#f1f5f9",
 
-        // legacy aliases kept for existing components
-        secondary: "#059669",
-        "secondary-light": "#34d399",
-        "secondary-bg": "#d1fae5",
-        "secondary-text": "#064e3b",
-        tertiary: "#111827",
-        "tertiary-bg": "#f0fdf4",
-        "on-surface": "#111827",
-        "on-surface-muted": "#6b7280",
+        // legacy aliases mapped to new cohesive values
+        secondary: "#1e1b4b",
+        "secondary-light": "#6366f1",
+        "secondary-bg": "#e0e7ff",
+        "secondary-text": "#1e1b4b",
+        tertiary: "#0f172a",
+        "tertiary-bg": "#f8f8f9",
+        "on-surface": "#0f172a",
+        "on-surface-muted": "#64748b",
       },
       fontFamily: {
         display: ["var(--font-bricolage)", "sans-serif"],
@@ -43,10 +43,10 @@ const config: Config = {
         label: ["var(--font-dm-sans)", "sans-serif"],
       },
       boxShadow: {
-        card: "0 1px 3px rgba(0,0,0,0.04), 0 8px 32px rgba(5,150,105,0.06)",
-        "card-hover": "0 4px 12px rgba(0,0,0,0.06), 0 16px 48px rgba(5,150,105,0.10)",
-        sidebar: "4px 0 24px rgba(0,0,0,0.04)",
-        sm: "0 1px 3px rgba(0,0,0,0.06)",
+        card: "0 1px 3px rgba(0,0,0,0.03), 0 8px 32px rgba(30,27,75,0.04)",
+        "card-hover": "0 4px 12px rgba(0,0,0,0.04), 0 16px 48px rgba(30,27,75,0.08)",
+        sidebar: "4px 0 24px rgba(0,0,0,0.03)",
+        sm: "0 1px 3px rgba(0,0,0,0.04)",
       },
       borderRadius: {
         card: "1.25rem",
@@ -55,9 +55,9 @@ const config: Config = {
         "3xl": "1.25rem",
       },
       backgroundImage: {
-        "emerald-subtle": "linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)",
-        "emerald-vivid": "linear-gradient(135deg, #059669 0%, #047857 100%)",
-        "warm-base": "linear-gradient(180deg, #f7f6f3 0%, #f3f2ef 100%)",
+        "indigo-subtle": "linear-gradient(135deg, #f8f8f9 0%, #e0e7ff 100%)",
+        "brand-gradient": "linear-gradient(135deg, #6366f1 0%, #14b8a6 100%)",
+        "warm-base": "linear-gradient(180deg, #f8f8f9 0%, #f1f5f9 100%)",
       },
     },
   },
