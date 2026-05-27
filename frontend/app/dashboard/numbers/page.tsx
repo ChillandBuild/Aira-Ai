@@ -38,13 +38,6 @@ const ROLE_STYLES: Record<PhoneNumber["role"], string> = {
   archived: "bg-surface-low text-on-surface-muted opacity-60",
 };
 
-const STATUS_STYLES: Record<PhoneNumber["status"], string> = {
-  active: "bg-green-100 text-green-700",
-  warming: "bg-amber-100 text-amber-700",
-  restricted: "bg-red-100 text-red-700",
-  archived: "bg-surface-mid text-on-surface-muted opacity-60",
-};
-
 // Messaging tier labels — based on Meta's current (2025/2026) portfolio-level limits
 const TIER_LABELS: Record<number, string> = {
   250: "250 / day · Unverified",
