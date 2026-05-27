@@ -124,23 +124,22 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 ## Task Router — Read This File Before Acting
 | Task involves | Read first |
 |---|---|
-| WhatsApp, Meta API, WATI, provider layer, phone_numbers | .claude/context/whatsapp.md |
-| Telecalling, TeleCMI, call logs, notes, briefing modal | .claude/context/telecalling.md |
-| Leads, scoring, segments, opt-in | .claude/context/leads.md |
-| Number pool, failover, Numbers page, Incidents page | .claude/context/resilience.md |
-| CSV upload, bulk send, scheduled/drip broadcasts | .claude/context/upload.md |
+| WhatsApp, Meta API, WATI, provider layer, phone_numbers | backend/app/routes/webhook.py + services/meta_cloud.py + services/outbound_router.py |
+| Telecalling, TeleCMI, call logs, notes, briefing modal | backend/app/routes/calls.py + services/telecmi_client.py + services/call_summarizer.py |
+| Leads, scoring, segments, opt-in | backend/app/routes/leads.py + services/lead_scorer.py |
+| Number pool, failover, Numbers page, Incidents page | backend/app/routes/numbers.py + services/failover.py + routes/incidents.py |
+| CSV upload, bulk send, scheduled/drip broadcasts | backend/app/routes/upload.py + services/broadcast_executor.py |
 | Bookings, booking flow, Razorpay payments | backend/app/services/booking_flow.py + routes/bookings.py |
 | WhatsApp templates, Meta template API | backend/app/routes/templates.py + services/meta_cloud.py |
 | Settings, channel activation, token health | backend/app/routes/app_settings.py |
 
 ## Agent Dispatch
-See AI_RULES.md — spawn sub-agents automatically for tasks with 2+ independent work units.
+Spawn sub-agents automatically for tasks with 2+ independent work units.
 Parallel pattern: schema + API route + frontend page → all 3 in one message.
 
 ## Known Tech Debt
 - RLS DISABLED on 18 tables — app-layer tenant filter is only guard
 - Booking automation amount hardcoded at ₹500 flat (needs booking_type + dynamic pricing)
-- Bulk send uses single number only
 
 ## Key File Locations
 | File | Purpose |
@@ -163,7 +162,7 @@ Parallel pattern: schema + API route + frontend page → all 3 in one message.
 | backend/supabase/migrations/ | All schema migrations 001–058 |
 | frontend/app/dashboard/ | All dashboard pages |
 
-## Migration Index (latest = 060)
+## Migration Index (latest = 064)
 | Migration | What |
 |---|---|
 | 051 | Telegram support — tg_user_id on leads |
@@ -176,6 +175,10 @@ Parallel pattern: schema + API route + frontend page → all 3 in one message.
 | 058_broadcast_fail_reason | fail_reason column on broadcast_recipients |
 | 058_incidents_token_health | incidents: tenant_id column + token_invalid/webhook_unhealthy types |
 | 060 | carousel_cards JSONB column on message_templates |
+| 061_message_delivery_error | message delivery error tracking |
+| 061_number_health_engagement | phone_number_quality_history + outbound_no_reply_count + template variations |
+| 062 | conversation_last_message RPC |
+| 064 | leads.pinned_at |
 
 ## Response Style
 - One sentence per progress update while working

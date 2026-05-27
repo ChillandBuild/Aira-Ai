@@ -24,16 +24,11 @@ build/
 .env.example
 backend/.env*
 
-# Ruflo runtime (auto-regenerated, never commit)
+# Ruflo / claude-flow runtime (removed — not used)
 .swarm/
 ruvector.db
 .claude/memory.db
-.claude-flow/daemon.pid
-.claude-flow/daemon-state.json
-.claude-flow/logs/
-.claude-flow/metrics/
-.claude-flow/data/
-.claude-flow/security/
+.claude-flow/
 
 # Build / test cache
 frontend/test-results/
