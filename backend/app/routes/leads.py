@@ -244,10 +244,11 @@ async def toggle_pin(lead_id: UUID, tenant_id: str = Depends(get_tenant_id)):
     if not existing.data:
         raise HTTPException(status_code=404, detail="Lead not found")
     new_pinned = None if existing.data.get("pinned_at") else "now()"
-    result = db.table("leads").update({"pinned_at": new_pinned}).eq("id", str(lead_id)).eq("tenant_id", tenant_id).select("*").execute()
-    if not result.data:
+    db.table("leads").update({"pinned_at": new_pinned}).eq("id", str(lead_id)).eq("tenant_id", tenant_id).execute()
+    updated = db.table("leads").select("*").eq("id", str(lead_id)).eq("tenant_id", tenant_id).maybe_single().execute()
+    if not updated.data:
         raise HTTPException(status_code=404, detail="Lead not found")
-    return result.data[0]
+    return updated.data
 
 
 @router.post("/{lead_id}/send")
