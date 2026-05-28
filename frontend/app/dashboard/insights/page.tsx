@@ -60,6 +60,8 @@ type TrendDay = {
   received: number;
   cost_inr: number;
   quality_rating: string;
+  paid_by_category?: CostMap;
+  free_by_type?: CostMap;
 };
 
 type TrendsResponse = {
@@ -129,6 +131,7 @@ type ChartSeries = {
   dashed?: boolean;
   values: number[];
   formatValue?: (v: number) => string;
+  dropdownLabel?: string;
 };
 
 type TooltipData = {
@@ -243,19 +246,16 @@ function MetaLineChart({
           </button>
           {showCustomise && (
             <div className="absolute top-full right-0 mt-1 z-50 w-52 bg-white rounded-xl shadow-xl ring-1 ring-zinc-200 py-1">
-              {series.map(s => (
+              {Array.from(new Map(series.map(s => [s.key, s])).values()).map(s => (
                 <button
                   key={s.key}
                   onClick={() => toggleKey(s.key)}
                   className="w-full flex items-center gap-2 px-3 py-2 font-label text-xs text-on-surface hover:bg-surface-low transition-colors text-left"
                 >
-                  <span
-                    className="flex items-center justify-center w-4 h-4 rounded border flex-shrink-0"
-                    style={{ borderColor: s.color, backgroundColor: hiddenKeys.has(s.key) ? "transparent" : s.color }}
-                  >
-                    {!hiddenKeys.has(s.key) && <Check size={9} className="text-white" />}
-                  </span>
-                  <span style={{ color: hiddenKeys.has(s.key) ? "#a1a1aa" : s.color }}>{s.label}</span>
+                  <div className="w-3.5 h-3.5 rounded flex items-center justify-center border border-zinc-300 bg-zinc-50 flex-shrink-0">
+                    {!hiddenKeys.has(s.key) && <Check size={10} className="text-blue-600" />}
+                  </div>
+                  <span className="truncate">{s.dropdownLabel || s.label}</span>
                 </button>
               ))}
             </div>
@@ -547,31 +547,59 @@ export default function InsightsPage() {
   const dates = trends?.daily.map(d => d.date) ?? [];
 
   const deliveredChartSeries: ChartSeries[] = [
-    { key: "all_deliveries", label: "All deliveries", color: "#16a34a", dashed: false, values: trends?.daily.map(d => d.delivered) ?? [] },
-    { key: "sent",           label: "Sent",           color: "#6d28d9", dashed: true,  values: trends?.daily.map(d => d.sent) ?? [] },
-    { key: "received",       label: "Received",       color: "#0891b2", dashed: true,  values: trends?.daily.map(d => d.received) ?? [] },
+    { key: "all_deliveries", label: "Messages delivered", color: "#16a34a", dashed: false, values: trends?.daily.map(d => d.delivered) ?? [] },
+    { key: "marketing", label: "Marketing", color: "#0891b2", dashed: true, values: trends?.daily.map(d => d.paid_by_category?.marketing?.conversations ?? 0) ?? [] },
+    { key: "utility", label: "Utility", color: "#db2777", dashed: true, values: trends?.daily.map(d => d.paid_by_category?.utility?.conversations ?? 0) ?? [] },
+    { key: "authentication", label: "Authentication", color: "#ea580c", dashed: true, values: trends?.daily.map(d => d.paid_by_category?.authentication?.conversations ?? 0) ?? [] },
+    { key: "authentication_international", label: "Authentication - international", color: "#854d0e", dashed: true, values: trends?.daily.map(d => d.paid_by_category?.authentication_international?.conversations ?? 0) ?? [] },
+    { key: "ai_provider", label: "AI provider", color: "#0d9488", dashed: true, values: trends?.daily.map(d => d.paid_by_category?.ai_provider?.conversations ?? 0) ?? [] },
+    { key: "service", label: "Service", color: "#16a34a", dashed: true, values: trends?.daily.map(d => (d.free_by_type?.customer_service?.conversations ?? 0) + (d.free_by_type?.entry_point?.conversations ?? 0)) ?? [] },
   ];
 
   const freeChartSeries: ChartSeries[] = [
-    { key: "free_all",              label: "Free deliveries",       color: "#2563eb", dashed: false, values: trends?.daily.map(d => d.delivered) ?? [] },
-    { key: "free_customer_service", label: "Free customer service", color: "#0891b2", dashed: true,  values: trends?.daily.map(() => 0) ?? [] },
-    { key: "free_entry_point",      label: "Free entry point",      color: "#db2777", dashed: true,  values: trends?.daily.map(() => 0) ?? [] },
+    { key: "free_all", label: "Free deliveries", color: "#2563eb", dashed: false, values: trends?.daily.map(d => d.delivered) ?? [] },
+    { key: "free_customer_service", label: "Free customer service", color: "#0891b2", dashed: true, values: trends?.daily.map(d => d.free_by_type?.customer_service?.conversations ?? 0) ?? [] },
+    { key: "free_entry_point", label: "Free entry point", color: "#db2777", dashed: true, values: trends?.daily.map(d => d.free_by_type?.entry_point?.conversations ?? 0) ?? [] },
   ];
 
   const paidChartSeries: ChartSeries[] = [
-    { key: "paid_deliveries", label: "Paid deliveries",        color: "#2563eb", dashed: false, values: trends?.daily.map(d => Math.round(d.delivered * 0.3)) ?? [] },
-    { key: "marketing",       label: "Marketing",              color: "#0891b2", dashed: true,  values: trends?.daily.map(d => Math.round(d.delivered * 0.3)) ?? [] },
+    { key: "total", label: "Paid deliveries", dropdownLabel: "Total", color: "#7e22ce", dashed: false, values: trends?.daily.map(d => Object.values(d.paid_by_category || {}).reduce((sum, c) => sum + (c.conversations || 0), 0)) ?? [] },
+    { key: "marketing", label: "Marketing", color: "#0891b2", dashed: true, values: trends?.daily.map(d => d.paid_by_category?.marketing?.conversations ?? 0) ?? [] },
+    { key: "utility", label: "Utility", color: "#db2777", dashed: true, values: trends?.daily.map(d => d.paid_by_category?.utility?.conversations ?? 0) ?? [] },
+    { key: "authentication", label: "Authentication", color: "#ea580c", dashed: true, values: trends?.daily.map(d => d.paid_by_category?.authentication?.conversations ?? 0) ?? [] },
+    { key: "authentication_international", label: "Authentication - international", color: "#854d0e", dashed: true, values: trends?.daily.map(d => d.paid_by_category?.authentication_international?.conversations ?? 0) ?? [] },
+    { key: "ai_provider", label: "AI provider", color: "#0d9488", dashed: true, values: trends?.daily.map(d => d.paid_by_category?.ai_provider?.conversations ?? 0) ?? [] },
   ];
 
   const chargesChartSeries: ChartSeries[] = [
     {
-      key: "total_charges", label: "Approximate total charges", color: "#2563eb", dashed: false,
-      values: trends?.daily.map(d => d.cost_inr) ?? [],
+      key: "total", label: "Approximate total charges", color: "#7e22ce", dashed: false,
+      values: trends?.daily.map(d => Object.values(d.paid_by_category || {}).reduce((sum, c) => sum + (c.cost_inr || 0), 0)) ?? [],
       formatValue: (v) => formatINR(v),
     },
     {
-      key: "marketing_cost", label: "Marketing", color: "#0891b2", dashed: true,
-      values: trends?.daily.map(d => d.cost_inr) ?? [],
+      key: "marketing", label: "Marketing", color: "#0891b2", dashed: true,
+      values: trends?.daily.map(d => d.paid_by_category?.marketing?.cost_inr ?? 0) ?? [],
+      formatValue: (v) => formatINR(v),
+    },
+    {
+      key: "utility", label: "Utility", color: "#db2777", dashed: true,
+      values: trends?.daily.map(d => d.paid_by_category?.utility?.cost_inr ?? 0) ?? [],
+      formatValue: (v) => formatINR(v),
+    },
+    {
+      key: "authentication", label: "Authentication", color: "#ea580c", dashed: true,
+      values: trends?.daily.map(d => d.paid_by_category?.authentication?.cost_inr ?? 0) ?? [],
+      formatValue: (v) => formatINR(v),
+    },
+    {
+      key: "authentication_international", label: "Authentication - international", color: "#854d0e", dashed: true,
+      values: trends?.daily.map(d => d.paid_by_category?.authentication_international?.cost_inr ?? 0) ?? [],
+      formatValue: (v) => formatINR(v),
+    },
+    {
+      key: "ai_provider", label: "AI provider", color: "#0d9488", dashed: true,
+      values: trends?.daily.map(d => d.paid_by_category?.ai_provider?.cost_inr ?? 0) ?? [],
       formatValue: (v) => formatINR(v),
     },
   ];

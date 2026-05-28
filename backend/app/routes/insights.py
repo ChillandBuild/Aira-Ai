@@ -365,18 +365,43 @@ async def trends_insights(
     for r in rows:
         date = r["snapshot_date"]
         if date not in daily:
-            daily[date] = {"date": date, "sent": 0, "delivered": 0, "read": 0, "received": 0, "cost_inr": 0.0, "quality_rating": "UNKNOWN"}
+            daily[date] = {
+                "date": date, "sent": 0, "delivered": 0, "read": 0, "received": 0, 
+                "cost_inr": 0.0, "quality_rating": "UNKNOWN",
+                "paid_by_category": {}, "free_by_type": {}
+            }
         daily[date]["sent"] += r.get("sent", 0)
         daily[date]["delivered"] += r.get("delivered", 0)
         daily[date]["read"] += r.get("read", 0)
         daily[date]["received"] += r.get("received", 0)
         daily[date]["cost_inr"] += float(r.get("total_cost_inr", 0))
+
+        # Aggregate paid_by_category
+        paid = r.get("paid_by_category") or {}
+        for cat, data in paid.items():
+            if cat not in daily[date]["paid_by_category"]:
+                daily[date]["paid_by_category"][cat] = {"conversations": 0, "cost_inr": 0.0}
+            daily[date]["paid_by_category"][cat]["conversations"] += data.get("conversations", 0)
+            daily[date]["paid_by_category"][cat]["cost_inr"] += float(data.get("cost_inr", 0.0))
+            
+        # Aggregate free_by_type
+        free = r.get("free_by_type") or {}
+        for ftype, data in free.items():
+            if ftype not in daily[date]["free_by_type"]:
+                daily[date]["free_by_type"][ftype] = {"conversations": 0, "cost_inr": 0.0}
+            daily[date]["free_by_type"][ftype]["conversations"] += data.get("conversations", 0)
+            daily[date]["free_by_type"][ftype]["cost_inr"] += float(data.get("cost_inr", 0.0))
+
         if r.get("quality_rating") and r["quality_rating"] != "UNKNOWN":
             daily[date]["quality_rating"] = r["quality_rating"]
 
     trend_list = sorted(daily.values(), key=lambda x: x["date"])
     for d in trend_list:
         d["cost_inr"] = round(d["cost_inr"], 2)
+        for cat in d["paid_by_category"]:
+            d["paid_by_category"][cat]["cost_inr"] = round(d["paid_by_category"][cat]["cost_inr"], 2)
+        for ftype in d["free_by_type"]:
+            d["free_by_type"][ftype]["cost_inr"] = round(d["free_by_type"][ftype]["cost_inr"], 2)
 
     return {"daily": trend_list, "range": {"since": since, "until": until}}
 
