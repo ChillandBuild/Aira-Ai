@@ -144,6 +144,33 @@ async def sync_number_from_meta(number_id: UUID, tenant_id: str = Depends(get_te
         .eq("tenant_id", tenant_id)
         .execute()
     )
+
+    # Always record a quality snapshot so Activity Log has something to show
+    db.table("phone_number_quality_history").insert({
+        "phone_number_id": str(number_id),
+        "tenant_id": tenant_id,
+        "quality_rating": quality,
+        "messaging_tier": tier,
+    }).execute()
+
+    # Also write an incident if quality degraded
+    old_quality = row.get("quality_rating", "green")
+    if quality != old_quality:
+        incident_type = "quality_yellow" if quality == "yellow" else "quality_red" if quality == "red" else None
+        if incident_type:
+            db.table("incidents").insert({
+                "type": incident_type,
+                "phone_number_id": str(number_id),
+                "tenant_id": tenant_id,
+                "detail": {
+                    "number": row["number"],
+                    "display_name": row["display_name"],
+                    "old_quality": old_quality,
+                    "new_quality": quality,
+                    "source": "manual_sync",
+                },
+            }).execute()
+
     return result.data[0]
 
 

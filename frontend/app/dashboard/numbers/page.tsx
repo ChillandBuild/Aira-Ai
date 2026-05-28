@@ -152,6 +152,7 @@ const TYPE_LABELS: Record<string, string> = {
   appeal_filed: "Meta appeal filed",
   standby_promoted: "Standby number promoted",
   warm_up_complete: "Number warm-up complete — now active",
+  quality_snapshot: "Quality synced from Meta",
 };
 
 const TYPE_BADGE: Record<string, string> = {
@@ -162,6 +163,7 @@ const TYPE_BADGE: Record<string, string> = {
   appeal_filed: "bg-orange-100 text-orange-700",
   standby_promoted: "bg-blue-100 text-blue-700",
   warm_up_complete: "bg-green-100 text-green-700",
+  quality_snapshot: "bg-emerald-100 text-emerald-700",
 };
 
 const INCIDENTS_PAGE_SIZE = 50;
@@ -195,9 +197,17 @@ function DetailExpander({ detail }: { detail: Record<string, unknown> }) {
   );
 }
 
+const QUALITY_DOT: Record<string, string> = {
+  green: "bg-emerald-400",
+  yellow: "bg-amber-400",
+  red: "bg-red-400",
+};
+
 function IncidentRow({ incident }: { incident: Incident }) {
   const badgeClass = TYPE_BADGE[incident.type] ?? "bg-surface-mid text-on-surface-muted";
   const label = TYPE_LABELS[incident.type] ?? incident.type.replace(/_/g, " ");
+  const isSnapshot = incident.type === "quality_snapshot";
+  const snapQuality = isSnapshot ? (incident.detail.quality_rating as string) : null;
 
   return (
     <div className="flex gap-4 py-5 border-b border-surface-mid/50 last:border-0">
@@ -211,11 +221,22 @@ function IncidentRow({ incident }: { incident: Incident }) {
             {formatTimestamp(incident.created_at)}
           </span>
           <span className={`px-2 py-0.5 rounded-full font-label text-xs font-semibold ${badgeClass}`}>
-            {incident.type.replace(/_/g, "_")}
+            {incident.type.replace(/_/g, " ")}
           </span>
+          {isSnapshot && snapQuality && (
+            <span className="flex items-center gap-1">
+              <span className={`w-2 h-2 rounded-full ${QUALITY_DOT[snapQuality] ?? "bg-surface-mid"}`} />
+              <span className="font-label text-xs text-on-surface-muted capitalize">{snapQuality}</span>
+              {incident.detail.messaging_tier != null && (
+                <span className="font-label text-xs text-on-surface-muted">
+                  · {Number(incident.detail.messaging_tier).toLocaleString()} /day
+                </span>
+              )}
+            </span>
+          )}
         </div>
         <p className="font-body text-sm text-on-surface">{label}</p>
-        <DetailExpander detail={incident.detail} />
+        {!isSnapshot && <DetailExpander detail={incident.detail} />}
       </div>
     </div>
   );
@@ -791,9 +812,26 @@ function NumbersPageContent() {
         <div className="bg-surface rounded-card p-8 shadow-card ring-1 ring-[#c4c7c7]/15">
           <div className="flex items-center justify-between mb-6">
             <h2 className="font-display text-lg font-bold text-tertiary">Timeline</h2>
-            <span className="font-label text-xs text-on-surface-muted">
-              Auto-refreshes every 30 s
-            </span>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={async () => {
+                  await handleSyncAllMeta();
+                  setIncidentsLoading(true);
+                  await fetchIncidents(0, false);
+                  setIncidentOffset(0);
+                  setIncidentsLoading(false);
+                }}
+                disabled={syncingAll || numbers.filter(n => n.meta_phone_number_id && n.status !== "archived").length === 0}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-surface-mid text-on-surface hover:text-tertiary hover:border-tertiary/40 rounded-lg font-label text-xs font-semibold transition-colors disabled:opacity-50"
+                title="Sync quality from Meta and log any changes"
+              >
+                <RefreshCw size={13} className={syncingAll ? "animate-spin" : ""} />
+                {syncingAll ? "Syncing…" : "Sync from Meta"}
+              </button>
+              <span className="font-label text-xs text-on-surface-muted">
+                Auto-refreshes every 30 s
+              </span>
+            </div>
           </div>
 
           {incidentsLoading ? (

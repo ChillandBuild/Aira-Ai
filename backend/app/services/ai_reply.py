@@ -405,10 +405,13 @@ _ESCALATION_PHRASES = [
 
 _HUMAN_REQUEST_PHRASES = [
     "talk to a person", "talk to agent", "talk to human", "talk to someone",
+    "talk with a person", "talk with agent", "talk with human", "talk with someone",
     "speak to a person", "speak to agent", "speak to human", "speak to someone",
-    "human agent", "real person", "live agent", "connect me to",
-    "need to speak with", "want to talk to", "can i speak", "i need help",
+    "speak with a person", "speak with agent", "speak with human", "speak with someone",
+    "human agent", "real person", "live agent", "connect me to", "connect me with",
+    "need to speak with", "want to talk to", "want to talk with", "can i speak", "i need help",
     "get me a human", "customer care", "customer support", "call me",
+    "talk to you", "speak with you",
 ]
 
 _GENERIC_FALLBACK_MARKERS = [
@@ -464,6 +467,7 @@ def _trigger_chat_escalation(
     db.table("leads").update({
         "needs_human_attention": True,
         "escalation_reason": reason,
+        "ai_enabled": False,
     }).eq("id", lead_id).execute()
 
     db.table("chat_handovers").insert({

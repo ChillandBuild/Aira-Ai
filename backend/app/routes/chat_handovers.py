@@ -75,6 +75,7 @@ def resolve_handover(handover_id: str, tenant_id: str = Depends(get_tenant_id)):
             db.table("leads").update({
                 "needs_human_attention": False,
                 "escalation_reason": None,
+                "ai_enabled": True,
             }).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
 
     return {"resolved": True}
