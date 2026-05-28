@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 _MAX_TEXT_CHARS = 50_000
 
 _groq_client = Groq(api_key=settings.groq_api_key) if settings.groq_api_key else None
-_VISION_MODEL = "llama-3.2-11b-vision-preview"
+_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 
 def extract_text_from_file(file_content: bytes, filename: str, mime_type: str) -> str:
