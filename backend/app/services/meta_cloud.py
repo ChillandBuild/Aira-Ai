@@ -15,7 +15,7 @@ class TemplateContentExistsError(HTTPException):
     """Raised when Meta rejects template creation because name+language already exists."""
     pass
 
-_GRAPH_BASE = "https://graph.facebook.com/v18.0"
+_GRAPH_BASE = "https://graph.facebook.com/v21.0"
 
 _TIER_MAP = {
     "TIER_1000": 1000,
@@ -492,26 +492,24 @@ async def get_whatsapp_insights(
 
     headers = {"Authorization": f"Bearer {tok}"}
 
-    # ── 1. Delivery analytics (sent / delivered / read) ──────────────────────
-    if since_ts and until_ts:
-        fields = f"analytics.since({since_ts}).until({until_ts}).granularity(DAY)"
-    else:
-        fields = "analytics"
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.get(
-            f"{_GRAPH_BASE}/{pid}",
-            params={"fields": fields},
-            headers=headers,
-        )
-    if resp.is_success:
-        analytics = resp.json().get("analytics", {})
-        for dp in analytics.get("data_points", []):
-            result["sent"] += dp.get("sent", 0)
-            result["delivered"] += dp.get("delivered", 0)
-            result["read"] += dp.get("read", 0)
-    else:
-        logger.warning("analytics field failed for %s: %s %s", pid, resp.status_code, resp.text)
+    # ── 1. Delivery analytics from WABA (sent / delivered) ────────────────────
+    # Note: analytics field exists on the WABA endpoint, NOT on phone number
+    if waba_id and since_ts and until_ts:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{_GRAPH_BASE}/{waba_id}",
+                params={"fields": f"analytics.start({since_ts}).end({until_ts}).granularity(DAY)"},
+                headers=headers,
+            )
+        if resp.is_success:
+            analytics = resp.json().get("analytics", {})
+            for dp in analytics.get("data_points", []):
+                result["sent"] += dp.get("sent", 0)
+                result["delivered"] += dp.get("delivered", 0)
+        else:
+            logger.warning("WABA analytics failed for %s: %s %s", waba_id, resp.status_code, resp.text)
+    elif not waba_id:
+        logger.warning("Skipping analytics: no WABA ID configured")
 
     # ── 2. Conversation cost analytics (pricing by category) ─────────────────
     if waba_id and since_ts and until_ts:
