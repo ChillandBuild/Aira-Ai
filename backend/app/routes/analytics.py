@@ -44,22 +44,12 @@ async def whatsapp_analytics(tenant_id: str = Depends(get_tenant_id)):
         if m.get("direction") == "outbound" and m.get("is_ai_generated")
     )
 
-    faqs_res = (
-        db.table("faqs")
-        .select("question,hit_count")
-        .eq("tenant_id", tenant_id)
-        .order("hit_count", desc=True)
-        .limit(5)
-        .execute()
-        .data or []
-    )
-
     return {
         "messages_sent_today": messages_sent_today,
         "messages_received_today": messages_received_today,
         "ai_reply_count_today": ai_reply_count_today,
         "avg_reply_time_seconds": None,
-        "top_faqs": [{"question": f.get("question"), "hit_count": f.get("hit_count", 0)} for f in faqs_res],
+        "top_faqs": [],
     }
 
 

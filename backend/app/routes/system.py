@@ -18,13 +18,10 @@ async def status():
     )
     active_prompt = prompt_row.data[0] if prompt_row.data else None
 
-    faq_row = db.table("faqs").select("id", count="exact").eq("active", True).execute()
-
     return {
         "has_meta": bool(settings.meta_page_token),
         "has_gemini": False,
         "has_groq": bool(settings.groq_api_key),
         "supabase_url": settings.supabase_url,
         "active_prompt": active_prompt,
-        "active_faq_count": faq_row.count or 0,
     }

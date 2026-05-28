@@ -126,7 +126,6 @@ def _recent_thread(db, lead_id: str, limit: int = 6) -> list[dict]:
 
 _FAQ_MIN_KEYWORD_LEN = 3  # ignore "no", "ok", "hi" etc. at match time
 
-
 def _check_faq(message: str, db, tenant_id: str | None = None) -> str | None:
     """Pick the best-matching active FAQ for an inbound message.
 
@@ -458,8 +457,8 @@ async def generate_reply(
 ) -> None:
     """
     Core pipeline:
-    1. Check FAQ table (keyword match)
-    2. If no FAQ hit, call Groq for reply
+    1. Inject knowledge base context
+    2. Call Groq for reply
     3. Send reply via the matching channel
     4. Score the message and update lead score + segment in DB
     """
@@ -545,78 +544,67 @@ async def generate_reply(
             logger.error(f"Scoring update failed (takeover mode) for lead {lead_id}: {e}")
         return
 
-    # Step 1: FAQ check (no LLM cost)
-    faq_answer = _check_faq(message, db, tenant_id=lead_data.get("tenant_id"))
-    
-    context_text = ""
+    # Inject full knowledge base text if any documents are indexed
+    try:
+        context_text = await get_knowledge_context(lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001")
+    except Exception as e:
+        logger.warning(f"Knowledge context fetch failed for lead {lead_id}: {e}")
+        context_text = ""
 
-    if faq_answer:
-        reply_text = faq_answer
+    try:
+        system_prompt = _get_prompt(f"{channel}_reply", tenant_id=lead_data.get("tenant_id"))
+        if context_text:
+            system_prompt += "\n\nKNOWLEDGE BASE:\nUse the following documents to answer the user's question accurately. If the answer is not in the documents, say you will connect them with a team member.\n\n" + context_text
+
+        lead_name = (lead_data.get("name") or "").strip()
+        lead_segment = lead_data.get("segment") or "C"
+        summary = _fetch_conversation_summary(db, lead_id)
+
+        lead_facts: list[str] = []
+        if lead_name:
+            lead_facts.append(f"Lead name: {lead_name}")
+        lead_facts.append(f"Current segment: {lead_segment} (A=hot, B=warm, C=cold, D=disqualified)")
+        if summary:
+            lead_facts.append(f"Earlier conversation summary:\n{summary}")
+        system_prompt += "\n\nLEAD CONTEXT:\n" + "\n".join(lead_facts)
+
+        system_prompt += (
+            "\n\nLANGUAGE RULE: Reply in the SAME language the user just wrote in. "
+            "If they write Tamil, reply Tamil. English → English. Never switch unless they do."
+        )
+
+        # recent_thread already fetched at step 0 (reuse — no extra DB call)
+        chat_messages: list[dict] = [{"role": "system", "content": system_prompt}]
+        for row in reversed(recent_thread):  # oldest first
+            content = (row.get("content") or "").strip()
+            if not content:
+                continue
+            role = "assistant" if row.get("direction") == "outbound" else "user"
+            chat_messages.append({"role": role, "content": content})
+
+        if not chat_messages or chat_messages[-1].get("role") != "user" or chat_messages[-1].get("content") != message:
+            chat_messages.append({"role": "user", "content": message})
+
+        reply_text = _groq_chat(chat_messages, max_tokens=300)
+        is_ai = True
+        reply_source = "knowledge" if context_text else "ai"
+
+        # Trigger A: AI gave a generic fallback reply
+        if _is_generic_fallback(reply_text):
+            escalation_flags.add("A")
+            logger.info(f"Trigger A: lead {lead_id} received generic fallback reply")
+        # Trigger F: AI reply contained escalation phrases
+        if any(phrase in reply_text.lower() for phrase in _ESCALATION_PHRASES):
+            escalation_flags.add("F")
+
+    except Exception as e:
+        logger.error(f"Groq reply failed for lead {lead_id}: {e}")
+        reply_text = "Thank you for reaching out! We'll get back to you shortly."
         is_ai = False
-        reply_source = "faq"
-        logger.info(f"FAQ hit for lead {lead_id}")
-    else:
-        # Step 2: Inject full knowledge base text if any documents are indexed
-        try:
-            context_text = await get_knowledge_context(lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001")
-        except Exception as e:
-            logger.warning(f"Knowledge context fetch failed for lead {lead_id}: {e}")
-            context_text = ""
-
-        try:
-            system_prompt = _get_prompt(f"{channel}_reply", tenant_id=lead_data.get("tenant_id"))
-            if context_text:
-                system_prompt += "\n\nKNOWLEDGE BASE:\nUse the following documents to answer the user's question accurately. If the answer is not in the documents, say you will connect them with a team member.\n\n" + context_text
-
-            lead_name = (lead_data.get("name") or "").strip()
-            lead_segment = lead_data.get("segment") or "C"
-            summary = _fetch_conversation_summary(db, lead_id)
-
-            lead_facts: list[str] = []
-            if lead_name:
-                lead_facts.append(f"Lead name: {lead_name}")
-            lead_facts.append(f"Current segment: {lead_segment} (A=hot, B=warm, C=cold, D=disqualified)")
-            if summary:
-                lead_facts.append(f"Earlier conversation summary:\n{summary}")
-            system_prompt += "\n\nLEAD CONTEXT:\n" + "\n".join(lead_facts)
-
-            system_prompt += (
-                "\n\nLANGUAGE RULE: Reply in the SAME language the user just wrote in. "
-                "If they write Tamil, reply Tamil. English → English. Never switch unless they do."
-            )
-
-            # recent_thread already fetched at step 0 (reuse — no extra DB call)
-            chat_messages: list[dict] = [{"role": "system", "content": system_prompt}]
-            for row in reversed(recent_thread):  # oldest first
-                content = (row.get("content") or "").strip()
-                if not content:
-                    continue
-                role = "assistant" if row.get("direction") == "outbound" else "user"
-                chat_messages.append({"role": role, "content": content})
-
-            if not chat_messages or chat_messages[-1].get("role") != "user" or chat_messages[-1].get("content") != message:
-                chat_messages.append({"role": "user", "content": message})
-
-            reply_text = _groq_chat(chat_messages, max_tokens=300)
-            is_ai = True
-            reply_source = "knowledge" if context_text else "ai"
-
-            # Trigger A: AI gave a generic fallback reply
-            if _is_generic_fallback(reply_text):
-                escalation_flags.add("A")
-                logger.info(f"Trigger A: lead {lead_id} received generic fallback reply")
-            # Trigger F: AI reply contained escalation phrases
-            if any(phrase in reply_text.lower() for phrase in _ESCALATION_PHRASES):
-                escalation_flags.add("F")
-
-        except Exception as e:
-            logger.error(f"Groq reply failed for lead {lead_id}: {e}")
-            reply_text = "Thank you for reaching out! We'll get back to you shortly."
-            is_ai = False
-            reply_source = "ai"
-            # Trigger B: AI/Groq exception — escalate so a human can pick up
-            escalation_flags.add("B")
-            logger.info(f"Trigger B: lead {lead_id} Groq exception — {e}")
+        reply_source = "ai"
+        # Trigger B: AI/Groq exception — escalate so a human can pick up
+        escalation_flags.add("B")
+        logger.info(f"Trigger B: lead {lead_id} Groq exception — {e}")
 
     # Step 3: Dispatch to the correct channel
     if channel == "instagram":

@@ -59,7 +59,6 @@ const SECTIONS: SectionDef[] = [
     description: "Groq powers WhatsApp auto-reply, lead scoring, call summaries, and AI coaching.",
     fields: [
       { key: "groq_api_key", label: "Groq API Key", secret: true, required: true },
-      { key: "faq_match_threshold", label: "FAQ Match Threshold (0–1)", secret: false, required: false, hint: "How closely a message must match a FAQ keyword. Default: 0.7", placeholder: "0.7" },
     ],
     toggles: [
       { key: "ai_auto_reply_enabled", label: "AI Auto-Reply", description: "Automatically reply to inbound WhatsApp messages using AI" },

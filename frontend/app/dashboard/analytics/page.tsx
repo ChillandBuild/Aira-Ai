@@ -75,27 +75,6 @@ function WhatsAppTab() {
           <StatCard key={s.label} icon={s.icon} label={s.label} value={s.value} />
         ))}
       </div>
-
-      <div className="bg-surface rounded-card p-8 shadow-card ring-1 ring-[#c4c7c7]/15">
-        <h2 className="font-display text-lg font-bold text-tertiary mb-5">Top FAQs</h2>
-        {data.top_faqs.length === 0 ? (
-          <p className="font-body text-sm text-on-surface-muted">No FAQ hits recorded yet.</p>
-        ) : (
-          <div className="space-y-3">
-            {data.top_faqs.map((faq, i) => (
-              <div
-                key={i}
-                className="flex items-center justify-between gap-4 rounded-2xl bg-surface-low px-4 py-3"
-              >
-                <p className="font-body text-sm text-on-surface">{faq.question}</p>
-                <span className="shrink-0 rounded-full bg-secondary/10 px-3 py-1 font-label text-xs font-semibold text-secondary">
-                  {faq.hit_count} hits
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

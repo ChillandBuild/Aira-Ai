@@ -37,7 +37,7 @@ export interface Message {
   channel: string;
   content: string;
   is_ai_generated: boolean;
-  reply_source?: "faq" | "knowledge" | "ai" | null;
+  reply_source?: "knowledge" | "ai" | null;
   twilio_message_sid: string | null;
   meta_message_id?: string | null;
   media_url?: string | null;
@@ -104,23 +104,6 @@ export interface BroadcastResult {
   sent: number;
   failed: number;
   skipped_window: number;
-}
-
-export interface FAQ {
-  id: string;
-  question: string;
-  answer: string;
-  keywords: string[];
-  hit_count: number;
-  active: boolean;
-  created_at?: string;
-}
-
-export interface FAQInput {
-  question: string;
-  answer: string;
-  keywords: string[];
-  active?: boolean;
 }
 
 export interface AIPrompt {
@@ -502,24 +485,6 @@ export const api = {
       apiFetch<BroadcastResult>(`/api/v1/segments/${segment}/broadcast`, { method: "POST" }),
   },
   knowledge: {
-    list: async () => {
-      const res = await apiFetch<{ data: FAQ[] }>(`/api/v1/knowledge/faqs`);
-      return res.data || [];
-    },
-    create: (payload: FAQInput) =>
-      apiFetch<FAQ>(`/api/v1/knowledge/faqs`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
-    update: (id: string, payload: Partial<FAQInput>) =>
-      apiFetch<FAQ>(`/api/v1/knowledge/faqs/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify(payload),
-      }),
-    remove: (id: string) =>
-      apiFetch<{ success: boolean }>(`/api/v1/knowledge/faqs/${id}`, {
-        method: "DELETE",
-      }),
     listDocuments: async () => {
       const res = await apiFetch<{ data: Array<{id:string;name:string;size_bytes:number;file_type:string;status:string;created_at:string;chunk_count?:number}> }>(`/api/v1/knowledge/documents`);
       return res.data || [];

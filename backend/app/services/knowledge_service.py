@@ -64,6 +64,9 @@ def extract_text_from_file(file_content: bytes, filename: str, mime_type: str) -
             )
             text = (response.choices[0].message.content or "").strip()
 
+        elif mime_type == "text/plain" or filename.endswith(".txt"):
+            text = file_content.decode("utf-8")
+
         else:
             try:
                 text = file_content.decode("utf-8")

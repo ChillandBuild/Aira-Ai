@@ -166,9 +166,7 @@ const MessageBubble = memo(function MessageBubble({ msg }: { msg: Message }) {
         {msg.direction === "outbound" && (
           <p className="mt-1 text-[10px] opacity-60">
             {msg.is_ai_generated
-              ? msg.reply_source === "faq"
-                ? "📋 FAQ"
-                : msg.reply_source === "knowledge"
+              ? msg.reply_source === "knowledge"
                 ? "📄 Knowledge Base"
                 : "✨ AI"
               : "Sent by you"}

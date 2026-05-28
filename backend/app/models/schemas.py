@@ -80,21 +80,6 @@ class Conversation(ConversationBase):
     closed_at: Optional[datetime] = None
     model_config = {"from_attributes": True}
 
-# --- FAQ Models ---
-class FAQBase(BaseModel):
-    question: str
-    answer: str
-    keywords: list[str] = []
-
-class FAQCreate(FAQBase):
-    pass
-
-class FAQ(FAQBase):
-    id: UUID
-    hit_count: int = 0
-    active: bool = True
-    created_at: datetime
-    model_config = {"from_attributes": True}
 
 # --- Twilio Webhook payload ---
 class TwilioWebhookPayload(BaseModel):
