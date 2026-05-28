@@ -2,7 +2,7 @@ import logging
 import re
 import time
 import httpx
-from groq import Groq
+from groq import AsyncGroq
 from app.config import settings
 from app.db.supabase import get_supabase
 from app.services.growth import record_stage_event, sync_follow_up_jobs
@@ -18,14 +18,14 @@ from app.services.assignment import (
 
 logger = logging.getLogger(__name__)
 
-_groq_client = Groq(api_key=settings.groq_api_key) if settings.groq_api_key else None
+_groq_client = AsyncGroq(api_key=settings.groq_api_key) if settings.groq_api_key else None
 _REPLY_MODEL = "llama-3.3-70b-versatile"
 
 
-def _groq_complete(prompt: str, max_tokens: int = 300) -> str:
+async def _groq_complete(prompt: str, max_tokens: int = 300) -> str:
     if not _groq_client:
         raise RuntimeError("GROQ_API_KEY not configured")
-    response = _groq_client.chat.completions.create(
+    response = await _groq_client.chat.completions.create(
         model=_REPLY_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.4,
@@ -34,12 +34,10 @@ def _groq_complete(prompt: str, max_tokens: int = 300) -> str:
     return response.choices[0].message.content.strip()
 
 
-def _groq_chat(messages: list[dict], max_tokens: int = 300) -> str:
-    """Multi-turn chat completion. Pass an array of {role, content} dicts —
-    typically [system, user, assistant, user, ...] — so the model sees real history."""
+async def _groq_chat(messages: list[dict], max_tokens: int = 300) -> str:
     if not _groq_client:
         raise RuntimeError("GROQ_API_KEY not configured")
-    response = _groq_client.chat.completions.create(
+    response = await _groq_client.chat.completions.create(
         model=_REPLY_MODEL,
         messages=messages,
         temperature=0.4,
@@ -159,7 +157,7 @@ def _detect_lang(text: str) -> str:
     return max(counts, key=counts.__getitem__) if counts else "en"
 
 
-def _mirror_faq_language(answer: str, user_message: str) -> str:
+async def _mirror_faq_language(answer: str, user_message: str) -> str:
     """Translate FAQ answer to match the user's message language when they differ."""
     user_lang = _detect_lang(user_message)
     ans_lang = _detect_lang(answer)
@@ -167,7 +165,7 @@ def _mirror_faq_language(answer: str, user_message: str) -> str:
         return answer
     lang_name = _LANG_NAMES.get(user_lang, "English")
     try:
-        return _groq_complete(
+        return await _groq_complete(
             f"Translate to {lang_name}. Return ONLY the translation, no explanations:\n\n{answer}",
             max_tokens=300,
         )
@@ -375,7 +373,7 @@ async def send_facebook(fb_user_id: str, message: str, tenant_id: str | None = N
         return None
 
 
-def generate_reengagement_message(lead_id: str, cadence: str, db=None) -> str:
+async def generate_reengagement_message(lead_id: str, cadence: str, db=None) -> str:
     db = db or get_supabase()
     lead = (
         db.table("leads")
@@ -405,7 +403,7 @@ Be warm, specific, and low-pressure.
 Reference the lead's interest naturally and end with one clear next step.
 Do not use markdown or quotes."""
     try:
-        text = _groq_complete(prompt, max_tokens=120)
+        text = await _groq_complete(prompt, max_tokens=120)
         return text[:280] if len(text) > 280 else text
     except Exception as e:
         logger.error(f"Re-engagement copy failed for lead {lead_id}: {e}")
@@ -600,7 +598,7 @@ async def generate_reply(
     context_text = ""
 
     if faq_answer:
-        reply_text = _mirror_faq_language(faq_answer, message)
+        reply_text = await _mirror_faq_language(faq_answer, message)
         is_ai = False
         reply_source = "faq"
         logger.info(f"FAQ hit for lead {lead_id}")
@@ -652,7 +650,7 @@ async def generate_reply(
             else:
                 chat_messages[-1]["content"] = _tagged_message
 
-            reply_text = _groq_chat(chat_messages, max_tokens=300)
+            reply_text = await _groq_chat(chat_messages, max_tokens=300)
             is_ai = True
             reply_source = "knowledge" if context_text else "ai"
 

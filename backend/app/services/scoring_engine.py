@@ -18,14 +18,14 @@ import logging
 import re
 from datetime import datetime, timezone
 
-from groq import Groq
+from groq import AsyncGroq
 
 from app.config import settings
 from app.services.segmentation import score_to_segment, parse_thresholds
 
 logger = logging.getLogger(__name__)
 
-_client = Groq(api_key=settings.groq_api_key) if settings.groq_api_key else None
+_client = AsyncGroq(api_key=settings.groq_api_key) if settings.groq_api_key else None
 _MODEL = "llama-3.3-70b-versatile"
 
 # ── Intent signal patterns ────────────────────────────────────────────────────
@@ -189,7 +189,7 @@ async def _score_arc(conversation: str, tenant_id: str | None) -> int:
         f"Reply with ONLY a single integer 1-10."
     )
     try:
-        resp = _client.chat.completions.create(
+        resp = await _client.chat.completions.create(
             model=_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
