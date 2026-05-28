@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/client";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://aira-ai-5tfr.onrender.com";
 const MAX_LEADS_LIST_LIMIT = 200;
 
 export async function getAuthHeaders(): Promise<Record<string, string>> {

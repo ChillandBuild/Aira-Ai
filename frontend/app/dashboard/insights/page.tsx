@@ -831,35 +831,7 @@ export default function InsightsPage() {
                   <MetaLineChart title="Paid messages delivered and approximate total charges" dates={dates} series={[...paidChartSeries, ...chargesChartSeries]} />
                 </div>
 
-                {/* Data table */}
-                <div className="px-6 py-5">
-                  <p className="font-label text-xs font-semibold text-on-surface-muted uppercase tracking-wider mb-3">Daily breakdown</p>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                      <thead>
-                        <tr className="border-b border-surface-mid">
-                          {["Date", "Sent", "Delivered", "Cost (₹)", "Quality"].map(h => (
-                            <th key={h} className="pb-2 pr-4 font-label text-[10px] font-semibold text-on-surface-muted uppercase tracking-wider">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {trends.daily.slice().reverse().map(d => (
-                          <tr key={d.date} className="border-b border-surface-mid/50">
-                            <td className="py-2 pr-4 font-label text-xs text-on-surface">{formatXLabel(d.date)}</td>
-                            <td className="py-2 pr-4 font-label text-xs text-on-surface">{d.sent}</td>
-                            <td className="py-2 pr-4 font-label text-xs text-on-surface">{d.delivered}</td>
-                            <td className="py-2 pr-4 font-label text-xs font-semibold text-on-surface">{formatINR(d.cost_inr)}</td>
-                            <td className="py-2">
-                              <span className={cn("font-label text-[10px] font-bold px-1.5 py-0.5 rounded", d.quality_rating === "HIGH" ? "bg-green-100 text-green-700" : d.quality_rating === "MEDIUM" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700")}>
-                                {d.quality_rating}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+              </div>
                 </div>
               </div>
             )}
