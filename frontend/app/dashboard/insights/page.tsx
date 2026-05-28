@@ -142,12 +142,10 @@ function MetaLineChart({
   title,
   dates,
   series,
-  customiseOptions,
 }: {
   title: string;
   dates: string[];
   series: ChartSeries[];
-  customiseOptions?: string[];
 }) {
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
   const [showCustomise, setShowCustomise] = useState(false);
@@ -505,7 +503,7 @@ export default function InsightsPage() {
 
   function handleExport(type: "message_metrics" | "pricing_metrics") {
     if (!trends?.daily || trends.daily.length === 0) { toast.error("No data to export. Sync first."); return; }
-    let csv = type === "message_metrics"
+    const csv = type === "message_metrics"
       ? "Date,Sent,Delivered,Read,Received,Quality\n" + trends.daily.map(d => `${d.date},${d.sent},${d.delivered},${d.read},${d.received},${d.quality_rating}`).join("\n")
       : "Date,Cost (INR)\n" + trends.daily.map(d => `${d.date},${d.cost_inr}`).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
