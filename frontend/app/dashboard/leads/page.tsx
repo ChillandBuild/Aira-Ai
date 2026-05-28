@@ -609,20 +609,23 @@ export default function LeadsPage() {
           </div>
         </div>
 
-        {showScoringDrawer && (
-          <div className="w-full lg:w-[420px] shrink-0 sticky top-4 card rounded-3xl p-6 bg-surface shadow-card ring-1 ring-[#c4c7c7]/15">
-            <ScoringPanel
-              onClose={() => setShowScoringDrawer(false)}
-              scoringRubric={scoringRubric}
-              setScoringRubric={setScoringRubric}
-              scoringThresholds={scoringThresholds}
-              setScoringThresholds={setScoringThresholds}
-              scoringSaving={scoringSaving}
-              saveScoringConfig={saveScoringConfig}
-              scoringMsg={scoringMsg}
-            />
-          </div>
-        )}
+        <div className={cn(
+          "w-full lg:w-[420px] shrink-0 sticky top-4 rounded-3xl transition-all duration-300 ease-in-out origin-right transform",
+          showScoringDrawer
+            ? "opacity-100 translate-x-0 scale-100 max-w-[420px] p-6 bg-surface shadow-card ring-1 ring-[#c4c7c7]/15"
+            : "opacity-0 translate-x-4 scale-95 max-w-0 overflow-hidden pointer-events-none p-0 bg-transparent shadow-none ring-0 border-0"
+        )}>
+          <ScoringPanel
+            onClose={() => setShowScoringDrawer(false)}
+            scoringRubric={scoringRubric}
+            setScoringRubric={setScoringRubric}
+            scoringThresholds={scoringThresholds}
+            setScoringThresholds={setScoringThresholds}
+            scoringSaving={scoringSaving}
+            saveScoringConfig={saveScoringConfig}
+            scoringMsg={scoringMsg}
+          />
+        </div>
       </div>
     </div>
   );

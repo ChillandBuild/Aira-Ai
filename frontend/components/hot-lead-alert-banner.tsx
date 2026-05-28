@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { api, HotLeadAlert } from "@/lib/api";
-import { usePolling } from "@/hooks/usePolling";
+import { createClient } from "@/lib/supabase/client";
 
 export function HotLeadAlertBanner() {
   const [alerts, setAlerts] = useState<HotLeadAlert[]>([]);
@@ -13,8 +13,29 @@ export function HotLeadAlertBanner() {
     } catch {}
   }, []);
 
-  useEffect(() => { load(); }, [load]);
-  usePolling(load, 30_000);
+  useEffect(() => {
+    load();
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel("hot-lead-alerts-realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "hot_lead_alerts",
+        },
+        () => {
+          load();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [load]);
 
   async function dismiss(id: string) {
     try {

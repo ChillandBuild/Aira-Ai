@@ -4,7 +4,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { useAuthRole, clearRoleCache } from "@/app/dashboard/contexts/AuthRoleContext";
 import { API_URL, getAuthHeaders } from "@/lib/api";
-import { usePolling } from "@/hooks/usePolling";
 import {
   LayoutDashboard, MessageSquare, Users, Settings, Phone,
   BarChart2, Upload, BookOpen, Layers, FileCheck, StickyNote,
@@ -81,9 +80,29 @@ export function Sidebar() {
 
   const waEnabled = enabledFeatures.includes("whatsapp");
   useEffect(() => {
-    if (waEnabled) fetchCount();
+    if (!waEnabled) return;
+    fetchCount();
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel("inbox-count-realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "chat_handovers",
+        },
+        () => {
+          fetchCount();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [waEnabled, fetchCount]);
-  usePolling(fetchCount, 60_000, waEnabled);
 
   if (roleLoading) {
     return (

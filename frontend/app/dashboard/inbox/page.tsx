@@ -6,6 +6,7 @@ import { SegmentBadge } from "@/components/segment-badge";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { InboxConfigPanel } from "../settings/InboxConfigPanel";
+import { toast } from "sonner";
 
 type Handover = {
   id: string;
@@ -53,8 +54,16 @@ export default function InboxPage() {
   useEffect(() => { load(); }, []);
 
   async function handleResolve(id: string) {
-    await resolveHandover(id);
-    await load();
+    const originalHandovers = handovers;
+    // Optimistic UI updates
+    setHandovers((prev) => prev.filter((h) => h.id !== id));
+    try {
+      await resolveHandover(id);
+      toast.success("Handover resolved");
+    } catch (err) {
+      setHandovers(originalHandovers);
+      toast.error(err instanceof Error ? err.message : "Failed to resolve");
+    }
   }
 
   return (
@@ -142,11 +151,12 @@ export default function InboxPage() {
           )}
         </div>
 
-        {showConfig && (
-          <div className="w-full lg:w-[420px] shrink-0 sticky top-4">
-            <InboxConfigPanel />
-          </div>
-        )}
+        <div className={cn(
+          "w-full lg:w-[420px] shrink-0 sticky top-4 transition-all duration-300 ease-in-out origin-right transform",
+          showConfig ? "opacity-100 translate-x-0 scale-100 max-w-[420px]" : "opacity-0 translate-x-4 scale-95 max-w-0 overflow-hidden pointer-events-none"
+        )}>
+          <InboxConfigPanel />
+        </div>
       </div>
     </div>
   );

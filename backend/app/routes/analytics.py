@@ -207,6 +207,7 @@ async def overview_analytics(tenant_id: str = Depends(get_tenant_id)):
     )
 
     daily_leads_map = {d: 0 for d in seven_day_iso}
+    by_segment = {"A": 0, "B": 0, "C": 0, "D": 0}
     converted_7d = 0
     funnel_inquiries = 0
     funnel_engaged = 0
@@ -220,6 +221,8 @@ async def overview_analytics(tenant_id: str = Depends(get_tenant_id)):
             converted_7d += 1
             funnel_converted += 1
         seg = lead.get("segment")
+        if seg in by_segment:
+            by_segment[seg] += 1
         funnel_inquiries += 1
         if seg in ("A", "B"):
             funnel_engaged += 1
@@ -293,6 +296,7 @@ async def overview_analytics(tenant_id: str = Depends(get_tenant_id)):
         "unreplied_24h": unreplied_24h,
         "converted_7d": converted_7d,
         "ai_handled_today": ai_handled_today,
+        "by_segment": by_segment,
     }
 
 

@@ -162,6 +162,7 @@ export interface AnalyticsOverview {
   unreplied_24h: number;
   converted_7d: number;
   ai_handled_today: number;
+  by_segment: Record<"A" | "B" | "C" | "D", number>;
 }
 
 export interface FollowUpQueueItem {

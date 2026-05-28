@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, Lead, AnalyticsOverview } from "@/lib/api";
+import { api, AnalyticsOverview } from "@/lib/api";
 import {
   MessageSquare,
   Sparkles,
@@ -21,12 +21,12 @@ const SEGMENT_CONFIG: Record<"A" | "B" | "C" | "D", { label: string; tone: strin
   D: { label: "Disqualified", tone: "text-rose-600", bar: "bg-rose-400", bg: "bg-rose-50" },
 };
 
-function PipelineBar({ leads }: { leads: Lead[] }) {
-  const total = leads.length;
+function PipelineBar({ by_segment }: { by_segment: Record<"A" | "B" | "C" | "D", number> }) {
   const counts = (["A", "B", "C", "D"] as const).map((s) => ({
     seg: s,
-    count: leads.filter((l) => l.segment === s).length,
+    count: by_segment?.[s] ?? 0,
   }));
+  const total = counts.reduce((acc, c) => acc + c.count, 0);
 
   return (
     <div className="card rounded-[32px] p-8">
@@ -155,7 +155,6 @@ function TodaySnapshot({ overview }: { overview: AnalyticsOverview | null }) {
 export default function DashboardPage() {
   const { role, loading: roleLoading } = useAuthRole();
   const router = useRouter();
-  const [leads, setLeads] = useState<Lead[]>([]);
   const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -168,11 +167,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (role !== "owner") return; // only owners fetch admin data
-    Promise.all([api.leads.list({ limit: 200 }), api.analytics.overview().catch(() => null)])
-      .then(([l, o]) => {
-        setLeads(l);
+    api.analytics.overview()
+      .then((o) => {
         setOverview(o);
       })
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, [role]);
 
@@ -197,8 +196,8 @@ export default function DashboardPage() {
     );
   }
 
-  const total = leads.length;
-  const segA = leads.filter((l) => l.segment === "A").length;
+  const total = overview?.funnel?.inquiries ?? 0;
+  const segA = overview?.by_segment?.A ?? 0;
   const aiVsHuman = overview?.ai_vs_human;
   const totalReplies = (aiVsHuman?.ai ?? 0) + (aiVsHuman?.human ?? 0);
   const aiPct = totalReplies > 0 ? Math.round(((aiVsHuman?.ai ?? 0) / totalReplies) * 100) : 0;
@@ -338,7 +337,7 @@ export default function DashboardPage() {
 
           {/* Row 3: Pipeline Activities */}
           <div className="grid grid-cols-1 gap-6">
-            <PipelineBar leads={leads} />
+            <PipelineBar by_segment={overview?.by_segment ?? { A: 0, B: 0, C: 0, D: 0 }} />
           </div>
         </>
       )}

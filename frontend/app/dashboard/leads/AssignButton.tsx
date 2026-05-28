@@ -78,8 +78,14 @@ export function AssignButton({ leadId, currentAssignedTo, callers: callersProp, 
   const assignedCaller = callers.find((c) => c.id === assignedId);
 
   async function assign(callerId: string | null) {
-    setLoading(true);
+    const originalAssignedId = assignedId;
+    // Optimistic UI updates
+    setAssignedId(callerId);
+    onAssigned?.(callerId);
+    setOpen(false);
     setError(null);
+    setLoading(true);
+
     try {
       const { getAuthHeaders, API_URL } = await import("@/lib/api");
       const auth = await getAuthHeaders();
@@ -92,11 +98,12 @@ export function AssignButton({ leadId, currentAssignedTo, callers: callersProp, 
         const body = await res.json().catch(() => ({}));
         throw new Error(body.detail || `Error ${res.status}`);
       }
-      setAssignedId(callerId);
-      onAssigned?.(callerId);
-      setOpen(false);
     } catch (err) {
+      // Rollback
+      setAssignedId(originalAssignedId);
+      onAssigned?.(originalAssignedId);
       setError(err instanceof Error ? err.message : "Assign failed");
+      setOpen(true);
     } finally {
       setLoading(false);
     }
