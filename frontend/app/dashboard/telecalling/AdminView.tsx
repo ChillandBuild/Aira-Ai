@@ -3,12 +3,13 @@ import { toast } from "sonner";
 import { useEffect, useState, useCallback } from "react";
 import {
   Phone, ToggleLeft, ToggleRight, RefreshCw, TrendingUp,
-  Users, Coffee, ChevronDown,
+  Users, Coffee, ChevronDown, Settings,
 } from "lucide-react";
 import { api, Caller, Lead, API_URL, getAuthHeaders } from "@/lib/api";
 import { formatPhone } from "@/lib/utils";
 import LiveNotesPane from "./components/live-notes-pane";
 import { useActiveCall } from "../contexts/ActiveCallContext";
+import { TelecallingConfigPanel } from "../settings/TelecallingConfigPanel";
 
 function ScoreBar({ score }: { score: number }) {
   const pct = Math.round((score / 10) * 100);
@@ -28,6 +29,7 @@ export default function AdminView() {
   const [selectedCallerId, setSelectedCallerId] = useState<string | null>(null);
   const [roundRobinEnabled, setRoundRobinEnabled] = useState<boolean | null>(null);
   const [togglingRR, setTogglingRR] = useState(false);
+  const [showConfigModal, setShowConfigModal] = useState(false);
 
   const [totalCallsToday, setTotalCallsToday] = useState(0);
   const [totalConversionsToday, setTotalConversionsToday] = useState(0);
@@ -143,6 +145,18 @@ export default function AdminView() {
               </button>
             </div>
           )}
+
+          {/* Telecalling routing config */}
+          <div>
+            <label className="block font-label text-[10px] text-on-surface-muted uppercase tracking-widest mb-1">Routing Rules</label>
+            <button
+              onClick={() => setShowConfigModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-surface-mid hover:text-amber-600 hover:border-amber-300 font-label text-sm font-semibold transition-colors"
+            >
+              <Settings size={14} />
+              Config
+            </button>
+          </div>
         </div>
       </div>
 
@@ -241,6 +255,20 @@ export default function AdminView() {
       {activeCallCtx && (
         <div className="mt-6">
           <LiveNotesPane ctx={activeCallCtx} onClose={() => setActiveCallCtx(null)} />
+        </div>
+      )}
+
+      {showConfigModal && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm cursor-pointer"
+          onClick={() => setShowConfigModal(false)}
+        >
+          <div 
+            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <TelecallingConfigPanel />
+          </div>
         </div>
       )}
     </div>

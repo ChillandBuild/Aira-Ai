@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Search, Plus, Trash2, Edit3, CheckCircle2, XCircle,
   Upload, FileText, Loader2, Info, AlertCircle,
-  Database, HelpCircle, Sparkles, Save, MessageCircle, Target
+  Database, HelpCircle, Sparkles, Save, MessageCircle
 } from "lucide-react";
 import { api, FAQ, FAQInput, AIPrompt } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -54,7 +54,7 @@ export default function KnowledgePage() {
   const [documents, setDocuments] = useState<KnowledgeDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [tab, setTab] = useState<"faqs" | "documents" | "ai-tune" | "scoring">("faqs");
+  const [tab, setTab] = useState<"faqs" | "documents" | "ai-tune">("faqs");
 
   // FAQ Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -74,12 +74,6 @@ export default function KnowledgePage() {
   const [tuneMsg, setTuneMsg] = useState<string | null>(null);
   const [tuneSaving, setTuneSaving] = useState(false);
 
-  // Scoring config
-  const [scoringRubric, setScoringRubric] = useState("");
-  const [scoringThresholds, setScoringThresholds] = useState({ A: 9, B: 7, C: 5 });
-  const [scoringSaving, setScoringSaving] = useState(false);
-  const [scoringMsg, setScoringMsg] = useState<string | null>(null);
-
   useEffect(() => {
     loadData();
   }, []);
@@ -92,7 +86,6 @@ export default function KnowledgePage() {
 
   useEffect(() => {
     if (tab === "ai-tune" && prompts.length === 0) loadPrompts();
-    if (tab === "scoring") loadScoringConfig();
   }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -226,50 +219,6 @@ export default function KnowledgePage() {
 
   const activePrompt = prompts.find((p) => p.name === activeName);
 
-  async function loadScoringConfig() {
-    try {
-      const { API_URL, getAuthHeaders } = await import("@/lib/api");
-      const auth = await getAuthHeaders();
-      const res = await fetch(`${API_URL}/api/v1/settings`, { headers: auth });
-      if (!res.ok) return;
-      const data = await res.json();
-      const map: Record<string, string> = {};
-      for (const s of (data.settings ?? [])) map[s.key] = s.display_value ?? "";
-      if (map.scoring_rubric && map.scoring_rubric !== "Not set") setScoringRubric(map.scoring_rubric);
-      if (map.scoring_segment_thresholds && map.scoring_segment_thresholds !== "Not set") {
-        try {
-          const t = JSON.parse(map.scoring_segment_thresholds);
-          setScoringThresholds({ A: t.A ?? 9, B: t.B ?? 7, C: t.C ?? 5 });
-        } catch { /* ignore parse error */ }
-      }
-    } catch { /* silent */ }
-  }
-
-  async function saveScoringConfig() {
-    setScoringSaving(true);
-    setScoringMsg(null);
-    try {
-      const { API_URL, getAuthHeaders } = await import("@/lib/api");
-      const auth = await getAuthHeaders();
-      const updates: Record<string, string> = {
-        scoring_segment_thresholds: JSON.stringify(scoringThresholds),
-      };
-      if (scoringRubric.trim()) updates.scoring_rubric = scoringRubric.trim();
-      const res = await fetch(`${API_URL}/api/v1/settings`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...auth },
-        body: JSON.stringify({ updates }),
-      });
-      if (!res.ok) throw new Error("Save failed");
-      setScoringMsg("Scoring config saved.");
-      setTimeout(() => setScoringMsg(null), 3000);
-    } catch (err) {
-      setScoringMsg(err instanceof Error ? err.message : "Save failed");
-    } finally {
-      setScoringSaving(false);
-    }
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -324,20 +273,9 @@ export default function KnowledgePage() {
             <Sparkles size={16} /> AI Tune
           </div>
         </button>
-        <button
-          onClick={() => setTab("scoring")}
-          className={cn(
-            "px-6 py-3 font-label font-semibold text-sm transition-all border-b-2",
-            tab === "scoring" ? "border-tertiary text-tertiary" : "border-transparent text-on-surface-muted hover:text-on-surface"
-          )}
-        >
-          <div className="flex items-center gap-2">
-            <Target size={16} /> Scoring
-          </div>
-        </button>
       </div>
 
-      {tab !== "ai-tune" && tab !== "scoring" && (
+      {tab !== "ai-tune" && (
         <div className="relative">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-muted" />
           <input
@@ -509,98 +447,6 @@ export default function KnowledgePage() {
           </div>
         </div>
       ) : (
-        /* Scoring Tab */
-        tab === "scoring" ? (
-          <div className="space-y-6 animate-in fade-in duration-200">
-            {scoringMsg && (
-              <div className="p-3 rounded-xl bg-tertiary-bg text-tertiary font-label text-sm">
-                {scoringMsg}
-              </div>
-            )}
-
-            {/* Rubric */}
-            <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
-              <div className="mb-4">
-                <h2 className="font-display text-lg font-bold text-tertiary flex items-center gap-2">
-                  <Target size={18} /> Custom Scoring Rubric
-                </h2>
-                <p className="font-body text-sm text-on-surface-muted mt-1">
-                  Describe what each score range means for your business. Leave blank to use the default rubric.
-                </p>
-              </div>
-              <div className="mb-3 p-3 rounded-xl bg-surface-low border border-surface-mid font-label text-xs text-on-surface-muted leading-5">
-                <strong>Default rubric (used when blank):</strong><br />
-                9–10: Asked for pricing/demo, ready to buy, completed booking<br />
-                7–8: Detailed questions, comparing options, multiple follow-ups<br />
-                5–6: General inquiry, first contact, acknowledgment without commitment<br />
-                1–4: Not interested, irrelevant, dismissive
-              </div>
-              <textarea
-                value={scoringRubric}
-                onChange={(e) => setScoringRubric(e.target.value)}
-                rows={8}
-                spellCheck={false}
-                placeholder={"- 9-10: Asked about course fees or demo class, confirmed slot\n- 7-8: Asking about syllabus, comparing with other institutes\n- 5-6: General enquiry, first contact\n- 1-4: Not interested, wrong number"}
-                className="w-full px-4 py-3 rounded-xl bg-surface-low border border-surface-mid font-mono text-sm leading-6 focus:outline-none focus:ring-2 focus:ring-tertiary resize-none"
-              />
-            </div>
-
-            {/* Thresholds */}
-            <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
-              <div className="mb-5">
-                <h2 className="font-display text-lg font-bold text-tertiary flex items-center gap-2">
-                  <Target size={18} /> Segment Thresholds
-                </h2>
-                <p className="font-body text-sm text-on-surface-muted mt-1">
-                  A lead moves to a segment when its score is ≥ the threshold. Default: A≥9, B≥7, C≥5, D&lt;5.
-                </p>
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                {(["A", "B", "C"] as const).map((seg) => {
-                  const colors: Record<string, string> = { A: "text-red-600 bg-red-50 border-red-200", B: "text-amber-600 bg-amber-50 border-amber-200", C: "text-blue-600 bg-blue-50 border-blue-200" };
-                  const labels: Record<string, string> = { A: "A — Hot", B: "B — Warm", C: "C — Cold" };
-                  return (
-                    <div key={seg} className={`rounded-2xl border p-4 ${colors[seg]}`}>
-                      <label className="block font-label text-xs font-bold uppercase mb-2">{labels[seg]}</label>
-                      <div className="flex items-center gap-2">
-                        <span className="font-label text-sm font-semibold">Score ≥</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={10}
-                          value={scoringThresholds[seg]}
-                          onChange={(e) => {
-                            const v = Math.max(1, Math.min(10, parseInt(e.target.value) || 1));
-                            setScoringThresholds(prev => ({ ...prev, [seg]: v }));
-                          }}
-                          className="w-16 px-2 py-1 rounded-lg border bg-white font-mono text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-current"
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              {/* Ordering validation */}
-              {!(scoringThresholds.A > scoringThresholds.B && scoringThresholds.B > scoringThresholds.C) && (
-                <div className="mt-3 flex items-center gap-2 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 font-label text-xs font-semibold">
-                  <AlertCircle size={13} /> Thresholds must be in order: A &gt; B &gt; C. Current values will be rejected and defaults (9/7/5) will be used.
-                </div>
-              )}
-              <p className="mt-2 font-label text-xs text-on-surface-muted">
-                D (Disqualified) = score below C threshold ({scoringThresholds.C - 1} or less).
-              </p>
-            </div>
-
-            <button
-              onClick={saveScoringConfig}
-              disabled={scoringSaving || !(scoringThresholds.A > scoringThresholds.B && scoringThresholds.B > scoringThresholds.C)}
-              className="flex items-center gap-2 px-5 py-2.5 bg-tertiary text-white rounded-xl font-label text-sm font-semibold hover:bg-tertiary/90 disabled:opacity-40 transition-all shadow-card"
-            >
-              <Save size={15} /> {scoringSaving ? "Saving…" : "Save Scoring Config"}
-            </button>
-          </div>
-        ) :
-
         /* AI Tune Tab */
         <div className="space-y-4 animate-in fade-in duration-200">
           {tuneMsg && (

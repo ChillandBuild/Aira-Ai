@@ -4,8 +4,6 @@ import {
   Phone, Sparkles, Eye, EyeOff, Save, AlertCircle, Loader2, CheckCircle2, ChevronDown
 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
-import { InboxConfigPanel } from "./InboxConfigPanel";
-import { TelecallingConfigPanel } from "./TelecallingConfigPanel";
 
 type Setting = {
   key: string;
@@ -283,8 +281,6 @@ export default function SettingsPage() {
         </div>
       ) : (
         <div className="space-y-5">
-          <InboxConfigPanel />
-          <TelecallingConfigPanel />
           {SECTIONS.map((section) => {
             const isCollapsed = !!collapsed[section.id];
             const allKeys = [...section.fields.map(f => f.key), ...(section.toggles?.map(t => t.key) ?? [])];

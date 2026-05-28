@@ -9,49 +9,10 @@ import {
   LayoutDashboard, MessageSquare, Users, Settings, Phone,
   BarChart2, Upload, BookOpen, Layers, FileCheck, StickyNote,
   LogOut, Inbox, Zap, TrendingUp, ChevronDown, ChevronRight,
-  Send as TelegramIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AiraLogo } from "./logo";
 import { createClient } from "@/lib/supabase/client";
-
-function Instagram({ size = 16, className, color = "currentColor", strokeWidth = 2 }: { size?: number | string; className?: string; color?: string; strokeWidth?: number | string }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke={color}
-      strokeWidth={strokeWidth}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
-      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
-      <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
-    </svg>
-  );
-}
-
-function Facebook({ size = 16, className, color = "currentColor", strokeWidth = 2 }: { size?: number | string; className?: string; color?: string; strokeWidth?: number | string }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke={color}
-      strokeWidth={strokeWidth}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
-    </svg>
-  );
-}
 
 type NavItem = {
   href: string;
@@ -61,25 +22,13 @@ type NavItem = {
   badgeType?: "inbox" | "scheduled" | "drafts";
 };
 
-// Sub-menu groupings for Omnichannel platforms
-const WHATSAPP_ITEMS: NavItem[] = [
-  { href: "/dashboard/upload", icon: Upload, label: "Upload" },
-  { href: "/dashboard/templates", icon: FileCheck, label: "Templates" },
-  { href: "/dashboard/numbers", icon: Layers, label: "Numbers Pool" },
-  { href: "/dashboard/insights", icon: TrendingUp, label: "Insights" },
-  { href: "/dashboard/whatsapp/connect", icon: Settings, label: "Connect Account" },
-];
-
-const INSTAGRAM_ITEMS: NavItem[] = [
-  { href: "/dashboard/instagram/connect", icon: Settings, label: "Connect Account", feature: "instagram" },
-];
-
-const FACEBOOK_ITEMS: NavItem[] = [
-  { href: "/dashboard/facebook/connect", icon: Settings, label: "Connect Account", feature: "facebook" },
-];
-
-const TELEGRAM_ITEMS: NavItem[] = [
-  { href: "/dashboard/telegram/connect", icon: Settings, label: "Connect Account", feature: "telegram" },
+// Sub-menu groupings for Omnichannel platforms under a single Channels hub
+const CHANNELS_ITEMS: NavItem[] = [
+  { href: "/dashboard/channels", icon: Settings, label: "Connect Channels" },
+  { href: "/dashboard/upload", icon: Upload, label: "Upload", feature: "whatsapp" },
+  { href: "/dashboard/templates", icon: FileCheck, label: "Templates", feature: "whatsapp" },
+  { href: "/dashboard/numbers", icon: Layers, label: "Numbers Pool", feature: "whatsapp" },
+  { href: "/dashboard/insights", icon: TrendingUp, label: "Insights", feature: "whatsapp" },
 ];
 
 const TELECALLING_ITEMS: NavItem[] = [
@@ -114,10 +63,7 @@ export function Sidebar() {
   
   // Track open/collapsed state of nested groups
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
-    WhatsApp: true,
-    Instagram: false,
-    Facebook: false,
-    Telegram: false,
+    Channels: true,
     Telecalling: true,
   });
 
@@ -149,23 +95,14 @@ export function Sidebar() {
   const filterEnabled = (items: NavItem[]) => 
     items.filter(item => !item.feature || enabledFeatures.includes(item.feature));
 
-  const waGroupItems = filterEnabled(WHATSAPP_ITEMS);
-  const igGroupItems = filterEnabled(INSTAGRAM_ITEMS);
-  const fbGroupItems = filterEnabled(FACEBOOK_ITEMS);
-  const tgGroupItems = filterEnabled(TELEGRAM_ITEMS);
+  const channelsGroupItems = filterEnabled(CHANNELS_ITEMS);
   const tcGroupItems = filterEnabled(TELECALLING_ITEMS);
 
-  const isWaActive = waGroupItems.some(item => pathname.startsWith(item.href));
-  const isIgActive = igGroupItems.some(item => pathname.startsWith(item.href));
-  const isFbActive = fbGroupItems.some(item => pathname.startsWith(item.href));
-  const isTgActive = tgGroupItems.some(item => pathname.startsWith(item.href));
+  const isChannelsActive = channelsGroupItems.some(item => pathname.startsWith(item.href));
   const isTcActive = tcGroupItems.some(item => pathname.startsWith(item.href));
 
   // Auto-expand active groups
-  const showWa = expandedGroups.WhatsApp || isWaActive;
-  const showIg = expandedGroups.Instagram || isIgActive;
-  const showFb = expandedGroups.Facebook || isFbActive;
-  const showTg = expandedGroups.Telegram || isTgActive;
+  const showChannels = expandedGroups.Channels || isChannelsActive;
   const showTc = expandedGroups.Telecalling || isTcActive;
 
   return (
@@ -323,184 +260,31 @@ export function Sidebar() {
 
         <div className="mx-2 my-3 h-px bg-zinc-200" />
 
-        {/* GROUP: WhatsApp messaging */}
-        {enabledFeatures.includes("whatsapp") && waGroupItems.length > 0 && (
+        {/* GROUP: Channels messaging */}
+        {channelsGroupItems.length > 0 && (
           <div className="space-y-0.5">
             <button
-              onClick={() => toggleGroup("WhatsApp")}
+              onClick={() => toggleGroup("Channels")}
               className={cn(
                 "flex items-center gap-3 px-3 py-2 w-full rounded-xl text-sm font-semibold text-left transition-all group",
-                isWaActive ? "text-zinc-950" : "text-zinc-700 hover:bg-zinc-200/40"
+                isChannelsActive ? "text-zinc-950" : "text-zinc-700 hover:bg-zinc-200/40"
               )}
             >
-              <MessageSquare size={16} className={isWaActive ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
-              <span className="flex-1">WhatsApp</span>
-              {showWa ? <ChevronDown size={14} className="text-zinc-500" /> : <ChevronRight size={14} className="text-zinc-500" />}
+              <MessageSquare size={16} className={isChannelsActive ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
+              <span className="flex-1">Channels</span>
+              {showChannels ? <ChevronDown size={14} className="text-zinc-500" /> : <ChevronRight size={14} className="text-zinc-500" />}
             </button>
 
             {/* Tree items */}
-            {showWa && (
+            {showChannels && (
               <div className="space-y-0.5">
-                {waGroupItems.map((item, idx) => {
+                {channelsGroupItems.map((item, idx) => {
                   const active = pathname === item.href || pathname.startsWith(item.href + "/");
-                  const isLast = idx === waGroupItems.length - 1;
+                  const isLast = idx === channelsGroupItems.length - 1;
 
                   return (
                     <div key={item.href} className="relative pl-6 flex items-center h-9">
                       {/* Curved branch lines */}
-                      <div
-                        className={cn(
-                          "absolute left-3 w-px bg-zinc-300/80",
-                          isLast ? "top-0 h-4.5" : "-top-1 bottom-0"
-                        )}
-                      />
-                      <div className="absolute left-3 top-1/2 -translate-y-1 w-3.5 h-3.5 border-l border-b border-zinc-300/80 rounded-bl-lg" />
-
-                      <Link
-                        href={item.href}
-                        className={cn(
-                          "flex items-center gap-2.5 ml-3.5 px-3 py-1.5 w-[145px] rounded-xl text-[13px] transition-all duration-150 group",
-                          active
-                            ? "bg-white shadow-md border border-zinc-200/80 text-zinc-950 font-bold"
-                            : "text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200/40"
-                        )}
-                      >
-                        <span className="truncate flex-1">{item.label}</span>
-                      </Link>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* GROUP: Instagram messaging */}
-        {enabledFeatures.includes("instagram") && igGroupItems.length > 0 && (
-          <div className="space-y-0.5">
-            <button
-              onClick={() => toggleGroup("Instagram")}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2 w-full rounded-xl text-sm font-semibold text-left transition-all group",
-                isIgActive ? "text-zinc-950" : "text-zinc-700 hover:bg-zinc-200/40"
-              )}
-            >
-              <Instagram size={16} className={isIgActive ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
-              <span className="flex-1">Instagram</span>
-              {showIg ? <ChevronDown size={14} className="text-zinc-500" /> : <ChevronRight size={14} className="text-zinc-500" />}
-            </button>
-
-            {/* Tree items */}
-            {showIg && (
-              <div className="space-y-0.5">
-                {igGroupItems.map((item, idx) => {
-                  const active = pathname === item.href || pathname.startsWith(item.href + "/");
-                  const isLast = idx === igGroupItems.length - 1;
-
-                  return (
-                    <div key={item.href} className="relative pl-6 flex items-center h-9">
-                      <div
-                        className={cn(
-                          "absolute left-3 w-px bg-zinc-300/80",
-                          isLast ? "top-0 h-4.5" : "-top-1 bottom-0"
-                        )}
-                      />
-                      <div className="absolute left-3 top-1/2 -translate-y-1 w-3.5 h-3.5 border-l border-b border-zinc-300/80 rounded-bl-lg" />
-
-                      <Link
-                        href={item.href}
-                        className={cn(
-                          "flex items-center gap-2.5 ml-3.5 px-3 py-1.5 w-[145px] rounded-xl text-[13px] transition-all duration-150 group",
-                          active
-                            ? "bg-white shadow-md border border-zinc-200/80 text-zinc-950 font-bold"
-                            : "text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200/40"
-                        )}
-                      >
-                        <span className="truncate flex-1">{item.label}</span>
-                      </Link>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* GROUP: Facebook messaging */}
-        {enabledFeatures.includes("facebook") && fbGroupItems.length > 0 && (
-          <div className="space-y-0.5">
-            <button
-              onClick={() => toggleGroup("Facebook")}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2 w-full rounded-xl text-sm font-semibold text-left transition-all group",
-                isFbActive ? "text-zinc-950" : "text-zinc-700 hover:bg-zinc-200/40"
-              )}
-            >
-              <Facebook size={16} className={isFbActive ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
-              <span className="flex-1">Facebook</span>
-              {showFb ? <ChevronDown size={14} className="text-zinc-500" /> : <ChevronRight size={14} className="text-zinc-500" />}
-            </button>
-
-            {/* Tree items */}
-            {showFb && (
-              <div className="space-y-0.5">
-                {fbGroupItems.map((item, idx) => {
-                  const active = pathname === item.href || pathname.startsWith(item.href + "/");
-                  const isLast = idx === fbGroupItems.length - 1;
-
-                  return (
-                    <div key={item.href} className="relative pl-6 flex items-center h-9">
-                      <div
-                        className={cn(
-                          "absolute left-3 w-px bg-zinc-300/80",
-                          isLast ? "top-0 h-4.5" : "-top-1 bottom-0"
-                        )}
-                      />
-                      <div className="absolute left-3 top-1/2 -translate-y-1 w-3.5 h-3.5 border-l border-b border-zinc-300/80 rounded-bl-lg" />
-
-                      <Link
-                        href={item.href}
-                        className={cn(
-                          "flex items-center gap-2.5 ml-3.5 px-3 py-1.5 w-[145px] rounded-xl text-[13px] transition-all duration-150 group",
-                          active
-                            ? "bg-white shadow-md border border-zinc-200/80 text-zinc-950 font-bold"
-                            : "text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200/40"
-                        )}
-                      >
-                        <span className="truncate flex-1">{item.label}</span>
-                      </Link>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* GROUP: Telegram messaging */}
-        {enabledFeatures.includes("telegram") && tgGroupItems.length > 0 && (
-          <div className="space-y-0.5">
-            <button
-              onClick={() => toggleGroup("Telegram")}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2 w-full rounded-xl text-sm font-semibold text-left transition-all group",
-                isTgActive ? "text-zinc-950" : "text-zinc-700 hover:bg-zinc-200/40"
-              )}
-            >
-              <TelegramIcon size={16} className={isTgActive ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
-              <span className="flex-1">Telegram</span>
-              {showTg ? <ChevronDown size={14} className="text-zinc-500" /> : <ChevronRight size={14} className="text-zinc-500" />}
-            </button>
-
-            {/* Tree items */}
-            {showTg && (
-              <div className="space-y-0.5">
-                {tgGroupItems.map((item, idx) => {
-                  const active = pathname === item.href || pathname.startsWith(item.href + "/");
-                  const isLast = idx === tgGroupItems.length - 1;
-
-                  return (
-                    <div key={item.href} className="relative pl-6 flex items-center h-9">
                       <div
                         className={cn(
                           "absolute left-3 w-px bg-zinc-300/80",
@@ -601,7 +385,10 @@ export function Sidebar() {
         )}
 
         <div className="px-2 pt-1">
-          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50">
+          <Link
+            href="/dashboard/numbers?tab=activity"
+            className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100/85 transition-colors cursor-pointer"
+          >
             <span className="relative flex h-1.5 w-1.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
@@ -609,7 +396,7 @@ export function Sidebar() {
             <span className="font-label text-emerald-700 font-bold tracking-wider" style={{ fontSize: "0.55rem" }}>
               ALL SYSTEMS ONLINE
             </span>
-          </div>
+          </Link>
         </div>
 
         <div className="pt-2 border-t border-zinc-200/60">

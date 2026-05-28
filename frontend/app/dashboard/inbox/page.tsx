@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
-import { MessageSquare, CheckCircle } from "lucide-react";
+import { MessageSquare, CheckCircle, Settings } from "lucide-react";
 import Link from "next/link";
 import { SegmentBadge } from "@/components/segment-badge";
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { InboxConfigPanel } from "../settings/InboxConfigPanel";
 
 type Handover = {
   id: string;
@@ -40,6 +41,7 @@ async function resolveHandover(id: string): Promise<void> {
 export default function InboxPage() {
   const [handovers, setHandovers] = useState<Handover[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showConfigModal, setShowConfigModal] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -56,10 +58,33 @@ export default function InboxPage() {
 
   return (
     <div>
-      <div className="mb-7">
-        <h1 className="page-title">Chat Inbox</h1>
-        <p className="page-subtitle">Conversations where AI couldn&apos;t answer — needs your reply.</p>
+      <div className="mb-7 flex items-start justify-between">
+        <div>
+          <h1 className="page-title">Chat Inbox</h1>
+          <p className="page-subtitle">Conversations where AI couldn&apos;t answer — needs your reply.</p>
+        </div>
+        <button
+          onClick={() => setShowConfigModal(true)}
+          className="flex items-center gap-2 px-4 py-2.5 bg-white border border-surface-mid text-on-surface hover:text-violet-600 hover:border-violet-300 rounded-xl font-label text-sm font-semibold transition-colors"
+        >
+          <Settings size={16} />
+          Escalation Rules
+        </button>
       </div>
+
+      {showConfigModal && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm cursor-pointer"
+          onClick={() => setShowConfigModal(false)}
+        >
+          <div 
+            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <InboxConfigPanel />
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="card rounded-3xl p-8 text-center font-body text-sm text-ink-muted">Loading…</div>
