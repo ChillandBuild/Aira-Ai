@@ -66,7 +66,8 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       setMyCaller(me);
       if (me) setMyStatus((me.status as "active" | "idle") || "active");
 
-      const sorted = leads.sort((a: Lead, b: Lead) => (b.score ?? 0) - (a.score ?? 0));
+      const dialable = leads.filter((l: Lead) => l.phone && l.phone.trim() !== "");
+      const sorted = dialable.sort((a: Lead, b: Lead) => (b.score ?? 0) - (a.score ?? 0));
       setMyLeads(sorted);
 
       const ids = sorted.map((l: Lead) => l.id).filter(Boolean);

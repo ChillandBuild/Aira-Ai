@@ -128,6 +128,19 @@ async def _check_token_health() -> None:
     logger.info(f"Token health check complete for {len(tenant_cfg)} tenant(s)")
 
 
+async def _apply_engagement_decay() -> None:
+    """APScheduler 6h job: decay scores for leads silent >24h."""
+    try:
+        from app.db.supabase import get_supabase
+        from app.services.scoring_engine import apply_engagement_decay_all
+        db = get_supabase()
+        count = await apply_engagement_decay_all(db)
+        if count:
+            logger.info(f"Engagement decay: updated {count} lead(s)")
+    except Exception as e:
+        logger.error(f"Engagement decay scheduler error: {e}")
+
+
 def _create_token_incident(db, tenant_id: str, channel: str, error_msg: str) -> None:
     try:
         from datetime import datetime, timezone, timedelta
@@ -183,8 +196,15 @@ async def lifespan(app: FastAPI):
         id="token-health-check",
         replace_existing=True,
     )
+    _scheduler.add_job(
+        _apply_engagement_decay,
+        trigger="interval",
+        hours=6,
+        id="engagement-decay",
+        replace_existing=True,
+    )
     _scheduler.start()
-    logger.info("Schedulers started: automation(5m) + broadcasts(1m) + token-health(24h)")
+    logger.info("Schedulers started: automation(5m) + broadcasts(1m) + token-health(24h) + engagement-decay(6h)")
 
     yield
 
