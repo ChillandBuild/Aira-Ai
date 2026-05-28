@@ -467,10 +467,10 @@ def _trigger_chat_escalation(
         .select("id")
         .eq("lead_id", lead_id)
         .eq("status", "pending")
-        .maybe_single()
+        .limit(1)
         .execute()
     )
-    if existing.data:
+    if existing and existing.data:
         return  # already has an open handover
 
     # Round-robin auto-assign if no one is assigned yet
