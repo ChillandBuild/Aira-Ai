@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
-import { MessageSquare, CheckCircle, Settings } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
+import { MessageSquare, CheckCircle, Settings, UserCog } from "lucide-react";
 import Link from "next/link";
 import { SegmentBadge } from "@/components/segment-badge";
 import { API_URL, getAuthHeaders } from "@/lib/api";
@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 import { InboxConfigPanel } from "../settings/InboxConfigPanel";
 import { toast } from "sonner";
 import { useAuthRole } from "../contexts/AuthRoleContext";
+
+type Caller = { id: string; name: string };
 
 type Handover = {
   id: string;
@@ -43,23 +45,55 @@ async function resolveHandover(id: string): Promise<void> {
   });
 }
 
+async function fetchCallers(): Promise<Caller[]> {
+  const auth = await getAuthHeaders();
+  const res = await fetch(`${API_URL}/api/v1/callers?active=true`, { headers: auth });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data.callers ?? data.data ?? []).map((c: { id: string; name: string }) => ({ id: c.id, name: c.name }));
+}
+
+async function assignHandover(handoverId: string, callerId: string): Promise<void> {
+  const auth = await getAuthHeaders();
+  const res = await fetch(`${API_URL}/api/v1/chat-handovers/${handoverId}/assign`, {
+    method: "PATCH",
+    headers: { ...auth, "Content-Type": "application/json" },
+    body: JSON.stringify({ caller_id: callerId }),
+  });
+  if (!res.ok) throw new Error("Assignment failed");
+}
+
 export default function InboxPage() {
   const { role } = useAuthRole();
   const [handovers, setHandovers] = useState<Handover[]>([]);
+  const [callers, setCallers] = useState<Caller[]>([]);
   const [loading, setLoading] = useState(true);
   const [showConfig, setShowConfig] = useState(false);
+  const [reassigningId, setReassigningId] = useState<string | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   async function load() {
     setLoading(true);
-    setHandovers(await fetchHandovers());
+    const [hs, cs] = await Promise.all([fetchHandovers(), fetchCallers()]);
+    setHandovers(hs);
+    setCallers(cs);
     setLoading(false);
   }
 
   useEffect(() => { load(); }, []);
 
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setReassigningId(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
   async function handleResolve(id: string) {
     const originalHandovers = handovers;
-    // Optimistic UI updates
     setHandovers((prev) => prev.filter((h) => h.id !== id));
     try {
       await resolveHandover(id);
@@ -67,6 +101,21 @@ export default function InboxPage() {
     } catch (err) {
       setHandovers(originalHandovers);
       toast.error(err instanceof Error ? err.message : "Failed to resolve");
+    }
+  }
+
+  async function handleAssign(handoverId: string, callerId: string, callerName: string) {
+    setReassigningId(null);
+    const prev = handovers;
+    setHandovers((hs) => hs.map((h) =>
+      h.id === handoverId ? { ...h, assigned_to: callerId, caller_name: callerName } : h
+    ));
+    try {
+      await assignHandover(handoverId, callerId);
+      toast.success(`Assigned to ${callerName}`);
+    } catch {
+      setHandovers(prev);
+      toast.error("Assignment failed");
     }
   }
 
@@ -133,19 +182,41 @@ export default function InboxPage() {
                         &ldquo;{h.reason}&rdquo;
                       </p>
                     )}
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                       <p className="font-body text-xs text-ink-muted">
                         {new Date(h.opened_at).toLocaleString("en-IN")}
                       </p>
-                      {h.assigned_to ? (
-                        <span className="font-label text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700 font-medium">
-                          Assigned to {h.caller_name ?? "caller"}
-                        </span>
-                      ) : (
-                        <span className="font-label text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 font-medium">
-                          Unassigned
-                        </span>
-                      )}
+                      <div className="relative" ref={reassigningId === h.id ? dropdownRef : null}>
+                        <button
+                          onClick={() => role === "owner" ? setReassigningId(reassigningId === h.id ? null : h.id) : undefined}
+                          className={cn(
+                            "font-label text-xs px-2 py-0.5 rounded-full font-medium flex items-center gap-1",
+                            h.assigned_to
+                              ? "bg-green-50 text-green-700 hover:bg-green-100"
+                              : "bg-amber-50 text-amber-600 hover:bg-amber-100",
+                            role !== "owner" && "cursor-default"
+                          )}
+                        >
+                          {h.assigned_to ? `Assigned to ${h.caller_name ?? "caller"}` : "Unassigned"}
+                          {role === "owner" && <UserCog size={10} />}
+                        </button>
+                        {reassigningId === h.id && (
+                          <div className="absolute left-0 top-full mt-1 z-20 bg-white border border-surface-mid rounded-xl shadow-lg py-1 min-w-[160px]">
+                            <p className="px-3 py-1 text-xs text-ink-muted font-label font-semibold">Assign to</p>
+                            {callers.length === 0 ? (
+                              <p className="px-3 py-2 text-xs text-ink-muted">No active callers</p>
+                            ) : callers.map((c) => (
+                              <button
+                                key={c.id}
+                                onClick={() => handleAssign(h.id, c.id, c.name)}
+                                className="w-full text-left px-3 py-2 text-sm font-body hover:bg-surface-subtle text-ink transition-colors"
+                              >
+                                {c.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div className="flex flex-col gap-2 flex-shrink-0">

@@ -744,25 +744,6 @@ async def generate_reply(
                 if assigned_caller:
                     lead_data["assigned_to"] = assigned_caller
 
-        # Inbox segment-transition escalation (mirrors telecalling logic)
-        # Fires when lead enters a configured inbox segment — independent of trigger events.
-        # auto_assign_enabled routes to a telecaller; off leaves handover unassigned for admin.
-        if (
-            inbox_cfg.get("enabled")
-            and new_segment != old_segment
-            and new_segment in inbox_cfg.get("segments", [])
-        ):
-            try:
-                _trigger_chat_escalation(
-                    lead_id=str(lead_id),
-                    reason=f"Lead entered {new_segment} segment",
-                    tenant_id=tenant_id,
-                    assigned_to=lead_data.get("assigned_to"),
-                    db=db,
-                    auto_assign=inbox_cfg.get("auto_assign_enabled", False),
-                )
-            except Exception as seg_err:
-                logger.error(f"Inbox segment-transition escalation failed for lead {lead_id}: {seg_err}")
 
         if new_score >= 7 and (lead_data.get("score") or 5) < 7:
             try:
@@ -798,6 +779,7 @@ async def generate_reply(
         t for t in _TRIGGER_PRIORITY
         if t in escalation_flags and should_escalate_to_inbox(inbox_cfg, t, channel)
     ]
+    trigger_escalated = False
     if active_triggers:
         primary = active_triggers[0]
         try:
@@ -809,6 +791,28 @@ async def generate_reply(
                 db=db,
                 auto_assign=inbox_cfg.get("auto_assign_enabled", False),
             )
+            trigger_escalated = True
             logger.info(f"Inbox escalation fired for lead {lead_id} — trigger {primary}")
         except Exception as e:
             logger.error(f"Inbox escalation failed for lead {lead_id}: {e}")
+
+    # Segment-transition escalation — only fires if no trigger-based handover was created.
+    # Uses pre-scoring segment (`segment`) vs post-scoring segment (`new_segment`).
+    # auto_assign_enabled=ON routes to telecaller; OFF leaves handover unassigned for admin.
+    if (
+        not trigger_escalated
+        and inbox_cfg.get("enabled")
+        and new_segment != segment
+        and new_segment in inbox_cfg.get("segments", [])
+    ):
+        try:
+            _trigger_chat_escalation(
+                lead_id=str(lead_id),
+                reason=f"Lead entered {new_segment} segment",
+                tenant_id=tenant_id,
+                assigned_to=lead_data.get("assigned_to"),
+                db=db,
+                auto_assign=inbox_cfg.get("auto_assign_enabled", False),
+            )
+        except Exception as seg_err:
+            logger.error(f"Inbox segment-transition escalation failed for lead {lead_id}: {seg_err}")

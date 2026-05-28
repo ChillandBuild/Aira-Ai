@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id, get_tenant_and_role
 
@@ -64,6 +65,35 @@ def handover_count(ctx: dict = Depends(get_tenant_and_role)):
         logger.warning(f"chat_handovers count failed (transient?): {e}")
         return {"count": 0}
     return {"count": result.count or 0}
+
+
+class AssignBody(BaseModel):
+    caller_id: str
+
+
+@router.patch("/{handover_id}/assign")
+def assign_handover(handover_id: str, body: AssignBody, tenant_id: str = Depends(get_tenant_id)):
+    db = get_supabase()
+    caller = (
+        db.table("callers")
+        .select("id")
+        .eq("id", body.caller_id)
+        .eq("tenant_id", tenant_id)
+        .limit(1)
+        .execute()
+    )
+    if not caller.data:
+        raise HTTPException(status_code=404, detail="Caller not found")
+    result = (
+        db.table("chat_handovers")
+        .update({"assigned_to": body.caller_id})
+        .eq("id", handover_id)
+        .eq("tenant_id", tenant_id)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Handover not found")
+    return {"assigned": True}
 
 
 @router.patch("/{handover_id}/resolve")
