@@ -403,16 +403,29 @@ _ESCALATION_PHRASES = [
     "team will get back",
 ]
 
-_HUMAN_REQUEST_PHRASES = [
-    "talk to a person", "talk to agent", "talk to human", "talk to someone",
-    "talk with a person", "talk with agent", "talk with human", "talk with someone",
-    "speak to a person", "speak to agent", "speak to human", "speak to someone",
-    "speak with a person", "speak with agent", "speak with human", "speak with someone",
-    "human agent", "real person", "live agent", "connect me to", "connect me with",
-    "need to speak with", "want to talk to", "want to talk with", "can i speak", "i need help",
-    "get me a human", "customer care", "customer support", "call me",
-    "talk to you", "speak with you",
-]
+_HUMAN_REQUEST_RE = re.compile(
+    r"""
+    \b(
+        (?:talk|speak|chat)\s+(?:to|with)\s+(?:a\s+|an\s+|the\s+)?
+            (?:human|person|agent|someone|representative|staff|team\s+member)
+        |
+        (?:want|need|like)\s+(?:to\s+)?(?:talk|speak|chat)\s+(?:to|with)\s+(?:a\s+|an\s+)?
+            (?:human|person|agent|someone|representative)
+        |
+        connect\s+me\s+(?:to|with)\s+(?:a\s+|an\s+|the\s+)?
+            (?:human|person|agent|team|someone|representative)
+        |
+        (?:get|find)\s+me\s+(?:a\s+)?(?:human|person|agent)
+        |
+        human\s+agent | real\s+person | live\s+agent
+        |
+        customer\s+(?:care|support|service)
+        |
+        can\s+i\s+speak | call\s+me
+    )\b
+    """,
+    re.VERBOSE | re.IGNORECASE,
+)
 
 _GENERIC_FALLBACK_MARKERS = [
     "we'll get back to you shortly",
@@ -515,7 +528,7 @@ async def generate_reply(
     escalation_flags: set[str] = set()
 
     # Trigger C: user explicitly asked for human (always fires, not config-gated)
-    if any(ph in message.lower() for ph in _HUMAN_REQUEST_PHRASES):
+    if _HUMAN_REQUEST_RE.search(message):
         escalation_flags.add("C")
         logger.info(f"Trigger C: lead {lead_id} asked for human agent")
 
