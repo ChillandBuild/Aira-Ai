@@ -226,10 +226,11 @@ function ScoringPanel({
         <label className="block font-label text-xs font-semibold text-on-surface-muted uppercase">Custom Scoring Rubric</label>
         <div className="p-3 rounded-xl bg-surface-low border border-surface-mid font-label text-[11px] text-on-surface-muted leading-4">
           <strong>Default rubric (used when blank):</strong><br />
-          9–10: Confirmed booking, ready to buy<br />
-          7–8: Detailed questions, multiple queries<br />
-          5–6: General enquiry, first contact<br />
-          1–4: Disinterested, wrong number
+          9–10: High intent — asked for pricing/booking/payment, completed booking steps<br />
+          7–8: Warm — detailed questions, comparing options, providing requested info<br />
+          5–6: Neutral — general enquiry, first contact, short acknowledgments<br />
+          3–4: Lukewarm — vague replies, no follow-up, low engagement<br />
+          1–2: Low intent — unresponsive, dismissive, wrong number
         </div>
         <textarea
           value={scoringRubric}

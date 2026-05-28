@@ -428,15 +428,20 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
                     )}>
                       {lead.name || formatPhone(lead.phone) || "Unknown"}
                     </span>
-                    {lead.pinned_at ? (
-                      <Pin size={10} className="text-amber-500 fill-current shrink-0" />
-                    ) : onPin ? (
+                    {onPin ? (
                       <button
                         onClick={(e) => { e.stopPropagation(); onPin(lead.id); }}
-                        className="shrink-0 p-0.5 rounded opacity-0 group-hover:opacity-100 text-on-surface-muted hover:text-amber-500 transition-all"
+                        className={cn(
+                          "shrink-0 p-0.5 rounded transition-all",
+                          lead.pinned_at
+                            ? "text-amber-500 opacity-100 hover:text-amber-700"
+                            : "opacity-0 group-hover:opacity-100 text-on-surface-muted hover:text-amber-500"
+                        )}
                       >
-                        <Pin size={10} />
+                        <Pin size={10} className={lead.pinned_at ? "fill-current" : ""} />
                       </button>
+                    ) : lead.pinned_at ? (
+                      <Pin size={10} className="text-amber-500 fill-current shrink-0" />
                     ) : null}
                   </div>
                   <span className="font-label text-[10px] text-on-surface-muted shrink-0 whitespace-nowrap">

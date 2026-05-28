@@ -2,11 +2,10 @@ import logging
 import re
 import time
 import httpx
-from groq import Groq
+from groq import AsyncGroq
 from app.config import settings
 from app.db.supabase import get_supabase
 from app.services.growth import record_stage_event, sync_follow_up_jobs
-from app.services.lead_scorer import score_message
 from app.services.segmentation import score_to_segment, parse_thresholds
 from app.services.knowledge_service import get_knowledge_context
 from app.services.assignment import (
@@ -19,14 +18,14 @@ from app.services.assignment import (
 
 logger = logging.getLogger(__name__)
 
-_groq_client = Groq(api_key=settings.groq_api_key) if settings.groq_api_key else None
+_groq_client = AsyncGroq(api_key=settings.groq_api_key) if settings.groq_api_key else None
 _REPLY_MODEL = "llama-3.3-70b-versatile"
 
 
-def _groq_complete(prompt: str, max_tokens: int = 300) -> str:
+async def _groq_complete(prompt: str, max_tokens: int = 300) -> str:
     if not _groq_client:
         raise RuntimeError("GROQ_API_KEY not configured")
-    response = _groq_client.chat.completions.create(
+    response = await _groq_client.chat.completions.create(
         model=_REPLY_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.4,
@@ -35,12 +34,10 @@ def _groq_complete(prompt: str, max_tokens: int = 300) -> str:
     return response.choices[0].message.content.strip()
 
 
-def _groq_chat(messages: list[dict], max_tokens: int = 300) -> str:
-    """Multi-turn chat completion. Pass an array of {role, content} dicts —
-    typically [system, user, assistant, user, ...] — so the model sees real history."""
+async def _groq_chat(messages: list[dict], max_tokens: int = 300) -> str:
     if not _groq_client:
         raise RuntimeError("GROQ_API_KEY not configured")
-    response = _groq_client.chat.completions.create(
+    response = await _groq_client.chat.completions.create(
         model=_REPLY_MODEL,
         messages=messages,
         temperature=0.4,
@@ -125,6 +122,40 @@ def _recent_thread(db, lead_id: str, limit: int = 6) -> list[dict]:
     )
 
 _FAQ_MIN_KEYWORD_LEN = 3  # ignore "no", "ok", "hi" etc. at match time
+
+_LANG_NAMES = {"ta": "Tamil", "hi": "Hindi", "te": "Telugu", "kn": "Kannada", "ml": "Malayalam", "en": "English"}
+
+_FALLBACK_BY_LANG = {
+    "ta": "நன்றி! உங்கள் விசாரணைக்கு விரைவில் பதிலளிப்போம்.",
+    "hi": "धन्यवाद! हम जल्द ही आपसे संपर्क करेंगे।",
+    "te": "ధన్యవాదాలు! మేము త్వరలో మీకు తిరిగి వస్తాము.",
+    "kn": "ಧನ್ಯವಾದಗಳು! ನಾವು ಶೀಘ್ರದಲ್ಲೇ ನಿಮ್ಮನ್ನು ಸಂಪರ್ಕಿಸುತ್ತೇವೆ.",
+    "ml": "നന്ദി! ഞങ്ങൾ ഉടൻ തന്നെ നിങ്ങളുമായി ബന്ധപ്പെടും.",
+    "en": "Thank you for reaching out! We'll get back to you shortly.",
+}
+
+
+def _detect_lang(text: str) -> str:
+    """Return dominant language code based on Unicode block frequency."""
+    if not text:
+        return "en"
+    counts: dict[str, int] = {}
+    for ch in text:
+        cp = ord(ch)
+        if 0x0B80 <= cp <= 0x0BFF:
+            counts["ta"] = counts.get("ta", 0) + 1
+        elif 0x0C00 <= cp <= 0x0C7F:
+            counts["te"] = counts.get("te", 0) + 1
+        elif 0x0C80 <= cp <= 0x0CFF:
+            counts["kn"] = counts.get("kn", 0) + 1
+        elif 0x0D00 <= cp <= 0x0D7F:
+            counts["ml"] = counts.get("ml", 0) + 1
+        elif 0x0900 <= cp <= 0x097F:
+            counts["hi"] = counts.get("hi", 0) + 1
+        elif ch.isalpha() and cp < 128:
+            counts["en"] = counts.get("en", 0) + 1
+    return max(counts, key=counts.__getitem__) if counts else "en"
+
 
 def _check_faq(message: str, db, tenant_id: str | None = None) -> str | None:
     """Pick the best-matching active FAQ for an inbound message.
@@ -325,7 +356,7 @@ async def send_facebook(fb_user_id: str, message: str, tenant_id: str | None = N
         return None
 
 
-def generate_reengagement_message(lead_id: str, cadence: str, db=None) -> str:
+async def generate_reengagement_message(lead_id: str, cadence: str, db=None) -> str:
     db = db or get_supabase()
     lead = (
         db.table("leads")
@@ -355,7 +386,7 @@ Be warm, specific, and low-pressure.
 Reference the lead's interest naturally and end with one clear next step.
 Do not use markdown or quotes."""
     try:
-        text = _groq_complete(prompt, max_tokens=120)
+        text = await _groq_complete(prompt, max_tokens=120)
         return text[:280] if len(text) > 280 else text
     except Exception as e:
         logger.error(f"Re-engagement copy failed for lead {lead_id}: {e}")
@@ -488,11 +519,11 @@ async def generate_reply(
     recent_thread = _recent_thread(db, lead_id, limit=8)
 
     # Trigger D: user repeated the same question (AI not resolving it)
+    # Skip the first inbound match — it's the current message (already stored before generate_reply runs).
+    # We need the PREVIOUS inbound to compare against.
     if "D" in inbox_cfg.get("triggers", []):
-        prev_inbound = next(
-            (r for r in recent_thread if r.get("direction") == "inbound"),
-            None,
-        )
+        prev_inbounds = [r for r in recent_thread if r.get("direction") == "inbound"]
+        prev_inbound = prev_inbounds[1] if len(prev_inbounds) > 1 else None
         if prev_inbound and _is_similar(message, prev_inbound.get("content", "")):
             escalation_flags.add("D")
             logger.info(f"Trigger D: lead {lead_id} repeated same question")
@@ -570,10 +601,10 @@ async def generate_reply(
 
         system_prompt += (
             "\n\nLANGUAGE RULE: Reply in the SAME language the user just wrote in. "
-            "If they write Tamil, reply Tamil. English → English. Never switch unless they do."
+            "If they write Tamil, reply Tamil. English -> English. Never switch unless they do."
         )
 
-        # recent_thread already fetched at step 0 (reuse — no extra DB call)
+        # recent_thread already fetched at step 0 (reuse - no extra DB call)
         chat_messages: list[dict] = [{"role": "system", "content": system_prompt}]
         for row in reversed(recent_thread):  # oldest first
             content = (row.get("content") or "").strip()
@@ -582,10 +613,16 @@ async def generate_reply(
             role = "assistant" if row.get("direction") == "outbound" else "user"
             chat_messages.append({"role": role, "content": content})
 
+        # Inject language hint directly into the final user turn - strongest signal,
+        # overrides any knowledge-base language that may dominate the system prompt.
+        _user_lang_name = _LANG_NAMES.get(_detect_lang(message), "English")
+        _tagged_message = f"[Respond in {_user_lang_name}] {message}"
         if not chat_messages or chat_messages[-1].get("role") != "user" or chat_messages[-1].get("content") != message:
-            chat_messages.append({"role": "user", "content": message})
+            chat_messages.append({"role": "user", "content": _tagged_message})
+        else:
+            chat_messages[-1]["content"] = _tagged_message
 
-        reply_text = _groq_chat(chat_messages, max_tokens=300)
+        reply_text = await _groq_chat(chat_messages, max_tokens=300)
         is_ai = True
         reply_source = "knowledge" if context_text else "ai"
 
@@ -599,12 +636,12 @@ async def generate_reply(
 
     except Exception as e:
         logger.error(f"Groq reply failed for lead {lead_id}: {e}")
-        reply_text = "Thank you for reaching out! We'll get back to you shortly."
+        reply_text = _FALLBACK_BY_LANG.get(_detect_lang(message), _FALLBACK_BY_LANG["en"])
         is_ai = False
         reply_source = "ai"
-        # Trigger B: AI/Groq exception — escalate so a human can pick up
+        # Trigger B: AI/Groq exception - escalate so a human can pick up
         escalation_flags.add("B")
-        logger.info(f"Trigger B: lead {lead_id} Groq exception — {e}")
+        logger.info(f"Trigger B: lead {lead_id} Groq exception - {e}")
 
     # Step 3: Dispatch to the correct channel
     if channel == "instagram":
@@ -614,7 +651,8 @@ async def generate_reply(
     elif channel == "facebook":
         sid = await send_facebook(fb_user_id, reply_text, tenant_id=lead_data.get("tenant_id")) if fb_user_id else None
     else:
-        sid = await send_whatsapp(phone, reply_text, tenant_id=lead_data.get("tenant_id")) if phone else None
+        _wa_phone = phone or lead_data.get("phone")
+        sid = await send_whatsapp(_wa_phone, reply_text, tenant_id=lead_data.get("tenant_id")) if _wa_phone else None
 
     # Step 4: Store outbound message
     if channel == "telegram":
@@ -636,29 +674,32 @@ async def generate_reply(
         sid_field: sid,
     }).execute()
 
-    # Step 5: Re-score lead and update segment (with D-segment safety net)
+    # Step 5: Score Engine v2 — composite arc + intent + engagement
     new_segment = segment  # fallback if scoring fails
+    new_score = lead_data.get("score", 5)
     try:
-        current_score = lead_data.get("score", 5)
-        from app.services.lead_scorer import score_with_safety_net
-        from app.config_dynamic import get_setting as _gs
-        new_score = await score_with_safety_net(
-            message, current_score, context_block or "", db, str(lead_id), tenant_id=tenant_id
+        from app.services.scoring_engine import compute_score
+        score_result = await compute_score(
+            message=message,
+            lead_id=str(lead_id),
+            db=db,
+            tenant_id=tenant_id,
         )
-        _thresholds = parse_thresholds(_gs("scoring_segment_thresholds", tenant_id=tenant_id))
-        new_segment = score_to_segment(new_score, thresholds=_thresholds)
-        db.table("leads").update({
-            "score": new_score,
-            "segment": new_segment,
-        }).eq("id", str(lead_id)).execute()
+        new_score = score_result["score"]
+        new_segment = score_result["segment"]
+
         _score_meta = {
             "new_score": new_score,
-            "prev_score": current_score,
+            "prev_score": lead_data.get("score", 5),
+            "arc_score": score_result["arc_score"],
+            "intent_delta": score_result["intent_delta"],
+            "engagement_delta": score_result["engagement_delta"],
+            "intent_reason": score_result["intent_reason"],
+            "arc_updated": score_result["arc_updated"],
             "message_snippet": message[:150],
             "channel": channel,
-            "reason": f"{channel}_reply",
         }
-        if new_segment != lead_data.get("segment") or new_score != current_score:
+        if new_segment != lead_data.get("segment") or new_score != lead_data.get("score", 5):
             record_stage_event(
                 lead_id,
                 from_segment=lead_data.get("segment"),
@@ -678,10 +719,8 @@ async def generate_reply(
             tenant_id=tenant_id,
             db=db,
         )
-        logger.info(f"Lead {lead_id} scored {new_score} → segment {new_segment}")
 
         if new_score >= 7 and (lead_data.get("score") or 5) < 7:
-            # Module B — Telecalling: config-driven auto-assign + alert
             if should_assign_to_telecalling(telecalling_cfg, new_segment, channel):
                 if not lead_data.get("assigned_to"):
                     assigned_caller = auto_assign_lead(str(lead_id), tenant_id)
@@ -697,10 +736,8 @@ async def generate_reply(
                 except Exception as alert_err:
                     logger.warning(f"Alert creation failed for lead {lead_id}: {alert_err}")
 
-            # Module A — Inbox: trigger E (score crossed threshold)
             escalation_flags.add("E")
 
-            # score_threshold automation trigger
             try:
                 from app.services.automation_triggers import _dispatch
                 import asyncio

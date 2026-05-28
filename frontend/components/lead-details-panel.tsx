@@ -44,6 +44,11 @@ type ScoreEvent = {
     prev_score?: number;
     message_snippet?: string;
     channel?: string;
+    arc_score?: number;
+    intent_delta?: number;
+    engagement_delta?: number;
+    intent_reason?: string;
+    arc_updated?: boolean;
   };
   created_at: string;
 };
@@ -183,6 +188,35 @@ function ScoreEventCard({ ev }: { ev: ScoreEvent }) {
           <span className="font-label text-[10px] text-on-surface-muted">{timeAgo(ev.created_at)}</span>
         </div>
       </div>
+      {/* Composite breakdown — only shown when v2 data is present */}
+      {ev.metadata.arc_score != null && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-surface-mid text-on-surface-muted">
+            arc {ev.metadata.arc_score}
+          </span>
+          {ev.metadata.intent_delta != null && ev.metadata.intent_delta !== 0 && (
+            <span className={cn(
+              "font-mono text-[10px] px-1.5 py-0.5 rounded",
+              ev.metadata.intent_delta > 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"
+            )}>
+              {ev.metadata.intent_delta > 0 ? "+" : ""}{ev.metadata.intent_delta} intent
+            </span>
+          )}
+          {ev.metadata.engagement_delta != null && ev.metadata.engagement_delta !== 0 && (
+            <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">
+              {ev.metadata.engagement_delta} eng
+            </span>
+          )}
+          {ev.metadata.intent_reason && ev.metadata.intent_reason !== "neutral" && (
+            <span className="font-label text-[10px] text-on-surface-muted italic">
+              {ev.metadata.intent_reason.replace(/_/g, " ")}
+            </span>
+          )}
+          {ev.metadata.arc_updated && (
+            <span className="font-label text-[10px] text-purple-500">⚡ arc</span>
+          )}
+        </div>
+      )}
       {ev.metadata.message_snippet && (
         <p className="font-body text-[11px] text-on-surface-muted italic leading-snug line-clamp-2">
           &ldquo;{ev.metadata.message_snippet}&rdquo;
