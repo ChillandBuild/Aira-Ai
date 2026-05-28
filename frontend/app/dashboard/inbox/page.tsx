@@ -7,6 +7,7 @@ import { API_URL, getAuthHeaders } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { InboxConfigPanel } from "../settings/InboxConfigPanel";
 import { toast } from "sonner";
+import { useAuthRole } from "../contexts/AuthRoleContext";
 
 type Handover = {
   id: string;
@@ -41,6 +42,7 @@ async function resolveHandover(id: string): Promise<void> {
 }
 
 export default function InboxPage() {
+  const { role } = useAuthRole();
   const [handovers, setHandovers] = useState<Handover[]>([]);
   const [loading, setLoading] = useState(true);
   const [showConfig, setShowConfig] = useState(false);
@@ -73,18 +75,20 @@ export default function InboxPage() {
           <h1 className="page-title">Chat Inbox</h1>
           <p className="page-subtitle">Conversations where AI couldn&apos;t answer — needs your reply.</p>
         </div>
-        <button
-          onClick={() => setShowConfig(prev => !prev)}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2.5 rounded-xl font-label text-sm font-semibold transition-colors border",
-            showConfig
-              ? "bg-violet-50 border-violet-200 text-violet-700 hover:bg-violet-100"
-              : "bg-white border-surface-mid text-on-surface hover:text-violet-600 hover:border-violet-300"
-          )}
-        >
-          <Settings size={16} />
-          {showConfig ? "Hide Rules" : "Escalation Rules"}
-        </button>
+        {role === "owner" && (
+          <button
+            onClick={() => setShowConfig(prev => !prev)}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2.5 rounded-xl font-label text-sm font-semibold transition-colors border",
+              showConfig
+                ? "bg-violet-50 border-violet-200 text-violet-700 hover:bg-violet-100"
+                : "bg-white border-surface-mid text-on-surface hover:text-violet-600 hover:border-violet-300"
+            )}
+          >
+            <Settings size={16} />
+            {showConfig ? "Hide Rules" : "Escalation Rules"}
+          </button>
+        )}
       </div>
 
       <div className="flex flex-col lg:flex-row gap-6 items-start">
@@ -151,12 +155,14 @@ export default function InboxPage() {
           )}
         </div>
 
-        <div className={cn(
-          "w-full lg:w-[420px] shrink-0 sticky top-4 transition-all duration-300 ease-in-out origin-right transform",
-          showConfig ? "opacity-100 translate-x-0 scale-100 max-w-[420px]" : "opacity-0 translate-x-4 scale-95 max-w-0 overflow-hidden pointer-events-none"
-        )}>
-          <InboxConfigPanel />
-        </div>
+        {role === "owner" && (
+          <div className={cn(
+            "w-full lg:w-[420px] shrink-0 sticky top-4 transition-all duration-300 ease-in-out origin-right transform",
+            showConfig ? "opacity-100 translate-x-0 scale-100 max-w-[420px]" : "opacity-0 translate-x-4 scale-95 max-w-0 overflow-hidden pointer-events-none"
+          )}>
+            <InboxConfigPanel />
+          </div>
+        )}
       </div>
     </div>
   );

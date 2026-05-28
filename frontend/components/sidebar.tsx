@@ -148,8 +148,8 @@ export function Sidebar() {
       <div className="mx-5 h-px bg-zinc-300/60" />
 
       <div className="flex-grow overflow-y-auto px-3 py-4 space-y-1.5 scrollbar-thin">
-        {/* TOP LEVEL: Overview */}
-        {role === "owner" && (
+        {/* TOP LEVEL: Overview / Profile */}
+        {role === "owner" ? (
           <Link
             href="/dashboard"
             className={cn(
@@ -161,6 +161,19 @@ export function Sidebar() {
           >
             <LayoutDashboard size={16} className={pathname === "/dashboard" ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
             <span>Dashboard</span>
+          </Link>
+        ) : (
+          <Link
+            href="/dashboard/profile"
+            className={cn(
+              "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-150 group",
+              pathname === "/dashboard/profile"
+                ? "bg-zinc-200/70 text-zinc-950"
+                : "text-zinc-700 hover:bg-zinc-200/40 hover:text-zinc-950"
+            )}
+          >
+            <LayoutDashboard size={16} className={pathname === "/dashboard/profile" ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
+            <span>My Profile</span>
           </Link>
         )}
 
@@ -216,18 +229,20 @@ export function Sidebar() {
         )}
 
         {/* TOP LEVEL: Knowledge Base (Common for all platforms) */}
-        <Link
-          href="/dashboard/knowledge"
-          className={cn(
-            "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-150 group",
-            pathname.startsWith("/dashboard/knowledge")
-              ? "bg-zinc-200/70 text-zinc-950"
-              : "text-zinc-700 hover:bg-zinc-200/40 hover:text-zinc-950"
-          )}
-        >
-          <BookOpen size={16} className={pathname.startsWith("/dashboard/knowledge") ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
-          <span>Knowledge Base</span>
-        </Link>
+        {role === "owner" && (
+          <Link
+            href="/dashboard/knowledge"
+            className={cn(
+              "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-150 group",
+              pathname.startsWith("/dashboard/knowledge")
+                ? "bg-zinc-200/70 text-zinc-950"
+                : "text-zinc-700 hover:bg-zinc-200/40 hover:text-zinc-950"
+            )}
+          >
+            <BookOpen size={16} className={pathname.startsWith("/dashboard/knowledge") ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
+            <span>Knowledge Base</span>
+          </Link>
+        )}
 
         {/* TOP LEVEL: Automations */}
         {role === "owner" && (
@@ -280,7 +295,7 @@ export function Sidebar() {
         <div className="mx-2 my-3 h-px bg-zinc-200" />
 
         {/* GROUP: Channels messaging */}
-        {channelsGroupItems.length > 0 && (
+        {role === "owner" && channelsGroupItems.length > 0 && (
           <div className="space-y-0.5">
             <button
               onClick={() => toggleGroup("Channels")}
@@ -403,20 +418,22 @@ export function Sidebar() {
           </Link>
         )}
 
-        <div className="px-2 pt-1">
-          <Link
-            href="/dashboard/numbers?tab=activity"
-            className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100/85 transition-colors cursor-pointer"
-          >
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-            </span>
-            <span className="font-label text-emerald-700 font-bold tracking-wider" style={{ fontSize: "0.55rem" }}>
-              ALL SYSTEMS ONLINE
-            </span>
-          </Link>
-        </div>
+        {role === "owner" && (
+          <div className="px-2 pt-1">
+            <Link
+              href="/dashboard/numbers?tab=activity"
+              className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100/85 transition-colors cursor-pointer"
+            >
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+              </span>
+              <span className="font-label text-emerald-700 font-bold tracking-wider" style={{ fontSize: "0.55rem" }}>
+                ALL SYSTEMS ONLINE
+              </span>
+            </Link>
+          </div>
+        )}
 
         <div className="pt-2 border-t border-zinc-200/60">
           <LogoutButton />

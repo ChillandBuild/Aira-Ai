@@ -10,6 +10,7 @@ import { api, FAQ, FAQInput, AIPrompt } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/utils";
 import { usePolling } from "@/hooks/usePolling";
+import { useAuthRole } from "../contexts/AuthRoleContext";
 
 function IgIcon({ size = 14, className = "" }: { size?: number; className?: string }) {
   return (
@@ -50,6 +51,7 @@ interface KnowledgeDoc {
 }
 
 export default function KnowledgePage() {
+  const { role, loading: roleLoading } = useAuthRole();
   const [faqs, setFaqs] = useState<FAQ[]>([]);
   const [documents, setDocuments] = useState<KnowledgeDoc[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,6 +94,24 @@ export default function KnowledgePage() {
     const cur = prompts.find((x) => x.name === activeName);
     if (cur) setDraft(cur.content);
   }, [activeName, prompts]);
+
+  if (roleLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 size={24} className="animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (role !== "owner") {
+    return (
+      <div className="text-center py-20">
+        <p className="text-on-surface-muted font-body">
+          This section is only available for owners/admins.
+        </p>
+      </div>
+    );
+  }
 
   async function loadData() {
     setLoading(true);
