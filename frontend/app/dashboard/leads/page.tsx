@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { useEffect, useState } from "react";
 import { api, Lead, Caller, SegmentTemplate, BroadcastResult, API_URL, getAuthHeaders } from "@/lib/api";
 import { Download, Send, Save, Pencil, Plus, X, Loader2, Settings, AlertCircle } from "lucide-react";
-import { timeAgo, formatPhone } from "@/lib/utils";
+import { timeAgo, formatPhone, cn } from "@/lib/utils";
 import { useAuthRole } from "../contexts/AuthRoleContext";
 import { AssignButton } from "./AssignButton";
 
@@ -178,8 +178,7 @@ function ComposeModal({ onClose, onSent }: { onClose: () => void; onSent: () => 
   );
 }
 
-function ScoringDrawer({
-  isOpen,
+function ScoringPanel({
   onClose,
   scoringRubric,
   setScoringRubric,
@@ -189,7 +188,6 @@ function ScoringDrawer({
   saveScoringConfig,
   scoringMsg,
 }: {
-  isOpen: boolean;
   onClose: () => void;
   scoringRubric: string;
   setScoringRubric: (s: string) => void;
@@ -199,118 +197,105 @@ function ScoringDrawer({
   saveScoringConfig: () => Promise<void>;
   scoringMsg: string | null;
 }) {
-  if (!isOpen) return null;
   const isOrderValid = scoringThresholds.A > scoringThresholds.B && scoringThresholds.B > scoringThresholds.C;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/40 p-0" onClick={onClose}>
-      <div
-        className="bg-surface w-full max-w-lg h-full p-6 shadow-xl overflow-y-auto flex flex-col justify-between animate-in slide-in-from-right duration-250"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="space-y-6">
-          <div className="flex items-center justify-between pb-4 border-b border-surface-mid">
-            <div>
-              <h3 className="font-display text-lg font-bold text-tertiary flex items-center gap-2">
-                <Settings size={18} /> Lead Scoring Rules
-              </h3>
-              <p className="font-body text-xs text-on-surface-muted mt-0.5">
-                Configure custom rubric and segmentation thresholds.
-              </p>
-            </div>
-            <button onClick={onClose} className="p-2 hover:bg-surface-low rounded-lg transition-all text-on-surface-muted hover:text-on-surface">
-              <X size={18} />
-            </button>
-          </div>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between pb-4 border-b border-surface-mid">
+        <div>
+          <h3 className="font-display text-lg font-bold text-tertiary flex items-center gap-2">
+            <Settings size={18} /> Lead Scoring Rules
+          </h3>
+          <p className="font-body text-xs text-on-surface-muted mt-0.5">
+            Configure custom rubric and segmentation thresholds.
+          </p>
+        </div>
+        <button onClick={onClose} className="p-2 hover:bg-surface-low rounded-lg transition-all text-on-surface-muted hover:text-on-surface" title="Close configuration">
+          <X size={18} />
+        </button>
+      </div>
 
-          {scoringMsg && (
-            <div className="p-3 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 font-label text-sm">
-              {scoringMsg}
-            </div>
-          )}
+      {scoringMsg && (
+        <div className="p-3 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 font-label text-sm animate-fade-in">
+          {scoringMsg}
+        </div>
+      )}
 
-          {/* Rubric */}
-          <div className="space-y-2">
-            <label className="block font-label text-xs font-semibold text-on-surface-muted uppercase">Custom Scoring Rubric</label>
-            <div className="p-3 rounded-xl bg-surface-low border border-surface-mid font-label text-[11px] text-on-surface-muted leading-4">
-              <strong>Default rubric (used when blank):</strong><br />
-              9–10: Confirmed booking, ready to buy<br />
-              7–8: Detailed questions, multiple queries<br />
-              5–6: General enquiry, first contact<br />
-              1–4: Disinterested, wrong number
-            </div>
-            <textarea
-              value={scoringRubric}
-              onChange={(e) => setScoringRubric(e.target.value)}
-              rows={8}
-              spellCheck={false}
-              placeholder={"- 9-10: Asked about fees or demo, confirmed slot\n- 7-8: Asking about syllabus or schedules\n- 5-6: General enquiry\n- 1-4: Wrong number or opt-out"}
-              className="w-full px-4 py-3 rounded-xl bg-surface-low border border-surface-mid font-mono text-xs leading-5 focus:outline-none focus:ring-2 focus:ring-tertiary resize-none"
-            />
-          </div>
+      {/* Rubric */}
+      <div className="space-y-2">
+        <label className="block font-label text-xs font-semibold text-on-surface-muted uppercase">Custom Scoring Rubric</label>
+        <div className="p-3 rounded-xl bg-surface-low border border-surface-mid font-label text-[11px] text-on-surface-muted leading-4">
+          <strong>Default rubric (used when blank):</strong><br />
+          9–10: Confirmed booking, ready to buy<br />
+          7–8: Detailed questions, multiple queries<br />
+          5–6: General enquiry, first contact<br />
+          1–4: Disinterested, wrong number
+        </div>
+        <textarea
+          value={scoringRubric}
+          onChange={(e) => setScoringRubric(e.target.value)}
+          rows={6}
+          spellCheck={false}
+          placeholder={"- 9-10: Asked about fees or demo, confirmed slot\n- 7-8: Asking about syllabus or schedules\n- 5-6: General enquiry\n- 1-4: Wrong number or opt-out"}
+          className="w-full px-4 py-3 rounded-xl bg-surface-low border border-surface-mid font-mono text-xs leading-5 focus:outline-none focus:ring-2 focus:ring-tertiary resize-none"
+        />
+      </div>
 
-          {/* Thresholds */}
-          <div className="space-y-3">
-            <label className="block font-label text-xs font-semibold text-on-surface-muted uppercase">Segment Thresholds</label>
-            <p className="font-body text-xs text-on-surface-muted">
-              Leads are grouped when score is ≥ threshold. Default: A≥9, B≥7, C≥5, D&lt;5.
-            </p>
-            <div className="grid grid-cols-3 gap-3">
-              {(["A", "B", "C"] as const).map((seg) => {
-                const colors: Record<string, string> = {
-                  A: "text-red-700 bg-red-50 border-red-200",
-                  B: "text-amber-700 bg-amber-50 border-amber-200",
-                  C: "text-blue-700 bg-blue-50 border-blue-200"
-                };
-                const labels: Record<string, string> = { A: "A — Hot", B: "B — Warm", C: "C — Cold" };
-                return (
-                  <div key={seg} className={`rounded-xl border p-3 ${colors[seg]}`}>
-                    <label className="block font-label text-[10px] font-bold uppercase mb-1">{labels[seg]}</label>
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-label text-xs">Score ≥</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={10}
-                        value={scoringThresholds[seg]}
-                        onChange={(e) => {
-                          const v = Math.max(1, Math.min(10, parseInt(e.target.value) || 1));
-                          setScoringThresholds(prev => ({ ...prev, [seg]: v }));
-                        }}
-                        className="w-12 px-1 py-0.5 rounded border bg-white font-mono text-xs font-bold text-center focus:outline-none focus:ring-1 focus:ring-current"
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {!isOrderValid && (
-              <div className="flex items-start gap-1.5 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 font-label text-xs font-semibold">
-                <AlertCircle size={13} className="mt-0.5 shrink-0" />
-                <span>Thresholds must be in order: A &gt; B &gt; C. Otherwise, defaults (9/7/5) will be used.</span>
+      {/* Thresholds */}
+      <div className="space-y-3">
+        <label className="block font-label text-xs font-semibold text-on-surface-muted uppercase">Segment Thresholds</label>
+        <p className="font-body text-xs text-on-surface-muted">
+          Leads are grouped when score is ≥ threshold. Default: A≥9, B≥7, C≥5, D&lt;5.
+        </p>
+        <div className="grid grid-cols-1 gap-2">
+          {(["A", "B", "C"] as const).map((seg) => {
+            const colors: Record<string, string> = {
+              A: "text-red-700 bg-red-50 border-red-200",
+              B: "text-amber-700 bg-amber-50 border-amber-200",
+              C: "text-blue-700 bg-blue-50 border-blue-200"
+            };
+            const labels: Record<string, string> = { A: "A — Hot", B: "B — Warm", C: "C — Cold" };
+            return (
+              <div key={seg} className={`rounded-xl border p-3 flex items-center justify-between ${colors[seg]}`}>
+                <label className="font-label text-xs font-bold uppercase">{labels[seg]}</label>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-label text-xs">Score ≥</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={scoringThresholds[seg]}
+                    onChange={(e) => {
+                      const v = Math.max(1, Math.min(10, parseInt(e.target.value) || 1));
+                      setScoringThresholds(prev => ({ ...prev, [seg]: v }));
+                    }}
+                    className="w-12 px-1.5 py-0.5 rounded border bg-white font-mono text-xs font-bold text-center focus:outline-none focus:ring-1 focus:ring-current text-ink"
+                  />
+                </div>
               </div>
-            )}
-            <p className="font-label text-[10px] text-on-surface-muted">
-              D (Disqualified) = score below C threshold ({scoringThresholds.C - 1} or less).
-            </p>
+            );
+          })}
+        </div>
+        {!isOrderValid && (
+          <div className="flex items-start gap-1.5 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 font-label text-xs font-semibold">
+            <AlertCircle size={13} className="mt-0.5 shrink-0" />
+            <span>Thresholds must be in order: A &gt; B &gt; C. Otherwise, defaults (9/7/5) will be used.</span>
           </div>
-        </div>
+        )}
+        <p className="font-label text-[10px] text-on-surface-muted">
+          D (Disqualified) = score below C threshold ({scoringThresholds.C - 1} or less).
+        </p>
+      </div>
 
-        <div className="pt-4 border-t border-surface-mid flex gap-3 mt-6">
-          <button
-            onClick={onClose}
-            className="flex-1 py-2.5 bg-surface-low border border-surface-mid text-on-surface rounded-xl font-label text-sm font-semibold hover:bg-surface-mid transition-all"
-          >
-            Close
-          </button>
-          <button
-            onClick={saveScoringConfig}
-            disabled={scoringSaving || !isOrderValid}
-            className="flex-1 py-2.5 bg-tertiary text-white rounded-xl font-label text-sm font-semibold hover:bg-tertiary/90 disabled:opacity-40 transition-all shadow-card"
-          >
-            {scoringSaving ? "Saving…" : "Save Configuration"}
-          </button>
-        </div>
+      <div className="pt-4 border-t border-surface-mid">
+        <button
+          onClick={saveScoringConfig}
+          disabled={scoringSaving || !isOrderValid}
+          className="w-full py-2.5 bg-tertiary text-white rounded-xl font-label text-sm font-semibold hover:bg-tertiary/90 disabled:opacity-40 transition-all shadow-card flex items-center justify-center gap-2"
+        >
+          {scoringSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+          {scoringSaving ? "Saving…" : "Save Configuration"}
+        </button>
       </div>
     </div>
   );
@@ -442,11 +427,16 @@ export default function LeadsPage() {
         <div className="flex items-center gap-2">
           {role === "owner" && (
             <button
-              onClick={() => setShowScoringDrawer(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-surface-mid text-on-surface hover:text-tertiary hover:border-tertiary/40 rounded-xl font-label text-sm font-semibold transition-colors"
+              onClick={() => setShowScoringDrawer((prev) => !prev)}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2.5 rounded-xl font-label text-sm font-semibold transition-colors border",
+                showScoringDrawer
+                  ? "bg-violet-50 border-violet-200 text-violet-700 hover:bg-violet-100"
+                  : "bg-white border-surface-mid text-on-surface hover:text-violet-600 hover:border-violet-300"
+              )}
             >
               <Settings size={16} />
-              Scoring Rules
+              {showScoringDrawer ? "Hide Rules" : "Scoring Rules"}
             </button>
           )}
           <button
@@ -480,151 +470,158 @@ export default function LeadsPage() {
         />
       )}
 
-      <ScoringDrawer
-        isOpen={showScoringDrawer}
-        onClose={() => setShowScoringDrawer(false)}
-        scoringRubric={scoringRubric}
-        setScoringRubric={setScoringRubric}
-        scoringThresholds={scoringThresholds}
-        setScoringThresholds={setScoringThresholds}
-        scoringSaving={scoringSaving}
-        saveScoringConfig={saveScoringConfig}
-        scoringMsg={scoringMsg}
-      />
+      <div className="flex flex-col lg:flex-row gap-6 items-start">
+        <div className="flex-grow flex-1 min-w-0 w-full">
+          <div className="flex gap-1 mb-6 bg-surface-mid p-1 rounded-xl w-fit">
+            {SEGMENTS.map((seg) => (
+              <button
+                key={seg}
+                onClick={() => setTab(seg)}
+                className={`px-5 py-2 rounded-lg font-label text-sm font-semibold transition-all ${
+                  tab === seg ? "bg-surface shadow-card text-tertiary" : "text-on-surface-muted hover:text-on-surface"
+                }`}
+              >
+                {SEGMENT_LABELS[seg]}
+              </button>
+            ))}
+          </div>
 
-      <div className="flex gap-1 mb-6 bg-surface-mid p-1 rounded-xl w-fit">
-        {SEGMENTS.map((seg) => (
-          <button
-            key={seg}
-            onClick={() => setTab(seg)}
-            className={`px-5 py-2 rounded-lg font-label text-sm font-semibold transition-all ${
-              tab === seg ? "bg-surface shadow-card text-tertiary" : "text-on-surface-muted hover:text-on-surface"
-            }`}
-          >
-            {SEGMENT_LABELS[seg]}
-          </button>
-        ))}
-      </div>
+          <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15 mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-display text-sm font-bold text-tertiary">
+                Action Box — {SEGMENT_LABELS[tab]} Leads
+              </h2>
+              {lastResult && (
+                <p className="font-label text-xs text-on-surface-muted">
+                  Sent {lastResult.sent} · Failed {lastResult.failed} · Outside 24h window{" "}
+                  {lastResult.skipped_window}
+                </p>
+              )}
+            </div>
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={3}
+              placeholder={`Message to broadcast to ${SEGMENT_LABELS[tab]} leads…`}
+              className="w-full px-4 py-3 bg-surface-low rounded-xl font-body text-sm text-on-surface border-0 focus:ring-2 focus:ring-tertiary resize-none"
+            />
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={saveTemplate}
+                disabled={savingTpl || draft === (templates[tab]?.message ?? "")}
+                className="flex items-center gap-2 px-4 py-2 bg-surface-low text-on-surface rounded-xl font-label text-xs font-semibold hover:bg-surface-mid transition-colors disabled:opacity-50"
+              >
+                <Save size={14} />
+                {savingTpl ? "Saving…" : "Save"}
+              </button>
+              <button
+                onClick={broadcast}
+                disabled={broadcasting || !draft.trim()}
+                className="flex items-center gap-2 px-4 py-2 bg-secondary text-white rounded-xl font-label text-xs font-semibold hover:bg-secondary/90 transition-colors disabled:opacity-50"
+              >
+                <Send size={14} />
+                {broadcasting ? "Sending…" : `Send to ${SEGMENT_LABELS[tab]}`}
+              </button>
+            </div>
+          </div>
 
-      <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15 mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-display text-sm font-bold text-tertiary">
-            Action Box — {SEGMENT_LABELS[tab]} Leads
-          </h2>
-          {lastResult && (
-            <p className="font-label text-xs text-on-surface-muted">
-              Sent {lastResult.sent} · Failed {lastResult.failed} · Outside 24h window{" "}
-              {lastResult.skipped_window}
-            </p>
-          )}
-        </div>
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          rows={3}
-          placeholder={`Message to broadcast to ${SEGMENT_LABELS[tab]} leads…`}
-          className="w-full px-4 py-3 bg-surface-low rounded-xl font-body text-sm text-on-surface border-0 focus:ring-2 focus:ring-tertiary resize-none"
-        />
-        <div className="flex gap-2 mt-3">
-          <button
-            onClick={saveTemplate}
-            disabled={savingTpl || draft === (templates[tab]?.message ?? "")}
-            className="flex items-center gap-2 px-4 py-2 bg-surface-low text-on-surface rounded-xl font-label text-xs font-semibold hover:bg-surface-mid transition-colors disabled:opacity-50"
-          >
-            <Save size={14} />
-            {savingTpl ? "Saving…" : "Save"}
-          </button>
-          <button
-            onClick={broadcast}
-            disabled={broadcasting || !draft.trim()}
-            className="flex items-center gap-2 px-4 py-2 bg-secondary text-white rounded-xl font-label text-xs font-semibold hover:bg-secondary/90 transition-colors disabled:opacity-50"
-          >
-            <Send size={14} />
-            {broadcasting ? "Sending…" : `Send to ${SEGMENT_LABELS[tab]}`}
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-surface rounded-card shadow-card ring-1 ring-[#c4c7c7]/15">
-        {loading ? (
-          <div className="p-8 text-center font-body text-on-surface-muted">Loading…</div>
-        ) : leads.length === 0 ? (
-          <div className="p-8 text-center font-body text-on-surface-muted">No {SEGMENT_LABELS[tab]} leads</div>
-        ) : (
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-surface-mid">
-                <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Contact/ID</th>
-                <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Name</th>
-                <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Score</th>
-                <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Assigned To</th>
-                <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Source</th>
-                <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Added</th>
-                {role === "owner" && (
-                  <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Actions</th>
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {leads.map((lead, i) => (
-                <tr
-                  key={lead.id}
-                  className={`border-b border-surface-mid/50 hover:bg-surface-low transition-colors ${
-                    i % 2 === 0 ? "" : "bg-surface-low/30"
-                  }`}
-                >
-                  <td className="px-6 py-4 font-body text-sm text-on-surface">
-                    {lead.phone ? formatPhone(lead.phone) : (lead.source === "telegram" ? `@${lead.tg_username || "unknown"}` : (lead.source === "instagram" ? lead.ig_user_id : (lead.source === "facebook" ? lead.fb_user_id : "No Contact")))}
-                  </td>
-                  <td className="px-6 py-4">
-                    <NameCell
-                      lead={lead}
-                      onUpdate={(updated) =>
-                        setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)))
-                      }
-                    />
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-16 h-1.5 rounded-full bg-surface-mid overflow-hidden">
-                        <div className="h-full rounded-full bg-secondary transition-all" style={{ width: `${lead.score * 10}%` }} />
-                      </div>
-                      <span className="font-label text-xs text-on-surface-muted">{lead.score}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    {lead.assigned_to ? (
-                      <span className="font-label text-xs font-semibold text-ink">
-                        {callers.find((c) => c.id === lead.assigned_to)?.name ?? "Caller"}
-                      </span>
-                    ) : (
-                      <span className="font-label text-xs text-ink-muted">—</span>
+          <div className="bg-surface rounded-card shadow-card ring-1 ring-[#c4c7c7]/15">
+            {loading ? (
+              <div className="p-8 text-center font-body text-on-surface-muted">Loading…</div>
+            ) : leads.length === 0 ? (
+              <div className="p-8 text-center font-body text-on-surface-muted">No {SEGMENT_LABELS[tab]} leads</div>
+            ) : (
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-surface-mid">
+                    <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Contact/ID</th>
+                    <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Name</th>
+                    <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Score</th>
+                    <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Assigned To</th>
+                    <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Source</th>
+                    <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Added</th>
+                    {role === "owner" && (
+                      <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Actions</th>
                     )}
-                  </td>
-                  <td className="px-6 py-4 font-label text-xs text-on-surface-muted capitalize">{lead.source}</td>
-                  <td className="px-6 py-4 font-label text-xs text-on-surface-muted">{timeAgo(lead.created_at)}</td>
-                  {role === "owner" && (
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <AssignButton
-                          leadId={lead.id}
-                          currentAssignedTo={lead.assigned_to}
-                          callers={callers}
-                          onAssigned={(callerId) =>
-                            setLeads((prev) =>
-                              prev.map((l) =>
-                                l.id === lead.id ? { ...l, assigned_to: callerId } : l
-                              )
-                            )
+                  </tr>
+                </thead>
+                <tbody>
+                  {leads.map((lead, i) => (
+                    <tr
+                      key={lead.id}
+                      className={`border-b border-surface-mid/50 hover:bg-surface-low transition-colors ${
+                        i % 2 === 0 ? "" : "bg-surface-low/30"
+                      }`}
+                    >
+                      <td className="px-6 py-4 font-body text-sm text-on-surface">
+                        {lead.phone ? formatPhone(lead.phone) : (lead.source === "telegram" ? `@${lead.tg_username || "unknown"}` : (lead.source === "instagram" ? lead.ig_user_id : (lead.source === "facebook" ? lead.fb_user_id : "No Contact")))}
+                      </td>
+                      <td className="px-6 py-4">
+                        <NameCell
+                          lead={lead}
+                          onUpdate={(updated) =>
+                            setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)))
                           }
                         />
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-16 h-1.5 rounded-full bg-surface-mid overflow-hidden">
+                            <div className="h-full rounded-full bg-secondary transition-all" style={{ width: `${lead.score * 10}%` }} />
+                          </div>
+                          <span className="font-label text-xs text-on-surface-muted">{lead.score}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        {lead.assigned_to ? (
+                          <span className="font-label text-xs font-semibold text-ink">
+                            {callers.find((c) => c.id === lead.assigned_to)?.name ?? "Caller"}
+                          </span>
+                        ) : (
+                          <span className="font-label text-xs text-ink-muted">—</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 font-label text-xs text-on-surface-muted capitalize">{lead.source}</td>
+                      <td className="px-6 py-4 font-label text-xs text-on-surface-muted">{timeAgo(lead.created_at)}</td>
+                      {role === "owner" && (
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <AssignButton
+                              leadId={lead.id}
+                              currentAssignedTo={lead.assigned_to}
+                              callers={callers}
+                              onAssigned={(callerId) =>
+                                setLeads((prev) =>
+                                  prev.map((l) =>
+                                    l.id === lead.id ? { ...l, assigned_to: callerId } : l
+                                  )
+                                )
+                              }
+                            />
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {showScoringDrawer && (
+          <div className="w-full lg:w-[420px] shrink-0 sticky top-4 card rounded-3xl p-6 bg-surface shadow-card ring-1 ring-[#c4c7c7]/15">
+            <ScoringPanel
+              onClose={() => setShowScoringDrawer(false)}
+              scoringRubric={scoringRubric}
+              setScoringRubric={setScoringRubric}
+              scoringThresholds={scoringThresholds}
+              setScoringThresholds={setScoringThresholds}
+              scoringSaving={scoringSaving}
+              saveScoringConfig={saveScoringConfig}
+              scoringMsg={scoringMsg}
+            />
+          </div>
         )}
       </div>
     </div>

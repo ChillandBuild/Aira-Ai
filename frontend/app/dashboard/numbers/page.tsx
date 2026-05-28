@@ -19,6 +19,7 @@ type PhoneNumber = {
   daily_send_count: number;
   warm_up_day: number;
   paused_outbound: boolean;
+  meta_phone_number_id?: string | null;
   created_at: string;
 };
 
@@ -268,6 +269,7 @@ function NumbersPageContent() {
   const editInputRef = useRef<HTMLInputElement>(null);
 
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [syncingAll, setSyncingAll] = useState(false);
   const [pausingId, setPausingId] = useState<string | null>(null);
 
   // Incidents state
@@ -428,6 +430,40 @@ function NumbersPageContent() {
     }
   }
 
+  async function handleSyncAllMeta() {
+    const configuredNumbers = numbers.filter((n) => n.meta_phone_number_id && n.status !== "archived");
+    if (configuredNumbers.length === 0) {
+      toast.error("No configured numbers to sync");
+      return;
+    }
+    setSyncingAll(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    await Promise.all(
+      configuredNumbers.map(async (num) => {
+        try {
+          await numbersApi.syncMeta(num.id);
+          successCount++;
+        } catch (err) {
+          console.error(`Failed to sync number ${num.number}:`, err);
+          failCount++;
+        }
+      })
+    );
+
+    await reload();
+    setSyncingAll(false);
+
+    if (failCount === 0) {
+      toast.success(`Successfully synced ${successCount} numbers from Meta`);
+    } else if (successCount > 0) {
+      toast.success(`Synced ${successCount} numbers, ${failCount} failed`);
+    } else {
+      toast.error("Failed to sync numbers from Meta");
+    }
+  }
+
   async function handleDelete(id: string) {
     if (!confirm("Delete this number? It will no longer send or receive messages.")) return;
     try {
@@ -480,13 +516,24 @@ function NumbersPageContent() {
           <div className="bg-surface rounded-card shadow-card ring-1 ring-[#c4c7c7]/15 p-8">
             <div className="flex items-center justify-between mb-6">
               <h2 className="font-display text-lg font-bold text-tertiary">Number Pool</h2>
-              <button
-                onClick={() => setShowAddModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 transition-colors"
-              >
-                <Plus size={13} />
-                Add Number
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleSyncAllMeta}
+                  disabled={syncingAll || numbers.filter(n => n.meta_phone_number_id && n.status !== "archived").length === 0}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-surface-mid text-on-surface hover:text-tertiary hover:border-tertiary/40 rounded-lg font-label text-xs font-semibold transition-colors disabled:opacity-50"
+                  title="Sync all configured numbers from Meta"
+                >
+                  <RefreshCw size={13} className={syncingAll ? "animate-spin" : ""} />
+                  {syncingAll ? "Syncing all…" : "Sync from Meta"}
+                </button>
+                <button
+                  onClick={() => setShowAddModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 transition-colors"
+                >
+                  <Plus size={13} />
+                  Add Number
+                </button>
+              </div>
             </div>
 
             {loading ? (
