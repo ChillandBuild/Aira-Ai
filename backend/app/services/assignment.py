@@ -226,16 +226,15 @@ def save_telecalling_config(tenant_id: str, config: dict) -> None:
     ).execute()
 
 
-def should_escalate_to_inbox(config: dict, trigger: str, segment: str, channel: str) -> bool:
-    """Return True if this event should create an inbox handover.
-    Trigger C (user asked for human) bypasses all config gates — always escalates."""
+def should_escalate_to_inbox(config: dict, trigger: str, channel: str) -> bool:
+    """Return True if this trigger should create an inbox handover.
+    Trigger C always escalates (explicit user request, bypasses all gates).
+    Other triggers check master switch, trigger list, and channel — no segment gate."""
     if trigger == "C":
-        return True  # explicit user intent overrides all config
+        return True
     if not config.get("enabled"):
         return False
     if trigger not in config.get("triggers", []):
-        return False
-    if segment not in config.get("segments", ["A"]):
         return False
     if channel not in config.get("channels", []):
         return False
