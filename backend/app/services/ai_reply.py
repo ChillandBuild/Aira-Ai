@@ -737,21 +737,23 @@ async def generate_reply(
             db=db,
         )
 
+        old_segment = lead_data.get("segment") or "C"
+        if new_segment != old_segment and should_assign_to_telecalling(telecalling_cfg, new_segment, channel):
+            if not lead_data.get("assigned_to"):
+                assigned_caller = auto_assign_lead(str(lead_id), tenant_id)
+                if assigned_caller:
+                    lead_data["assigned_to"] = assigned_caller
+
         if new_score >= 7 and (lead_data.get("score") or 5) < 7:
-            if should_assign_to_telecalling(telecalling_cfg, new_segment, channel):
-                if not lead_data.get("assigned_to"):
-                    assigned_caller = auto_assign_lead(str(lead_id), tenant_id)
-                    if assigned_caller:
-                        lead_data["assigned_to"] = assigned_caller
-                try:
-                    from app.routes.alerts import create_alert
-                    create_alert(
-                        lead_id=str(lead_id),
-                        tenant_id=tenant_id,
-                        assigned_caller_id=lead_data.get("assigned_to"),
-                    )
-                except Exception as alert_err:
-                    logger.warning(f"Alert creation failed for lead {lead_id}: {alert_err}")
+            try:
+                from app.routes.alerts import create_alert
+                create_alert(
+                    lead_id=str(lead_id),
+                    tenant_id=tenant_id,
+                    assigned_caller_id=lead_data.get("assigned_to"),
+                )
+            except Exception as alert_err:
+                logger.warning(f"Alert creation failed for lead {lead_id}: {alert_err}")
 
             escalation_flags.add("E")
 
