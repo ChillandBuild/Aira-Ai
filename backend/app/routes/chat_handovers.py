@@ -26,7 +26,22 @@ def list_handovers(ctx: dict = Depends(get_tenant_and_role)):
     except Exception as e:
         logger.warning(f"chat_handovers list failed (transient?): {e}")
         return {"data": []}
-    return {"data": rows.data or []}
+
+    handovers = rows.data or []
+
+    # Attach caller names in one batch lookup
+    caller_ids = list({h["assigned_to"] for h in handovers if h.get("assigned_to")})
+    caller_map: dict = {}
+    if caller_ids:
+        try:
+            callers = db.table("callers").select("id, name").in_("id", caller_ids).execute()
+            caller_map = {c["id"]: c["name"] for c in (callers.data or [])}
+        except Exception:
+            pass
+    for h in handovers:
+        h["caller_name"] = caller_map.get(h.get("assigned_to")) if h.get("assigned_to") else None
+
+    return {"data": handovers}
 
 
 @router.get("/count")

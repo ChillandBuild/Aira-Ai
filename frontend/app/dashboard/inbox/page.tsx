@@ -12,6 +12,8 @@ import { useAuthRole } from "../contexts/AuthRoleContext";
 type Handover = {
   id: string;
   lead_id: string;
+  assigned_to: string | null;
+  caller_name: string | null;
   reason: string | null;
   status: string;
   opened_at: string;
@@ -131,9 +133,20 @@ export default function InboxPage() {
                         &ldquo;{h.reason}&rdquo;
                       </p>
                     )}
-                    <p className="font-body text-xs text-ink-muted">
-                      {new Date(h.opened_at).toLocaleString("en-IN")}
-                    </p>
+                    <div className="flex items-center gap-3">
+                      <p className="font-body text-xs text-ink-muted">
+                        {new Date(h.opened_at).toLocaleString("en-IN")}
+                      </p>
+                      {h.assigned_to ? (
+                        <span className="font-label text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700 font-medium">
+                          Assigned to {h.caller_name ?? "caller"}
+                        </span>
+                      ) : (
+                        <span className="font-label text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 font-medium">
+                          Unassigned
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex flex-col gap-2 flex-shrink-0">
                     <Link
