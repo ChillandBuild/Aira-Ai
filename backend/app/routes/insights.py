@@ -5,6 +5,7 @@ Insights routes — WhatsApp Business API metrics from Meta.
 import logging
 from datetime import datetime, timedelta, timezone
 
+import httpx
 from fastapi import APIRouter, Depends, Query
 
 from app.db.supabase import get_supabase
@@ -98,7 +99,7 @@ async def whatsapp_insights(
     range: str = Query("7d", alias="range"),
     since: str | None = Query(None),
     until: str | None = Query(None),
-    source: str = Query("meta", alias="source"),
+    source: str = Query("db", alias="source"),
     tenant_id: str = Depends(get_tenant_id),
 ):
     """
@@ -378,3 +379,62 @@ async def trends_insights(
         d["cost_inr"] = round(d["cost_inr"], 2)
 
     return {"daily": trend_list, "range": {"since": since, "until": until}}
+
+
+@router.get("/activity-log")
+async def meta_activity_log(
+    tenant_id: str = Depends(get_tenant_id),
+    limit: int = Query(50, ge=1, le=200),
+    after: str | None = Query(None),
+):
+    """
+    Fetch Meta WhatsApp Manager activity log for the business/WABA.
+    Returns entries with: time, user, category, activity description.
+    """
+    db = get_supabase()
+
+    # Get credentials from settings
+    access_token = _get_setting_value(db, tenant_id, "meta_access_token")
+    waba_id = _get_setting_value(db, tenant_id, "meta_waba_id") or _get_setting_value(db, tenant_id, "whatsapp_business_account_id")
+
+    if not access_token or not waba_id:
+        return {"logs": [], "paging": None, "error": "Meta credentials not configured (need meta_access_token and meta_waba_id)"}
+
+    params = {
+        "access_token": access_token,
+        "fields": "time,user,category,activity",
+        "limit": limit,
+    }
+    if after:
+        params["after"] = after
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                f"https://graph.facebook.com/v21.0/{waba_id}/audit_logs",
+                params=params,
+            )
+        data = resp.json()
+
+        if "error" in data:
+            logger.error(f"Meta audit log error: {data['error']}")
+            return {"logs": [], "paging": None, "error": data["error"].get("message", "Meta API error")}
+
+        raw_logs = data.get("data", [])
+        paging = data.get("paging")
+
+        # Normalise entries
+        logs = []
+        for entry in raw_logs:
+            logs.append({
+                "time": entry.get("time"),
+                "user": entry.get("user", {}).get("name", "Unknown") if isinstance(entry.get("user"), dict) else str(entry.get("user", "Unknown")),
+                "category": entry.get("category", ""),
+                "activity": entry.get("activity", ""),
+            })
+
+        return {"logs": logs, "paging": paging, "error": None}
+
+    except Exception as e:
+        logger.error(f"Meta audit log fetch error: {e}")
+        return {"logs": [], "paging": None, "error": str(e)}
