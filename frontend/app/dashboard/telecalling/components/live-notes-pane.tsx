@@ -25,30 +25,34 @@ const CALLBACK_TAGS = new Set(["Call back later", "Meeting scheduled"]);
 
 export default function LiveNotesPane({ ctx, onClose }: Props) {
   const [content, setContent] = useState("");
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [pinned, setPinned] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [showCallbackPicker, setShowCallbackPicker] = useState(false);
   const [callbackAt, setCallbackAt] = useState("");
 
-  const canSave = !!ctx.leadId && content.trim().length > 0;
+  const canSave = !!ctx.leadId && (content.trim().length > 0 || selectedTags.length > 0);
 
-  function appendTag(tag: string) {
-    setContent((prev) => (prev.trim() ? `${prev.trim()}\n${tag}` : tag));
+  function toggleTag(tag: string) {
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
     if (CALLBACK_TAGS.has(tag)) {
       setShowCallbackPicker(true);
     }
   }
 
   async function handleSave() {
-    if (!ctx.leadId || !content.trim()) return;
+    if (!ctx.leadId || (!content.trim() && selectedTags.length === 0)) return;
     setSaving(true);
     try {
-      await saveNote(ctx.leadId, content.trim(), pinned);
+      await saveNote(ctx.leadId, content.trim(), pinned, selectedTags);
       if (callbackAt) {
         await createCallback(ctx.leadId, new Date(callbackAt).toISOString(), content.trim());
       }
       setContent("");
+      setSelectedTags([]);
       setPinned(false);
       setCallbackAt("");
       setShowCallbackPicker(false);
@@ -100,8 +104,12 @@ export default function LiveNotesPane({ ctx, onClose }: Props) {
         {LIVE_NOTE_TAGS.map((tag) => (
           <button
             key={tag}
-            onClick={() => appendTag(tag)}
-            className="px-3 py-1.5 bg-surface-low hover:bg-surface-mid rounded-lg font-label text-sm font-semibold text-on-surface transition-colors"
+            onClick={() => toggleTag(tag)}
+            className={`px-3 py-1.5 rounded-lg font-label text-sm font-semibold transition-colors ${
+              selectedTags.includes(tag)
+                ? "bg-tertiary text-white"
+                : "bg-surface-low hover:bg-surface-mid text-on-surface"
+            }`}
           >
             {tag}
           </button>

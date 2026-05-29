@@ -20,12 +20,12 @@ export async function fetchAllNotes(leadId: string): Promise<Note[]> {
   return [...data.pinned, ...data.notes];
 }
 
-export async function saveNote(leadId: string, content: string, isPinned: boolean): Promise<Note> {
+export async function saveNote(leadId: string, content: string, isPinned: boolean, tags: string[] = []): Promise<Note> {
   const auth = await getAuthHeaders();
   const res = await fetch(`${API_URL}/api/v1/lead-notes/${leadId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...auth },
-    body: JSON.stringify({ content, is_pinned: isPinned }),
+    body: JSON.stringify({ content, is_pinned: isPinned, tags }),
   });
   if (!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
