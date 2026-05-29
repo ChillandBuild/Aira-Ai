@@ -208,7 +208,7 @@ async def telecmi_cdr(request: Request, background_tasks: BackgroundTasks):
 
     log_row = (
         db.table("call_logs")
-        .select("id,caller_id,lead_id")
+        .select("id,caller_id,lead_id,tenant_id")
         .eq("id", call_log_id)
         .maybe_single()
         .execute()
@@ -218,6 +218,30 @@ async def telecmi_cdr(request: Request, background_tasks: BackgroundTasks):
         return {"ok": True}
 
     call_log_id = log_row.data["id"]
+
+    # If call_log has no lead linked, try to match/create one from the dialed number
+    if not log_row.data.get("lead_id"):
+        dialed = cdr.get("to") or cdr.get("customer_number") or cdr.get("did")
+        tenant_id = log_row.data.get("tenant_id")
+        if dialed and tenant_id:
+            match = db.table("leads").select("id").eq("phone", dialed).eq("tenant_id", tenant_id).maybe_single().execute()
+            if match and match.data:
+                resolved_lead_id = match.data["id"]
+            else:
+                try:
+                    new_lead = db.table("leads").insert({
+                        "phone": dialed, "source": "manual", "score": 5,
+                        "segment": "C", "tenant_id": tenant_id,
+                    }).execute()
+                    resolved_lead_id = new_lead.data[0]["id"] if new_lead.data else None
+                except Exception as e:
+                    logger.warning(f"CDR: auto-create lead failed for {dialed}: {e}")
+                    resolved_lead_id = None
+            if resolved_lead_id:
+                db.table("call_logs").update({"lead_id": resolved_lead_id}).eq("id", call_log_id).execute()
+                log_row.data["lead_id"] = resolved_lead_id
+                logger.info(f"CDR: linked call {call_log_id} to lead {resolved_lead_id} via phone {dialed}")
+
     updates: dict = {}
 
     # TeleCMI final CDR statuses: "answered", "missed", "user_missed"
@@ -321,30 +345,25 @@ async def _process_telecmi_recording(call_log_id: str, recording_url: str) -> No
 
 
 _SKIP_OUTCOMES = {"no_answer", "voicemail"}
-_MIN_CALL_DURATION_SECONDS = 30
 
 
 async def _run_summarization(call_log_id: str, recording_url: str) -> None:
     try:
         db = get_supabase()
 
-        # ── Gate: skip dead calls (no conversation to analyze) ───────────
+        # ── Gate: skip calls with no conversation (not answered / voicemail) ──
         call_row = (
             db.table("call_logs")
-            .select("outcome,duration_seconds,lead_id,caller_id")
+            .select("outcome,duration_seconds,lead_id,caller_id,tenant_id")
             .eq("id", call_log_id)
             .maybe_single()
             .execute()
         )
         call_data = (call_row.data or {})
         outcome = call_data.get("outcome")
-        duration = call_data.get("duration_seconds") or 0
 
         if outcome in _SKIP_OUTCOMES:
             logger.info(f"Skipping AI analysis for {call_log_id}: outcome={outcome}")
-            return
-        if duration < _MIN_CALL_DURATION_SECONDS:
-            logger.info(f"Skipping AI analysis for {call_log_id}: duration={duration}s < {_MIN_CALL_DURATION_SECONDS}s")
             return
 
         # ── Transcribe ───────────────────────────────────────────────────
@@ -371,13 +390,16 @@ async def _run_summarization(call_log_id: str, recording_url: str) -> None:
         db.table("call_logs").update(updates).eq("id", call_log_id).execute()
 
         if summary.get("next_action") and lead_id:
-            db.table("lead_notes").insert({
+            note_row = {
                 "lead_id": lead_id,
                 "call_log_id": call_log_id,
                 "content": f"AI Summary: {summary.get('next_action', '')}",
                 "structured": summary,
                 "is_pinned": False,
-            }).execute()
+            }
+            if call_data.get("tenant_id"):
+                note_row["tenant_id"] = call_data["tenant_id"]
+            db.table("lead_notes").insert(note_row).execute()
 
         # ── Re-score caller now that AI evaluation is stored ─────────────
         # The first recompute (at outcome-set time) only had the outcome score.
