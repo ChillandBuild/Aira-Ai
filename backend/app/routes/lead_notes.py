@@ -84,13 +84,24 @@ async def create_lead_note(lead_id: UUID, payload: CreateNote, tenant_id: str = 
         "content": payload.content,
         "is_pinned": payload.is_pinned,
         "structured": payload.structured,
-        "tags": payload.tags,
     }
+    if payload.tags:
+        insert_data["tags"] = payload.tags
     if payload.caller_id is not None:
         insert_data["caller_id"] = payload.caller_id
     if payload.call_log_id is not None:
         insert_data["call_log_id"] = payload.call_log_id
-    result = db.table("lead_notes").insert(insert_data).execute()
+
+    try:
+        result = db.table("lead_notes").insert(insert_data).execute()
+    except Exception as e:
+        # PostgREST schema cache may not have refreshed for the 'tags' column yet
+        if "PGRST204" in str(e) and "tags" in insert_data:
+            logger.warning("PostgREST schema cache missing 'tags' column — retrying without tags")
+            insert_data.pop("tags", None)
+            result = db.table("lead_notes").insert(insert_data).execute()
+        else:
+            raise
     return result.data[0]
 
 
@@ -108,7 +119,18 @@ async def update_lead_note(note_id: UUID, payload: UpdateNote, tenant_id: str = 
         updates["tags"] = payload.tags
     if not updates:
         raise HTTPException(status_code=400, detail="Nothing to update")
-    result = db.table("lead_notes").update(updates).eq("id", str(note_id)).eq("tenant_id", tenant_id).execute()
+
+    try:
+        result = db.table("lead_notes").update(updates).eq("id", str(note_id)).eq("tenant_id", tenant_id).execute()
+    except Exception as e:
+        if "PGRST204" in str(e) and "tags" in updates:
+            logger.warning("PostgREST schema cache missing 'tags' column — retrying update without tags")
+            updates.pop("tags", None)
+            if not updates:
+                raise HTTPException(status_code=400, detail="Tags column not available yet")
+            result = db.table("lead_notes").update(updates).eq("id", str(note_id)).eq("tenant_id", tenant_id).execute()
+        else:
+            raise
     if not result.data:
         raise HTTPException(status_code=404, detail="Note not found")
     return result.data[0]
