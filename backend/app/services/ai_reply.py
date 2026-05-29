@@ -694,85 +694,84 @@ async def generate_reply(
     # Step 5: Score Engine v2 — composite arc + intent + engagement
     new_segment = segment  # fallback if scoring fails
     new_score = lead_data.get("score", 5)
-    try:
-        from app.services.scoring_engine import compute_score
-        score_result = await compute_score(
-            message=message,
-            lead_id=str(lead_id),
-            db=db,
-            tenant_id=tenant_id,
-        )
-        new_score = score_result["score"]
-        new_segment = score_result["segment"]
+    if not lead_data.get("assigned_to"):
+        try:
+            from app.services.scoring_engine import compute_score
+            score_result = await compute_score(
+                message=message,
+                lead_id=str(lead_id),
+                db=db,
+                tenant_id=tenant_id,
+            )
+            new_score = score_result["score"]
+            new_segment = score_result["segment"]
 
-        _score_meta = {
-            "new_score": new_score,
-            "prev_score": lead_data.get("score", 5),
-            "arc_score": score_result["arc_score"],
-            "intent_delta": score_result["intent_delta"],
-            "engagement_delta": score_result["engagement_delta"],
-            "intent_reason": score_result["intent_reason"],
-            "arc_updated": score_result["arc_updated"],
-            "message_snippet": message[:150],
-            "channel": channel,
-        }
-        if new_segment != lead_data.get("segment") or new_score != lead_data.get("score", 5):
-            record_stage_event(
+            _score_meta = {
+                "new_score": new_score,
+                "prev_score": lead_data.get("score", 5),
+                "arc_score": score_result["arc_score"],
+                "intent_delta": score_result["intent_delta"],
+                "engagement_delta": score_result["engagement_delta"],
+                "intent_reason": score_result["intent_reason"],
+                "arc_updated": score_result["arc_updated"],
+                "message_snippet": message[:150],
+                "channel": channel,
+            }
+            if new_segment != lead_data.get("segment") or new_score != lead_data.get("score", 5):
+                record_stage_event(
+                    lead_id,
+                    from_segment=lead_data.get("segment"),
+                    to_segment=new_segment,
+                    event_type="segment_changed" if new_segment != lead_data.get("segment") else "score_updated",
+                    metadata=_score_meta,
+                    tenant_id=tenant_id,
+                    db=db,
+                )
+            sync_follow_up_jobs(
                 lead_id,
-                from_segment=lead_data.get("segment"),
-                to_segment=new_segment,
-                event_type="segment_changed" if new_segment != lead_data.get("segment") else "score_updated",
-                metadata=_score_meta,
+                segment=new_segment,
+                phone=lead_data.get("phone") or phone,
+                converted_at=lead_data.get("converted_at"),
+                ai_enabled=lead_data.get("ai_enabled", True),
+                reason=f"{channel}_reply",
                 tenant_id=tenant_id,
                 db=db,
             )
-        sync_follow_up_jobs(
-            lead_id,
-            segment=new_segment,
-            phone=lead_data.get("phone") or phone,
-            converted_at=lead_data.get("converted_at"),
-            ai_enabled=lead_data.get("ai_enabled", True),
-            reason=f"{channel}_reply",
-            tenant_id=tenant_id,
-            db=db,
-        )
 
-        old_segment = lead_data.get("segment") or "C"
-        if new_segment != old_segment and should_assign_to_telecalling(telecalling_cfg, new_segment, channel):
-            if not lead_data.get("assigned_to"):
+            old_segment = lead_data.get("segment") or "C"
+            if new_segment != old_segment and should_assign_to_telecalling(telecalling_cfg, new_segment, channel):
                 assigned_caller = auto_assign_lead(str(lead_id), tenant_id)
                 if assigned_caller:
                     lead_data["assigned_to"] = assigned_caller
 
+            if new_score >= 7 and (lead_data.get("score") or 5) < 7:
+                try:
+                    from app.routes.alerts import create_alert
+                    create_alert(
+                        lead_id=str(lead_id),
+                        tenant_id=tenant_id,
+                        assigned_caller_id=lead_data.get("assigned_to"),
+                    )
+                except Exception as alert_err:
+                    logger.warning(f"Alert creation failed for lead {lead_id}: {alert_err}")
 
-        if new_score >= 7 and (lead_data.get("score") or 5) < 7:
-            try:
-                from app.routes.alerts import create_alert
-                create_alert(
-                    lead_id=str(lead_id),
-                    tenant_id=tenant_id,
-                    assigned_caller_id=lead_data.get("assigned_to"),
-                )
-            except Exception as alert_err:
-                logger.warning(f"Alert creation failed for lead {lead_id}: {alert_err}")
+                escalation_flags.add("E")
 
-            escalation_flags.add("E")
-
-            try:
-                from app.services.automation_triggers import _dispatch
-                import asyncio
-                asyncio.create_task(_dispatch(
-                    lead_id=str(lead_id),
-                    tenant_id=tenant_id,
-                    trigger_type="score_threshold",
-                    message=message,
-                    is_first_message=False,
-                    db=db,
-                ))
-            except Exception as auto_err:
-                logger.warning(f"score_threshold trigger failed for lead {lead_id}: {auto_err}")
-    except Exception as e:
-        logger.error(f"Scoring update failed for lead {lead_id}: {e}")
+                try:
+                    from app.services.automation_triggers import _dispatch
+                    import asyncio
+                    asyncio.create_task(_dispatch(
+                        lead_id=str(lead_id),
+                        tenant_id=tenant_id,
+                        trigger_type="score_threshold",
+                        message=message,
+                        is_first_message=False,
+                        db=db,
+                    ))
+                except Exception as auto_err:
+                    logger.warning(f"score_threshold trigger failed for lead {lead_id}: {auto_err}")
+        except Exception as e:
+            logger.error(f"Scoring update failed for lead {lead_id}: {e}")
 
     # Step 6: Fire inbox escalation — trigger-based, no segment gate
     active_triggers = [
