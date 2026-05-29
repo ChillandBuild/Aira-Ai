@@ -65,14 +65,27 @@ def auto_assign_lead(lead_id: str, tenant_id: str) -> str | None:
 
     db = get_supabase()
 
-    callers = (
+    # Exclude the owner's caller record — matches list_callers exclusion logic
+    owner = (
+        db.table("tenant_users")
+        .select("user_id")
+        .eq("tenant_id", tenant_id)
+        .eq("role", "owner")
+        .limit(1)
+        .execute()
+    )
+    owner_user_id = (owner.data[0] if owner.data else {}).get("user_id")
+
+    query = (
         db.table("callers")
         .select("id")
         .eq("tenant_id", tenant_id)
         .eq("active", True)
         .eq("status", "active")
-        .execute()
     )
+    if owner_user_id:
+        query = query.neq("user_id", owner_user_id)
+    callers = query.execute()
     if not callers.data:
         return None
 
