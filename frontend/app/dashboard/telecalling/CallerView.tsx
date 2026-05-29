@@ -1,7 +1,7 @@
 "use client";
 import { toast } from "sonner";
 import { useEffect, useState, useCallback } from "react";
-import { Phone, Eye, RefreshCw, ChevronDown, StickyNote, Check } from "lucide-react";
+import { Phone, Eye, RefreshCw, ChevronDown, StickyNote, Check, CheckCheck } from "lucide-react";
 import { api, Caller, Lead } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import BriefingModal from "./components/briefing-modal";
@@ -31,6 +31,8 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
 
   // dialing
   const [dialing, setDialing] = useState<string | null>(null);
+  const [releasingLead, setReleasingLead] = useState<string | null>(null);
+  const [confirmRelease, setConfirmRelease] = useState<string | null>(null);
   const [manualPhone, setManualPhone] = useState("");
   const [manualDialing, setManualDialing] = useState(false);
 
@@ -171,7 +173,6 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   async function handleMarkDone(jobId: string) {
     try {
       await markCallbackDone(jobId);
-      // Move from active to completed
       const cb = todayCallbacks.find((c) => c.id === jobId);
       if (cb) {
         setTodayCallbacks((prev) => prev.filter((c) => c.id !== jobId));
@@ -179,6 +180,25 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to mark done");
+    }
+  }
+
+  async function handleRelease(leadId: string) {
+    if (confirmRelease !== leadId) {
+      setConfirmRelease(leadId);
+      setTimeout(() => setConfirmRelease((cur) => cur === leadId ? null : cur), 3000);
+      return;
+    }
+    setConfirmRelease(null);
+    setReleasingLead(leadId);
+    try {
+      await api.leads.release(leadId);
+      setMyLeads((prev) => prev.filter((l) => l.id !== leadId));
+      toast.success("Lead released — it'll be re-assigned via round-robin");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to release lead");
+    } finally {
+      setReleasingLead(null);
     }
   }
 
@@ -303,6 +323,22 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                       </button>
                       <button onClick={() => setViewingLead(lead)} className="p-2 rounded-lg hover:bg-surface-mid transition-colors text-on-surface-muted" title="View notes">
                         <Eye size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleRelease(lead.id)}
+                        disabled={releasingLead === lead.id}
+                        title="Done with this lead"
+                        className={`p-2 rounded-lg transition-colors font-label text-xs font-semibold ${
+                          confirmRelease === lead.id
+                            ? "bg-green-100 text-green-700 border border-green-300 px-3"
+                            : "hover:bg-surface-mid text-on-surface-muted"
+                        } disabled:opacity-50`}
+                      >
+                        {releasingLead === lead.id
+                          ? <RefreshCw size={14} className="animate-spin" />
+                          : confirmRelease === lead.id
+                          ? "Confirm?"
+                          : <CheckCheck size={14} />}
                       </button>
                       <button
                         onClick={() => openBriefing(lead)}

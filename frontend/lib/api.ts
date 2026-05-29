@@ -368,6 +368,10 @@ export const api = {
       apiFetch<Lead>(`/api/v1/leads/${id}/pin`, {
         method: "PATCH",
       }),
+    release: (id: string) =>
+      apiFetch<{ released: boolean }>(`/api/v1/leads/${id}/release`, {
+        method: "PATCH",
+      }),
     messages: async (id: string) => {
       const res = await apiFetch<Message[] | { data: Message[] }>(`/api/v1/leads/${id}/messages`);
       return Array.isArray(res) ? res : res.data || [];

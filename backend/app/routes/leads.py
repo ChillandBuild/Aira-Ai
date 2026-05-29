@@ -439,3 +439,20 @@ async def score_history(lead_id: UUID, ctx: dict = Depends(get_tenant_and_role))
         .execute()
     )
     return {"data": result.data or []}
+
+
+@router.patch("/{lead_id}/release")
+async def release_lead(lead_id: UUID, tenant_id: str = Depends(get_tenant_id)):
+    """Unassign a lead from its caller — caller marks it as 'done'.
+    Drops it from their queue so the next auto-assign can pick it up."""
+    db = get_supabase()
+    result = (
+        db.table("leads")
+        .update({"assigned_to": None})
+        .eq("id", str(lead_id))
+        .eq("tenant_id", tenant_id)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return {"released": True}
