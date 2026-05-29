@@ -639,7 +639,7 @@ async def generate_reply(
         else:
             chat_messages[-1]["content"] = _tagged_message
 
-        reply_text = await _groq_chat(chat_messages, max_tokens=300)
+        reply_text = await _groq_chat(chat_messages, max_tokens=600)
         is_ai = True
         reply_source = "knowledge" if context_text else "ai"
 
