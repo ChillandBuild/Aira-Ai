@@ -498,7 +498,7 @@ async def get_whatsapp_insights(
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(
                 f"{_GRAPH_BASE}/{waba_id}",
-                params={"fields": f"analytics.start({since_ts}).end({until_ts}).granularity(DAY)"},
+                params={"fields": f"analytics.start({since_ts}).end({until_ts}).granularity(DAY).phone_numbers(['{pid}'])"},
                 headers=headers,
             )
         if resp.is_success:
@@ -513,16 +513,15 @@ async def get_whatsapp_insights(
 
     # ── 2. Conversation cost analytics (pricing by category) ─────────────────
     if waba_id and since_ts and until_ts:
+        fields_str = (
+            f"conversation_analytics.start({since_ts}).end({until_ts})"
+            f".granularity(DAILY).dimensions(['CONVERSATION_CATEGORY','CONVERSATION_TYPE'])"
+            f".phone_numbers(['{pid}'])"
+        )
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(
-                f"{_GRAPH_BASE}/{waba_id}/conversation_analytics",
-                params={
-                    "start": since_ts,
-                    "end": until_ts,
-                    "granularity": "DAILY",
-                    "phone_numbers": json.dumps([pid]),
-                    "dimensions": json.dumps(["conversation_category", "conversation_type"]),
-                },
+                f"{_GRAPH_BASE}/{waba_id}",
+                params={"fields": fields_str},
                 headers=headers,
             )
         if resp.is_success:

@@ -427,7 +427,7 @@ async def meta_activity_log(
 
     params = {
         "access_token": access_token,
-        "fields": "time,user,category,activity",
+        "fields": "id,actor_id,category,event_type,timestamp",
         "limit": limit,
     }
     if after:
@@ -436,13 +436,13 @@ async def meta_activity_log(
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(
-                f"https://graph.facebook.com/v21.0/{waba_id}/audit_logs",
+                f"https://graph.facebook.com/v21.0/{waba_id}/activities",
                 params=params,
             )
         data = resp.json()
 
         if "error" in data:
-            logger.error(f"Meta audit log error: {data['error']}")
+            logger.error(f"Meta activity log error: {data['error']}")
             return {"logs": [], "paging": None, "error": data["error"].get("message", "Meta API error")}
 
         raw_logs = data.get("data", [])
@@ -452,10 +452,10 @@ async def meta_activity_log(
         logs = []
         for entry in raw_logs:
             logs.append({
-                "time": entry.get("time"),
-                "user": entry.get("user", {}).get("name", "Unknown") if isinstance(entry.get("user"), dict) else str(entry.get("user", "Unknown")),
+                "time": entry.get("timestamp"),
+                "user": str(entry.get("actor_id", "Unknown")),
                 "category": entry.get("category", ""),
-                "activity": entry.get("activity", ""),
+                "activity": entry.get("event_type", ""),
             })
 
         return {"logs": logs, "paging": paging, "error": None}

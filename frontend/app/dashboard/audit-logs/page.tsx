@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
-import { RefreshCw, ExternalLink, Clock, User, Tag, Activity, AlertCircle, ChevronDown } from "lucide-react";
+import { RefreshCw, Clock, User, Tag, Activity, AlertCircle, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -149,15 +149,7 @@ export default function AuditLogsPage() {
                 </p>
               </div>
 
-              <a
-                href="https://business.facebook.com/latest/whatsapp_manager/activity_log"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-surface-mid text-on-surface-muted hover:text-on-surface hover:bg-surface-low transition-colors font-label text-[11px]"
-              >
-                <ExternalLink size={11} />
-                View on Meta
-              </a>
+
             </div>
 
             <div className="flex items-center gap-2">
