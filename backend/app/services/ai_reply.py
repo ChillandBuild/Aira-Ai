@@ -662,7 +662,7 @@ async def generate_reply(
         # Strip [COLLECT_DONE] signal before sending to customer — the raw JSON
         # must never reach the channel delivery path or pollute thread history.
         # Keep _raw_reply intact for the parser below (after messages insert).
-        _display_text = re.sub(r'\s*\[COLLECT_DONE\]\s*\{.*?\}\s*', '', _raw_reply, flags=re.DOTALL).strip()
+        _display_text = re.sub(r'^\s*\[COLLECT_DONE\]\s*\{.*\}\s*$', '', _raw_reply.strip(), flags=re.DOTALL).strip()
         reply_text = _display_text if _display_text != _raw_reply else _raw_reply
         if not reply_text:
             reply_text = "Thank you — we've got all your details. We'll be in touch shortly."
@@ -717,7 +717,7 @@ async def generate_reply(
 
     # Detect [COLLECT_DONE] signal — AI has finished collecting structured data.
     # Parser runs against _raw_reply so the stripped display text doesn't block detection.
-    _collect_match = re.search(r'\[COLLECT_DONE\]\s*(\{.*?\})', _raw_reply, re.DOTALL)
+    _collect_match = re.match(r'\s*\[COLLECT_DONE\]\s*(\{.*\})\s*$', _raw_reply.strip(), re.DOTALL)
     if _collect_match:
         try:
             import json as _json
@@ -728,17 +728,29 @@ async def generate_reply(
             _post_action = get_setting("collect_post_action", tenant_id=tenant_id)
             if _post_action == "send_payment_link":
                 try:
+                    from app.services.booking_flow import _create_draft_booking
                     from app.services.payment_razorpay import create_payment_link
-                    _bk = db.table("bookings").select("id,booking_ref,amount_paise").eq("lead_id", str(lead_id)).eq("status", "pending_payment").limit(1).execute()
-                    if _bk.data:
-                        _b = _bk.data[0]
-                        await create_payment_link(
-                            booking_id=_b["id"],
-                            booking_ref=_b.get("booking_ref", "REF"),
-                            amount_paise=_b.get("amount_paise", 50000),
-                            customer_name=_collected.get("name") or _collected.get("devotee_name") or "",
-                            customer_phone=phone,
-                        )
+                    # Get or create booking row
+                    _bk = db.table("bookings").select("id,booking_ref,amount_paise") \
+                        .eq("lead_id", str(lead_id)).eq("tenant_id", tenant_id) \
+                        .neq("status", "cancelled").order("created_at", desc=True).limit(1).execute()
+                    _b = _bk.data[0] if _bk.data else _create_draft_booking(str(lead_id), tenant_id, db)
+                    # Write collected fields onto booking row + mark pending_payment
+                    db.table("bookings").update({
+                        "devotee_name": _collected.get("devotee_name") or _collected.get("name") or "",
+                        "rasi": _collected.get("rasi"),
+                        "nakshatram": _collected.get("nakshatram"),
+                        "gotram": _collected.get("gotram"),
+                        "delivery_address": _collected.get("delivery_address") or _collected.get("address"),
+                        "status": "pending_payment",
+                    }).eq("id", _b["id"]).execute()
+                    await create_payment_link(
+                        booking_id=_b["id"],
+                        booking_ref=_b.get("booking_ref", "REF"),
+                        amount_paise=_b.get("amount_paise", 50000),
+                        customer_name=_collected.get("devotee_name") or _collected.get("name") or "",
+                        customer_phone=phone,
+                    )
                 except Exception as _pe:
                     logger.warning(f"Payment link failed for lead {lead_id}: {_pe}")
             elif _post_action == "notify_telecaller":
