@@ -54,3 +54,22 @@ ALTER TABLE messages
 
 CREATE INDEX IF NOT EXISTS idx_messages_automation_step
     ON messages(automation_step_id) WHERE automation_step_id IS NOT NULL;
+
+-- 4. atomic per-node counter increment --------------------------------------
+-- PostgREST cannot express `col = col + 1`; the executor and webhook call this.
+-- p_field is whitelisted to the three counter columns.
+CREATE OR REPLACE FUNCTION bump_automation_step_counter(
+    p_step_id UUID,
+    p_field   TEXT,
+    p_delta   INTEGER DEFAULT 1
+) RETURNS VOID AS $$
+BEGIN
+    IF p_field NOT IN ('sent_count', 'delivered_count', 'error_count') THEN
+        RAISE EXCEPTION 'invalid counter field: %', p_field;
+    END IF;
+    EXECUTE format(
+        'UPDATE automation_steps SET %I = %I + $1 WHERE id = $2',
+        p_field, p_field
+    ) USING p_delta, p_step_id;
+END;
+$$ LANGUAGE plpgsql;
