@@ -427,58 +427,171 @@ function ChannelsTab({ range }: { range: DateRange }) {
 
 // ─── Telecalling Tab ──────────────────────────────────────────────────────────
 
-const SLOT_LABELS = ["9AM","","10AM","","11AM","","12PM","","1PM","","2PM","","3PM","","4PM","","5PM",""];
-// indexes 0,2,4,6... show the hour; odd indexes are blank (for the :30 slots)
+function slotToLabel(index: number): string {
+  const totalMins = 9 * 60 + index * 30;
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  const ampm = h >= 12 ? "PM" : "AM";
+  const displayH = h > 12 ? h - 12 : h;
+  return m === 0 ? `${displayH}${ampm}` : `${displayH}:30${ampm}`;
+}
 
-function CallerPulsStrip({ data }: { data: TelecallingAnalyticsExtended }) {
-  const callers = data.per_caller;
-  const slots = data.calls_per_slot;
+function computeCallerPeriods(
+  slotCounts: number[]
+): { activePeriods: string[]; idlePeriods: string[] } {
+  const n = slotCounts.length;
+  const activePeriods: string[] = [];
+  const idlePeriods: string[] = [];
+  const isActive = slotCounts.map((c) => c > 0);
+  let i = 0;
+  while (i < n) {
+    const state = isActive[i];
+    let j = i;
+    while (j < n && isActive[j] === state) j++;
+    const range = `${slotToLabel(i)}–${slotToLabel(j)}`;
+    if (state) activePeriods.push(range);
+    else idlePeriods.push(range);
+    i = j;
+  }
+  return { activePeriods, idlePeriods };
+}
+
+function CallerTimelineStrip({ data }: { data: TelecallingAnalyticsExtended }) {
+  const { per_caller: callers, calls_per_slot: slots } = data;
 
   if (callers.length === 0) {
     return <p className="font-label text-sm text-on-surface-muted">No caller data for today.</p>;
   }
 
+  const maxCount = Math.max(
+    ...slots.flatMap((s) => Object.values(s.caller_counts) as number[]),
+    1
+  );
+
   return (
     <div>
       <div className="space-y-2">
         {callers.map((caller) => {
-          const totalCalls = slots.reduce(
-            (sum, s) => sum + (s.caller_counts[caller.caller_id] ?? 0),
-            0
-          );
+          const slotCounts = slots.map((s) => s.caller_counts[caller.caller_id] ?? 0);
+          const totalCalls = slotCounts.reduce((a, b) => a + b, 0);
 
           return (
-            <div key={caller.caller_id} className="flex items-center gap-2">
+            <div key={caller.caller_id} className="flex items-center gap-3">
               <span className="font-label text-xs text-on-surface-muted w-20 text-right shrink-0 truncate">
                 {caller.name}
               </span>
-              <div className="flex-1 grid gap-0.5" style={{ gridTemplateColumns: `repeat(18, 1fr)` }}>
-                {slots.map((slot) => {
-                  const count = slot.caller_counts[caller.caller_id] ?? 0;
+              <div className="flex-1 h-8 rounded-lg overflow-hidden flex gap-px bg-surface-mid">
+                {slotCounts.map((count, i) => {
+                  const opacity = count > 0 ? 0.35 + 0.65 * (count / maxCount) : 0;
                   return (
                     <div
-                      key={slot.slot}
-                      title={count > 0 ? `${count} call${count > 1 ? "s" : ""}` : "Idle"}
-                      className={`h-7 rounded-sm ${
-                        count > 0 ? "bg-emerald-500" : "bg-surface-mid"
-                      }`}
+                      key={i}
+                      style={{
+                        flex: 1,
+                        backgroundColor: count > 0 ? `rgba(16,185,129,${opacity})` : undefined,
+                      }}
+                      title={
+                        count > 0
+                          ? `${slotToLabel(i)}: ${count} call${count !== 1 ? "s" : ""}`
+                          : `${slotToLabel(i)}: Idle`
+                      }
                     />
                   );
                 })}
               </div>
-              <span className="font-label text-xs text-on-surface-muted w-20 shrink-0">
+              <span className="font-label text-xs text-on-surface-muted w-24 shrink-0">
                 {totalCalls} calls · {formatMinutes(caller.total_minutes_today)}
               </span>
             </div>
           );
         })}
       </div>
-      {/* X-axis labels */}
-      <div className="ml-[88px] grid gap-0.5" style={{ gridTemplateColumns: `repeat(18, 1fr)` }}>
-        {SLOT_LABELS.map((label, i) => (
-          <span key={i} className="text-[9px] text-on-surface-muted text-center truncate">{label}</span>
+      {/* X-axis: hour label at every even slot (0,2,4…) */}
+      <div
+        className="mt-1"
+        style={{ marginLeft: 92, marginRight: 100, display: "grid", gridTemplateColumns: "repeat(18, 1fr)" }}
+      >
+        {Array.from({ length: 18 }, (_, i) => (
+          <span key={i} className="text-[9px] text-on-surface-muted text-center">
+            {i % 2 === 0 ? slotToLabel(i) : ""}
+          </span>
         ))}
       </div>
+    </div>
+  );
+}
+
+function CallerSummaryCards({ data }: { data: TelecallingAnalyticsExtended }) {
+  const { per_caller: callers, calls_per_slot: slots } = data;
+  if (callers.length === 0) return null;
+
+  return (
+    <div className="grid grid-cols-3 gap-3 mt-5">
+      {callers.map((caller) => {
+        const slotCounts = slots.map((s) => s.caller_counts[caller.caller_id] ?? 0);
+        const { activePeriods, idlePeriods } = computeCallerPeriods(slotCounts);
+        const hasActivity = caller.calls_today > 0;
+
+        return (
+          <div
+            key={caller.caller_id}
+            className="bg-surface-low rounded-xl p-4 ring-1 ring-[#c4c7c7]/15"
+          >
+            <div className="flex items-start justify-between mb-3">
+              <p className="font-body text-sm font-bold text-on-surface">{caller.name}</p>
+              <div className="text-right">
+                <p className="font-label text-xs font-semibold text-on-surface">
+                  {caller.calls_today} calls
+                </p>
+                <p className="font-label text-xs text-on-surface-muted">
+                  {formatMinutes(caller.total_minutes_today)}
+                </p>
+              </div>
+            </div>
+
+            {!hasActivity ? (
+              <p className="font-label text-xs text-on-surface-muted italic">No activity today</p>
+            ) : (
+              <div className="space-y-2">
+                {activePeriods.length > 0 && (
+                  <div>
+                    <p className="font-label text-[10px] font-semibold text-emerald-700 uppercase tracking-wider mb-1">
+                      Active
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {activePeriods.map((p, i) => (
+                        <span
+                          key={i}
+                          className="font-label text-xs bg-emerald-50 text-emerald-700 rounded px-2 py-0.5 ring-1 ring-emerald-100"
+                        >
+                          {p}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {idlePeriods.length > 0 && (
+                  <div>
+                    <p className="font-label text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                      Idle
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {idlePeriods.map((p, i) => (
+                        <span
+                          key={i}
+                          className="font-label text-xs bg-slate-50 text-slate-500 rounded px-2 py-0.5 ring-1 ring-slate-100"
+                        >
+                          {p}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -518,9 +631,10 @@ function TelecallingTab() {
         <KpiCard label="Team Conv. Rate" value={`${convRate}%`} sub={`${converted} converted`} />
       </div>
 
-      {/* Caller pulse strip */}
+      {/* Caller activity — timeline + summary cards */}
       <SectionCard title="Who worked and when — today">
-        <CallerPulsStrip data={data} />
+        <CallerTimelineStrip data={data} />
+        <CallerSummaryCards data={data} />
       </SectionCard>
 
       {/* Outcome + calls per hour */}
