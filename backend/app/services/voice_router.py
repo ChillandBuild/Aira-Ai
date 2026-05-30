@@ -6,11 +6,12 @@ logger = logging.getLogger(__name__)
 SPAM_PAUSE_THRESHOLD = 7  # auto-pause when spam_score reaches this
 
 
-async def get_best_voice_number() -> dict | None:
+async def get_best_voice_number(tenant_id: str) -> dict | None:
     db = get_supabase()
     result = (
         db.table("voice_numbers")
         .select("*")
+        .eq("tenant_id", tenant_id)
         .eq("status", "active")
         .order("spam_score")
         .order("pickup_rate", desc=True)

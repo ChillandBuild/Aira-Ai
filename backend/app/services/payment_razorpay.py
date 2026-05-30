@@ -13,22 +13,22 @@ logger = logging.getLogger(__name__)
 _RAZORPAY_BASE = "https://api.razorpay.com/v1"
 
 
-def _get_key_id() -> str:
-    v = get_setting("razorpay_key_id")
+def _get_key_id(tenant_id: str | None = None) -> str:
+    v = get_setting("razorpay_key_id", tenant_id=tenant_id)
     if not v:
         raise RuntimeError("razorpay_key_id not configured in app settings")
     return v
 
 
-def _get_key_secret() -> str:
-    v = get_setting("razorpay_key_secret")
+def _get_key_secret(tenant_id: str | None = None) -> str:
+    v = get_setting("razorpay_key_secret", tenant_id=tenant_id)
     if not v:
         raise RuntimeError("razorpay_key_secret not configured in app settings")
     return v
 
 
-def _get_webhook_secret() -> str:
-    v = get_setting("razorpay_webhook_secret")
+def _get_webhook_secret(tenant_id: str | None = None) -> str:
+    v = get_setting("razorpay_webhook_secret", tenant_id=tenant_id)
     if not v:
         raise RuntimeError("razorpay_webhook_secret not configured in app settings")
     return v
@@ -41,6 +41,7 @@ async def create_payment_link(
     customer_name: str,
     customer_phone: str,
     description: str,
+    tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Create a Razorpay Payment Link and return the short URL.
@@ -49,8 +50,8 @@ async def create_payment_link(
       - payment_link_url: str
       - razorpay_payment_link_id: str
     """
-    key_id = _get_key_id()
-    key_secret = _get_key_secret()
+    key_id = _get_key_id(tenant_id)
+    key_secret = _get_key_secret(tenant_id)
 
     payload = {
         "amount": amount_paise,
@@ -71,7 +72,11 @@ async def create_payment_link(
     }
 
     async with httpx.AsyncClient(auth=(key_id, key_secret), timeout=15.0) as client:
-        resp = await client.post(f"{_RAZORPAY_BASE}/payment_links", json=payload)
+        resp = await client.post(
+            f"{_RAZORPAY_BASE}/payment_links",
+            json=payload,
+            headers={"X-Razorpay-Idempotency-Key": f"booking:{booking_id}:payment_link"},
+        )
 
     if not resp.is_success:
         raise RuntimeError(
