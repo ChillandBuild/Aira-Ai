@@ -86,6 +86,66 @@ def _evaluate_condition(config: dict, lead_data: dict, message: str) -> bool:
     return False
 
 
+# ─── Send helpers ────────────────────────────────────────────────────────────
+
+_NEW_SEND_STEPS = ("send_image", "send_video", "send_file", "send_location", "cta_url")
+
+
+def _interpolate(text: str, lead_data: dict) -> str:
+    return (text or "").replace(
+        "{{name}}", lead_data.get("name") or "there"
+    ).replace("{{phone}}", lead_data.get("phone") or "")
+
+
+async def _send_text_via_channel(source: str, lead_data: dict, text: str, tenant_id: str) -> str | None:
+    """Send a plain text message on the lead's channel. Returns msg id/wamid or None."""
+    if source == "telegram":
+        from app.services.ai_reply import send_telegram
+        tg_id = lead_data.get("tg_user_id")
+        return await send_telegram(tg_id, text, tenant_id=tenant_id) if tg_id else None
+    if source == "instagram":
+        from app.services.ai_reply import send_instagram
+        ig_id = lead_data.get("ig_user_id")
+        return await send_instagram(ig_id, text, tenant_id=tenant_id) if ig_id else None
+    if source == "facebook":
+        from app.services.ai_reply import send_facebook
+        fb_id = lead_data.get("fb_user_id")
+        return await send_facebook(fb_id, text, tenant_id=tenant_id) if fb_id else None
+    from app.services.ai_reply import send_whatsapp
+    phone = lead_data.get("phone")
+    return await send_whatsapp(phone, text, tenant_id=tenant_id) if phone else None
+
+
+def _record_outbound(db, step, lead_data, source, content, sid, automation_id) -> None:
+    """Insert the outbound messages row and bump per-node counters. Never raises."""
+    step_id = step["id"]
+    if sid:
+        try:
+            db.table("messages").insert({
+                "lead_id": str(lead_data["id"]),
+                "tenant_id": str(lead_data["tenant_id"]),
+                "direction": "outbound",
+                "channel": source,
+                "content": content,
+                "is_ai_generated": False,
+                "reply_source": "automation",
+                "meta_message_id": sid,
+                "automation_id": automation_id,
+                "automation_step_id": step_id,
+            }).execute()
+        except Exception as e:
+            logger.error(f"automation outbound insert failed for step {step_id}: {e}")
+    field = "sent_count" if sid else "error_count"
+    try:
+        db.rpc("bump_automation_step_counter", {"p_step_id": step_id, "p_field": field, "p_delta": 1}).execute()
+    except Exception as e:
+        logger.warning(f"counter bump ({field}) failed for step {step_id}: {e}")
+
+
+def _maps_link(lat, lon) -> str:
+    return f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+
+
 # ─── Step executor ───────────────────────────────────────────────────────────
 
 async def _execute_step(
@@ -101,9 +161,10 @@ async def _execute_step(
     lead_id = str(lead_data["id"])
     tenant_id = str(lead_data["tenant_id"])
     source = lead_data.get("source", "whatsapp")
+    automation_id = context.get("automation_id")
 
     # ── Booking-flow guard for outbound message steps ──────────────────────
-    if step_type in ("send_message", "send_template"):
+    if step_type in ("send_message", "send_template", *_NEW_SEND_STEPS):
         try:
             from app.services.booking_flow import get_or_create_state
             conv_state = get_or_create_state(lead_id, tenant_id, db)
@@ -117,44 +178,129 @@ async def _execute_step(
         text = config.get("message", "")
         if not text:
             return {"status": "error", "detail": "empty message"}
-        # Interpolate {{name}} and {{phone}}
-        text = text.replace("{{name}}", lead_data.get("name") or "there")
-        text = text.replace("{{phone}}", lead_data.get("phone") or "")
+        text = _interpolate(text, lead_data)
         try:
-            sid: str | None = None
-            if source == "telegram":
-                from app.services.ai_reply import send_telegram
-                tg_id = lead_data.get("tg_user_id")
-                if tg_id:
-                    sid = await send_telegram(tg_id, text, tenant_id=tenant_id)
-            elif source == "instagram":
-                from app.services.ai_reply import send_instagram
-                ig_id = lead_data.get("ig_user_id")
-                if ig_id:
-                    sid = await send_instagram(ig_id, text, tenant_id=tenant_id)
-            elif source == "facebook":
-                from app.services.ai_reply import send_facebook
-                fb_id = lead_data.get("fb_user_id")
-                if fb_id:
-                    sid = await send_facebook(fb_id, text, tenant_id=tenant_id)
-            else:
-                from app.services.ai_reply import send_whatsapp
-                phone = lead_data.get("phone")
-                if phone:
-                    sid = await send_whatsapp(phone, text, tenant_id=tenant_id)
-            if sid:
-                db.table("messages").insert({
-                    "lead_id": lead_id,
-                    "tenant_id": tenant_id,
-                    "direction": "outbound",
-                    "channel": source,
-                    "content": text,
-                    "is_ai_generated": False,
-                    "reply_source": "automation",
-                }).execute()
+            sid = await _send_text_via_channel(source, lead_data, text, tenant_id)
+            _record_outbound(db, step, lead_data, source, text, sid, automation_id)
             return {"status": "ok", "detail": f"sent sid={sid}"}
         except Exception as e:
             logger.error(f"automation send_message failed for lead {lead_id}: {e}")
+            _record_outbound(db, step, lead_data, source, text, None, automation_id)
+            return {"status": "error", "detail": str(e)}
+
+    # ── send_image / send_video ────────────────────────────────────────────
+    if step_type in ("send_image", "send_video"):
+        url_val = config.get("url", "")
+        if not url_val:
+            return {"status": "error", "detail": "empty url"}
+        caption = _interpolate(config.get("caption", ""), lead_data) or None
+        wa_type = "image" if step_type == "send_image" else "video"
+        try:
+            sid = None
+            if source == "whatsapp":
+                from app.services.meta_cloud import send_media_message
+                phone = lead_data.get("phone")
+                if phone:
+                    data = await send_media_message(
+                        to_number=phone, wa_type=wa_type, media_link=url_val,
+                        caption=caption, tenant_id=tenant_id,
+                    )
+                    sid = (data.get("messages") or [{}])[0].get("id")
+            else:
+                text = f"{caption}\n{url_val}" if caption else url_val
+                sid = await _send_text_via_channel(source, lead_data, text, tenant_id)
+            _record_outbound(db, step, lead_data, source, caption or url_val, sid, automation_id)
+            return {"status": "ok", "detail": f"sent {wa_type} sid={sid}"}
+        except Exception as e:
+            logger.error(f"automation {step_type} failed for lead {lead_id}: {e}")
+            _record_outbound(db, step, lead_data, source, url_val, None, automation_id)
+            return {"status": "error", "detail": str(e)}
+
+    # ── send_file ──────────────────────────────────────────────────────────
+    if step_type == "send_file":
+        url_val = config.get("url", "")
+        if not url_val:
+            return {"status": "error", "detail": "empty url"}
+        caption = _interpolate(config.get("caption", ""), lead_data) or None
+        filename = config.get("filename") or None
+        try:
+            sid = None
+            if source == "whatsapp":
+                from app.services.meta_cloud import send_media_message
+                phone = lead_data.get("phone")
+                if phone:
+                    data = await send_media_message(
+                        to_number=phone, wa_type="document", media_link=url_val,
+                        filename=filename, caption=caption, tenant_id=tenant_id,
+                    )
+                    sid = (data.get("messages") or [{}])[0].get("id")
+            else:
+                text = f"{caption}\n{url_val}" if caption else url_val
+                sid = await _send_text_via_channel(source, lead_data, text, tenant_id)
+            _record_outbound(db, step, lead_data, source, caption or url_val, sid, automation_id)
+            return {"status": "ok", "detail": f"sent file sid={sid}"}
+        except Exception as e:
+            logger.error(f"automation send_file failed for lead {lead_id}: {e}")
+            _record_outbound(db, step, lead_data, source, url_val, None, automation_id)
+            return {"status": "error", "detail": str(e)}
+
+    # ── send_location ──────────────────────────────────────────────────────
+    if step_type == "send_location":
+        try:
+            lat = float(config.get("latitude"))
+            lon = float(config.get("longitude"))
+        except (TypeError, ValueError):
+            return {"status": "error", "detail": "invalid latitude/longitude"}
+        name = config.get("name") or None
+        address = config.get("address") or None
+        try:
+            sid = None
+            if source == "whatsapp":
+                from app.services.meta_cloud import send_location_message
+                phone = lead_data.get("phone")
+                if phone:
+                    data = await send_location_message(
+                        to_number=phone, latitude=lat, longitude=lon,
+                        name=name, address=address, tenant_id=tenant_id,
+                    )
+                    sid = (data.get("messages") or [{}])[0].get("id")
+            else:
+                label = name or "Location"
+                text = f"{label}: {_maps_link(lat, lon)}"
+                sid = await _send_text_via_channel(source, lead_data, text, tenant_id)
+            _record_outbound(db, step, lead_data, source, name or _maps_link(lat, lon), sid, automation_id)
+            return {"status": "ok", "detail": f"sent location sid={sid}"}
+        except Exception as e:
+            logger.error(f"automation send_location failed for lead {lead_id}: {e}")
+            _record_outbound(db, step, lead_data, source, _maps_link(lat, lon), None, automation_id)
+            return {"status": "error", "detail": str(e)}
+
+    # ── cta_url ────────────────────────────────────────────────────────────
+    if step_type == "cta_url":
+        body = _interpolate(config.get("body", ""), lead_data)
+        button_text = config.get("button_text", "")
+        button_url = config.get("button_url", "")
+        if not body or not button_text or not button_url:
+            return {"status": "error", "detail": "cta_url requires body, button_text, button_url"}
+        try:
+            sid = None
+            if source == "whatsapp":
+                from app.services.meta_cloud import send_cta_url_message
+                phone = lead_data.get("phone")
+                if phone:
+                    data = await send_cta_url_message(
+                        to_number=phone, body_text=body, button_text=button_text,
+                        button_url=button_url, tenant_id=tenant_id,
+                    )
+                    sid = (data.get("messages") or [{}])[0].get("id")
+            else:
+                text = f"{body}\n\n{button_text}: {button_url}"
+                sid = await _send_text_via_channel(source, lead_data, text, tenant_id)
+            _record_outbound(db, step, lead_data, source, body, sid, automation_id)
+            return {"status": "ok", "detail": f"sent cta_url sid={sid}"}
+        except Exception as e:
+            logger.error(f"automation cta_url failed for lead {lead_id}: {e}")
+            _record_outbound(db, step, lead_data, source, body, None, automation_id)
             return {"status": "error", "detail": str(e)}
 
     # ── send_template ─────────────────────────────────────────────────────
@@ -395,7 +541,8 @@ async def run_automation(
     steps_results: list[dict] = []
     try:
         steps_results = await _run_steps(
-            steps_flat, root_steps, lead_data, message, db, automation_id, {}
+            steps_flat, root_steps, lead_data, message, db, automation_id,
+            {"automation_id": automation_id},
         )
         if any(r.get("status") == "error" for r in steps_results):
             overall_status = "partial" if any(r.get("status") == "ok" for r in steps_results) else "failure"
@@ -407,6 +554,7 @@ async def run_automation(
     try:
         db.table("automations").update({
             "run_count": (automation.get("run_count") or 0) + 1,
+            "subscriber_count": (automation.get("subscriber_count") or 0) + 1,
         }).eq("id", automation_id).execute()
         db.table("automation_logs").insert({
             "automation_id": automation_id,

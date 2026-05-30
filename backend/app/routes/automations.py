@@ -1,4 +1,5 @@
 import logging
+from typing import Literal
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -25,6 +26,7 @@ class AutomationCreate(BaseModel):
     trigger_type: str
     trigger_config: dict = {}
     active: bool = False
+    flow_kind: Literal["automation", "bot_flow"] = "automation"
     steps: list[StepIn] = []
 
 
@@ -46,6 +48,7 @@ _VALID_STEPS = {
     "send_message", "send_template", "assign_lead",
     "update_segment", "add_note", "send_webhook",
     "wait", "condition", "create_followup",
+    "send_image", "send_video", "send_file", "send_location", "cta_url",
 }
 
 
@@ -76,6 +79,25 @@ def _validate(trigger_type: str, trigger_config: dict, steps: list) -> list[str]
             url = step.get("config", {}).get("url", "")
             if not url.startswith(("http://", "https://")):
                 errors.append(f"Step {i}: send_webhook requires a valid http/https URL")
+        if step.get("step_type") in ("send_image", "send_video", "send_file"):
+            url = step.get("config", {}).get("url", "")
+            if not url.startswith(("http://", "https://")):
+                errors.append(f"Step {i}: {step.get('step_type')} requires a valid http/https URL")
+        if step.get("step_type") == "send_location":
+            cfg = step.get("config", {})
+            try:
+                float(cfg.get("latitude"))
+                float(cfg.get("longitude"))
+            except (TypeError, ValueError):
+                errors.append(f"Step {i}: send_location requires numeric latitude and longitude")
+        if step.get("step_type") == "cta_url":
+            cfg = step.get("config", {})
+            if not cfg.get("body"):
+                errors.append(f"Step {i}: cta_url requires body")
+            if not cfg.get("button_text"):
+                errors.append(f"Step {i}: cta_url requires button_text")
+            if not str(cfg.get("button_url", "")).startswith(("http://", "https://")):
+                errors.append(f"Step {i}: cta_url requires a valid http/https button_url")
     return errors
 
 
@@ -101,15 +123,19 @@ def _upsert_steps(automation_id: str, tenant_id: str, steps: list[StepIn], db) -
 # ─── Routes ──────────────────────────────────────────────────────────────────
 
 @router.get("/")
-async def list_automations(tenant_id: str = Depends(get_tenant_id)):
+async def list_automations(
+    flow_kind: str | None = None,
+    tenant_id: str = Depends(get_tenant_id),
+):
     db = get_supabase()
-    res = (
+    query = (
         db.table("automations")
-        .select("id,name,trigger_type,active,run_count,created_at,updated_at")
+        .select("id,name,trigger_type,active,run_count,subscriber_count,flow_kind,created_at,updated_at")
         .eq("tenant_id", tenant_id)
-        .order("created_at", desc=True)
-        .execute()
     )
+    if flow_kind:
+        query = query.eq("flow_kind", flow_kind)
+    res = query.order("created_at", desc=True).execute()
     return {"data": res.data or []}
 
 
@@ -127,6 +153,7 @@ async def create_automation(payload: AutomationCreate, tenant_id: str = Depends(
         "trigger_type": payload.trigger_type,
         "trigger_config": payload.trigger_config,
         "active": payload.active,
+        "flow_kind": payload.flow_kind,
     }).execute()
     if not res.data:
         raise HTTPException(status_code=500, detail="Failed to create automation")

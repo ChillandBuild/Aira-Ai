@@ -123,22 +123,24 @@ async def upload_media_to_meta(
 
 async def send_media_message(
     to_number: str,
-    media_id: str,
-    wa_type: str,
+    media_id: Optional[str] = None,
+    wa_type: str = "image",
     filename: Optional[str] = None,
     caption: Optional[str] = None,
     phone_number_id: Optional[str] = None,
     access_token: Optional[str] = None,
     tenant_id: Optional[str] = None,
+    media_link: Optional[str] = None,
 ) -> dict:
     """
     Send a media message via Meta Cloud API.
     wa_type: 'image' | 'document' | 'audio' | 'video'
+    Pass media_link for a public URL, or media_id for an uploaded Meta media handle.
     """
     pid, tok = _creds(phone_number_id, access_token, tenant_id)
     url = f"{_GRAPH_BASE}/{pid}/messages"
 
-    media_obj: dict = {"id": media_id}
+    media_obj: dict = {"link": media_link} if media_link else {"id": media_id}
     if caption and wa_type in ("image", "video", "document"):
         media_obj["caption"] = caption
     if filename and wa_type == "document":
@@ -157,6 +159,73 @@ async def send_media_message(
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
     data = resp.json()
     logger.info("Meta %s sent to %s", wa_type, to_number)
+    return data
+
+
+async def send_location_message(
+    to_number: str,
+    latitude: float,
+    longitude: float,
+    name: Optional[str] = None,
+    address: Optional[str] = None,
+    phone_number_id: Optional[str] = None,
+    access_token: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+) -> dict:
+    pid, tok = _creds(phone_number_id, access_token, tenant_id)
+    url = f"{_GRAPH_BASE}/{pid}/messages"
+    location: dict = {"latitude": latitude, "longitude": longitude}
+    if name:
+        location["name"] = name
+    if address:
+        location["address"] = address
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_number,
+        "type": "location",
+        "location": location,
+    }
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(url, json=payload, headers={"Authorization": f"Bearer {tok}"})
+    if not resp.is_success:
+        logger.error("send_location_message failed: %s %s", resp.status_code, resp.text)
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    data = resp.json()
+    logger.info("Meta location sent to %s", to_number)
+    return data
+
+
+async def send_cta_url_message(
+    to_number: str,
+    body_text: str,
+    button_text: str,
+    button_url: str,
+    phone_number_id: Optional[str] = None,
+    access_token: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+) -> dict:
+    pid, tok = _creds(phone_number_id, access_token, tenant_id)
+    url = f"{_GRAPH_BASE}/{pid}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_number,
+        "type": "interactive",
+        "interactive": {
+            "type": "cta_url",
+            "body": {"text": body_text},
+            "action": {
+                "name": "cta_url",
+                "parameters": {"display_text": button_text, "url": button_url},
+            },
+        },
+    }
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(url, json=payload, headers={"Authorization": f"Bearer {tok}"})
+    if not resp.is_success:
+        logger.error("send_cta_url_message failed: %s %s", resp.status_code, resp.text)
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    data = resp.json()
+    logger.info("Meta cta_url sent to %s", to_number)
     return data
 
 

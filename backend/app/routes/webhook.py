@@ -357,6 +357,18 @@ async def whatsapp_webhook(
                                     if failed_lead_id:
                                         db.table("leads").update({"whatsapp_undeliverable": True}) \
                                             .eq("id", failed_lead_id).eq("tenant_id", tenant_id).execute()
+                                # Bot Flow Builder per-node analytics: bump node delivered_count once
+                                if status == "delivered" and updated.data:
+                                    step_id = updated.data[0].get("automation_step_id")
+                                    if step_id:
+                                        try:
+                                            db.rpc("bump_automation_step_counter", {
+                                                "p_step_id": step_id,
+                                                "p_field": "delivered_count",
+                                                "p_delta": 1,
+                                            }).execute()
+                                        except Exception as e:
+                                            logger.warning(f"Failed to bump delivered_count for step {step_id}: {e}")
                             except Exception as e:
                                 logger.error(f"Failed to update message {message_id} status to {status}: {e}")
 
