@@ -50,16 +50,6 @@ def _ist_hour(utc_iso: str) -> int:
         return -1
 
 
-def _ist_date(utc_iso: str) -> str:
-    """Convert a UTC ISO string to IST date string YYYY-MM-DD."""
-    try:
-        dt = datetime.fromisoformat(utc_iso.replace("Z", "+00:00"))
-        ist = dt + IST_OFFSET
-        return ist.date().isoformat()
-    except Exception:
-        return ""
-
-
 def _ist_today_start_utc() -> datetime:
     """Midnight IST expressed as a UTC datetime."""
     now_utc = datetime.now(timezone.utc)
@@ -101,14 +91,15 @@ async def whatsapp_analytics(tenant_id: str = Depends(get_tenant_id)):
 @router.get("/telecalling")
 async def telecalling_analytics(tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
-    today = _today_start()
+    ist_today_start_utc = _ist_today_start_utc()
+    ist_today_start_iso = ist_today_start_utc.isoformat()
     week = _week_start()
 
     logs_today_res = (
         db.table("call_logs")
         .select("id,duration_seconds,outcome,caller_id,created_at")
         .eq("tenant_id", tenant_id)
-        .gte("created_at", today)
+        .gte("created_at", ist_today_start_iso)
         .execute()
         .data or []
     )
@@ -150,10 +141,6 @@ async def telecalling_analytics(tenant_id: str = Depends(get_tenant_id)):
         .execute()
         .data or []
     )
-
-    # IST today midnight (in UTC) for filtering calls that fall in IST today
-    ist_today_utc = _ist_today_start_utc()
-    ist_today_utc_iso = ist_today_utc.replace(tzinfo=None).isoformat()
 
     today_counts: dict[str, int] = {}
     today_durations: dict[str, list[int]] = {}
@@ -377,6 +364,7 @@ async def overview_analytics(
         "telegram": 0, "upload": 0, "manual": 0,
     }
     converted_7d = 0
+    converted_today = 0
     funnel_inquiries = 0
     funnel_engaged = 0
     funnel_hot = 0
@@ -387,9 +375,13 @@ async def overview_analytics(
         created = (lead.get("created_at") or "")[:10]
         if created in daily_leads_map:
             daily_leads_map[created] += 1
-        if lead.get("converted_at") and lead["converted_at"] >= week_start_for_funnel.isoformat():
-            converted_7d += 1
+        converted_at = lead.get("converted_at")
+        if converted_at:
             funnel_converted += 1
+            if converted_at >= week_start_for_funnel.isoformat():
+                converted_7d += 1
+            if converted_at >= today_start.isoformat():
+                converted_today += 1
         seg = lead.get("segment")
         if seg in by_segment:
             by_segment[seg] += 1
@@ -470,6 +462,7 @@ async def overview_analytics(
         "ai_vs_human": {"ai": ai_count, "human": human_count},
         "unreplied_24h": unreplied_24h,
         "converted_7d": converted_7d,
+        "converted_today": converted_today,
         "ai_handled_today": ai_handled_today,
         "by_segment": by_segment,
         "channel_breakdown": channel_breakdown,
@@ -535,16 +528,19 @@ async def messaging_analytics(
             if m.get("is_ai_generated"):
                 outbound_ai += 1
 
-        # reply_source breakdown
-        rs = m.get("reply_source")
-        if rs in ("ai", "knowledge", "automation"):
-            # treat "automation" as a sub-type; map to "ai" bucket if not already named
-            key = rs if rs in reply_source_counts else "ai"
-            reply_source_counts[key] += 1
-        elif rs == "manual" or (rs is None and m.get("direction") == "outbound" and not m.get("is_ai_generated")):
-            reply_source_counts["manual"] += 1
-        elif rs is None:
-            reply_source_counts["unknown"] += 1
+            # reply_source breakdown — outbound only (inbound has null reply_source)
+            rs = m.get("reply_source")
+            if rs in ("ai", "knowledge", "automation"):
+                # treat "automation" as a sub-type; map to "ai" bucket if not already named
+                key = rs if rs in reply_source_counts else "ai"
+                reply_source_counts[key] += 1
+            elif rs == "manual":
+                reply_source_counts["manual"] += 1
+            elif rs is None:
+                if not m.get("is_ai_generated"):
+                    reply_source_counts["manual"] += 1
+                else:
+                    reply_source_counts["unknown"] += 1
 
     ai_reply_rate: float | None = round(outbound_ai / outbound_total, 4) if outbound_total > 0 else None
 
