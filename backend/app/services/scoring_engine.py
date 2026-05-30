@@ -184,6 +184,10 @@ async def _score_arc(conversation: str, tenant_id: str | None) -> int:
         f"You score sales conversations for purchase intent (1-10).\n\n"
         f"Rubric:\n{rubric}\n\n"
         f"Conversation:\n{conversation}\n\n"
+        f"LANGUAGE RULES:\n"
+        f"- A message requesting communication in a regional language (Tamil, Hindi, Telugu, etc.) is an engagement signal — never score below 5 for it.\n"
+        f"- Single-word answers in regional languages (e.g. \"சிம்மம்\", \"பூரம்\", \"ஆமா\") must be evaluated for their semantic intent, not penalised for brevity or language.\n"
+        f"- Non-English intent = same weight as English equivalent.\n\n"
         f"Score the OVERALL purchase intent trajectory of this conversation. "
         f"Consider the full arc — not just the last message. "
         f"Reply with ONLY a single integer 1-10."
@@ -195,7 +199,9 @@ async def _score_arc(conversation: str, tenant_id: str | None) -> int:
             temperature=0.0,
             max_tokens=4,
         )
-        return max(1, min(10, int(resp.choices[0].message.content.strip())))
+        raw = resp.choices[0].message.content.strip()
+        match = re.search(r'\d+', raw)
+        return max(1, min(10, int(match.group()))) if match else 5
     except Exception as e:
         logger.error(f"Arc scoring failed: {e}")
         return 5

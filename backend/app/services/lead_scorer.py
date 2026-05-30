@@ -1,4 +1,5 @@
 import logging
+import re
 from groq import Groq
 from app.config import settings
 
@@ -22,6 +23,8 @@ IMPORTANT: Use the context to understand the message.
 - The same message as a first contact or without context = neutral/low (3-5)
 - If the user is actively engaged in a booking flow (providing name, rasi, address, etc.) = warm/high (7-10)
 - "ok" or "thank you" during an active booking flow = acknowledgment of progress, not disinterest (7-9)
+- A message requesting communication in a regional language (Tamil, Hindi, Telugu, Kannada, Malayalam, Bengali, etc.) is an ENGAGEMENT SIGNAL — score minimum 5, never penalise for a language switch request.
+- Non-English messages carry the same weight as equivalent English expressions. "ஆமா வேணும்" = "yes I want it" = high intent if context supports it. "சிம்மம்" answering a rasi question = a valid answer — score based on conversational context, not message length or language.
 
 CONTEXT:
 {context_block}
@@ -67,7 +70,9 @@ async def score_message(
             temperature=0.0,
             max_tokens=4,
         )
-        score = int(response.choices[0].message.content.strip())
+        raw = response.choices[0].message.content.strip()
+        match = re.search(r'\d+', raw)
+        score = int(match.group()) if match else current_score
         return max(1, min(10, score))
     except Exception as e:
         logger.error(f"Scoring failed: {e}")
