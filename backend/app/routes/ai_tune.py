@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from typing import Literal
@@ -81,6 +82,50 @@ async def list_prompts(tenant_id: str = Depends(get_tenant_id)):
     return {"data": res.data or []}
 
 
+async def _auto_generate_rubric(system_prompt: str, tenant_id: str) -> None:
+    """Generate a domain-appropriate scoring rubric from the tenant's system prompt."""
+    try:
+        from app.config_dynamic import get_setting, save_setting
+        existing_rubric = get_setting("scoring_rubric", tenant_id=tenant_id)
+        if existing_rubric and existing_rubric.strip():
+            logger.info(f"Scoring rubric already exists for tenant {tenant_id} — skipping auto-generation")
+            return
+
+        if not settings.groq_api_key:
+            return
+
+        client = Groq(api_key=settings.groq_api_key)
+        prompt = f"""You are configuring a lead scoring system for a B2B sales team.
+
+Based on this business's AI assistant system prompt, write a lead scoring rubric (1-10 scale).
+The rubric should reflect THIS specific business's conversion signals — not generic ones.
+
+System prompt:
+{system_prompt[:1500]}
+
+Write a rubric in this exact format (5 lines, one per score band):
+- 9-10: [High intent signals specific to this business]
+- 7-8: [Warm signals specific to this business]
+- 5-6: [Neutral signals]
+- 3-4: [Low engagement signals]
+- 1-2: [Disqualified / not interested signals]
+
+Reply with ONLY the 5 rubric lines. No explanation, no preamble."""
+
+        resp = client.chat.completions.create(
+            model=_TUNE_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=300,
+        )
+        rubric = resp.choices[0].message.content.strip()
+        if rubric and "9-10" in rubric:
+            save_setting("scoring_rubric", rubric, tenant_id=tenant_id)
+            logger.info(f"Auto-generated scoring rubric for tenant {tenant_id}")
+    except Exception as e:
+        logger.warning(f"Auto-rubric generation failed for tenant {tenant_id}: {e}")
+
+
 @router.put("/prompts/{name}")
 async def update_prompt(name: str, payload: PromptUpdate, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
@@ -88,6 +133,7 @@ async def update_prompt(name: str, payload: PromptUpdate, tenant_id: str = Depen
     if not res.data:
         raise HTTPException(status_code=404, detail=f"Prompt '{name}' not found")
     invalidate_prompt_cache(name)
+    asyncio.create_task(_auto_generate_rubric(payload.content, tenant_id))
     return res.data[0]
 
 
