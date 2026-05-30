@@ -48,6 +48,7 @@ const SECTIONS: SectionDef[] = [
     fields: [
       { key: "telecmi_secret", label: "App Secret", secret: true, required: true },
       { key: "telecmi_callerid", label: "Caller ID (DID shown to leads)", secret: false, required: false, hint: "The outbound number leads see when you call them" },
+      { key: "telecmi_webhook_secret", label: "Webhook Secret", secret: true, required: false, hint: "Appended as ?webhook_secret= to your TeleCMI CDR webhook URL" },
     ],
   },
   {
