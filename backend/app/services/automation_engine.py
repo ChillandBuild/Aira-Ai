@@ -116,30 +116,39 @@ async def _send_text_via_channel(source: str, lead_data: dict, text: str, tenant
     return await send_whatsapp(phone, text, tenant_id=tenant_id) if phone else None
 
 
-def _record_outbound(db, step, lead_data, source, content, sid, automation_id) -> None:
-    """Insert the outbound messages row and bump per-node counters. Never raises."""
-    step_id = step["id"]
-    if sid:
-        try:
-            db.table("messages").insert({
-                "lead_id": str(lead_data["id"]),
-                "tenant_id": str(lead_data["tenant_id"]),
-                "direction": "outbound",
-                "channel": source,
-                "content": content,
-                "is_ai_generated": False,
-                "reply_source": "automation",
-                "meta_message_id": sid,
-                "automation_id": automation_id,
-                "automation_step_id": step_id,
-            }).execute()
-        except Exception as e:
-            logger.error(f"automation outbound insert failed for step {step_id}: {e}")
-    field = "sent_count" if sid else "error_count"
+def _bump_counter(db, step_id, field) -> None:
     try:
         db.rpc("bump_automation_step_counter", {"p_step_id": step_id, "p_field": field, "p_delta": 1}).execute()
     except Exception as e:
         logger.warning(f"counter bump ({field}) failed for step {step_id}: {e}")
+
+
+def _record_outbound(db, step, lead_data, source, content, sid, automation_id) -> None:
+    """Record a successful send: insert the messages row + bump sent_count.
+
+    A None sid means the send did not happen (e.g. lead has no channel id); that is
+    a skip, not an error — callers return 'skipped' and no counter is touched here.
+    Error counting lives in the handlers' except blocks via _bump_counter.
+    """
+    if not sid:
+        return
+    step_id = step["id"]
+    try:
+        db.table("messages").insert({
+            "lead_id": str(lead_data["id"]),
+            "tenant_id": str(lead_data["tenant_id"]),
+            "direction": "outbound",
+            "channel": source,
+            "content": content,
+            "is_ai_generated": False,
+            "reply_source": "automation",
+            "meta_message_id": sid,
+            "automation_id": automation_id,
+            "automation_step_id": step_id,
+        }).execute()
+    except Exception as e:
+        logger.error(f"automation outbound insert failed for step {step_id}: {e}")
+    _bump_counter(db, step_id, "sent_count")
 
 
 def _maps_link(lat, lon) -> str:
@@ -182,10 +191,12 @@ async def _execute_step(
         try:
             sid = await _send_text_via_channel(source, lead_data, text, tenant_id)
             _record_outbound(db, step, lead_data, source, text, sid, automation_id)
+            if not sid:
+                return {"status": "skipped", "detail": "no channel id for lead"}
             return {"status": "ok", "detail": f"sent sid={sid}"}
         except Exception as e:
             logger.error(f"automation send_message failed for lead {lead_id}: {e}")
-            _record_outbound(db, step, lead_data, source, text, None, automation_id)
+            _bump_counter(db, step["id"], "error_count")
             return {"status": "error", "detail": str(e)}
 
     # ── send_image / send_video ────────────────────────────────────────────
@@ -210,10 +221,12 @@ async def _execute_step(
                 text = f"{caption}\n{url_val}" if caption else url_val
                 sid = await _send_text_via_channel(source, lead_data, text, tenant_id)
             _record_outbound(db, step, lead_data, source, caption or url_val, sid, automation_id)
+            if not sid:
+                return {"status": "skipped", "detail": "no channel id for lead"}
             return {"status": "ok", "detail": f"sent {wa_type} sid={sid}"}
         except Exception as e:
             logger.error(f"automation {step_type} failed for lead {lead_id}: {e}")
-            _record_outbound(db, step, lead_data, source, url_val, None, automation_id)
+            _bump_counter(db, step["id"], "error_count")
             return {"status": "error", "detail": str(e)}
 
     # ── send_file ──────────────────────────────────────────────────────────
@@ -238,10 +251,12 @@ async def _execute_step(
                 text = f"{caption}\n{url_val}" if caption else url_val
                 sid = await _send_text_via_channel(source, lead_data, text, tenant_id)
             _record_outbound(db, step, lead_data, source, caption or url_val, sid, automation_id)
+            if not sid:
+                return {"status": "skipped", "detail": "no channel id for lead"}
             return {"status": "ok", "detail": f"sent file sid={sid}"}
         except Exception as e:
             logger.error(f"automation send_file failed for lead {lead_id}: {e}")
-            _record_outbound(db, step, lead_data, source, url_val, None, automation_id)
+            _bump_counter(db, step["id"], "error_count")
             return {"status": "error", "detail": str(e)}
 
     # ── send_location ──────────────────────────────────────────────────────
@@ -269,10 +284,12 @@ async def _execute_step(
                 text = f"{label}: {_maps_link(lat, lon)}"
                 sid = await _send_text_via_channel(source, lead_data, text, tenant_id)
             _record_outbound(db, step, lead_data, source, name or _maps_link(lat, lon), sid, automation_id)
+            if not sid:
+                return {"status": "skipped", "detail": "no channel id for lead"}
             return {"status": "ok", "detail": f"sent location sid={sid}"}
         except Exception as e:
             logger.error(f"automation send_location failed for lead {lead_id}: {e}")
-            _record_outbound(db, step, lead_data, source, _maps_link(lat, lon), None, automation_id)
+            _bump_counter(db, step["id"], "error_count")
             return {"status": "error", "detail": str(e)}
 
     # ── cta_url ────────────────────────────────────────────────────────────
@@ -297,10 +314,12 @@ async def _execute_step(
                 text = f"{body}\n\n{button_text}: {button_url}"
                 sid = await _send_text_via_channel(source, lead_data, text, tenant_id)
             _record_outbound(db, step, lead_data, source, body, sid, automation_id)
+            if not sid:
+                return {"status": "skipped", "detail": "no channel id for lead"}
             return {"status": "ok", "detail": f"sent cta_url sid={sid}"}
         except Exception as e:
             logger.error(f"automation cta_url failed for lead {lead_id}: {e}")
-            _record_outbound(db, step, lead_data, source, body, None, automation_id)
+            _bump_counter(db, step["id"], "error_count")
             return {"status": "error", "detail": str(e)}
 
     # ── send_template ─────────────────────────────────────────────────────
@@ -552,10 +571,25 @@ async def run_automation(
         steps_results.append({"status": "error", "detail": str(e)})
 
     try:
-        db.table("automations").update({
-            "run_count": (automation.get("run_count") or 0) + 1,
-            "subscriber_count": (automation.get("subscriber_count") or 0) + 1,
-        }).eq("id", automation_id).execute()
+        # subscriber_count = distinct leads that ever entered this flow. Only
+        # bump it the first time THIS lead runs (run_count counts every run).
+        is_new_subscriber = True
+        try:
+            prior = (
+                db.table("automation_logs")
+                .select("id")
+                .eq("automation_id", automation_id)
+                .eq("lead_id", lead_id)
+                .limit(1)
+                .execute()
+            )
+            is_new_subscriber = not (prior.data or [])
+        except Exception as e:
+            logger.warning(f"subscriber dedup check failed for {automation_id}: {e}")
+        updates = {"run_count": (automation.get("run_count") or 0) + 1}
+        if is_new_subscriber:
+            updates["subscriber_count"] = (automation.get("subscriber_count") or 0) + 1
+        db.table("automations").update(updates).eq("id", automation_id).execute()
         db.table("automation_logs").insert({
             "automation_id": automation_id,
             "lead_id": lead_id,

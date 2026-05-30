@@ -1,6 +1,6 @@
 import logging
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
@@ -81,8 +81,8 @@ def _validate(trigger_type: str, trigger_config: dict, steps: list) -> list[str]
                 errors.append(f"Step {i}: send_webhook requires a valid http/https URL")
         if step.get("step_type") in ("send_image", "send_video", "send_file"):
             url = step.get("config", {}).get("url", "")
-            if not url.startswith(("http://", "https://")):
-                errors.append(f"Step {i}: {step.get('step_type')} requires a valid http/https URL")
+            if not url.startswith("https://"):
+                errors.append(f"Step {i}: {step.get('step_type')} requires a valid https URL")
         if step.get("step_type") == "send_location":
             cfg = step.get("config", {})
             try:
@@ -96,8 +96,8 @@ def _validate(trigger_type: str, trigger_config: dict, steps: list) -> list[str]
                 errors.append(f"Step {i}: cta_url requires body")
             if not cfg.get("button_text"):
                 errors.append(f"Step {i}: cta_url requires button_text")
-            if not str(cfg.get("button_url", "")).startswith(("http://", "https://")):
-                errors.append(f"Step {i}: cta_url requires a valid http/https button_url")
+            if not str(cfg.get("button_url", "")).startswith("https://"):
+                errors.append(f"Step {i}: cta_url requires a valid https button_url")
     return errors
 
 
@@ -105,8 +105,11 @@ def _upsert_steps(automation_id: str, tenant_id: str, steps: list[StepIn], db) -
     db.table("automation_steps").delete().eq("automation_id", automation_id).execute()
     if not steps:
         return
+    # Persist the client-supplied id so parent_step_id references (condition
+    # branches) resolve after the delete+reinsert. Frontend emits a UUID per node.
     rows = [
         {
+            **({"id": s.id} if s.id else {}),
             "automation_id": automation_id,
             "tenant_id": tenant_id,
             "step_type": s.step_type,
@@ -124,7 +127,7 @@ def _upsert_steps(automation_id: str, tenant_id: str, steps: list[StepIn], db) -
 
 @router.get("/")
 async def list_automations(
-    flow_kind: str | None = None,
+    flow_kind: Literal["automation", "bot_flow"] | None = None,
     tenant_id: str = Depends(get_tenant_id),
 ):
     db = get_supabase()
@@ -278,6 +281,7 @@ async def duplicate_automation(automation_id: UUID, tenant_id: str = Depends(get
         "trigger_type": src.data["trigger_type"],
         "trigger_config": src.data["trigger_config"],
         "active": False,
+        "flow_kind": src.data.get("flow_kind", "automation"),
     }).execute()
     new_id = new_auto.data[0]["id"]
     steps = (
@@ -287,13 +291,17 @@ async def duplicate_automation(automation_id: UUID, tenant_id: str = Depends(get
         .execute()
     )
     if steps.data:
+        # Remap old step ids → new ids so parent_step_id (condition branches)
+        # references stay intact within the duplicated flow.
+        id_map = {s["id"]: str(uuid4()) for s in steps.data}
         new_steps = [
             {
+                "id": id_map[s["id"]],
                 "automation_id": new_id,
                 "tenant_id": tenant_id,
                 "step_type": s["step_type"],
                 "config": s["config"],
-                "parent_step_id": s.get("parent_step_id"),
+                "parent_step_id": id_map.get(s.get("parent_step_id")),
                 "branch": s.get("branch"),
                 "position": s["position"],
             }
