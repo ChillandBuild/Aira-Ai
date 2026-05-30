@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 from typing import Literal
-from groq import Groq
+from groq import AsyncGroq, Groq
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.config import settings
@@ -94,7 +94,7 @@ async def _auto_generate_rubric(system_prompt: str, tenant_id: str) -> None:
         if not settings.groq_api_key:
             return
 
-        client = Groq(api_key=settings.groq_api_key)
+        client = AsyncGroq(api_key=settings.groq_api_key)
         prompt = f"""You are configuring a lead scoring system for a B2B sales team.
 
 Based on this business's AI assistant system prompt, write a lead scoring rubric (1-10 scale).
@@ -112,7 +112,7 @@ Write a rubric in this exact format (5 lines, one per score band):
 
 Reply with ONLY the 5 rubric lines. No explanation, no preamble."""
 
-        resp = client.chat.completions.create(
+        resp = await client.chat.completions.create(
             model=_TUNE_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
@@ -133,7 +133,8 @@ async def update_prompt(name: str, payload: PromptUpdate, tenant_id: str = Depen
     if not res.data:
         raise HTTPException(status_code=404, detail=f"Prompt '{name}' not found")
     invalidate_prompt_cache(name)
-    asyncio.create_task(_auto_generate_rubric(payload.content, tenant_id))
+    _task = asyncio.create_task(_auto_generate_rubric(payload.content, tenant_id))
+    _task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
     return res.data[0]
 
 
