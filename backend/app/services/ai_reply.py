@@ -68,7 +68,19 @@ FALLBACK_PROMPT = """You are a helpful AI assistant. Answer customer queries war
 Keep replies concise (2-3 sentences max).
 Always guide the customer toward the next step: booking, payment, or speaking with our team.
 If you don't know a specific detail, say: "Let me connect you with our team who can help you right away."
+
+When a customer expresses booking intent (says "Book", "register", "I want to book"):
+1. Ask for their full name
+2. Ask for their Rasi (zodiac sign — e.g. Mesham, Rishabam, Mithunam)
+3. Ask for their Nakshatram (birth star — e.g. Ashwini, Bharani, Karthigai)
+4. Ask for their Gotram (lineage — if unknown, "Not known" is fine)
+5. Ask for full delivery address (street, city, state, PIN code)
+If the customer asks to speak in a regional language, switch to that language and re-ask the current question in that language.
+When all 5 fields are confirmed, reply ONLY: [COLLECT_DONE] {"devotee_name": "...", "rasi": "...", "nakshatram": "...", "gotram": "...", "delivery_address": "..."}
 """
+# NOTE: Tenants with a custom system prompt stored in ai_prompts (configurable via AI Tune)
+# will never see FALLBACK_PROMPT. Those tenants must add the [COLLECT_DONE] collection
+# instructions directly to their whatsapp_reply prompt in the AI Tune settings page.
 
 REENGAGEMENT_FALLBACKS = {
     "1d": "Hi! Just checking in — happy to help if you still have questions. Reply here and I can point you in the right direction today.",
@@ -602,6 +614,7 @@ async def generate_reply(
         logger.warning(f"Knowledge context fetch failed for lead {lead_id}: {e}")
         context_text = ""
 
+    _raw_reply = ""  # holds unstripped Groq output for [COLLECT_DONE] parser below
     try:
         system_prompt = _get_prompt(f"{channel}_reply", tenant_id=lead_data.get("tenant_id"))
         if context_text:
@@ -642,9 +655,17 @@ async def generate_reply(
         else:
             chat_messages[-1]["content"] = _tagged_message
 
-        reply_text = await _groq_chat(chat_messages, max_tokens=600)
+        _raw_reply = await _groq_chat(chat_messages, max_tokens=600)
         is_ai = True
         reply_source = "knowledge" if context_text else "ai"
+
+        # Strip [COLLECT_DONE] signal before sending to customer — the raw JSON
+        # must never reach the channel delivery path or pollute thread history.
+        # Keep _raw_reply intact for the parser below (after messages insert).
+        _display_text = re.sub(r'\s*\[COLLECT_DONE\]\s*\{.*?\}\s*', '', _raw_reply, flags=re.DOTALL).strip()
+        reply_text = _display_text if _display_text != _raw_reply else _raw_reply
+        if not reply_text:
+            reply_text = "Thank you — we've got all your details. We'll be in touch shortly."
 
         # Trigger A: AI gave a generic fallback reply
         if _is_generic_fallback(reply_text):
@@ -693,6 +714,41 @@ async def generate_reply(
         "tenant_id": lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001",
         sid_field: sid,
     }).execute()
+
+    # Detect [COLLECT_DONE] signal — AI has finished collecting structured data.
+    # Parser runs against _raw_reply so the stripped display text doesn't block detection.
+    _collect_match = re.search(r'\[COLLECT_DONE\]\s*(\{.*?\})', _raw_reply, re.DOTALL)
+    if _collect_match:
+        try:
+            import json as _json
+            _collected = _json.loads(_collect_match.group(1))
+            db.table("leads").update({"collected_data": _collected}).eq("id", str(lead_id)).execute()
+            logger.info(f"[COLLECT_DONE] saved for lead {lead_id}: {list(_collected.keys())}")
+            from app.config_dynamic import get_setting
+            _post_action = get_setting("collect_post_action", tenant_id=tenant_id)
+            if _post_action == "send_payment_link":
+                try:
+                    from app.services.payment_razorpay import create_payment_link
+                    _bk = db.table("bookings").select("id,booking_ref,amount_paise").eq("lead_id", str(lead_id)).eq("status", "pending_payment").limit(1).execute()
+                    if _bk.data:
+                        _b = _bk.data[0]
+                        await create_payment_link(
+                            booking_id=_b["id"],
+                            booking_ref=_b.get("booking_ref", "REF"),
+                            amount_paise=_b.get("amount_paise", 50000),
+                            customer_name=_collected.get("name") or _collected.get("devotee_name") or "",
+                            customer_phone=phone,
+                        )
+                except Exception as _pe:
+                    logger.warning(f"Payment link failed for lead {lead_id}: {_pe}")
+            elif _post_action == "notify_telecaller":
+                try:
+                    from app.routes.alerts import create_alert
+                    create_alert(lead_id=str(lead_id), tenant_id=tenant_id, assigned_caller_id=lead_data.get("assigned_to"))
+                except Exception as _ae:
+                    logger.warning(f"Telecaller alert failed for lead {lead_id}: {_ae}")
+        except Exception as _ce:
+            logger.warning(f"[COLLECT_DONE] parse failed for lead {lead_id}: {_ce}")
 
     # Step 5: Score Engine v2 — composite arc + intent + engagement
     new_segment = segment  # fallback if scoring fails

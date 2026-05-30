@@ -299,27 +299,10 @@ async def whatsapp_webhook(
                         # Only trigger AI reply for text messages (not media)
                         if msg_type in ("text", "button", "interactive") and body:
                             try:
-                                from app.services.booking_flow import (
-                                    advance_state,
-                                    detect_booking_intent,
-                                    start_booking_flow,
-                                )
                                 from app.services.context_builder import build_scorer_context
                                 context_block = build_scorer_context(lead_id, db)
-
-                                active_states = {
-                                    "collecting_name", "collecting_rasi",
-                                    "collecting_nakshatram", "collecting_gotram",
-                                    "collecting_address",
-                                }
-                                if conv_state["state"] in active_states:
-                                    await advance_state(state=conv_state, message=body, phone=phone, db=db)
-                                else:
-                                    if conv_state["state"] == "idle" and await detect_booking_intent(body):
-                                        await start_booking_flow(lead_id, tenant_id, phone, db, existing_state=conv_state)
-                                    else:
-                                        from app.services.ai_reply import generate_reply
-                                        await generate_reply(lead_id=lead_id, message=body, phone=phone, context_block=context_block)
+                                from app.services.ai_reply import generate_reply
+                                await generate_reply(lead_id=lead_id, message=body, phone=phone, context_block=context_block)
                             except Exception as e:
                                 logger.error(f"Reply routing failed for lead {lead_id}: {e}")
 
