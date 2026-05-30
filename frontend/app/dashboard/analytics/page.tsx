@@ -35,13 +35,6 @@ type Tab = "overview" | "channels" | "telecalling" | "pipeline";
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
 
-function formatDuration(seconds: number | null): string {
-  if (seconds === null) return "—";
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return m > 0 ? `${m}m ${s}s` : `${s}s`;
-}
-
 function formatMinutes(min: number): string {
   if (min < 60) return `${min}m`;
   const h = Math.floor(min / 60);
@@ -71,10 +64,15 @@ function KpiCard({
   );
 }
 
+const COL_CLASS: Record<number, string> = {
+  1: "grid-cols-1", 2: "grid-cols-2", 3: "grid-cols-3",
+  4: "grid-cols-4", 5: "grid-cols-5", 6: "grid-cols-6",
+};
+
 function SkeletonGrid({ cols = 4, rows = 1 }: { cols?: number; rows?: number }) {
   return (
     <div className="space-y-6">
-      <div className={`grid grid-cols-${cols} gap-6`}>
+      <div className={`${COL_CLASS[cols] ?? "grid-cols-4"} gap-6`}>
         {Array.from({ length: cols * rows }).map((_, i) => (
           <div key={i} className="h-36 rounded-card bg-surface-mid animate-pulse" />
         ))}
@@ -194,12 +192,14 @@ function OverviewTab({ range }: { range: DateRange }) {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
+    let isCurrent = true;
     setData(null);
     setErr(null);
     api.analytics
       .overviewExtended(range)
-      .then(setData)
-      .catch((e: unknown) => setErr(e instanceof Error ? e.message : "Failed to load"));
+      .then((d) => { if (isCurrent) setData(d); })
+      .catch((e: unknown) => { if (isCurrent) setErr(e instanceof Error ? e.message : "Failed to load"); });
+    return () => { isCurrent = false; };
   }, [range]);
 
   if (err) return <ErrorBox message={err} />;
@@ -239,36 +239,40 @@ function OverviewTab({ range }: { range: DateRange }) {
       {/* Charts row 1 */}
       <div className="grid grid-cols-2 gap-6">
         <SectionCard title="New Leads per Day">
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={data.daily_leads} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-              <defs>
-                <linearGradient id="leadGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
-              <XAxis dataKey="day" tick={{ fontSize: 10, fill: "#a1a1aa" }} />
-              <YAxis tick={{ fontSize: 10, fill: "#a1a1aa" }} />
-              <Tooltip
-                contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e4e4e7" }}
-              />
-              <Area type="monotone" dataKey="count" stroke="#6366f1" fill="url(#leadGrad)" strokeWidth={2} dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
+          <div role="img" aria-label="New leads per day chart">
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={data.daily_leads} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                <defs>
+                  <linearGradient id="leadGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
+                <XAxis dataKey="day" tick={{ fontSize: 10, fill: "#a1a1aa" }} />
+                <YAxis tick={{ fontSize: 10, fill: "#a1a1aa" }} />
+                <Tooltip
+                  contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e4e4e7" }}
+                />
+                <Area type="monotone" dataKey="count" stroke="#6366f1" fill="url(#leadGrad)" strokeWidth={2} dot={false} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </SectionCard>
 
         <SectionCard title="Messages per Day">
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={data.daily_messages} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
-              <XAxis dataKey="day" tick={{ fontSize: 10, fill: "#a1a1aa" }} />
-              <YAxis tick={{ fontSize: 10, fill: "#a1a1aa" }} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e4e4e7" }} />
-              <Bar dataKey="inbound" stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]} name="Inbound" />
-              <Bar dataKey="outbound" stackId="a" fill="#10b981" radius={[4, 4, 0, 0]} name="Outbound" />
-            </BarChart>
-          </ResponsiveContainer>
+          <div role="img" aria-label="Messages per day chart">
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={data.daily_messages} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
+                <XAxis dataKey="day" tick={{ fontSize: 10, fill: "#a1a1aa" }} />
+                <YAxis tick={{ fontSize: 10, fill: "#a1a1aa" }} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e4e4e7" }} />
+                <Bar dataKey="inbound" stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]} name="Inbound" />
+                <Bar dataKey="outbound" stackId="a" fill="#10b981" radius={[4, 4, 0, 0]} name="Outbound" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </SectionCard>
       </div>
 
@@ -344,12 +348,14 @@ function ChannelsTab({ range }: { range: DateRange }) {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
+    let isCurrent = true;
     setData(null);
     setErr(null);
     api.analytics
       .messaging(channel, range)
-      .then(setData)
-      .catch((e: unknown) => setErr(e instanceof Error ? e.message : "Failed to load"));
+      .then((d) => { if (isCurrent) setData(d); })
+      .catch((e: unknown) => { if (isCurrent) setErr(e instanceof Error ? e.message : "Failed to load"); });
+    return () => { isCurrent = false; };
   }, [channel, range]);
 
   return (
@@ -395,16 +401,18 @@ function ChannelsTab({ range }: { range: DateRange }) {
           {/* Charts */}
           <div className="grid grid-cols-2 gap-6">
             <SectionCard title="Message Volume">
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={data.daily_messages} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
-                  <XAxis dataKey="day" tick={{ fontSize: 10, fill: "#a1a1aa" }} />
-                  <YAxis tick={{ fontSize: 10, fill: "#a1a1aa" }} />
-                  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e4e4e7" }} />
-                  <Line type="monotone" dataKey="inbound" stroke="#3b82f6" strokeWidth={2} dot={false} name="Inbound" />
-                  <Line type="monotone" dataKey="outbound" stroke="#10b981" strokeWidth={2} dot={false} name="Outbound" />
-                </LineChart>
-              </ResponsiveContainer>
+              <div role="img" aria-label="Message volume chart">
+                <ResponsiveContainer width="100%" height={220}>
+                  <LineChart data={data.daily_messages} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
+                    <XAxis dataKey="day" tick={{ fontSize: 10, fill: "#a1a1aa" }} />
+                    <YAxis tick={{ fontSize: 10, fill: "#a1a1aa" }} />
+                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e4e4e7" }} />
+                    <Line type="monotone" dataKey="inbound" stroke="#3b82f6" strokeWidth={2} dot={false} name="Inbound" />
+                    <Line type="monotone" dataKey="outbound" stroke="#10b981" strokeWidth={2} dot={false} name="Outbound" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </SectionCard>
 
             <SectionCard title="Reply Source Split">
@@ -529,15 +537,17 @@ function TelecallingTab() {
         </SectionCard>
 
         <SectionCard title="Calls Per Hour">
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={data.calls_per_hour} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
-              <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#a1a1aa" }} />
-              <YAxis tick={{ fontSize: 10, fill: "#a1a1aa" }} allowDecimals={false} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e4e4e7" }} />
-              <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="Calls" />
-            </BarChart>
-          </ResponsiveContainer>
+          <div role="img" aria-label="Calls per hour chart">
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={data.calls_per_hour} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#a1a1aa" }} />
+                <YAxis tick={{ fontSize: 10, fill: "#a1a1aa" }} allowDecimals={false} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e4e4e7" }} />
+                <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="Calls" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </SectionCard>
       </div>
 
@@ -710,15 +720,17 @@ function PipelineTab() {
       <div className="grid grid-cols-2 gap-6">
         {/* Score histogram */}
         <SectionCard title="Score Distribution">
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={data.score_histogram} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
-              <XAxis dataKey="range" tick={{ fontSize: 10, fill: "#a1a1aa" }} />
-              <YAxis tick={{ fontSize: 10, fill: "#a1a1aa" }} allowDecimals={false} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e4e4e7" }} />
-              <Bar dataKey="count" radius={[4, 4, 0, 0]} name="Leads" fill="#6366f1" />
-            </BarChart>
-          </ResponsiveContainer>
+          <div role="img" aria-label="Score distribution chart">
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={data.score_histogram} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
+                <XAxis dataKey="range" tick={{ fontSize: 10, fill: "#a1a1aa" }} />
+                <YAxis tick={{ fontSize: 10, fill: "#a1a1aa" }} allowDecimals={false} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e4e4e7" }} />
+                <Bar dataKey="count" radius={[4, 4, 0, 0]} name="Leads" fill="#6366f1" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </SectionCard>
 
         {/* Hot lead aging */}
