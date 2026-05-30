@@ -240,7 +240,7 @@ async def upload_leads(
             sid = await send_whatsapp(phone, campaign_message, tenant_id=tenant_id)
             if sid:
                 sent += 1
-                lead = db.table("leads").select("id").eq("phone", phone).limit(1).execute()
+                lead = db.table("leads").select("id").eq("phone", phone).eq("tenant_id", tenant_id).limit(1).execute()
                 if lead.data:
                     db.table("messages").insert({
                         "lead_id": lead.data[0]["id"],

@@ -92,7 +92,7 @@ async def verify_webhook(request: Request):
     return Response(content="Forbidden", status_code=403)
 
 
-def _resolve_tenant_from_payload(payload: dict, db) -> str:
+def _resolve_tenant_from_payload(payload: dict, db) -> str | None:
     """Extract first phone_number_id from payload and look up its tenant."""
     for entry in payload.get("entry", []):
         for change in entry.get("changes", []):
@@ -105,7 +105,7 @@ def _resolve_tenant_from_payload(payload: dict, db) -> str:
                 tenant = _get_tenant_id_for_meta_number(phone_id, db)
                 if tenant:
                     return tenant
-    return "00000000-0000-0000-0000-000000000001"
+    return None
 
 
 @router.post("")
@@ -125,14 +125,19 @@ async def whatsapp_webhook(
         except Exception:
             payload = {}
 
-        # Verify Meta X-Hub-Signature-256 (fail-closed: drop if signature present but invalid)
+        # Verify Meta X-Hub-Signature-256 (fail-closed: missing or invalid signatures are ignored)
         signature = request.headers.get("x-hub-signature-256")
-        if signature:
-            db_sig = get_supabase()
-            tenant_for_sig = _resolve_tenant_from_payload(payload, db_sig)
-            if not verify_meta_signature(raw_body, signature, tenant_for_sig):
-                logger.warning(f"WhatsApp webhook: invalid signature for tenant={tenant_for_sig} — dropping")
-                return Response(content="OK", status_code=200)
+        if not signature:
+            logger.warning("WhatsApp webhook: missing signature — dropping")
+            return Response(content="OK", status_code=200)
+        db_sig = get_supabase()
+        tenant_for_sig = _resolve_tenant_from_payload(payload, db_sig)
+        if not tenant_for_sig:
+            logger.warning("WhatsApp webhook: no tenant for signed payload — dropping")
+            return Response(content="OK", status_code=200)
+        if not verify_meta_signature(raw_body, signature, tenant_for_sig):
+            logger.warning(f"WhatsApp webhook: invalid signature for tenant={tenant_for_sig} — dropping")
+            return Response(content="OK", status_code=200)
         for entry in payload.get("entry", []):
             for change in entry.get("changes", []):
                 field = change.get("field")
@@ -161,8 +166,8 @@ async def whatsapp_webhook(
                     db = get_supabase()
                     tenant_id = _get_tenant_id_for_meta_number(meta_phone_number_id, db) if meta_phone_number_id else None
                     if not tenant_id:
-                        logger.warning(f"No tenant for meta phone_number_id={meta_phone_number_id}, using default")
-                        tenant_id = "00000000-0000-0000-0000-000000000001"
+                        logger.warning(f"No tenant for meta phone_number_id={meta_phone_number_id}, dropping WhatsApp payload")
+                        continue
                     for msg in value.get("messages", []):
                         msg_type = msg.get("type")
                         msg_id = msg.get("id", "")
@@ -197,7 +202,7 @@ async def whatsapp_webhook(
                                     "deleted_at": None,
                                     "ai_enabled": True,
                                     "needs_human_intervention": False,
-                                }).eq("id", lead_id).execute()
+                                }).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
                                 logger.info(f"Restored soft-deleted lead {lead_id} on inbound message")
                         else:
                             new_lead = db.table("leads").insert({
@@ -233,12 +238,12 @@ async def whatsapp_webhook(
                                         external_campaign_id=ad_id,
                                     )
                                     if campaign:
-                                        db.table("leads").update({"ad_campaign_id": campaign["id"]}).eq("id", lead_id).execute()
+                                        db.table("leads").update({"ad_campaign_id": campaign["id"]}).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
                                         logger.info(f"CTWA referral: lead {lead_id} linked to ad campaign {campaign['id']} (ad_id={ad_id})")
                             except Exception as ctwa_err:
                                 logger.warning(f"CTWA referral tracking failed for lead {lead_id}: {ctwa_err}")
 
-                        already = db.table("messages").select("id").eq("meta_message_id", msg_id).limit(1).execute()
+                        already = db.table("messages").select("id").eq("meta_message_id", msg_id).eq("tenant_id", tenant_id).limit(1).execute()
                         if already.data:
                             continue
 
@@ -266,7 +271,7 @@ async def whatsapp_webhook(
                         # Reset engagement suppression counter on inbound reply
                         if lead_id:
                             try:
-                                db.table("leads").update({"outbound_no_reply_count": 0}).eq("id", lead_id).execute()
+                                db.table("leads").update({"outbound_no_reply_count": 0}).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
                             except Exception:
                                 pass
 
@@ -286,7 +291,7 @@ async def whatsapp_webhook(
                         db.table("lead_conversation_state").update({
                             "message_count": new_count,
                             "last_activity_at": datetime.now(timezone.utc).isoformat(),
-                        }).eq("lead_id", lead_id).execute()
+                        }).eq("lead_id", lead_id).eq("tenant_id", tenant_id).execute()
 
                         # Check if compaction needed (threshold: 10)
                         if new_count >= 10:
@@ -349,6 +354,7 @@ async def whatsapp_webhook(
                                     updated = db.table("messages") \
                                         .update(update_payload) \
                                         .eq("meta_message_id", message_id) \
+                                        .eq("tenant_id", tenant_id) \
                                         .execute()
                                 except Exception as col_err:
                                     # Migration 061 may not be applied yet — retry without error columns
@@ -357,6 +363,7 @@ async def whatsapp_webhook(
                                         updated = db.table("messages") \
                                             .update({"delivery_status": status}) \
                                             .eq("meta_message_id", message_id) \
+                                            .eq("tenant_id", tenant_id) \
                                             .execute()
                                     else:
                                         raise
@@ -366,7 +373,7 @@ async def whatsapp_webhook(
                                     failed_lead_id = updated.data[0].get("lead_id")
                                     if failed_lead_id:
                                         db.table("leads").update({"whatsapp_undeliverable": True}) \
-                                            .eq("id", failed_lead_id).execute()
+                                            .eq("id", failed_lead_id).eq("tenant_id", tenant_id).execute()
                             except Exception as e:
                                 logger.error(f"Failed to update message {message_id} status to {status}: {e}")
 
