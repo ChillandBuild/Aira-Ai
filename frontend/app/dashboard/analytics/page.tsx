@@ -118,10 +118,11 @@ function FunnelSteps({
     <div className="space-y-3">
       {steps.map((step, i) => {
         const prevCount = i === 0 ? step.count : steps[i - 1].count;
-        const dropPct =
+        const retentionPct =
           i === 0 || prevCount === 0
             ? null
             : Math.round((step.count / prevCount) * 100);
+        const dropPct = retentionPct !== null ? 100 - retentionPct : null;
         const widthPct =
           funnel.inquiries === 0 ? 0 : Math.round((step.count / funnel.inquiries) * 100);
 
@@ -141,7 +142,7 @@ function FunnelSteps({
             </span>
             {dropPct !== null && (
               <span className="font-label text-xs text-on-surface-muted w-14 shrink-0">
-                {dropPct}% kept
+                {dropPct}% drop
               </span>
             )}
           </div>
@@ -298,7 +299,7 @@ const CHANNEL_OPTIONS: { id: ChannelFilter; label: string; Icon: React.ElementTy
 ];
 
 function ReplySourceBar({ breakdown }: { breakdown: MessagingAnalytics["reply_source_breakdown"] }) {
-  const total = breakdown.ai + breakdown.knowledge + breakdown.manual + breakdown.unknown;
+  const total = breakdown.ai + breakdown.knowledge + breakdown.manual;
   if (total === 0) return <p className="font-label text-xs text-on-surface-muted">No data</p>;
 
   const segments = [
@@ -418,7 +419,8 @@ function ChannelsTab({ range }: { range: DateRange }) {
 
 // ─── Telecalling Tab ──────────────────────────────────────────────────────────
 
-const SLOT_HOURS = ["9AM", "10AM", "11AM", "12PM", "1PM", "2PM", "3PM", "4PM", "5PM", "6PM"];
+const SLOT_LABELS = ["9AM","","10AM","","11AM","","12PM","","1PM","","2PM","","3PM","","4PM","","5PM",""];
+// indexes 0,2,4,6... show the hour; odd indexes are blank (for the :30 slots)
 
 function CallerPulsStrip({ data }: { data: TelecallingAnalyticsExtended }) {
   const callers = data.per_caller;
@@ -442,14 +444,14 @@ function CallerPulsStrip({ data }: { data: TelecallingAnalyticsExtended }) {
               <span className="font-label text-xs text-on-surface-muted w-20 text-right shrink-0 truncate">
                 {caller.name}
               </span>
-              <div className="flex gap-0.5 flex-1">
+              <div className="flex-1 grid gap-0.5" style={{ gridTemplateColumns: `repeat(18, 1fr)` }}>
                 {slots.map((slot) => {
                   const count = slot.caller_counts[caller.caller_id] ?? 0;
                   return (
                     <div
                       key={slot.slot}
                       title={count > 0 ? `${count} call${count > 1 ? "s" : ""}` : "Idle"}
-                      className={`h-7 flex-1 rounded-sm ${
+                      className={`h-7 rounded-sm ${
                         count > 0 ? "bg-emerald-500" : "bg-surface-mid"
                       }`}
                     />
@@ -464,15 +466,9 @@ function CallerPulsStrip({ data }: { data: TelecallingAnalyticsExtended }) {
         })}
       </div>
       {/* X-axis labels */}
-      <div className="flex gap-0.5 mt-1 ml-[88px] mr-[88px]">
-        {SLOT_HOURS.map((label, i) => (
-          <div
-            key={label}
-            className="flex-1 font-label text-[10px] text-on-surface-muted text-center"
-            style={{ gridColumn: `${i * 2 + 1} / span 2` }}
-          >
-            {label}
-          </div>
+      <div className="ml-[88px] grid gap-0.5" style={{ gridTemplateColumns: `repeat(18, 1fr)` }}>
+        {SLOT_LABELS.map((label, i) => (
+          <span key={i} className="text-[9px] text-on-surface-muted text-center truncate">{label}</span>
         ))}
       </div>
     </div>
@@ -657,11 +653,6 @@ function PipelineTab() {
     { key: "D", label: "Disqualified (D)", color: "bg-red-400" },
   ];
 
-  const histogramColored = data.score_histogram.map((item, i) => ({
-    ...item,
-    fill: ["#ef4444", "#f97316", "#f59e0b", "#22c55e", "#10b981"][i] ?? "#6366f1",
-  }));
-
   return (
     <div className="space-y-6">
       {/* KPI row */}
@@ -720,7 +711,7 @@ function PipelineTab() {
         {/* Score histogram */}
         <SectionCard title="Score Distribution">
           <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={histogramColored} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+            <BarChart data={data.score_histogram} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
               <XAxis dataKey="range" tick={{ fontSize: 10, fill: "#a1a1aa" }} />
               <YAxis tick={{ fontSize: 10, fill: "#a1a1aa" }} allowDecimals={false} />
