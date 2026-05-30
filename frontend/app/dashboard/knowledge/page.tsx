@@ -6,7 +6,7 @@ import {
   Upload, FileText, Loader2, Info, AlertCircle,
   Database, Sparkles, Save, MessageCircle
 } from "lucide-react";
-import { api, AIPrompt } from "@/lib/api";
+import { api, AIPrompt, API_URL, getAuthHeaders } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/utils";
 import { usePolling } from "@/hooks/usePolling";
@@ -68,6 +68,14 @@ export default function KnowledgePage() {
   const [tuneMsg, setTuneMsg] = useState<string | null>(null);
   const [tuneSaving, setTuneSaving] = useState(false);
 
+  // Scoring Rubric
+  const [scoringRubric, setScoringRubric] = useState<string>("");
+  const [rubricSaving, setRubricSaving] = useState(false);
+
+  // Post-Collection Action
+  const [postAction, setPostAction] = useState<string>("");
+  const [postActionSaving, setPostActionSaving] = useState(false);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -79,7 +87,10 @@ export default function KnowledgePage() {
   usePolling(loadDocuments, 5000, hasProcessing);
 
   useEffect(() => {
-    if (tab === "ai-tune" && prompts.length === 0) loadPrompts();
+    if (tab === "ai-tune") {
+      if (prompts.length === 0) loadPrompts();
+      loadAiTuneSettings();
+    }
   }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -134,6 +145,56 @@ export default function KnowledgePage() {
         setDraft(cur.content);
       }
     } catch {}
+  }
+
+  async function loadAiTuneSettings() {
+    try {
+      const auth = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/settings`, { headers: auth });
+      if (!res.ok) return;
+      const data = await res.json();
+      const settings: { key: string; value: string }[] = data.settings ?? [];
+      const rubric = settings.find((s) => s.key === "scoring_rubric");
+      const action = settings.find((s) => s.key === "collect_post_action");
+      if (rubric) setScoringRubric(rubric.value ?? "");
+      if (action) setPostAction(action.value ?? "");
+    } catch {}
+  }
+
+  async function saveRubric() {
+    setRubricSaving(true);
+    try {
+      const auth = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...auth },
+        body: JSON.stringify({ updates: { scoring_rubric: scoringRubric } }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      toast.success("Scoring rubric saved.");
+    } catch {
+      toast.error("Failed to save rubric. Please try again.");
+    } finally {
+      setRubricSaving(false);
+    }
+  }
+
+  async function savePostAction() {
+    setPostActionSaving(true);
+    try {
+      const auth = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...auth },
+        body: JSON.stringify({ updates: { collect_post_action: postAction } }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      toast.success("Post-collection action saved.");
+    } catch {
+      toast.error("Failed to save. Please try again.");
+    } finally {
+      setPostActionSaving(false);
+    }
   }
 
   const filteredDocs = documents.filter(d =>
@@ -418,6 +479,67 @@ export default function KnowledgePage() {
                 className="flex items-center gap-2 px-4 py-2 bg-tertiary text-white rounded-lg font-label text-sm font-semibold hover:bg-tertiary/90 disabled:opacity-40"
               >
                 <Save size={14} /> {tuneSaving ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+
+          {/* Section A: Scoring Rubric */}
+          <div className="bg-surface rounded-card p-8 shadow-card ring-1 ring-[#c4c7c7]/15">
+            <div className="mb-4">
+              <h2 className="font-display text-lg font-bold text-tertiary">Scoring Rubric</h2>
+              <p className="font-body text-sm text-on-surface-muted mt-0.5">
+                Used to score leads 1–10. Auto-generated from your system prompt — edit to customize.
+              </p>
+            </div>
+            <textarea
+              value={scoringRubric}
+              onChange={(e) => setScoringRubric(e.target.value)}
+              rows={8}
+              spellCheck={false}
+              placeholder={
+                "9-10: High intent — asked about pricing, booking, or next steps\n" +
+                "7-8: Warm — showed clear interest, asked product questions\n" +
+                "5-6: Neutral — general inquiry, no strong buying signal\n" +
+                "3-4: Lukewarm — vague interest, one-word replies\n" +
+                "1-2: Low — unresponsive, spam, or out-of-scope"
+              }
+              className="w-full px-5 py-4 rounded-xl bg-surface-low border border-surface-mid font-mono text-sm leading-6 focus:outline-none focus:ring-2 focus:ring-tertiary"
+            />
+            <div className="mt-4 flex gap-3">
+              <button
+                onClick={saveRubric}
+                disabled={rubricSaving}
+                className="flex items-center gap-2 px-4 py-2 bg-tertiary text-white rounded-lg font-label text-sm font-semibold hover:bg-tertiary/90 disabled:opacity-40"
+              >
+                <Save size={14} /> {rubricSaving ? "Saving…" : "Save Rubric"}
+              </button>
+            </div>
+          </div>
+
+          {/* Section B: Post-Collection Action */}
+          <div className="bg-surface rounded-card p-8 shadow-card ring-1 ring-[#c4c7c7]/15">
+            <div className="mb-4">
+              <h2 className="font-display text-lg font-bold text-tertiary">After Data Collection</h2>
+              <p className="font-body text-sm text-on-surface-muted mt-0.5">
+                What should Aira do when the AI finishes collecting all required fields?
+              </p>
+            </div>
+            <select
+              value={postAction}
+              onChange={(e) => setPostAction(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl bg-surface-low border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary"
+            >
+              <option value="">Do nothing (just save the data)</option>
+              <option value="send_payment_link">Send payment link (Razorpay)</option>
+              <option value="notify_telecaller">Alert assigned telecaller</option>
+            </select>
+            <div className="mt-4 flex gap-3">
+              <button
+                onClick={savePostAction}
+                disabled={postActionSaving}
+                className="flex items-center gap-2 px-4 py-2 bg-tertiary text-white rounded-lg font-label text-sm font-semibold hover:bg-tertiary/90 disabled:opacity-40"
+              >
+                <Save size={14} /> {postActionSaving ? "Saving…" : "Save"}
               </button>
             </div>
           </div>
