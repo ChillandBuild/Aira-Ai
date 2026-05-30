@@ -550,34 +550,37 @@ async def generate_reply(
         try:
             current_score = lead_data.get("score", 5)
             _tid = lead_data.get("tenant_id")
-            from app.services.lead_scorer import score_with_safety_net
-            from app.config_dynamic import get_setting
-            new_score = await score_with_safety_net(
-                message, current_score, context_block or "", db, str(lead_id), tenant_id=_tid
-            )
-            _thresholds = parse_thresholds(get_setting("scoring_segment_thresholds", tenant_id=_tid))
-            new_segment = score_to_segment(new_score, thresholds=_thresholds)
-            db.table("leads").update({
-                "score": new_score,
-                "segment": new_segment,
-            }).eq("id", str(lead_id)).execute()
-            _score_meta = {
-                "new_score": new_score,
-                "prev_score": current_score,
-                "message_snippet": message[:150],
-                "channel": channel,
-                "reason": "ai_disabled_inbound",
-            }
-            if new_segment != lead_data.get("segment") or new_score != current_score:
-                record_stage_event(
-                    lead_id,
-                    from_segment=lead_data.get("segment"),
-                    to_segment=new_segment,
-                    event_type="segment_changed" if new_segment != lead_data.get("segment") else "score_updated",
-                    metadata=_score_meta,
-                    tenant_id=_tid,
-                    db=db,
+            new_score = current_score
+            new_segment = lead_data.get("segment") or "C"
+            if lead_data.get("segment") != "A":
+                from app.services.lead_scorer import score_with_safety_net
+                from app.config_dynamic import get_setting
+                new_score = await score_with_safety_net(
+                    message, current_score, context_block or "", db, str(lead_id), tenant_id=_tid
                 )
+                _thresholds = parse_thresholds(get_setting("scoring_segment_thresholds", tenant_id=_tid))
+                new_segment = score_to_segment(new_score, thresholds=_thresholds)
+                db.table("leads").update({
+                    "score": new_score,
+                    "segment": new_segment,
+                }).eq("id", str(lead_id)).execute()
+                _score_meta = {
+                    "new_score": new_score,
+                    "prev_score": current_score,
+                    "message_snippet": message[:150],
+                    "channel": channel,
+                    "reason": "ai_disabled_inbound",
+                }
+                if new_segment != lead_data.get("segment") or new_score != current_score:
+                    record_stage_event(
+                        lead_id,
+                        from_segment=lead_data.get("segment"),
+                        to_segment=new_segment,
+                        event_type="segment_changed" if new_segment != lead_data.get("segment") else "score_updated",
+                        metadata=_score_meta,
+                        tenant_id=_tid,
+                        db=db,
+                    )
             sync_follow_up_jobs(
                 lead_id,
                 segment=new_segment,
@@ -694,7 +697,7 @@ async def generate_reply(
     # Step 5: Score Engine v2 — composite arc + intent + engagement
     new_segment = segment  # fallback if scoring fails
     new_score = lead_data.get("score", 5)
-    if not lead_data.get("assigned_to"):
+    if not lead_data.get("assigned_to") and lead_data.get("segment") != "A":
         try:
             from app.services.scoring_engine import compute_score
             score_result = await compute_score(
@@ -727,17 +730,6 @@ async def generate_reply(
                     tenant_id=tenant_id,
                     db=db,
                 )
-            sync_follow_up_jobs(
-                lead_id,
-                segment=new_segment,
-                phone=lead_data.get("phone") or phone,
-                converted_at=lead_data.get("converted_at"),
-                ai_enabled=lead_data.get("ai_enabled", True),
-                reason=f"{channel}_reply",
-                tenant_id=tenant_id,
-                db=db,
-            )
-
             old_segment = lead_data.get("segment") or "C"
             if new_segment != old_segment and should_assign_to_telecalling(telecalling_cfg, new_segment, channel):
                 assigned_caller = auto_assign_lead(str(lead_id), tenant_id)
@@ -772,6 +764,17 @@ async def generate_reply(
                     logger.warning(f"score_threshold trigger failed for lead {lead_id}: {auto_err}")
         except Exception as e:
             logger.error(f"Scoring update failed for lead {lead_id}: {e}")
+
+    sync_follow_up_jobs(
+        lead_id,
+        segment=new_segment,
+        phone=lead_data.get("phone") or phone,
+        converted_at=lead_data.get("converted_at"),
+        ai_enabled=lead_data.get("ai_enabled", True),
+        reason=f"{channel}_reply",
+        tenant_id=tenant_id,
+        db=db,
+    )
 
     # Step 6: Fire inbox escalation — trigger-based, no segment gate
     active_triggers = [
