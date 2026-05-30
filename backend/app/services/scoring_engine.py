@@ -169,7 +169,7 @@ _ARC_RUBRIC_DEFAULT = """
 """
 
 
-async def _score_arc(conversation: str, tenant_id: str | None) -> int:
+async def _score_arc(conversation: str, tenant_id: str | None, fallback: int = 5) -> int:
     """LLM scores the FULL conversation thread for overall purchase intent."""
     if not _client:
         return 5
@@ -201,10 +201,10 @@ async def _score_arc(conversation: str, tenant_id: str | None) -> int:
         )
         raw = resp.choices[0].message.content.strip()
         match = re.search(r'\d+', raw)
-        return max(1, min(10, int(match.group()))) if match else 5
+        return max(1, min(10, int(match.group()))) if match else fallback
     except Exception as e:
         logger.error(f"Arc scoring failed: {e}")
-        return 5
+        return fallback
 
 
 def _should_score_arc(arc_message_count: int, intent_reason: str) -> bool:
@@ -365,7 +365,7 @@ async def compute_score(
         except Exception:
             conversation = f"User: {message}"
 
-        current_arc = await _score_arc(conversation, tenant_id)
+        current_arc = await _score_arc(conversation, tenant_id, fallback=current_arc)
         arc_updated = True
         arc_msg_count = 0  # reset counter after arc call
 
