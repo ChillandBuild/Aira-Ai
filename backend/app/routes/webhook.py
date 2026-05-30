@@ -275,6 +275,14 @@ async def whatsapp_webhook(
                             except Exception:
                                 pass
 
+                        # Bot Flow: if a flow run is waiting on this lead's reply, it
+                        # owns this message — capture it and skip BOTH the trigger
+                        # fan-out and the AI reply pipeline below.
+                        if body:
+                            from app.services.flow_runtime import resume_for_inbound
+                            if await resume_for_inbound(lead_id, tenant_id, body, db):
+                                continue
+
                         if body:
                             fire_trigger(
                                 background_tasks, lead_id, tenant_id,

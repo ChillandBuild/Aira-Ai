@@ -168,6 +168,14 @@ async def instagram_webhook(tenant_id: str, request: Request, background_tasks: 
                 "tenant_id": tenant_id,
             }
             db.table("messages").insert(insert_row).execute()
+
+            # Bot Flow: a flow run waiting on this lead's reply owns this message —
+            # capture it and skip both the trigger fan-out and the AI reply below.
+            if text:
+                from app.services.flow_runtime import resume_for_inbound
+                if await resume_for_inbound(lead_id, tenant_id, text, db):
+                    continue
+
             fire_trigger(
                 background_tasks, lead_id, tenant_id,
                 "new_message_received", message=text,

@@ -239,7 +239,7 @@ async def _execute_step(
     variables = context.get("variables") or {}
 
     # ── Booking-flow guard for outbound message steps ──────────────────────
-    if step_type in ("send_message", "send_template", *_NEW_SEND_STEPS):
+    if step_type in ("send_message", "send_template", "user_input", *_NEW_SEND_STEPS):
         try:
             from app.services.booking_flow import get_or_create_state
             conv_state = get_or_create_state(lead_id, tenant_id, db)
@@ -538,6 +538,27 @@ async def _execute_step(
         result = _evaluate_condition(config, lead_data, message)
         return {"status": "ok", "branch": "yes" if result else "no", "detail": f"condition → {'yes' if result else 'no'}"}
 
+    # ── user_input ─────────────────────────────────────────────────────────
+    # Send a prompt, then pause the run until the lead's next inbound message,
+    # which flow_runtime.resume_for_inbound captures into variables[save_as].
+    if step_type == "user_input":
+        save_as = config.get("save_as")
+        if not save_as:
+            return {"status": "error", "detail": "user_input requires save_as"}
+        prompt = _interpolate(config.get("prompt", ""), lead_data, variables)
+        if not prompt:
+            return {"status": "error", "detail": "user_input requires a prompt"}
+        try:
+            sid = await _send_text_via_channel(source, lead_data, prompt, tenant_id)
+            _record_outbound(db, step, lead_data, source, prompt, sid, automation_id)
+            if not sid:
+                return {"status": "skipped", "detail": "no channel id for lead"}
+            return {"status": "wait_reply", "save_as": save_as, "detail": f"awaiting reply → {save_as}"}
+        except Exception as e:
+            logger.error(f"automation user_input failed for lead {lead_id}: {e}")
+            _bump_counter(db, step["id"], "error_count")
+            return {"status": "error", "detail": str(e)}
+
     return {"status": "error", "detail": f"unknown step_type: {step_type}"}
 
 
@@ -693,6 +714,17 @@ async def _drive_run(run: dict, db, trigger_type: str = "") -> None:
                     "status": "waiting_time",
                     "resume_at": result.get("run_at"),
                     "current_step_id": next_id,
+                    "variables": variables,
+                    "updated_at": _now_iso(),
+                }).eq("id", run["id"]).execute()
+                return
+
+            if status == "wait_reply":
+                # Pause for the lead's next inbound. Pointer STAYS on this node so
+                # flow_runtime.resume_for_inbound knows which node's save_as to fill.
+                db.table("automation_flow_runs").update({
+                    "status": "waiting_reply",
+                    "current_step_id": step["id"],
                     "variables": variables,
                     "updated_at": _now_iso(),
                 }).eq("id", run["id"]).execute()

@@ -49,6 +49,7 @@ _VALID_STEPS = {
     "update_segment", "add_note", "send_webhook",
     "wait", "condition", "create_followup",
     "send_image", "send_video", "send_file", "send_location", "cta_url",
+    "user_input",
 }
 
 
@@ -90,6 +91,12 @@ def _validate(trigger_type: str, trigger_config: dict, steps: list) -> list[str]
                 float(cfg.get("longitude"))
             except (TypeError, ValueError):
                 errors.append(f"Step {i}: send_location requires numeric latitude and longitude")
+        if step.get("step_type") == "user_input":
+            cfg = step.get("config", {})
+            if not cfg.get("prompt"):
+                errors.append(f"Step {i}: user_input requires a prompt")
+            if not cfg.get("save_as"):
+                errors.append(f"Step {i}: user_input requires save_as")
         if step.get("step_type") == "cta_url":
             cfg = step.get("config", {})
             if not cfg.get("body"):
