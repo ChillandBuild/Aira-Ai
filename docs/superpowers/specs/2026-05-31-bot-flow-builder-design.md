@@ -74,42 +74,35 @@ Extend existing tables; add one new table. No renames.
 - `flow_kind TEXT NOT NULL DEFAULT 'automation'` — discriminates rows authored in the
   new builder (`'bot_flow'`) from legacy automations, so the new UI lists only its own.
 
-### NEW: `automation_node_events` — per-node delivery tracking
-```
-id            UUID PK
-automation_id UUID FK → automations(id) ON DELETE CASCADE
-step_id       UUID FK → automation_steps(id) ON DELETE CASCADE
-log_id        UUID FK → automation_logs(id) ON DELETE SET NULL   -- the run
-lead_id       UUID FK → leads(id) ON DELETE SET NULL
-tenant_id     UUID NOT NULL
-provider_msg_id TEXT          -- wamid, for delivery/read correlation
-event_type    TEXT CHECK IN ('sent','delivered','read','error')
-detail        TEXT
-created_at    TIMESTAMPTZ DEFAULT now()
-```
-Indexes: `(automation_id, step_id)`, `(provider_msg_id)` (for webhook lookup),
-`(tenant_id, created_at DESC)`.
+### `messages` — link outbound flow messages to their node (for delivery correlation)
+The `messages` table **already** has `meta_message_id` (wamid, migration 016) and the
+webhook status path **already** updates rows by it. We ride that existing path rather
+than building a separate lookup. Add two nullable columns:
+- `automation_id UUID` (nullable) — set on outbound messages sent by a flow.
+- `automation_step_id UUID` (nullable) — the node that sent it.
+Partial index: `(automation_step_id) WHERE automation_step_id IS NOT NULL`.
+
+No separate events table — per-node counters live on `automation_steps`, the audit
+trail already lives in `automation_logs.steps_results` (JSONB).
 
 ## Analytics (day one)
 
 Split by cost:
 
 - **Sent / Errors — cheap.** The executor already knows the outcome of each send step
-  (`automation_engine.py` send branches). On each send: insert an
-  `automation_node_events` row (`sent` or `error`) and increment the step's
-  `sent_count`/`error_count`.
+  (`automation_engine.py` send branches). On each send: increment the step's
+  `sent_count` (or `error_count` on failure) directly on the `automation_steps` row.
 - **Subscribers — cheap.** On flow entry (run start), increment
   `automations.subscriber_count` once for the lead.
-- **Delivered / Read — the hard integration.** Requires message-id → node
-  correlation:
-  1. At send time the executor must **capture the provider wamid** (currently
-     discarded) and store it on the `automation_node_events` row (and link the
-     `messages` row).
-  2. The WhatsApp delivery-status path in `webhook.py` must look up the node event by
-     `provider_msg_id` and increment the step's `delivered_count` (and write a
-     `delivered`/`read` event). This touches the **signature-verified webhook**
-     (Invariant 11) — treated as its own serialized workstream, never edited by two
-     subagents at once.
+- **Delivered / Read — rides the existing path.** The executor already gets the wamid
+  back as `sid` from the send functions. At send time, insert the `messages` row with
+  `meta_message_id=sid`, `automation_id`, and `automation_step_id` (today it omits
+  `meta_message_id`). The webhook status path **already** updates `messages` by
+  `meta_message_id`; we add a small additive step: when the updated row carries an
+  `automation_step_id` and status is `delivered`, increment that step's
+  `delivered_count`. This touches the **signature-verified webhook** (Invariant 11) —
+  additive only, inside the existing try block, single serialized owner. It must not
+  alter signature verification or FAQ-first ordering.
 
 Node card badge renders `sent_count`, `delivered_count`, `error_count` directly from
 the denormalized columns on the step row (no aggregation on page load).
@@ -174,8 +167,8 @@ The Phase-1 block picker shows only the 9 supported blocks. Nothing inert in the
 
 ## Phasing
 
-- **Phase 1A — Migration 073:** extend tables, add `automation_node_events`, relax
-  CHECKs, add counters.
+- **Phase 1A — Migration 073:** extend tables, add node-link columns on `messages`,
+  relax CHECKs, add counters.
 - **Phase 1B — Backend blocks + analytics:** new send-block handlers in
   `automation_engine.py`; wamid capture; sent/error events + counters; subscriber
   increment; validation in `automations.py` route for new block types.
