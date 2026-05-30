@@ -260,14 +260,17 @@ export default function SettingsPage() {
   async function handleSave(sectionId: string, allKeys: string[]) {
     setSaveStates(s => ({ ...s, [sectionId]: "saving" }));
     setError(null);
+    const sectionDef = SECTIONS.find(s => s.id === sectionId);
     const updates: SettingsMap = {};
     allKeys.forEach(k => {
       const draft = drafts[k];
       const current = settingFor(k);
-      if (!current) return;
-      if (current.is_secret) {
+      const fieldDef = sectionDef?.fields.find(f => f.key === k);
+      const isSecret = fieldDef?.secret ?? current?.is_secret ?? false;
+      if (isSecret) {
         if (draft && draft.length > 0) updates[k] = draft;
       } else {
+        if (!current) return;
         const stored = current.display_value === "Not set" ? "" : current.display_value;
         if (draft !== undefined && draft !== stored) updates[k] = draft;
       }
@@ -531,7 +534,7 @@ export default function SettingsPage() {
                         {!isDirty && saveState === "idle" && isConfigured && (
                           <span className="text-[11px] text-ink-muted font-body">No unsaved changes</span>
                         )}
-                        {isDirty && (
+                        {isDirty && saveState !== "saved" && (
                           <span className="text-[11px] text-amber-600 font-body font-medium">Unsaved changes</span>
                         )}
                       </div>
