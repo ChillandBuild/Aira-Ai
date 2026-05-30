@@ -130,6 +130,7 @@ export default function UploadPage() {
   const [scheduleType, setScheduleType] = useState<ScheduleType>("now");
   const [scheduleAt, setScheduleAt] = useState("");
   const [dripDays, setDripDays] = useState("");
+  const [dripSendTime, setDripSendTime] = useState("");
   const [variableMapping, setVariableMapping] = useState<string[]>([]); // column name per {{N}}
 
   const [sendLoading, setSendLoading] = useState(false);
@@ -403,6 +404,7 @@ export default function UploadPage() {
         schedule_type: scheduleType,
         schedule_at: scheduleType === "scheduled" && scheduleAt ? scheduleAt : undefined,
         drip_days: scheduleType === "drip" && dripDays ? parseInt(dripDays, 10) : undefined,
+        drip_send_time: scheduleType === "drip" && dripSendTime ? dripSendTime : undefined,
         csv_file_url: csvFileUrl,
         csv_file_name: csvFileName,
         variable_mapping: variableMapping.filter(Boolean),
@@ -848,18 +850,31 @@ export default function UploadPage() {
                   )}
 
                   {scheduleType === "drip" && (
-                    <div>
-                      <label className="block font-label text-xs font-bold text-on-surface-muted uppercase tracking-wider mb-2">
-                        Spread over how many days?
-                      </label>
-                      <input
-                        type="number"
-                        min={1}
-                        value={dripDays}
-                        onChange={(e) => setDripDays(e.target.value)}
-                        placeholder="e.g. 7"
-                        className={inputCls}
-                      />
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block font-label text-xs font-bold text-on-surface-muted uppercase tracking-wider mb-2">
+                          Spread over how many days?
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={dripDays}
+                          onChange={(e) => setDripDays(e.target.value)}
+                          placeholder="e.g. 7"
+                          className={inputCls}
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-label text-xs font-bold text-on-surface-muted uppercase tracking-wider mb-2">
+                          Send time each day (IST) <span className="text-on-surface-muted/60 normal-case font-normal">— optional, leave blank to send at upload time</span>
+                        </label>
+                        <input
+                          type="time"
+                          value={dripSendTime}
+                          onChange={(e) => setDripSendTime(e.target.value)}
+                          className={inputCls}
+                        />
+                      </div>
                     </div>
                   )}
 
@@ -894,7 +909,7 @@ export default function UploadPage() {
                       { label: "Leads Count", value: parsedData.total_rows.toLocaleString() },
                       { label: "Consent Source", value: optInSource.replace(/_/g, " ") },
                       { label: "Active Template", value: templateName },
-                      { label: "Dispatch Plan", value: scheduleType === "now" ? "Send Immediately" : scheduleType === "scheduled" ? `At ${scheduleAt}` : `Drip over ${dripDays} days` },
+                      { label: "Dispatch Plan", value: scheduleType === "now" ? "Send Immediately" : scheduleType === "scheduled" ? `At ${scheduleAt}` : `Drip over ${dripDays} days${dripSendTime ? ` · ${dripSendTime} IST daily` : ""}` },
                     ].map(({ label, value }) => (
                       <div key={label} className="p-4 bg-surface-low rounded-xl border border-surface-mid">
                         <p className="font-label text-[10px] text-on-surface-muted uppercase tracking-wider mb-1 font-bold">{label}</p>

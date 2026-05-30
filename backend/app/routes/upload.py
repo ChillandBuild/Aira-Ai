@@ -297,6 +297,7 @@ class BulkSendRequest(BaseModel):
     schedule_type: str
     schedule_at: Optional[str] = None
     drip_days: Optional[int] = None
+    drip_send_time: Optional[str] = None  # HH:MM in IST, e.g. "10:00"
     csv_file_url: Optional[str] = None
     csv_file_name: Optional[str] = None
     variable_mapping: list[str] = []  # ordered CSV column names for {{1}}, {{2}}, ...
@@ -387,6 +388,15 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         else:
             eligible.append(lead)
 
+    seen_phones: set[str] = set()
+    deduped: list[BulkLeadItem] = []
+    for lead in eligible:
+        p = _normalize_phone(lead.phone or "")
+        if p and p not in seen_phones:
+            seen_phones.add(p)
+            deduped.append(lead)
+    eligible = deduped
+
     if not eligible:
         raise HTTPException(status_code=400, detail="No eligible leads")
 
@@ -419,6 +429,18 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             days = body.drip_days
             batch_size = max(1, -(-len(eligible) // days))  # ceiling division
             now = datetime.now(timezone.utc)
+            ist_offset = timedelta(hours=5, minutes=30)
+            now_ist = now + ist_offset
+
+            def _drip_fire_at(day_index: int) -> str:
+                if body.drip_send_time:
+                    h, m = map(int, body.drip_send_time.split(":"))
+                    target_ist_date = (now_ist + timedelta(days=day_index)).date()
+                    naive_ist = datetime(target_ist_date.year, target_ist_date.month, target_ist_date.day, h, m)
+                    utc_dt = naive_ist - ist_offset
+                    return utc_dt.replace(tzinfo=timezone.utc).isoformat()
+                return (now + timedelta(days=day_index)).isoformat()
+
             records = []
             for i in range(days):
                 batch = eligible[i * batch_size:(i + 1) * batch_size]
@@ -428,7 +450,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                     "tenant_id": tenant_id,
                     "template_name": body.template_name,
                     "schedule_type": "drip",
-                    "fire_at": (now + timedelta(days=i)).isoformat(),
+                    "fire_at": _drip_fire_at(i),
                     "leads_json": [l.model_dump() for l in batch],
                     "variable_mapping": body.variable_mapping,
                     "opt_in_source": opt_in_src,
