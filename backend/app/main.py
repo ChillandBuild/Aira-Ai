@@ -23,10 +23,10 @@ logger = logging.getLogger(__name__)
 async def _process_automation_waits() -> None:
     """APScheduler job: resume automation wait-step executions that are due."""
     try:
-        from app.services.automation_engine import resume_pending_executions
-        count = await resume_pending_executions()
+        from app.services.automation_engine import resume_due_flow_runs
+        count = await resume_due_flow_runs()
         if count:
-            logger.info(f"Automation scheduler: resumed {count} pending execution(s)")
+            logger.info(f"Automation scheduler: resumed {count} flow run(s)")
     except Exception as e:
         logger.error(f"Automation scheduler error: {e}")
 

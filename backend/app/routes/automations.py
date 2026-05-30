@@ -337,7 +337,7 @@ async def get_automation_logs(automation_id: UUID, tenant_id: str = Depends(get_
 
 @router.post("/process-pending")
 async def process_pending(tenant_id: str = Depends(get_tenant_id)):
-    """Cron endpoint to resume wait-step executions that are due."""
-    from app.services.automation_engine import resume_pending_executions
-    count = await resume_pending_executions()
+    """Cron endpoint to resume wait-step flow runs that are due."""
+    from app.services.automation_engine import resume_due_flow_runs
+    count = await resume_due_flow_runs()
     return {"processed": count}

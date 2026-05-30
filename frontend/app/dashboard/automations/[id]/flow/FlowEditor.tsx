@@ -1,9 +1,10 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, Loader2, Map, Power } from "lucide-react";
+import { ArrowLeft, Check, Loader2, List, Map, Power } from "lucide-react";
 import { useFlow } from "./useFlow";
 import FlowCanvas from "./FlowCanvas";
+import MapView from "./MapView";
 import TriggerCard from "./TriggerCard";
 import BlockConfigDrawer from "./drawers/BlockConfigDrawer";
 import type { BlockConfig, FlowNode } from "./types";
@@ -16,6 +17,7 @@ export default function FlowEditor({ flowId }: FlowEditorProps) {
   const router = useRouter();
   const flow = useFlow(flowId);
   const [editing, setEditing] = useState<FlowNode | null>(null);
+  const [view, setView] = useState<"stack" | "map">("stack");
 
   if (flow.loading) {
     return (
@@ -75,18 +77,18 @@ export default function FlowEditor({ flowId }: FlowEditorProps) {
             {flow.active ? "Active" : "Paused"}
           </button>
 
-          <div className="relative group shrink-0">
-            <button
-              disabled
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-surface-mid text-on-surface-muted/60 cursor-not-allowed"
-            >
-              <Map size={13} />
-              <span className="hidden sm:inline">Map</span>
-            </button>
-            <span className="pointer-events-none absolute top-full right-0 mt-1 px-2 py-1 rounded-lg bg-primary text-white text-[10px] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
-              Soon
-            </span>
-          </div>
+          <button
+            onClick={() => setView((v) => (v === "stack" ? "map" : "stack"))}
+            className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
+              view === "map"
+                ? "bg-primary-light text-primary"
+                : "bg-surface-mid text-on-surface-muted hover:bg-surface-mid/70 hover:text-on-surface"
+            }`}
+            title={view === "map" ? "Switch to editor" : "View flow map"}
+          >
+            {view === "map" ? <List size={13} /> : <Map size={13} />}
+            <span className="hidden sm:inline">{view === "map" ? "Editor" : "Map"}</span>
+          </button>
 
           <button
             onClick={flow.save}
@@ -109,12 +111,28 @@ export default function FlowEditor({ flowId }: FlowEditorProps) {
       </header>
 
       {/* Canvas */}
-      <main className="max-w-2xl mx-auto px-4 py-6 space-y-1">
-        <TriggerCard triggerType={flow.triggerType} triggerConfig={flow.triggerConfig} onChange={flow.setTriggerConfig} />
+      {view === "map" ? (
+        <main className="max-w-5xl mx-auto px-4 py-6">
+          <MapView nodes={flow.tree} triggerType={flow.triggerType} triggerConfig={flow.triggerConfig} />
+        </main>
+      ) : (
+        <main className="max-w-2xl mx-auto px-4 py-6 space-y-1">
+          <TriggerCard triggerType={flow.triggerType} triggerConfig={flow.triggerConfig} onChange={flow.setTriggerConfig} />
 
-        {flow.tree.length === 0 ? (
-          <div className="pt-2">
-            <p className="text-center text-xs text-on-surface-muted mb-3 mt-4">Then the bot will…</p>
+          {flow.tree.length === 0 ? (
+            <div className="pt-2">
+              <p className="text-center text-xs text-on-surface-muted mb-3 mt-4">Then the bot will…</p>
+              <FlowCanvas
+                tree={flow.tree}
+                onAdd={flow.addBlock}
+                onEdit={setEditing}
+                onDuplicate={flow.duplicateBlock}
+                onDelete={flow.deleteBlock}
+                onMove={flow.moveBlock}
+                updateBlockConfig={flow.updateBlockConfig}
+              />
+            </div>
+          ) : (
             <FlowCanvas
               tree={flow.tree}
               onAdd={flow.addBlock}
@@ -124,19 +142,9 @@ export default function FlowEditor({ flowId }: FlowEditorProps) {
               onMove={flow.moveBlock}
               updateBlockConfig={flow.updateBlockConfig}
             />
-          </div>
-        ) : (
-          <FlowCanvas
-            tree={flow.tree}
-            onAdd={flow.addBlock}
-            onEdit={setEditing}
-            onDuplicate={flow.duplicateBlock}
-            onDelete={flow.deleteBlock}
-            onMove={flow.moveBlock}
-            updateBlockConfig={flow.updateBlockConfig}
-          />
-        )}
-      </main>
+          )}
+        </main>
+      )}
 
       {editing && <BlockConfigDrawer node={editing} onSave={handleSaveConfig} onClose={() => setEditing(null)} />}
     </div>

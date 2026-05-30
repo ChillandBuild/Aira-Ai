@@ -47,6 +47,53 @@ def _children(steps: list[dict], parent_id: str, branch: str | None = None) -> l
     )
 
 
+def _next_step_id(
+    steps_flat: list[dict], current_id: str, branch: str | None = None
+) -> str | None:
+    """Pure traversal: id of the node to execute after current_id, or None when done.
+
+    Tree-as-sequence semantics that reproduce Phase-1 recursion's *return* behavior:
+    a linear run is a set of siblings sharing (parent_step_id, branch); only a chosen
+    condition/interactive branch descends into children.
+    """
+    by_id = {s["id"]: s for s in steps_flat}
+    cur = by_id.get(current_id)
+    if cur is None:
+        return None
+
+    # 1) Descend into the chosen branch's first child (lowest position).
+    if branch is not None:
+        kids = _children(steps_flat, current_id, branch)
+        if kids:
+            return kids[0]["id"]
+        # No children for this branch → fall through to sibling/walk-up logic.
+
+    # 2) Linear advance: next sibling under same (parent, branch), then walk up.
+    node = cur
+    while node is not None:
+        parent_id = node.get("parent_step_id")
+        node_branch = node.get("branch")
+        node_pos = node.get("position", 0)
+
+        if parent_id is None:
+            roots = _build_tree(steps_flat)
+            sibs = roots
+        else:
+            sibs = _children(steps_flat, parent_id, node_branch)
+
+        nxt = next(
+            (s for s in sibs if s.get("position", 0) > node_pos and s["id"] != node["id"]),
+            None,
+        )
+        if nxt is not None:
+            return nxt["id"]
+
+        # No next sibling: pop to parent and look for parent's next sibling.
+        node = by_id.get(parent_id) if parent_id is not None else None
+
+    return None
+
+
 # ─── Condition evaluator ─────────────────────────────────────────────────────
 
 def _evaluate_condition(config: dict, lead_data: dict, message: str) -> bool:
@@ -91,8 +138,26 @@ def _evaluate_condition(config: dict, lead_data: dict, message: str) -> bool:
 _NEW_SEND_STEPS = ("send_image", "send_video", "send_file", "send_location", "cta_url")
 
 
-def _interpolate(text: str, lead_data: dict) -> str:
-    return (text or "").replace(
+import re
+
+_VAR_PATTERN = re.compile(r"\{\{\s*([\w.]+)\s*\}\}")
+
+
+def _interpolate(text: str, lead_data: dict, variables: dict | None = None) -> str:
+    """Resolve {{key}} from the run's variable bag first, then the legacy
+    name/phone defaulting (empty name → "there"). Phase-1 behavior preserved:
+    {{name}}/{{phone}} still fall back to lead_data when not in the bag."""
+    out = text or ""
+    if variables:
+        def _sub(m):
+            key = m.group(1)
+            # Empty/None treated as unset so {{name}}/{{phone}} fall through to the
+            # legacy name/phone defaulting below (preserves "" name → "there").
+            if key in variables and variables[key] not in (None, ""):
+                return str(variables[key])
+            return m.group(0)
+        out = _VAR_PATTERN.sub(_sub, out)
+    return out.replace(
         "{{name}}", lead_data.get("name") or "there"
     ).replace("{{phone}}", lead_data.get("phone") or "")
 
@@ -171,6 +236,7 @@ async def _execute_step(
     tenant_id = str(lead_data["tenant_id"])
     source = lead_data.get("source", "whatsapp")
     automation_id = context.get("automation_id")
+    variables = context.get("variables") or {}
 
     # ── Booking-flow guard for outbound message steps ──────────────────────
     if step_type in ("send_message", "send_template", *_NEW_SEND_STEPS):
@@ -187,7 +253,7 @@ async def _execute_step(
         text = config.get("message", "")
         if not text:
             return {"status": "error", "detail": "empty message"}
-        text = _interpolate(text, lead_data)
+        text = _interpolate(text, lead_data, variables)
         try:
             sid = await _send_text_via_channel(source, lead_data, text, tenant_id)
             _record_outbound(db, step, lead_data, source, text, sid, automation_id)
@@ -204,7 +270,7 @@ async def _execute_step(
         url_val = config.get("url", "")
         if not url_val:
             return {"status": "error", "detail": "empty url"}
-        caption = _interpolate(config.get("caption", ""), lead_data) or None
+        caption = _interpolate(config.get("caption", ""), lead_data, variables) or None
         wa_type = "image" if step_type == "send_image" else "video"
         try:
             sid = None
@@ -234,7 +300,7 @@ async def _execute_step(
         url_val = config.get("url", "")
         if not url_val:
             return {"status": "error", "detail": "empty url"}
-        caption = _interpolate(config.get("caption", ""), lead_data) or None
+        caption = _interpolate(config.get("caption", ""), lead_data, variables) or None
         filename = config.get("filename") or None
         try:
             sid = None
@@ -294,7 +360,7 @@ async def _execute_step(
 
     # ── cta_url ────────────────────────────────────────────────────────────
     if step_type == "cta_url":
-        body = _interpolate(config.get("body", ""), lead_data)
+        body = _interpolate(config.get("body", ""), lead_data, variables)
         button_text = config.get("button_text", "")
         button_url = config.get("button_url", "")
         if not body or not button_text or not button_url:
@@ -399,6 +465,11 @@ async def _execute_step(
         if not note:
             return {"status": "error", "detail": "empty note"}
         try:
+            if variables:
+                note = _VAR_PATTERN.sub(
+                    lambda m: str(variables[m.group(1)]) if m.group(1) in variables and variables[m.group(1)] is not None else m.group(0),
+                    note,
+                )
             note = note.replace("{{name}}", lead_data.get("name") or "").replace("{{phone}}", lead_data.get("phone") or "")
             db.table("lead_notes").insert({
                 "lead_id": lead_id,
@@ -470,69 +541,24 @@ async def _execute_step(
     return {"status": "error", "detail": f"unknown step_type: {step_type}"}
 
 
-# ─── Main executor ───────────────────────────────────────────────────────────
+# ─── Resumable driver (step-pointer state machine) ───────────────────────────
 
-async def _run_steps(
-    steps_flat: list[dict],
-    root_steps: list[dict],
-    lead_data: dict,
-    message: str,
-    db,
-    automation_id: str,
-    context: dict,
-) -> list[dict]:
-    """Recursively execute a step tree; return list of step result dicts."""
-    results: list[dict] = []
-
-    async def walk(step_list: list[dict]) -> None:
-        for step in step_list:
-            result = await _execute_step(step, lead_data, message, db, context)
-            result["step_id"] = step["id"]
-            result["step_type"] = step["step_type"]
-            results.append(result)
-
-            if result.get("status") == "wait":
-                # Schedule pending execution for the NEXT sibling after this step
-                # (simplification: queue the rest of the current branch from here)
-                run_at = result.get("run_at")
-                try:
-                    db.table("automation_pending_executions").insert({
-                        "automation_id": automation_id,
-                        "lead_id": str(lead_data["id"]),
-                        "resume_step_id": step["id"],
-                        "tenant_id": str(lead_data["tenant_id"]),
-                        "run_at": run_at,
-                        "status": "pending",
-                        "context": {**context, "message": message},
-                    }).execute()
-                except Exception as e:
-                    logger.error(f"Failed to queue pending execution: {e}")
-                return  # Stop this branch; resume later
-
-            if result.get("status") == "ok" and step["step_type"] == "condition":
-                branch = result.get("branch", "yes")
-                branch_children = _children(steps_flat, step["id"], branch)
-                await walk(branch_children)
-            elif step["step_type"] != "condition":
-                pass  # linear steps: continue to next in list
-
-    await walk(root_steps)
-    return results
+_MAX_ITER = 200  # infinite-loop guard
 
 
-async def run_automation(
-    automation: dict,
-    lead_id: str,
-    trigger_type: str,
-    message: str,
-    db=None,
-) -> None:
-    """Execute one automation against a lead. Logs outcome."""
-    db = db or get_supabase()
-    automation_id = str(automation["id"])
-    tenant_id = str(automation["tenant_id"])
+def _load_steps_flat(db, automation_id: str) -> list[dict]:
+    res = (
+        db.table("automation_steps")
+        .select("*")
+        .eq("automation_id", automation_id)
+        .order("position")
+        .execute()
+    )
+    return res.data or []
 
-    lead_row = (
+
+def _load_lead(db, lead_id: str, tenant_id: str) -> dict | None:
+    row = (
         db.table("leads")
         .select("id,name,phone,source,segment,score,tenant_id,assigned_to,tg_user_id,ig_user_id,fb_user_id")
         .eq("id", lead_id)
@@ -540,39 +566,40 @@ async def run_automation(
         .maybe_single()
         .execute()
     )
-    if not lead_row.data:
-        logger.warning(f"Automation {automation_id}: lead {lead_id} not found")
-        return
+    return row.data or None
 
-    lead_data = lead_row.data
 
-    steps_res = (
-        db.table("automation_steps")
-        .select("*")
-        .eq("automation_id", automation_id)
-        .order("position")
-        .execute()
-    )
-    steps_flat = steps_res.data or []
-    root_steps = _build_tree(steps_flat)
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _finish_run(
+    db,
+    run: dict,
+    status: str,
+    steps_results: list[dict],
+    trigger_type: str,
+) -> None:
+    """Mark the run done/failed, then write the legacy automation_logs row +
+    bump run_count / subscriber_count (Phase-1 semantics, preserved)."""
+    automation_id = str(run["automation_id"])
+    lead_id = str(run["lead_id"])
+    tenant_id = str(run["tenant_id"])
+    if run.get("id") is not None:
+        try:
+            db.table("automation_flow_runs").update(
+                {"status": status, "current_step_id": None, "updated_at": _now_iso()}
+            ).eq("id", run["id"]).execute()
+        except Exception as e:
+            logger.error(f"flow_run {run['id']} final state update failed: {e}")
 
     overall_status = "success"
-    steps_results: list[dict] = []
-    try:
-        steps_results = await _run_steps(
-            steps_flat, root_steps, lead_data, message, db, automation_id,
-            {"automation_id": automation_id},
-        )
-        if any(r.get("status") == "error" for r in steps_results):
-            overall_status = "partial" if any(r.get("status") == "ok" for r in steps_results) else "failure"
-    except Exception as e:
-        logger.error(f"Automation {automation_id} execution error: {e}")
+    if status == "failed":
         overall_status = "failure"
-        steps_results.append({"status": "error", "detail": str(e)})
+    elif any(r.get("status") == "error" for r in steps_results):
+        overall_status = "partial" if any(r.get("status") == "ok" for r in steps_results) else "failure"
 
     try:
-        # subscriber_count = distinct leads that ever entered this flow. Only
-        # bump it the first time THIS lead runs (run_count counts every run).
         is_new_subscriber = True
         try:
             prior = (
@@ -586,10 +613,20 @@ async def run_automation(
             is_new_subscriber = not (prior.data or [])
         except Exception as e:
             logger.warning(f"subscriber dedup check failed for {automation_id}: {e}")
-        updates = {"run_count": (automation.get("run_count") or 0) + 1}
+
+        auto = (
+            db.table("automations")
+            .select("run_count,subscriber_count")
+            .eq("id", automation_id)
+            .maybe_single()
+            .execute()
+        )
+        auto_data = auto.data or {}
+        updates = {"run_count": (auto_data.get("run_count") or 0) + 1}
         if is_new_subscriber:
-            updates["subscriber_count"] = (automation.get("subscriber_count") or 0) + 1
+            updates["subscriber_count"] = (auto_data.get("subscriber_count") or 0) + 1
         db.table("automations").update(updates).eq("id", automation_id).execute()
+
         db.table("automation_logs").insert({
             "automation_id": automation_id,
             "lead_id": lead_id,
@@ -602,55 +639,240 @@ async def run_automation(
         logger.error(f"Failed to log automation {automation_id}: {e}")
 
 
-async def resume_pending_executions(db=None) -> int:
-    """Process due pending executions. Called by cron endpoint. Returns count processed."""
+async def _drive_run(run: dict, db, trigger_type: str = "") -> None:
+    """Resumable executor: walk the step-pointer from run['current_step_id'],
+    persisting state each iteration so a crash resumes mid-flow."""
     db = db or get_supabase()
-    now = datetime.now(timezone.utc).isoformat()
+    automation_id = str(run["automation_id"])
+    tenant_id = str(run["tenant_id"])
+    lead_id = str(run["lead_id"])
+
+    lead_data = _load_lead(db, lead_id, tenant_id)
+    if not lead_data:
+        logger.warning(f"flow_run {run['id']}: lead {lead_id} not found")
+        _finish_run(db, run, "failed", [{"status": "error", "detail": "lead not found"}], trigger_type)
+        return
+
+    steps_flat = _load_steps_flat(db, automation_id)
+    by_id = {s["id"]: s for s in steps_flat}
+    variables = run.get("variables") or {}
+    message = run.get("trigger_message") or ""
+    context = {"automation_id": automation_id, "variables": variables, "run_id": run["id"]}
+
+    steps_results: list[dict] = []
+    current_step_id = run.get("current_step_id")
+    iterations = 0
+
+    try:
+        while current_step_id is not None:
+            iterations += 1
+            if iterations > _MAX_ITER:
+                logger.error(f"flow_run {run['id']} exceeded {_MAX_ITER} iterations; failing")
+                _finish_run(db, run, "failed", steps_results + [{"status": "error", "detail": "iteration cap exceeded"}], trigger_type)
+                return
+
+            step = by_id.get(current_step_id)
+            if step is None:
+                # Pointer references a missing node → treat flow as complete.
+                break
+
+            result = await _execute_step(step, lead_data, message, db, context)
+            result["step_id"] = step["id"]
+            result["step_type"] = step["step_type"]
+            steps_results.append(result)
+
+            # Persist any var mutations a block made (Milestone C blocks will).
+            variables = context.get("variables") or variables
+
+            status = result.get("status")
+            step_type = step["step_type"]
+
+            if status == "wait":
+                next_id = _next_step_id(steps_flat, step["id"])
+                db.table("automation_flow_runs").update({
+                    "status": "waiting_time",
+                    "resume_at": result.get("run_at"),
+                    "current_step_id": next_id,
+                    "variables": variables,
+                    "updated_at": _now_iso(),
+                }).eq("id", run["id"]).execute()
+                return
+
+            if status == "ok" and step_type == "condition":
+                branch = result.get("branch")
+                current_step_id = _next_step_id(steps_flat, step["id"], branch)
+            else:
+                current_step_id = _next_step_id(steps_flat, step["id"])
+
+            # Crash-recovery: advance the pointer + variables each iteration.
+            db.table("automation_flow_runs").update({
+                "current_step_id": current_step_id,
+                "variables": variables,
+                "updated_at": _now_iso(),
+            }).eq("id", run["id"]).execute()
+
+        _finish_run(db, run, "done", steps_results, trigger_type)
+    except Exception as e:
+        logger.error(f"flow_run {run['id']} execution error: {e}")
+        steps_results.append({"status": "error", "detail": str(e)})
+        _finish_run(db, run, "failed", steps_results, trigger_type)
+
+
+def _is_unique_violation(exc: Exception) -> bool:
+    s = str(exc).lower()
+    return "23505" in s or "duplicate key" in s or "unique constraint" in s
+
+
+async def run_automation(
+    automation: dict,
+    lead_id: str,
+    trigger_type: str,
+    message: str,
+    db=None,
+) -> None:
+    """Start a fresh run: seed variables, insert a flow-run row (one active run per
+    lead+automation), then drive it via the step-pointer engine."""
+    db = db or get_supabase()
+    automation_id = str(automation["id"])
+    tenant_id = str(automation["tenant_id"])
+
+    lead_data = _load_lead(db, lead_id, tenant_id)
+    if not lead_data:
+        logger.warning(f"Automation {automation_id}: lead {lead_id} not found")
+        return
+
+    steps_flat = _load_steps_flat(db, automation_id)
+    root_steps = _build_tree(steps_flat)
+    if not root_steps:
+        # No steps: nothing to execute, but preserve counter + log semantics.
+        synthetic_run = {
+            "id": None,
+            "automation_id": automation_id,
+            "lead_id": lead_id,
+            "tenant_id": tenant_id,
+        }
+        # _finish_run needs a real run id for the flow-run update; skip that table
+        # write for the no-steps case and only do counters + log.
+        _finish_run_no_run_row(db, automation_id, lead_id, tenant_id, "done", [], trigger_type)
+        return
+
+    first_step_id = root_steps[0]["id"]
+
+    seeded = {
+        "name": str(lead_data.get("name") or ""),
+        "phone": str(lead_data.get("phone") or ""),
+        "segment": str(lead_data.get("segment") or ""),
+        "score": str(lead_data.get("score") if lead_data.get("score") is not None else ""),
+    }
+
+    try:
+        ins = db.table("automation_flow_runs").insert({
+            "automation_id": automation_id,
+            "lead_id": lead_id,
+            "tenant_id": tenant_id,
+            "status": "running",
+            "current_step_id": first_step_id,
+            "variables": seeded,
+            "trigger_message": message,
+        }).execute()
+    except Exception as e:
+        if _is_unique_violation(e):
+            logger.info(f"Automation {automation_id}: active run already exists for lead {lead_id}; skipping")
+            return
+        logger.error(f"Automation {automation_id}: failed to create flow run for lead {lead_id}: {e}")
+        return
+
+    if not ins.data:
+        logger.error(f"Automation {automation_id}: flow run insert returned no row for lead {lead_id}")
+        return
+
+    await _drive_run(ins.data[0], db, trigger_type)
+
+
+def _finish_run_no_run_row(
+    db, automation_id: str, lead_id: str, tenant_id: str, status: str, steps_results: list[dict], trigger_type: str
+) -> None:
+    """Counters + automation_logs for the no-steps path (no flow-run row to close)."""
+    _finish_run(
+        db,
+        {"id": None, "automation_id": automation_id, "lead_id": lead_id, "tenant_id": tenant_id},
+        status,
+        steps_results,
+        trigger_type,
+    )
+
+
+async def resume_due_flow_runs(db=None) -> int:
+    """Resume time-waiting flow runs whose resume_at has passed. Returns count processed."""
+    db = db or get_supabase()
+    now = _now_iso()
     due = (
-        db.table("automation_pending_executions")
+        db.table("automation_flow_runs")
         .select("*")
-        .eq("status", "pending")
-        .lte("run_at", now)
+        .eq("status", "waiting_time")
+        .lte("resume_at", now)
         .limit(50)
         .execute()
     )
     processed = 0
-    for pending in (due.data or []):
+    for run in (due.data or []):
         try:
-            db.table("automation_pending_executions").update(
-                {"status": "running"}
-            ).eq("id", pending["id"]).execute()
-
             auto_row = (
                 db.table("automations")
                 .select("*")
-                .eq("id", pending["automation_id"])
+                .eq("id", run["automation_id"])
                 .maybe_single()
                 .execute()
             )
             if not auto_row.data or not auto_row.data.get("active"):
-                db.table("automation_pending_executions").update(
-                    {"status": "done"}
-                ).eq("id", pending["id"]).execute()
+                # Automation deactivated mid-wait: close the run silently (no log /
+                # no counter bump — matches Phase-1, which wrote nothing here).
+                db.table("automation_flow_runs").update(
+                    {"status": "done", "current_step_id": None, "updated_at": _now_iso()}
+                ).eq("id", run["id"]).execute()
                 continue
 
-            context = pending.get("context") or {}
-            message = context.pop("message", "")
-            await run_automation(
-                auto_row.data,
-                lead_id=pending["lead_id"],
-                trigger_type=auto_row.data["trigger_type"],
-                message=message,
-                db=db,
-            )
-            db.table("automation_pending_executions").update(
-                {"status": "done"}
-            ).eq("id", pending["id"]).execute()
+            # Optimistic guard: flip to running before advancing.
+            db.table("automation_flow_runs").update(
+                {"status": "running", "updated_at": _now_iso()}
+            ).eq("id", run["id"]).execute()
+
+            await _drive_run(run, db, auto_row.data["trigger_type"])
             processed += 1
         except Exception as e:
-            logger.error(f"Failed to resume pending execution {pending['id']}: {e}")
-            db.table("automation_pending_executions").update(
-                {"status": "failed"}
-            ).eq("id", pending["id"]).execute()
+            logger.error(f"Failed to resume flow run {run['id']}: {e}")
+            try:
+                db.table("automation_flow_runs").update(
+                    {"status": "failed", "updated_at": _now_iso()}
+                ).eq("id", run["id"]).execute()
+            except Exception:
+                pass
 
     return processed
+
+
+# Backwards-compat alias (retired path; kept so any stray import does not break).
+async def resume_pending_executions(db=None) -> int:
+    return await resume_due_flow_runs(db)
+
+
+if __name__ == "__main__":
+    # Pure traversal sanity checks for _next_step_id (no DB).
+    def _s(sid, parent=None, branch=None, pos=0, t="send_message"):
+        return {"id": sid, "parent_step_id": parent, "branch": branch, "position": pos, "step_type": t}
+
+    _lin = [_s("A", pos=0), _s("B", pos=1), _s("C", pos=2)]
+    assert _next_step_id(_lin, "A") == "B"
+    assert _next_step_id(_lin, "C") is None
+
+    _cond = [
+        _s("C", pos=0, t="condition"), _s("D", pos=1),
+        _s("X", parent="C", branch="yes", pos=0), _s("Y", parent="C", branch="yes", pos=1),
+        _s("Z", parent="C", branch="no", pos=0),
+    ]
+    assert _next_step_id(_cond, "C", "yes") == "X"
+    assert _next_step_id(_cond, "Y") == "D"   # walk up out of the yes-lane to C's next root sibling
+    assert _next_step_id(_cond, "C", "no") == "Z"
+    assert _next_step_id(_cond, "Z") == "D"
+    assert _next_step_id(_cond, "C", "yes_empty") == "D"  # missing branch → fall through
+    print("automation_engine: _next_step_id sanity checks pass")
