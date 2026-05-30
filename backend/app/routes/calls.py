@@ -162,7 +162,7 @@ _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 
 def _verify_telecmi_webhook_secret(request: Request) -> bool:
     configured_secret = get_setting("telecmi_webhook_secret")
-    received_secret = request.headers.get("x-aira-webhook-secret")
+    received_secret = request.query_params.get("webhook_secret")
     if not configured_secret or not received_secret:
         raise HTTPException(status_code=403, detail="Invalid webhook secret")
     if not hmac.compare_digest(received_secret, configured_secret):
