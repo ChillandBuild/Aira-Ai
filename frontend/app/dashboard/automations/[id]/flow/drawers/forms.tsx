@@ -1,12 +1,15 @@
 "use client";
-import type { BlockConfig, ConditionSubject, WaitUnit } from "../types";
+import { Plus, Trash2 } from "lucide-react";
+import type { BlockConfig, ConditionSubject, HttpMethod, InteractiveButton, WaitUnit } from "../types";
+import { newButtonId } from "../blockMeta";
 
 export interface FormProps {
   config: BlockConfig;
   patch: (next: Partial<BlockConfig>) => void;
 }
 
-const VAR_HINT = "Use {{name}} or {{phone}} to personalize.";
+const VAR_HINT = "Use {{name}}, {{phone}}, or any saved variable to personalize.";
+const MAX_BUTTONS = 3;
 
 // ── Field primitives ──────────────────────────────────────────────────────────
 
@@ -285,6 +288,213 @@ export function ConditionForm({ config, patch }: FormProps) {
       ) : (
         <TextField label="Text" value={config.value || ""} placeholder="interested" onChange={(v) => patch({ value: v })} />
       )}
+    </>
+  );
+}
+
+// ── Phase-2 forms ─────────────────────────────────────────────────────────────
+
+const ghostBtnClass =
+  "inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-dashed border-surface-mid text-xs font-medium text-on-surface-muted hover:text-on-surface hover:border-primary/40 transition-colors";
+
+export function UserInputForm({ config, patch }: FormProps) {
+  return (
+    <>
+      <div>
+        <Label>Question to ask</Label>
+        <textarea
+          className={`${inputClass} min-h-[100px] resize-y`}
+          value={config.prompt || ""}
+          placeholder="What's your budget range?"
+          onChange={(e) => patch({ prompt: e.target.value })}
+        />
+        <Hint>{VAR_HINT}</Hint>
+      </div>
+      <TextField
+        label="Save reply as"
+        value={config.save_as || ""}
+        placeholder="budget"
+        onChange={(v) => patch({ save_as: v })}
+        hint="The lead's reply is stored in this variable — reference it later as {{budget}}."
+      />
+    </>
+  );
+}
+
+export function InteractiveForm({ config, patch }: FormProps) {
+  const buttons: InteractiveButton[] = config.buttons || [];
+
+  const setButton = (id: string, title: string) =>
+    patch({ buttons: buttons.map((b) => (b.id === id ? { ...b, title } : b)) });
+
+  const addButton = () => {
+    if (buttons.length >= MAX_BUTTONS) return;
+    patch({ buttons: [...buttons, { id: newButtonId(), title: "" }] });
+  };
+
+  const removeButton = (id: string) =>
+    patch({ buttons: buttons.filter((b) => b.id !== id) });
+
+  return (
+    <>
+      <div>
+        <Label>Message body</Label>
+        <textarea
+          className={`${inputClass} min-h-[100px] resize-y`}
+          value={config.body || ""}
+          placeholder="How can we help you today?"
+          onChange={(e) => patch({ body: e.target.value })}
+        />
+        <Hint>{VAR_HINT}</Hint>
+      </div>
+
+      <div>
+        <Label>Buttons</Label>
+        <div className="space-y-2">
+          {buttons.map((b, i) => (
+            <div key={b.id} className="flex items-center gap-2">
+              <input
+                className={inputClass}
+                value={b.title}
+                placeholder={`Button ${i + 1}`}
+                maxLength={20}
+                onChange={(e) => setButton(b.id, e.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() => removeButton(b.id)}
+                disabled={buttons.length <= 1}
+                className="shrink-0 p-2 rounded-lg text-on-surface-muted hover:bg-red-50 hover:text-red-500 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                aria-label="Remove button"
+              >
+                <Trash2 size={15} />
+              </button>
+            </div>
+          ))}
+        </div>
+        {buttons.length < MAX_BUTTONS && (
+          <button type="button" onClick={addButton} className={`${ghostBtnClass} mt-2`}>
+            <Plus size={14} />
+            Add button
+          </button>
+        )}
+        <Hint>Each button opens its own branch lane. WhatsApp allows up to {MAX_BUTTONS} buttons (max 20 chars each).</Hint>
+      </div>
+
+      <TextField
+        label="Save choice as (optional)"
+        value={config.save_as || ""}
+        placeholder="menu_choice"
+        onChange={(v) => patch({ save_as: v })}
+        hint="Stores which button the lead tapped, e.g. {{menu_choice}}."
+      />
+    </>
+  );
+}
+
+const HTTP_METHODS: { value: HttpMethod; label: string }[] = [
+  { value: "GET", label: "GET" },
+  { value: "POST", label: "POST" },
+  { value: "PUT", label: "PUT" },
+  { value: "PATCH", label: "PATCH" },
+  { value: "DELETE", label: "DELETE" },
+];
+
+export function HttpApiForm({ config, patch }: FormProps) {
+  const method = config.method || "GET";
+  const headers = config.headers || {};
+  const headerRows = Object.entries(headers);
+  const hasBody = method !== "GET" && method !== "DELETE";
+
+  const setHeaders = (next: [string, string][]) => {
+    const obj: Record<string, string> = {};
+    for (const [k, v] of next) if (k.trim()) obj[k] = v;
+    patch({ headers: obj });
+  };
+
+  const updateHeader = (idx: number, key: string, value: string) => {
+    const next = headerRows.map((row, i) => (i === idx ? ([key, value] as [string, string]) : row));
+    setHeaders(next);
+  };
+  const addHeader = () => setHeaders([...headerRows, ["", ""]]);
+  const removeHeader = (idx: number) => setHeaders(headerRows.filter((_, i) => i !== idx));
+
+  return (
+    <>
+      <div className="grid grid-cols-[110px_1fr] gap-3">
+        <SelectField label="Method" value={method} options={HTTP_METHODS} onChange={(v) => patch({ method: v })} />
+        <TextField label="URL" value={config.url || ""} placeholder="https://api.example.com/lookup" onChange={(v) => patch({ url: v })} hint={VAR_HINT} />
+      </div>
+
+      <div>
+        <Label>Headers (optional)</Label>
+        <div className="space-y-2">
+          {headerRows.map(([k, v], i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input className={inputClass} value={k} placeholder="Authorization" onChange={(e) => updateHeader(i, e.target.value, v)} />
+              <input className={inputClass} value={v} placeholder="Bearer …" onChange={(e) => updateHeader(i, k, e.target.value)} />
+              <button
+                type="button"
+                onClick={() => removeHeader(i)}
+                className="shrink-0 p-2 rounded-lg text-on-surface-muted hover:bg-red-50 hover:text-red-500 transition-colors"
+                aria-label="Remove header"
+              >
+                <Trash2 size={15} />
+              </button>
+            </div>
+          ))}
+        </div>
+        <button type="button" onClick={addHeader} className={`${ghostBtnClass} mt-2`}>
+          <Plus size={14} />
+          Add header
+        </button>
+      </div>
+
+      {hasBody && (
+        <div>
+          <Label>Request body (optional)</Label>
+          <textarea
+            className={`${inputClass} min-h-[90px] resize-y font-mono text-xs`}
+            value={config.body || ""}
+            placeholder='{"phone": "{{phone}}"}'
+            onChange={(e) => patch({ body: e.target.value })}
+          />
+          <Hint>{VAR_HINT}</Hint>
+        </div>
+      )}
+
+      <TextField
+        label="Extract field (optional)"
+        value={config.json_path || ""}
+        placeholder="data.score"
+        onChange={(v) => patch({ json_path: v })}
+        hint="Dot path into the JSON response. Leave blank to save the whole response."
+      />
+      <TextField
+        label="Save result as"
+        value={config.save_as || ""}
+        placeholder="api_result"
+        onChange={(v) => patch({ save_as: v })}
+        hint="Reference the result later as {{api_result}}."
+      />
+    </>
+  );
+}
+
+export function RandomForm({ config, patch }: FormProps) {
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-3">
+        <NumberField label="Min" value={config.min} placeholder="1" onChange={(v) => patch({ min: v })} />
+        <NumberField label="Max" value={config.max} placeholder="100" onChange={(v) => patch({ max: v })} />
+      </div>
+      <TextField
+        label="Save number as"
+        value={config.save_as || ""}
+        placeholder="lucky_number"
+        onChange={(v) => patch({ save_as: v })}
+        hint="Reference the number later as {{lucky_number}}."
+      />
     </>
   );
 }

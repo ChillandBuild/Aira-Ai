@@ -9,17 +9,33 @@ import type {
   FlowDetail,
   FlowNode,
   InsertTarget,
+  InteractiveButton,
   Step,
   StepIn,
   TriggerConfig,
   TriggerType,
 } from "./types";
+import { isBranching, lanesOf } from "./types";
 
 function newId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
   return `tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+// Apply fn to every child lane of a node, returning a new branches map.
+// Empty result lanes are pruned so the map only holds live lanes.
+function mapBranches(
+  node: FlowNode,
+  fn: (lane: FlowNode[]) => FlowNode[],
+): Record<string, FlowNode[]> {
+  const next: Record<string, FlowNode[]> = {};
+  for (const key of Object.keys(node.branches)) {
+    const lane = fn(node.branches[key]);
+    if (lane.length > 0) next[key] = lane;
+  }
+  return next;
 }
 
 // Build the in-memory tree from flat backend steps.
@@ -33,8 +49,7 @@ function buildTree(steps: Step[]): FlowNode[] {
       sent_count: s.sent_count || 0,
       delivered_count: s.delivered_count || 0,
       error_count: s.error_count || 0,
-      yes: [],
-      no: [],
+      branches: {},
     });
   }
 
@@ -42,17 +57,15 @@ function buildTree(steps: Step[]): FlowNode[] {
   for (const s of steps) {
     const node = byId.get(s.id);
     if (!node) continue;
-    if (s.parent_step_id == null) {
+    const parent = s.parent_step_id != null ? byId.get(s.parent_step_id) : undefined;
+    if (!parent || s.branch == null) {
       roots.push({ node, position: s.position });
       continue;
     }
-    const parent = byId.get(s.parent_step_id);
-    if (!parent) {
-      roots.push({ node, position: s.position });
-      continue;
-    }
-    const lane = s.branch === "no" ? parent.no : parent.yes;
+    // Bucket the child under its branch label (condition: yes/no; interactive: button id).
+    const lane = parent.branches[s.branch] ?? [];
     lane.push(node);
+    parent.branches[s.branch] = lane;
   }
 
   // Sort every lane by original position. Children were pushed in array order;
@@ -60,14 +73,15 @@ function buildTree(steps: Step[]): FlowNode[] {
   const posOf = new Map<string, number>(steps.map((s) => [s.id, s.position]));
   const sortLane = (lane: FlowNode[]) => lane.sort((a, b) => (posOf.get(a.id) ?? 0) - (posOf.get(b.id) ?? 0));
   Array.from(byId.values()).forEach((node) => {
-    sortLane(node.yes);
-    sortLane(node.no);
+    for (const key of Object.keys(node.branches)) sortLane(node.branches[key]);
   });
   roots.sort((a, b) => a.position - b.position);
   return roots.map((r) => r.node);
 }
 
 // Flatten the tree back to StepIn[] with correct parent/branch/position.
+// Each child is emitted with branch = its lane key (condition: yes/no;
+// interactive: the button id), matching the backend interactive contract.
 function flattenTree(roots: FlowNode[]): StepIn[] {
   const out: StepIn[] = [];
   const walk = (lane: FlowNode[], parentId: string | null, branch: Branch) => {
@@ -80,14 +94,23 @@ function flattenTree(roots: FlowNode[]): StepIn[] {
         branch,
         position: idx,
       });
-      if (node.step_type === "condition") {
-        walk(node.yes, node.id, "yes");
-        walk(node.no, node.id, "no");
+      if (isBranching(node.step_type)) {
+        // Emit lanes in config-derived order so positions stay deterministic.
+        for (const spec of lanesOf(node)) {
+          walk(node.branches[spec.key] ?? [], node.id, spec.key);
+        }
       }
     });
   };
   walk(roots, null, null);
   return out;
+}
+
+// Recurse into every branch lane of a node, returning a new branches map.
+function recurseBranches(node: FlowNode, recurse: (nodes: FlowNode[]) => FlowNode[]): Record<string, FlowNode[]> {
+  const next: Record<string, FlowNode[]> = {};
+  for (const key of Object.keys(node.branches)) next[key] = recurse(node.branches[key]);
+  return next;
 }
 
 // Immutable lane update: find the lane addressed by (parentId, branch) and replace it.
@@ -97,15 +120,14 @@ function mapLane(
   branch: Branch,
   fn: (lane: FlowNode[]) => FlowNode[],
 ): FlowNode[] {
-  if (parentId == null) return fn(roots);
+  if (parentId == null || branch == null) return fn(roots);
   const recurse = (nodes: FlowNode[]): FlowNode[] =>
     nodes.map((node) => {
       if (node.id === parentId) {
-        if (branch === "no") return { ...node, no: fn(node.no) };
-        return { ...node, yes: fn(node.yes) };
+        return { ...node, branches: { ...node.branches, [branch]: fn(node.branches[branch] ?? []) } };
       }
-      if (node.step_type === "condition") {
-        return { ...node, yes: recurse(node.yes), no: recurse(node.no) };
+      if (isBranching(node.step_type)) {
+        return { ...node, branches: recurseBranches(node, recurse) };
       }
       return node;
     });
@@ -117,8 +139,8 @@ function mapNode(roots: FlowNode[], id: string, fn: (node: FlowNode) => FlowNode
   const recurse = (nodes: FlowNode[]): FlowNode[] =>
     nodes.map((node) => {
       let next = node;
-      if (node.step_type === "condition") {
-        next = { ...node, yes: recurse(node.yes), no: recurse(node.no) };
+      if (isBranching(node.step_type)) {
+        next = { ...node, branches: recurseBranches(node, recurse) };
       }
       return next.id === id ? fn(next) : next;
     });
@@ -126,15 +148,45 @@ function mapNode(roots: FlowNode[], id: string, fn: (node: FlowNode) => FlowNode
 }
 
 function deepCloneNode(node: FlowNode): FlowNode {
+  const branches: Record<string, FlowNode[]> = {};
+  for (const key of Object.keys(node.branches)) branches[key] = node.branches[key].map(deepCloneNode);
   return {
     ...node,
     id: newId(),
     sent_count: 0,
     delivered_count: 0,
     error_count: 0,
-    config: { ...node.config, params: node.config.params ? [...node.config.params] : node.config.params },
-    yes: node.yes.map(deepCloneNode),
-    no: node.no.map(deepCloneNode),
+    config: cloneConfig(node.config),
+    branches,
+  };
+}
+
+// Keep an interactive node's branch lanes in sync with its current buttons:
+// retain lanes whose button id still exists, drop lanes whose button was removed
+// (along with all their children). New buttons get no lane here — lanesOf derives
+// an empty lane from config so it renders, and a lane is only stored once a child
+// is added to it.
+function reconcileButtonLanes(
+  branches: Record<string, FlowNode[]>,
+  buttons: InteractiveButton[] | undefined,
+): Record<string, FlowNode[]> {
+  const live = new Set((buttons || []).map((b) => b.id));
+  const next: Record<string, FlowNode[]> = {};
+  for (const key of Object.keys(branches)) {
+    if (live.has(key)) next[key] = branches[key];
+  }
+  return next;
+}
+
+// Deep-copy a config's nested collections. Button ids are kept as-is: they are
+// branch labels scoped under their own parent, so a duplicate's lanes (keyed by
+// the same ids in deepCloneNode) stay linked to the copied buttons.
+function cloneConfig(config: BlockConfig): BlockConfig {
+  return {
+    ...config,
+    params: config.params ? [...config.params] : config.params,
+    headers: config.headers ? { ...config.headers } : config.headers,
+    buttons: config.buttons ? config.buttons.map((b) => ({ ...b })) : config.buttons,
   };
 }
 
@@ -223,8 +275,7 @@ export function useFlow(flowId: string): FlowState {
       sent_count: 0,
       delivered_count: 0,
       error_count: 0,
-      yes: [],
-      no: [],
+      branches: {},
     };
     setTree((prev) =>
       mapLane(prev, target.parentId, target.branch, (lane) => {
@@ -238,7 +289,16 @@ export function useFlow(flowId: string): FlowState {
   }, [markDirty]);
 
   const updateBlockConfig = useCallback((id: string, config: BlockConfig) => {
-    setTree((prev) => mapNode(prev, id, (node) => ({ ...node, config })));
+    setTree((prev) =>
+      mapNode(prev, id, (node) => ({
+        ...node,
+        config,
+        // For interactive nodes, keep child lanes linked to buttons by id:
+        // drop lanes whose button was removed; seed nothing for new buttons
+        // (lanesOf derives empty lanes from config).
+        branches: node.step_type === "interactive" ? reconcileButtonLanes(node.branches, config.buttons) : node.branches,
+      })),
+    );
     markDirty();
   }, [markDirty]);
 
@@ -247,7 +307,7 @@ export function useFlow(flowId: string): FlowState {
       nodes
         .filter((n) => n.id !== id)
         .map((n) =>
-          n.step_type === "condition" ? { ...n, yes: removeFrom(n.yes), no: removeFrom(n.no) } : n,
+          isBranching(n.step_type) ? { ...n, branches: mapBranches(n, removeFrom) } : n,
         );
     setTree((prev) => removeFrom(prev));
     markDirty();
@@ -257,7 +317,7 @@ export function useFlow(flowId: string): FlowState {
     const dupeIn = (nodes: FlowNode[]): FlowNode[] => {
       const out: FlowNode[] = [];
       for (const n of nodes) {
-        const node = n.step_type === "condition" ? { ...n, yes: dupeIn(n.yes), no: dupeIn(n.no) } : n;
+        const node = isBranching(n.step_type) ? { ...n, branches: mapBranches(n, dupeIn) } : n;
         out.push(node);
         if (n.id === id) out.push(deepCloneNode(n));
       }

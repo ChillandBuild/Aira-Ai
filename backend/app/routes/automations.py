@@ -49,7 +49,7 @@ _VALID_STEPS = {
     "update_segment", "add_note", "send_webhook",
     "wait", "condition", "create_followup",
     "send_image", "send_video", "send_file", "send_location", "cta_url",
-    "user_input",
+    "user_input", "http_api", "random", "interactive",
 }
 
 
@@ -105,6 +105,34 @@ def _validate(trigger_type: str, trigger_config: dict, steps: list) -> list[str]
                 errors.append(f"Step {i}: cta_url requires button_text")
             if not str(cfg.get("button_url", "")).startswith("https://"):
                 errors.append(f"Step {i}: cta_url requires a valid https button_url")
+        if step.get("step_type") == "http_api":
+            cfg = step.get("config", {})
+            if not cfg.get("save_as"):
+                errors.append(f"Step {i}: http_api requires save_as")
+            if not str(cfg.get("url", "")).startswith("https://"):
+                errors.append(f"Step {i}: http_api requires a valid https url")
+        if step.get("step_type") == "random":
+            cfg = step.get("config", {})
+            if not cfg.get("save_as"):
+                errors.append(f"Step {i}: random requires save_as")
+            for key in ("min", "max"):
+                if key in cfg and cfg.get(key) is not None:
+                    try:
+                        float(cfg.get(key))
+                    except (TypeError, ValueError):
+                        errors.append(f"Step {i}: random {key} must be numeric")
+        if step.get("step_type") == "interactive":
+            cfg = step.get("config", {})
+            if not cfg.get("body"):
+                errors.append(f"Step {i}: interactive requires body")
+            buttons = cfg.get("buttons") or []
+            if not (1 <= len(buttons) <= 3):
+                errors.append(f"Step {i}: interactive requires 1..3 buttons")
+            else:
+                for b in buttons:
+                    if not b.get("id") or not b.get("title"):
+                        errors.append(f"Step {i}: each interactive button requires id and title")
+                        break
     return errors
 
 

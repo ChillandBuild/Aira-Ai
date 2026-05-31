@@ -3,7 +3,7 @@ import { Fragment } from "react";
 import BlockCard from "./BlockCard";
 import AddButton from "./AddButton";
 import BranchGroup from "./BranchGroup";
-import type { BlockConfig, BlockType, Branch, FlowNode, InsertTarget } from "./types";
+import { isBranching, type BlockConfig, type BlockType, type Branch, type FlowNode, type InsertTarget } from "./types";
 
 export interface LaneCallbacks {
   onAdd: (type: BlockType, target: InsertTarget) => void;
@@ -51,7 +51,7 @@ export function Lane({ nodes, parentId, branch, emptyLabel, ...cb }: LaneProps) 
             onMoveUp={() => cb.onMove({ parentId, branch, position: idx }, -1)}
             onMoveDown={() => cb.onMove({ parentId, branch, position: idx }, 1)}
           />
-          {node.step_type === "condition" && <BranchGroup node={node} {...cb} />}
+          {isBranching(node.step_type) && <BranchGroup node={node} {...cb} />}
           <AddButton target={{ parentId, branch, position: idx + 1 }} onAdd={cb.onAdd} />
         </Fragment>
       ))}

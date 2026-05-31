@@ -8,6 +8,10 @@ import {
   LayoutTemplate,
   Clock,
   GitBranch,
+  MessageCircleQuestion,
+  ListChecks,
+  Webhook,
+  Dices,
   type LucideIcon,
 } from "lucide-react";
 import type { BlockType, BlockConfig, TriggerType } from "./types";
@@ -84,6 +88,34 @@ export const BLOCK_META: Record<BlockType, BlockMeta> = {
     iconText: "text-orange-600",
     description: "Split the flow on lead data",
   },
+  user_input: {
+    label: "Ask a Question",
+    icon: MessageCircleQuestion,
+    iconBg: "bg-teal-100",
+    iconText: "text-teal-600",
+    description: "Prompt the lead and save their reply",
+  },
+  interactive: {
+    label: "Button Menu",
+    icon: ListChecks,
+    iconBg: "bg-fuchsia-100",
+    iconText: "text-fuchsia-600",
+    description: "Up to 3 buttons, one branch each",
+  },
+  http_api: {
+    label: "Call an API",
+    icon: Webhook,
+    iconBg: "bg-sky-100",
+    iconText: "text-sky-600",
+    description: "Fetch data from an external service",
+  },
+  random: {
+    label: "Random Number",
+    icon: Dices,
+    iconBg: "bg-lime-100",
+    iconText: "text-lime-600",
+    description: "Pick a number in a range",
+  },
 };
 
 // Order shown in the block picker.
@@ -97,6 +129,10 @@ export const PICKER_BLOCKS: BlockType[] = [
   "send_template",
   "wait",
   "condition",
+  "user_input",
+  "interactive",
+  "http_api",
+  "random",
 ];
 
 export const TRIGGER_LABELS: Record<TriggerType, string> = {
@@ -175,9 +211,28 @@ export function blockSummary(type: BlockType, config: BlockConfig): string {
       const val = config.subject === "segment" ? SEGMENT_LABELS[config.value || ""] || config.value : config.value;
       return `${subj} ${op} ${val || "…"}`;
     }
+    case "user_input":
+      return config.prompt ? truncate(config.prompt) : "No question yet";
+    case "interactive": {
+      const count = config.buttons?.length || 0;
+      if (!config.body) return "No message yet";
+      return `${truncate(config.body, 40)} · ${count} button${count === 1 ? "" : "s"}`;
+    }
+    case "http_api":
+      return config.url ? `${config.method || "GET"} ${truncate(config.url, 44)}` : "No URL yet";
+    case "random":
+      return config.save_as
+        ? `${config.min ?? 0}–${config.max ?? 0} → {{${config.save_as}}}`
+        : `${config.min ?? 0}–${config.max ?? 0}`;
     default:
       return "";
   }
+}
+
+// Stable, collision-resistant id for an interactive button. Stored on the
+// button object so its child branch lane stays linked across edits.
+export function newButtonId(): string {
+  return `btn_${Math.random().toString(36).slice(2, 9)}`;
 }
 
 // Default config when a block is added.
@@ -200,6 +255,18 @@ export function defaultConfig(type: BlockType): BlockConfig {
       return { amount: 1, unit: "hours" };
     case "condition":
       return { subject: "segment", operator: "equals", value: "A" };
+    case "user_input":
+      return { prompt: "", save_as: "" };
+    case "interactive":
+      return {
+        body: "",
+        buttons: [{ id: newButtonId(), title: "" }],
+        save_as: "",
+      };
+    case "http_api":
+      return { method: "GET", url: "", headers: {}, body: "", save_as: "", json_path: "" };
+    case "random":
+      return { min: 1, max: 100, save_as: "" };
     default:
       return {};
   }

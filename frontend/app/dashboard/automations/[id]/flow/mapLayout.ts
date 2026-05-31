@@ -4,7 +4,7 @@
 // sequential chain (block[i] → block[i+1]); only `condition` nodes fan out
 // into yes[]/no[] branch lanes. The trigger is a synthetic head whose single
 // child is the first root block.
-import type { FlowNode, TriggerType, BlockType, BlockConfig } from "./types";
+import { lanesOf, isBranching, type FlowNode, type TriggerType, type BlockType, type BlockConfig } from "./types";
 
 export const NODE_W = 240;
 export const NODE_H = 96;
@@ -29,7 +29,9 @@ export interface MapNode {
   triggerType?: TriggerType;
 }
 
-export type EdgeLabel = "yes" | "no" | null;
+// Branch label shown on a fan-out edge ("if yes" / a button title), or null for a
+// plain sequential edge.
+export type EdgeLabel = string | null;
 
 export interface MapEdge {
   key: string;
@@ -67,11 +69,13 @@ interface BuildState {
 function laneChildren(lane: FlowNode[], index: number): { node: FlowNode; label: EdgeLabel }[] {
   const current = lane[index];
   const next = lane[index + 1];
-  if (current.step_type === "condition") {
+  if (isBranching(current.step_type)) {
     const out: { node: FlowNode; label: EdgeLabel }[] = [];
-    if (current.yes[0]) out.push({ node: current.yes[0], label: "yes" });
-    if (current.no[0]) out.push({ node: current.no[0], label: "no" });
-    // A block placed after the condition in the same lane hangs off the condition.
+    for (const spec of lanesOf(current)) {
+      const first = (current.branches[spec.key] ?? [])[0];
+      if (first) out.push({ node: first, label: spec.label });
+    }
+    // A block placed after the branching node in the same lane hangs off it.
     if (next) out.push({ node: next, label: null });
     return out;
   }
@@ -114,10 +118,7 @@ function placeNode(
     const owner =
       child.label === null
         ? { lane, index: index + 1 } // sequential continuation in same lane
-        : findInLane(child.node, [
-            node.yes,
-            node.no,
-          ]);
+        : findInLane(child.node, Object.values(node.branches));
     if (!owner) continue;
     const xUnit = placeNode(
       child.node,

@@ -229,6 +229,41 @@ async def send_cta_url_message(
     return data
 
 
+async def send_interactive_buttons(
+    to_number: str,
+    body_text: str,
+    buttons: list,
+    phone_number_id: Optional[str] = None,
+    access_token: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+) -> dict:
+    pid, tok = _creds(phone_number_id, access_token, tenant_id)
+    url = f"{_GRAPH_BASE}/{pid}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_number,
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": body_text},
+            "action": {
+                "buttons": [
+                    {"type": "reply", "reply": {"id": b["id"], "title": b["title"][:20]}}
+                    for b in buttons[:3]
+                ],
+            },
+        },
+    }
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(url, json=payload, headers={"Authorization": f"Bearer {tok}"})
+    if not resp.is_success:
+        logger.error("send_interactive_buttons failed: %s %s", resp.status_code, resp.text)
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    data = resp.json()
+    logger.info("Meta interactive buttons sent to %s", to_number)
+    return data
+
+
 async def download_media_from_meta(
     media_id: str,
     access_token: Optional[str] = None,

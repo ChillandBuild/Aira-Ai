@@ -10,9 +10,13 @@ AFTER the message has been stored but BEFORE generate_reply is queued, so it
 never alters the FAQ-check ordering inside ai_reply.py.
 """
 
+import ipaddress
 import logging
+import random
+import socket
 import httpx
 from datetime import datetime, timezone, timedelta
+from urllib.parse import urlparse
 from uuid import UUID
 
 from app.db.supabase import get_supabase
@@ -220,6 +224,48 @@ def _maps_link(lat, lon) -> str:
     return f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
 
 
+def _is_url_safe(url: str) -> bool:
+    """SSRF guard: http/https only; resolve host; reject if ANY resolved IP is
+    private/loopback/link-local/reserved/multicast (incl. the AWS metadata IP).
+    Fails closed: any parse/resolve error → unsafe."""
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        host = parsed.hostname
+        if not host:
+            return False
+        infos = socket.getaddrinfo(host, None)
+        for info in infos:
+            ip_str = info[4][0]
+            if ip_str == "169.254.169.254":
+                return False
+            ip = ipaddress.ip_address(ip_str)
+            if (ip.is_private or ip.is_loopback or ip.is_link_local
+                    or ip.is_reserved or ip.is_multicast):
+                return False
+        return True
+    except Exception as e:
+        logger.warning(f"SSRF guard rejected url {url!r}: {e}")
+        return False
+
+
+def _walk_json_path(data, path: str):
+    """Walk a simple dotted path like data.items.0.name. Returns None if any hop misses."""
+    cur = data
+    for part in path.split("."):
+        if isinstance(cur, dict):
+            cur = cur.get(part)
+        elif isinstance(cur, list):
+            try:
+                cur = cur[int(part)]
+            except (ValueError, IndexError):
+                return None
+        else:
+            return None
+    return cur
+
+
 # ─── Step executor ───────────────────────────────────────────────────────────
 
 async def _execute_step(
@@ -239,7 +285,7 @@ async def _execute_step(
     variables = context.get("variables") or {}
 
     # ── Booking-flow guard for outbound message steps ──────────────────────
-    if step_type in ("send_message", "send_template", "user_input", *_NEW_SEND_STEPS):
+    if step_type in ("send_message", "send_template", "user_input", "interactive", *_NEW_SEND_STEPS):
         try:
             from app.services.booking_flow import get_or_create_state
             conv_state = get_or_create_state(lead_id, tenant_id, db)
@@ -556,6 +602,98 @@ async def _execute_step(
             return {"status": "wait_reply", "save_as": save_as, "detail": f"awaiting reply → {save_as}"}
         except Exception as e:
             logger.error(f"automation user_input failed for lead {lead_id}: {e}")
+            _bump_counter(db, step["id"], "error_count")
+            return {"status": "error", "detail": str(e)}
+
+    # ── http_api ───────────────────────────────────────────────────────────
+    # Fetch an external URL behind an SSRF guard and store the result into a
+    # variable. Sends no message.
+    if step_type == "http_api":
+        save_as = config.get("save_as")
+        raw_url = config.get("url", "")
+        if not save_as:
+            return {"status": "error", "detail": "http_api requires save_as"}
+        url = _interpolate(raw_url, lead_data, variables)
+        if not url or not url.startswith(("http://", "https://")):
+            return {"status": "error", "detail": "http_api requires a valid http(s) url"}
+        if not _is_url_safe(url):
+            _bump_counter(db, step["id"], "error_count")
+            return {"status": "error", "detail": "blocked url (ssrf guard)"}
+        method = (config.get("method") or "GET").upper()
+        headers = config.get("headers") or {}
+        body = config.get("body")
+        if isinstance(body, str):
+            body = _interpolate(body, lead_data, variables)
+        json_path = config.get("json_path")
+        try:
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+                resp = await client.request(method, url, headers=headers, content=body if isinstance(body, str) else None)
+            text = resp.text[:100_000]
+            value = text
+            if json_path:
+                try:
+                    parsed = resp.json()
+                    value = _walk_json_path(parsed, json_path)
+                except Exception:
+                    value = None
+            vars_ = context.setdefault("variables", {})
+            vars_[save_as] = value
+            variables = vars_
+            return {"status": "ok", "detail": f"http_api {resp.status_code} → {save_as}"}
+        except Exception as e:
+            logger.error(f"automation http_api failed for lead {lead_id}: {e}")
+            _bump_counter(db, step["id"], "error_count")
+            return {"status": "error", "detail": str(e)}
+
+    # ── random ─────────────────────────────────────────────────────────────
+    if step_type == "random":
+        save_as = config.get("save_as")
+        if not save_as:
+            return {"status": "error", "detail": "random requires save_as"}
+        try:
+            lo = int(config.get("min", 0))
+            hi = int(config.get("max", 100))
+        except (TypeError, ValueError):
+            lo, hi = 0, 100
+        if lo > hi:
+            lo, hi = hi, lo
+        value = random.randint(lo, hi)
+        vars_ = context.setdefault("variables", {})
+        vars_[save_as] = value
+        variables = vars_
+        return {"status": "ok", "detail": f"random {value} → {save_as}"}
+
+    # ── interactive ────────────────────────────────────────────────────────
+    # Send up to 3 reply buttons (WhatsApp) or a numbered text menu (other
+    # channels), then pause for the lead's button choice. flow_runtime routes
+    # the inbound through _match_interactive_choice to pick the branch by button id.
+    if step_type == "interactive":
+        body = _interpolate(config.get("body", ""), lead_data, variables)
+        buttons = config.get("buttons") or []
+        if not body:
+            return {"status": "error", "detail": "interactive requires body"}
+        if not (1 <= len(buttons) <= 3):
+            return {"status": "error", "detail": "interactive requires 1..3 buttons"}
+        try:
+            sid = None
+            if source == "whatsapp":
+                from app.services.meta_cloud import send_interactive_buttons
+                phone = lead_data.get("phone")
+                if phone:
+                    data = await send_interactive_buttons(
+                        to_number=phone, body_text=body, buttons=buttons, tenant_id=tenant_id,
+                    )
+                    sid = (data.get("messages") or [{}])[0].get("id")
+            else:
+                menu = "\n".join(f"{i + 1}. {b.get('title', '')}" for i, b in enumerate(buttons))
+                text = f"{body}\n\n{menu}"
+                sid = await _send_text_via_channel(source, lead_data, text, tenant_id)
+            _record_outbound(db, step, lead_data, source, body, sid, automation_id)
+            if not sid:
+                return {"status": "skipped", "detail": "no channel id for lead"}
+            return {"status": "wait_reply", "save_as": config.get("save_as"), "detail": "awaiting button choice"}
+        except Exception as e:
+            logger.error(f"automation interactive failed for lead {lead_id}: {e}")
             _bump_counter(db, step["id"], "error_count")
             return {"status": "error", "detail": str(e)}
 
