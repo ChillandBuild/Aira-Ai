@@ -511,16 +511,68 @@ export default function InsightsPage() {
     });
   }
 
-  function handleExport(type: "message_metrics" | "pricing_metrics") {
+  function handleExport(type: "message_metrics" | "pricing_metrics" | "full_report") {
     if (!trends?.daily || trends.daily.length === 0) { toast.error("No data to export. Sync first."); return; }
-    const csv = type === "message_metrics"
-      ? "Date,Sent,Delivered,Read,Received,Quality\n" + trends.daily.map(d => `${d.date},${d.sent},${d.delivered},${d.read},${d.received},${d.quality_rating}`).join("\n")
-      : "Date,Cost (INR)\n" + trends.daily.map(d => `${d.date},${d.cost_inr}`).join("\n");
+
+    let csv = "";
+    let filename = "";
+
+    if (type === "message_metrics") {
+      csv = "Date,Sent,Delivered,Marketing,Utility,Authentication,Authentication – International,AI Provider,Service,Free Customer Service,Free Entry Point\n"
+        + trends.daily.map(d => [
+            d.date, d.sent, d.delivered,
+            d.paid_by_category?.marketing?.conversations ?? 0,
+            d.paid_by_category?.utility?.conversations ?? 0,
+            d.paid_by_category?.authentication?.conversations ?? 0,
+            d.paid_by_category?.authentication_international?.conversations ?? 0,
+            d.paid_by_category?.ai_provider?.conversations ?? 0,
+            d.free_by_type?.customer_service?.conversations ?? 0,
+            d.free_by_type?.entry_point?.conversations ?? 0,
+          ].join(",")).join("\n");
+      filename = `whatsapp_message_metrics_${new Date().toISOString().slice(0, 10)}.csv`;
+    } else if (type === "pricing_metrics") {
+      csv = "Date,Total Cost (INR),Marketing (INR),Utility (INR),Authentication (INR),Authentication – International (INR),AI Provider (INR)\n"
+        + trends.daily.map(d => [
+            d.date,
+            d.cost_inr,
+            d.paid_by_category?.marketing?.cost_inr ?? 0,
+            d.paid_by_category?.utility?.cost_inr ?? 0,
+            d.paid_by_category?.authentication?.cost_inr ?? 0,
+            d.paid_by_category?.authentication_international?.cost_inr ?? 0,
+            d.paid_by_category?.ai_provider?.cost_inr ?? 0,
+          ].join(",")).join("\n");
+      filename = `whatsapp_pricing_metrics_${new Date().toISOString().slice(0, 10)}.csv`;
+    } else {
+      // Full report — all columns combined, matching Meta Manager export style
+      const rangeLabel = data ? `${data.range.since.slice(0, 10)} to ${data.range.until.slice(0, 10)}` : "";
+      csv = `WhatsApp Business Insights Export\nDate Range: ${rangeLabel}\n\n`
+        + "Date,Sent,Delivered,Marketing Conversations,Marketing Cost (INR),Utility Conversations,Utility Cost (INR),"
+        + "Authentication Conversations,Authentication Cost (INR),Auth-Intl Conversations,Auth-Intl Cost (INR),"
+        + "AI Provider Conversations,AI Provider Cost (INR),Free Customer Service,Free Entry Point,Total Cost (INR)\n"
+        + trends.daily.map(d => [
+            d.date, d.sent, d.delivered,
+            d.paid_by_category?.marketing?.conversations ?? 0,
+            d.paid_by_category?.marketing?.cost_inr ?? 0,
+            d.paid_by_category?.utility?.conversations ?? 0,
+            d.paid_by_category?.utility?.cost_inr ?? 0,
+            d.paid_by_category?.authentication?.conversations ?? 0,
+            d.paid_by_category?.authentication?.cost_inr ?? 0,
+            d.paid_by_category?.authentication_international?.conversations ?? 0,
+            d.paid_by_category?.authentication_international?.cost_inr ?? 0,
+            d.paid_by_category?.ai_provider?.conversations ?? 0,
+            d.paid_by_category?.ai_provider?.cost_inr ?? 0,
+            d.free_by_type?.customer_service?.conversations ?? 0,
+            d.free_by_type?.entry_point?.conversations ?? 0,
+            d.cost_inr,
+          ].join(",")).join("\n");
+      filename = `whatsapp_full_report_${new Date().toISOString().slice(0, 10)}.csv`;
+    }
+
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `whatsapp_${type}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
     setShowExportDropdown(false);
@@ -693,9 +745,11 @@ export default function InsightsPage() {
               <Download size={12} /> Export <ChevronDown size={12} />
             </button>
             {showExportDropdown && (
-              <div className="absolute top-full right-0 mt-1 z-50 w-52 bg-surface rounded-xl shadow-card ring-1 ring-[#c4c7c7]/20 py-1">
-                <button onClick={() => handleExport("message_metrics")} className="w-full flex items-center gap-2 px-3 py-2 font-label text-xs text-on-surface hover:bg-surface-low transition-colors text-left"><Download size={11} /> Export message metrics</button>
-                <button onClick={() => handleExport("pricing_metrics")} className="w-full flex items-center gap-2 px-3 py-2 font-label text-xs text-on-surface hover:bg-surface-low transition-colors text-left"><Download size={11} /> Export pricing metrics</button>
+              <div className="absolute top-full right-0 mt-1 z-50 w-56 bg-surface rounded-xl shadow-card ring-1 ring-[#c4c7c7]/20 py-1">
+                <button onClick={() => handleExport("full_report")} className="w-full flex items-center gap-2 px-3 py-2 font-label text-xs text-on-surface hover:bg-surface-low transition-colors text-left font-semibold"><Download size={11} /> Full report (all columns)</button>
+                <div className="mx-3 border-t border-surface-mid" />
+                <button onClick={() => handleExport("message_metrics")} className="w-full flex items-center gap-2 px-3 py-2 font-label text-xs text-on-surface hover:bg-surface-low transition-colors text-left"><Download size={11} /> Message metrics</button>
+                <button onClick={() => handleExport("pricing_metrics")} className="w-full flex items-center gap-2 px-3 py-2 font-label text-xs text-on-surface hover:bg-surface-low transition-colors text-left"><Download size={11} /> Pricing metrics</button>
               </div>
             )}
           </div>

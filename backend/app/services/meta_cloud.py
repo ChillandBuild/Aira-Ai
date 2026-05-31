@@ -636,10 +636,13 @@ async def get_whatsapp_insights_bulk(
             )
         if resp.is_success:
             buckets = resp.json().get("conversation_analytics", {}).get("data", [])
-            logger.info("Bulk conversation_analytics: got %d buckets for %s", len(buckets), pid)
+            total_cost_dps = sum(len(b.get("data_points", [])) for b in buckets)
+            logger.info("Bulk conversation_analytics: got %d buckets / %d data_points for %s", len(buckets), total_cost_dps, pid)
             for bucket in buckets:
                 for dp in bucket.get("data_points", []):
-                    date_str = datetime.fromtimestamp(dp.get("start_time", 0), tz=timezone.utc).date().isoformat()
+                    # Meta uses "start" (not "start_time") for conversation_analytics data_points
+                    ts = dp.get("start") or dp.get("start_time") or 0
+                    date_str = datetime.fromtimestamp(ts, tz=timezone.utc).date().isoformat()
                     day = per_day.setdefault(date_str, _empty_insights_result())
                     _accumulate_cost(day, dp)
         else:
