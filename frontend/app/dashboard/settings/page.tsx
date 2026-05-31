@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import {
-  Phone, Sparkles, Eye, EyeOff, Save, AlertCircle, Loader2, CheckCircle2, ChevronDown
+  Phone, Sparkles, Eye, EyeOff, Save, AlertCircle, Loader2, CheckCircle2, ChevronDown, BarChart2
 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
@@ -48,6 +48,7 @@ const SECTIONS: SectionDef[] = [
     fields: [
       { key: "telecmi_secret", label: "App Secret", secret: true, required: true },
       { key: "telecmi_callerid", label: "Caller ID (DID shown to leads)", secret: false, required: false, hint: "The outbound number leads see when you call them" },
+      { key: "telecmi_webhook_secret", label: "Webhook Secret", secret: true, required: false, hint: "Appended as ?webhook_secret= to your TeleCMI CDR webhook URL" },
     ],
   },
   {
@@ -173,6 +174,11 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
+  // Lead Scoring thresholds
+  const [scoringThresholds, setScoringThresholds] = useState({ A: 9, B: 7, C: 5 });
+  const [scoringState, setScoringState] = useState<SaveState>("idle");
+  const [scoringCollapsed, setScoringCollapsed] = useState(false);
+
   const load = useCallback(async () => {
     try {
       const s = await fetchSettings();
@@ -199,6 +205,31 @@ export default function SettingsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    const row = settings.find(s => s.key === "scoring_segment_thresholds");
+    if (row && row.display_value && row.display_value !== "Not set") {
+      try {
+        const t = JSON.parse(row.display_value);
+        setScoringThresholds({ A: t.A ?? 9, B: t.B ?? 7, C: t.C ?? 5 });
+      } catch { /* ignore parse error */ }
+    }
+  }, [settings]);
+
+  async function handleScoringThresholdsSave() {
+    const isOrderValid = scoringThresholds.A > scoringThresholds.B && scoringThresholds.B > scoringThresholds.C;
+    if (!isOrderValid) return;
+    setScoringState("saving");
+    try {
+      await saveSettings({ scoring_segment_thresholds: JSON.stringify(scoringThresholds) });
+      await load();
+      setScoringState("saved");
+      setTimeout(() => setScoringState("idle"), 2500);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed");
+      setScoringState("idle");
+    }
+  }
 
   function settingFor(key: string) {
     return settings.find(s => s.key === key);
@@ -229,14 +260,17 @@ export default function SettingsPage() {
   async function handleSave(sectionId: string, allKeys: string[]) {
     setSaveStates(s => ({ ...s, [sectionId]: "saving" }));
     setError(null);
+    const sectionDef = SECTIONS.find(s => s.id === sectionId);
     const updates: SettingsMap = {};
     allKeys.forEach(k => {
       const draft = drafts[k];
       const current = settingFor(k);
-      if (!current) return;
-      if (current.is_secret) {
+      const fieldDef = sectionDef?.fields.find(f => f.key === k);
+      const isSecret = fieldDef?.secret ?? current?.is_secret ?? false;
+      if (isSecret) {
         if (draft && draft.length > 0) updates[k] = draft;
       } else {
+        if (!current) return;
         const stored = current.display_value === "Not set" ? "" : current.display_value;
         if (draft !== undefined && draft !== stored) updates[k] = draft;
       }
@@ -280,6 +314,118 @@ export default function SettingsPage() {
         </div>
       ) : (
         <div className="space-y-5">
+          {/* Lead Scoring Thresholds */}
+          {(() => {
+            const isOrderValid = scoringThresholds.A > scoringThresholds.B && scoringThresholds.B > scoringThresholds.C;
+            const thresholdColors: Record<string, string> = {
+              A: "text-red-700 bg-red-50 border-red-200",
+              B: "text-amber-700 bg-amber-50 border-amber-200",
+              C: "text-blue-700 bg-blue-50 border-blue-200",
+            };
+            const thresholdLabels: Record<string, string> = { A: "A — HOT", B: "B — WARM", C: "C — COLD" };
+            return (
+              <div className="card rounded-3xl">
+                <button
+                  type="button"
+                  onClick={() => setScoringCollapsed(c => !c)}
+                  className="w-full flex items-center gap-3 text-left"
+                >
+                  <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: "#ede9fe" }}>
+                    <BarChart2 size={18} style={{ color: "#7c3aed" }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h2 className="font-display font-bold text-ink" style={{ fontSize: "1rem", letterSpacing: "-0.02em" }}>
+                        Lead Scoring
+                      </h2>
+                      <span className="badge badge-green inline-flex items-center gap-1">
+                        <CheckCircle2 size={10} /> Configured
+                      </span>
+                    </div>
+                    <p className="font-body text-sm text-ink-muted mt-0.5">Segment thresholds for A/B/C lead classification. Scoring rubric is in AI Tune.</p>
+                  </div>
+                  <ChevronDown size={18} className={`text-ink-muted transition-transform flex-shrink-0 ${scoringCollapsed ? "" : "rotate-180"}`} />
+                </button>
+
+                {!scoringCollapsed && (
+                  <>
+                    <div className="mt-6 space-y-3">
+                      <p className="font-body text-xs text-ink-muted">
+                        Leads are grouped when score is ≥ threshold. Default: A≥9, B≥7, C≥5, D&lt;5.
+                      </p>
+                      <div className="grid grid-cols-1 gap-2">
+                        {(["A", "B", "C"] as const).map((seg) => (
+                          <div key={seg} className={`rounded-xl border p-3 flex items-center justify-between ${thresholdColors[seg]}`}>
+                            <label className="font-label text-xs font-bold uppercase">{thresholdLabels[seg]}</label>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-label text-xs">Score ≥</span>
+                              <input
+                                type="number"
+                                min={1}
+                                max={10}
+                                value={scoringThresholds[seg]}
+                                onChange={(e) => {
+                                  const v = Math.max(1, Math.min(10, parseInt(e.target.value) || 1));
+                                  setScoringThresholds(prev => ({ ...prev, [seg]: v }));
+                                  setScoringState("dirty");
+                                }}
+                                className="w-12 px-1.5 py-0.5 rounded border bg-white font-mono text-xs font-bold text-center focus:outline-none focus:ring-1 focus:ring-current text-ink"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {!isOrderValid && (
+                        <div className="flex items-start gap-1.5 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 font-label text-xs font-semibold">
+                          <AlertCircle size={13} className="mt-0.5 shrink-0" />
+                          <span>Thresholds must be in order: A &gt; B &gt; C.</span>
+                        </div>
+                      )}
+                      <p className="font-label text-[10px] text-ink-muted">
+                        D (Disqualified) = score below C threshold ({scoringThresholds.C - 1} or less).
+                      </p>
+                    </div>
+
+                    <div className="mt-6 flex items-center justify-between border-t border-border-subtle pt-5 gap-3 flex-wrap">
+                      <div className="min-h-[20px]">
+                        {scoringState === "saved" && (
+                          <span className="inline-flex items-center gap-1.5 text-emerald-600 font-body text-sm font-medium">
+                            <CheckCircle2 size={15} /> Saved successfully
+                          </span>
+                        )}
+                        {scoringState === "dirty" && (
+                          <span className="text-[11px] text-amber-600 font-body font-medium">Unsaved changes</span>
+                        )}
+                        {(scoringState === "idle" || scoringState === "saving") && (
+                          <span className="text-[11px] text-ink-muted font-body">Default: A≥9, B≥7, C≥5</span>
+                        )}
+                      </div>
+                      <button
+                        onClick={handleScoringThresholdsSave}
+                        disabled={scoringState === "saving" || scoringState === "saved" || !isOrderValid || scoringState === "idle"}
+                        className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-label text-sm font-semibold transition-all ${
+                          scoringState === "saved"
+                            ? "bg-emerald-100 text-emerald-700 cursor-default"
+                            : scoringState === "dirty" && isOrderValid
+                            ? "bg-primary text-white hover:bg-primary/90"
+                            : "bg-surface-subtle text-ink-muted cursor-default"
+                        }`}
+                      >
+                        {scoringState === "saving" ? (
+                          <><Loader2 size={14} className="animate-spin" />Saving…</>
+                        ) : scoringState === "saved" ? (
+                          <><CheckCircle2 size={14} />Saved</>
+                        ) : (
+                          <><Save size={14} />Save Changes</>
+                        )}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })()}
+
           {SECTIONS.map((section) => {
             const isCollapsed = !!collapsed[section.id];
             const allKeys = [...section.fields.map(f => f.key), ...(section.toggles?.map(t => t.key) ?? [])];
@@ -388,7 +534,7 @@ export default function SettingsPage() {
                         {!isDirty && saveState === "idle" && isConfigured && (
                           <span className="text-[11px] text-ink-muted font-body">No unsaved changes</span>
                         )}
-                        {isDirty && (
+                        {isDirty && saveState !== "saved" && (
                           <span className="text-[11px] text-amber-600 font-body font-medium">Unsaved changes</span>
                         )}
                       </div>

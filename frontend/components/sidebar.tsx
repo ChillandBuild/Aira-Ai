@@ -258,7 +258,7 @@ export function Sidebar() {
             )}
           >
             <Zap size={16} className={pathname.startsWith("/dashboard/automations") ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
-            <span>Automations</span>
+            <span>Bot Flows</span>
           </Link>
         )}
 

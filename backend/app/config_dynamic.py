@@ -18,6 +18,7 @@ _ENV_MAP = {
     "telecmi_secret": "TELECMI_SECRET",
     "telecmi_callerid": "TELECMI_CALLERID",
     "telecmi_recording_base_url": "TELECMI_RECORDING_BASE_URL",
+    "telecmi_webhook_secret": "TELECMI_WEBHOOK_SECRET",
     "razorpay_key_id": "RAZORPAY_KEY_ID",
     "razorpay_key_secret": "RAZORPAY_KEY_SECRET",
     "razorpay_webhook_secret": "RAZORPAY_WEBHOOK_SECRET",
@@ -67,6 +68,23 @@ def get_setting(key: str, fallback: Optional[str] = None, tenant_id: Optional[st
 
     _CACHE[cache_key] = (now, value)
     return value
+
+
+def save_setting(key: str, value: str, tenant_id: Optional[str] = None) -> None:
+    """Upsert a key/value into app_settings and invalidate the local cache."""
+    resolved_tenant_id = tenant_id or _DEFAULT_TENANT_ID
+    try:
+        from app.db.supabase import get_supabase
+        db = get_supabase()
+        db.table("app_settings").upsert(
+            {"key": key, "value": value, "tenant_id": resolved_tenant_id, "is_secret": False},
+            on_conflict="key,tenant_id",
+        ).execute()
+    except Exception as e:
+        logger.warning(f"save_setting({key}, tenant_id={resolved_tenant_id}) DB write failed: {e}")
+        return
+    cache_key = f"{resolved_tenant_id}:{key}"
+    _CACHE[cache_key] = (time.monotonic(), value)
 
 
 def invalidate_cache(key: Optional[str] = None) -> None:

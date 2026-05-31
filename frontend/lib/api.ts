@@ -265,6 +265,56 @@ export interface FunnelAnalytics {
   avg_score: number | null;
 }
 
+export interface AnalyticsOverviewExtended {
+  daily_leads: { day: string; count: number }[];
+  daily_messages: { day: string; inbound: number; outbound: number }[];
+  funnel: { inquiries: number; engaged: number; hot: number; converted: number };
+  ai_vs_human: { ai: number; human: number };
+  unreplied_24h: number;
+  converted_7d: number;
+  converted_today: number;
+  ai_handled_today: number;
+  by_segment: Record<"A" | "B" | "C" | "D", number>;
+  channel_breakdown: { whatsapp: number; instagram: number; facebook: number; telegram: number; upload: number; manual: number };
+  total_leads: number;
+}
+
+export interface MessagingAnalytics {
+  sent_today: number;
+  received_today: number;
+  ai_reply_rate: number | null;
+  reply_source_breakdown: { ai: number; knowledge: number; manual: number; unknown: number };
+  daily_messages: { day: string; inbound: number; outbound: number }[];
+}
+
+export interface TelecallingAnalyticsExtended {
+  calls_today: number;
+  calls_this_week: number;
+  avg_duration_seconds: number | null;
+  total_minutes_today: number;
+  outcome_breakdown: { converted: number; callback: number; not_interested: number; no_answer: number };
+  per_caller: {
+    caller_id: string;
+    name: string;
+    calls_today: number;
+    overall_score: number | null;
+    total_minutes_today: number;
+    conversion_rate: number | null;
+  }[];
+  calls_per_hour: { hour: number; label: string; count: number }[];
+  calls_per_slot: { slot: string; count: number; caller_counts: Record<string, number> }[];
+}
+
+export interface FunnelAnalyticsExtended {
+  total_leads: number;
+  by_segment: { A: number; B: number; C: number; D: number };
+  by_source: { whatsapp: number; instagram: number; facebook: number; telegram: number; upload: number; manual: number };
+  leads_this_week: number;
+  avg_score: number | null;
+  score_histogram: { range: string; count: number }[];
+  hot_lead_aging: { bucket: string; count: number }[];
+}
+
 async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const authHeaders = await getAuthHeaders();
   const controller = new AbortController();
@@ -550,6 +600,14 @@ export const api = {
     whatsapp: () => apiFetch<WhatsAppAnalytics>(`/api/v1/analytics/whatsapp`),
     telecalling: () => apiFetch<TelecallingAnalytics>(`/api/v1/analytics/telecalling`),
     funnel: () => apiFetch<FunnelAnalytics>(`/api/v1/analytics/funnel`),
+    overviewExtended: (range: "today" | "7d" | "30d" = "7d") =>
+      apiFetch<AnalyticsOverviewExtended>(`/api/v1/analytics/overview?range=${range}`),
+    messaging: (channel: string = "all", range: "today" | "7d" | "30d" = "7d") =>
+      apiFetch<MessagingAnalytics>(`/api/v1/analytics/messaging?channel=${channel}&range=${range}`),
+    telecallingExtended: () =>
+      apiFetch<TelecallingAnalyticsExtended>(`/api/v1/analytics/telecalling`),
+    funnelExtended: () =>
+      apiFetch<FunnelAnalyticsExtended>(`/api/v1/analytics/funnel`),
   },
   insights: {
     whatsapp: (params?: { range?: string; since?: string; until?: string; source?: string }) => {

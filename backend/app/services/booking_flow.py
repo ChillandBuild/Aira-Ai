@@ -288,6 +288,7 @@ async def _send_payment_link(state: dict, phone: str, db) -> None:
             customer_name=draft.get("devotee_name", "Devotee"),
             customer_phone=phone,
             description=f"Booking — {draft.get('devotee_name', 'Customer')} ({booking_ref})",
+            tenant_id=state.get("tenant_id"),
         )
 
         payment_url = result["payment_link_url"]

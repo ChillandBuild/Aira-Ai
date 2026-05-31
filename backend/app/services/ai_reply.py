@@ -68,7 +68,19 @@ FALLBACK_PROMPT = """You are a helpful AI assistant. Answer customer queries war
 Keep replies concise (2-3 sentences max).
 Always guide the customer toward the next step: booking, payment, or speaking with our team.
 If you don't know a specific detail, say: "Let me connect you with our team who can help you right away."
+
+When a customer expresses booking intent (says "Book", "register", "I want to book"):
+1. Ask for their full name
+2. Ask for their Rasi (zodiac sign — e.g. Mesham, Rishabam, Mithunam)
+3. Ask for their Nakshatram (birth star — e.g. Ashwini, Bharani, Karthigai)
+4. Ask for their Gotram (lineage — if unknown, "Not known" is fine)
+5. Ask for full delivery address (street, city, state, PIN code)
+If the customer asks to speak in a regional language, switch to that language and re-ask the current question in that language.
+When all 5 fields are confirmed, reply ONLY: [COLLECT_DONE] {"devotee_name": "...", "rasi": "...", "nakshatram": "...", "gotram": "...", "delivery_address": "..."}
 """
+# NOTE: Tenants with a custom system prompt stored in ai_prompts (configurable via AI Tune)
+# will never see FALLBACK_PROMPT. Those tenants must add the [COLLECT_DONE] collection
+# instructions directly to their whatsapp_reply prompt in the AI Tune settings page.
 
 REENGAGEMENT_FALLBACKS = {
     "1d": "Hi! Just checking in — happy to help if you still have questions. Reply here and I can point you in the right direction today.",
@@ -550,34 +562,37 @@ async def generate_reply(
         try:
             current_score = lead_data.get("score", 5)
             _tid = lead_data.get("tenant_id")
-            from app.services.lead_scorer import score_with_safety_net
-            from app.config_dynamic import get_setting
-            new_score = await score_with_safety_net(
-                message, current_score, context_block or "", db, str(lead_id), tenant_id=_tid
-            )
-            _thresholds = parse_thresholds(get_setting("scoring_segment_thresholds", tenant_id=_tid))
-            new_segment = score_to_segment(new_score, thresholds=_thresholds)
-            db.table("leads").update({
-                "score": new_score,
-                "segment": new_segment,
-            }).eq("id", str(lead_id)).execute()
-            _score_meta = {
-                "new_score": new_score,
-                "prev_score": current_score,
-                "message_snippet": message[:150],
-                "channel": channel,
-                "reason": "ai_disabled_inbound",
-            }
-            if new_segment != lead_data.get("segment") or new_score != current_score:
-                record_stage_event(
-                    lead_id,
-                    from_segment=lead_data.get("segment"),
-                    to_segment=new_segment,
-                    event_type="segment_changed" if new_segment != lead_data.get("segment") else "score_updated",
-                    metadata=_score_meta,
-                    tenant_id=_tid,
-                    db=db,
+            new_score = current_score
+            new_segment = lead_data.get("segment") or "C"
+            if lead_data.get("segment") != "A":
+                from app.services.lead_scorer import score_with_safety_net
+                from app.config_dynamic import get_setting
+                new_score = await score_with_safety_net(
+                    message, current_score, context_block or "", db, str(lead_id), tenant_id=_tid
                 )
+                _thresholds = parse_thresholds(get_setting("scoring_segment_thresholds", tenant_id=_tid))
+                new_segment = score_to_segment(new_score, thresholds=_thresholds)
+                db.table("leads").update({
+                    "score": new_score,
+                    "segment": new_segment,
+                }).eq("id", str(lead_id)).execute()
+                _score_meta = {
+                    "new_score": new_score,
+                    "prev_score": current_score,
+                    "message_snippet": message[:150],
+                    "channel": channel,
+                    "reason": "ai_disabled_inbound",
+                }
+                if new_segment != lead_data.get("segment") or new_score != current_score:
+                    record_stage_event(
+                        lead_id,
+                        from_segment=lead_data.get("segment"),
+                        to_segment=new_segment,
+                        event_type="segment_changed" if new_segment != lead_data.get("segment") else "score_updated",
+                        metadata=_score_meta,
+                        tenant_id=_tid,
+                        db=db,
+                    )
             sync_follow_up_jobs(
                 lead_id,
                 segment=new_segment,
@@ -599,6 +614,7 @@ async def generate_reply(
         logger.warning(f"Knowledge context fetch failed for lead {lead_id}: {e}")
         context_text = ""
 
+    _raw_reply = ""  # holds unstripped Groq output for [COLLECT_DONE] parser below
     try:
         system_prompt = _get_prompt(f"{channel}_reply", tenant_id=lead_data.get("tenant_id"))
         if context_text:
@@ -639,9 +655,17 @@ async def generate_reply(
         else:
             chat_messages[-1]["content"] = _tagged_message
 
-        reply_text = await _groq_chat(chat_messages, max_tokens=600)
+        _raw_reply = await _groq_chat(chat_messages, max_tokens=600)
         is_ai = True
         reply_source = "knowledge" if context_text else "ai"
+
+        # Strip [COLLECT_DONE] signal before sending to customer — the raw JSON
+        # must never reach the channel delivery path or pollute thread history.
+        # Keep _raw_reply intact for the parser below (after messages insert).
+        _display_text = re.sub(r'^\s*\[COLLECT_DONE\]\s*\{.*\}\s*$', '', _raw_reply.strip(), flags=re.DOTALL).strip()
+        reply_text = _display_text if _display_text != _raw_reply else _raw_reply
+        if not reply_text:
+            reply_text = "Thank you — we've got all your details. We'll be in touch shortly."
 
         # Trigger A: AI gave a generic fallback reply
         if _is_generic_fallback(reply_text):
@@ -691,10 +715,57 @@ async def generate_reply(
         sid_field: sid,
     }).execute()
 
+    # Detect [COLLECT_DONE] signal — AI has finished collecting structured data.
+    # Parser runs against _raw_reply so the stripped display text doesn't block detection.
+    _collect_match = re.match(r'\s*\[COLLECT_DONE\]\s*(\{.*\})\s*$', _raw_reply.strip(), re.DOTALL)
+    if _collect_match:
+        try:
+            import json as _json
+            _collected = _json.loads(_collect_match.group(1))
+            db.table("leads").update({"collected_data": _collected}).eq("id", str(lead_id)).execute()
+            logger.info(f"[COLLECT_DONE] saved for lead {lead_id}: {list(_collected.keys())}")
+            from app.config_dynamic import get_setting
+            _post_action = get_setting("collect_post_action", tenant_id=tenant_id)
+            if _post_action == "send_payment_link":
+                try:
+                    from app.services.booking_flow import _create_draft_booking
+                    from app.services.payment_razorpay import create_payment_link
+                    # Get or create booking row
+                    _bk = db.table("bookings").select("id,booking_ref,amount_paise") \
+                        .eq("lead_id", str(lead_id)).eq("tenant_id", tenant_id) \
+                        .neq("status", "cancelled").order("created_at", desc=True).limit(1).execute()
+                    _b = _bk.data[0] if _bk.data else _create_draft_booking(str(lead_id), tenant_id, db)
+                    # Write collected fields onto booking row + mark pending_payment
+                    db.table("bookings").update({
+                        "devotee_name": _collected.get("devotee_name") or _collected.get("name") or "",
+                        "rasi": _collected.get("rasi"),
+                        "nakshatram": _collected.get("nakshatram"),
+                        "gotram": _collected.get("gotram"),
+                        "delivery_address": _collected.get("delivery_address") or _collected.get("address"),
+                        "status": "pending_payment",
+                    }).eq("id", _b["id"]).execute()
+                    await create_payment_link(
+                        booking_id=_b["id"],
+                        booking_ref=_b.get("booking_ref", "REF"),
+                        amount_paise=_b.get("amount_paise", 50000),
+                        customer_name=_collected.get("devotee_name") or _collected.get("name") or "",
+                        customer_phone=phone,
+                    )
+                except Exception as _pe:
+                    logger.warning(f"Payment link failed for lead {lead_id}: {_pe}")
+            elif _post_action == "notify_telecaller":
+                try:
+                    from app.routes.alerts import create_alert
+                    create_alert(lead_id=str(lead_id), tenant_id=tenant_id, assigned_caller_id=lead_data.get("assigned_to"))
+                except Exception as _ae:
+                    logger.warning(f"Telecaller alert failed for lead {lead_id}: {_ae}")
+        except Exception as _ce:
+            logger.warning(f"[COLLECT_DONE] parse failed for lead {lead_id}: {_ce}")
+
     # Step 5: Score Engine v2 — composite arc + intent + engagement
     new_segment = segment  # fallback if scoring fails
     new_score = lead_data.get("score", 5)
-    if not lead_data.get("assigned_to"):
+    if not lead_data.get("assigned_to") and lead_data.get("segment") != "A":
         try:
             from app.services.scoring_engine import compute_score
             score_result = await compute_score(
@@ -727,17 +798,6 @@ async def generate_reply(
                     tenant_id=tenant_id,
                     db=db,
                 )
-            sync_follow_up_jobs(
-                lead_id,
-                segment=new_segment,
-                phone=lead_data.get("phone") or phone,
-                converted_at=lead_data.get("converted_at"),
-                ai_enabled=lead_data.get("ai_enabled", True),
-                reason=f"{channel}_reply",
-                tenant_id=tenant_id,
-                db=db,
-            )
-
             old_segment = lead_data.get("segment") or "C"
             if new_segment != old_segment and should_assign_to_telecalling(telecalling_cfg, new_segment, channel):
                 assigned_caller = auto_assign_lead(str(lead_id), tenant_id)
@@ -807,6 +867,17 @@ async def generate_reply(
             logger.info(f"Tag interest updated: lead {lead_id} tag {tid} segment {new_segment}")
     except Exception as tag_err:
         logger.warning(f"Tag interest update failed for lead {lead_id}: {tag_err}")
+
+    sync_follow_up_jobs(
+        lead_id,
+        segment=new_segment,
+        phone=lead_data.get("phone") or phone,
+        converted_at=lead_data.get("converted_at"),
+        ai_enabled=lead_data.get("ai_enabled", True),
+        reason=f"{channel}_reply",
+        tenant_id=tenant_id,
+        db=db,
+    )
 
     # Step 6: Fire inbox escalation — trigger-based, no segment gate
     active_triggers = [

@@ -20,8 +20,8 @@ async def test_create_payment_link_returns_url():
         "status": "created",
     }
 
-    with patch("app.services.payment_razorpay._get_key_id", return_value="test_key_id"), \
-         patch("app.services.payment_razorpay._get_key_secret", return_value="test_key_secret"), \
+    with patch("app.services.payment_razorpay._get_key_id", return_value="test_key_id") as key_id, \
+         patch("app.services.payment_razorpay._get_key_secret", return_value="test_key_secret") as key_secret, \
          patch("httpx.AsyncClient") as MockClient:
         instance = MockClient.return_value.__aenter__.return_value
         instance.post = AsyncMock(return_value=mock_response)
@@ -33,10 +33,16 @@ async def test_create_payment_link_returns_url():
             customer_name="Rajan Kumar",
             customer_phone="+919876543210",
             description="Guru Peyarchi Homam - Rajan Kumar",
+            tenant_id="tenant-1",
         )
 
     assert result["payment_link_url"] == "https://rzp.io/l/abc123"
     assert result["razorpay_payment_link_id"] == "plink_abc123"
+    key_id.assert_called_once_with("tenant-1")
+    key_secret.assert_called_once_with("tenant-1")
+    instance.post.assert_awaited_once()
+    _, kwargs = instance.post.await_args
+    assert kwargs["headers"]["X-Razorpay-Idempotency-Key"] == "booking:booking-uuid-1:payment_link"
 
 
 @pytest.mark.asyncio
@@ -60,10 +66,11 @@ async def test_create_payment_link_raises_on_failure():
                 booking_id="booking-uuid-1",
                 booking_ref="GPH-2026-0001",
                 amount_paise=0,
-                customer_name="Test",
-                customer_phone="+919876543210",
-                description="Test",
-            )
+            customer_name="Test",
+            customer_phone="+919876543210",
+            description="Test",
+            tenant_id="tenant-1",
+        )
 
 
 def test_verify_razorpay_signature_valid():

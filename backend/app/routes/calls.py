@@ -1,4 +1,5 @@
 import asyncio
+import hmac
 import logging
 import re
 from datetime import datetime, timezone
@@ -41,7 +42,7 @@ async def initiate_call(payload: InitiateCall, ctx: dict = Depends(get_tenant_an
     tenant_id = ctx["tenant_id"]
     role = ctx.get("role")
 
-    telecmi_secret = get_setting("telecmi_secret") or settings.telecmi_secret
+    telecmi_secret = get_setting("telecmi_secret", tenant_id=tenant_id) or settings.telecmi_secret
     if not telecmi_secret:
         raise HTTPException(status_code=400, detail="TeleCMI App Secret not configured. Set it in Settings.")
 
@@ -99,7 +100,7 @@ async def initiate_call(payload: InitiateCall, ctx: dict = Depends(get_tenant_an
         if caller.data:
             caller_telecmi_agent_id = caller.data.get("telecmi_agent_id") or None
 
-    best_number = await get_best_voice_number()
+    best_number = await get_best_voice_number(tenant_id)
     if not best_number:
         raise HTTPException(status_code=400, detail="No active voice numbers in pool")
 
@@ -113,7 +114,7 @@ async def initiate_call(payload: InitiateCall, ctx: dict = Depends(get_tenant_an
 
     try:
         # TeleCMI click-to-call: rings the caller first, then bridges to the lead
-        telecmi_callerid = get_setting("telecmi_callerid") or settings.telecmi_callerid or best_number["number"]
+        telecmi_callerid = get_setting("telecmi_callerid", tenant_id=tenant_id) or settings.telecmi_callerid or best_number["number"]
         # Caller's own agent ID takes priority; admin direct calls fall back to global setting
         # Fallback: owner's own caller record agent_id, then global setting
         effective_agent_id = caller_telecmi_agent_id
@@ -124,7 +125,7 @@ async def initiate_call(payload: InitiateCall, ctx: dict = Depends(get_tenant_an
                 if owner_caller.data:
                     effective_agent_id = owner_caller.data.get("telecmi_agent_id")
         if not effective_agent_id:
-            effective_agent_id = get_setting("telecmi_user_id") or settings.telecmi_user_id
+            effective_agent_id = get_setting("telecmi_user_id", tenant_id=tenant_id) or settings.telecmi_user_id
         if not effective_agent_id:
             raise HTTPException(status_code=400, detail="No TeleCMI Agent ID found. Assign one from the Team page.")
         result = await initiate_click2call(
@@ -159,6 +160,16 @@ async def initiate_call(payload: InitiateCall, ctx: dict = Depends(get_tenant_an
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
 
 
+def _verify_telecmi_webhook_secret(request: Request) -> bool:
+    configured_secret = get_setting("telecmi_webhook_secret")
+    received_secret = request.query_params.get("webhook_secret")
+    if not configured_secret or not received_secret:
+        raise HTTPException(status_code=403, detail="Invalid webhook secret")
+    if not hmac.compare_digest(received_secret, configured_secret):
+        raise HTTPException(status_code=403, detail="Invalid webhook secret")
+    return True
+
+
 def _extract_call_log_id(cdr: dict) -> str | None:
     """Pull a usable call_log_id from a TeleCMI CDR `custom` field.
 
@@ -182,6 +193,7 @@ def _extract_call_log_id(cdr: dict) -> str | None:
 @public_router.post("/telecmi-cdr")
 async def telecmi_cdr(request: Request, background_tasks: BackgroundTasks):
     """Receive Call Detail Record (CDR) from TeleCMI."""
+    _verify_telecmi_webhook_secret(request)
     cdr = await request.json()
     logger.info(f"TeleCMI CDR received: {cdr}")
 
@@ -264,7 +276,7 @@ async def telecmi_cdr(request: Request, background_tasks: BackgroundTasks):
     recording_filename = cdr.get("filename")
     if recording_filename:
         appid = cdr.get("appid")
-        secret = get_setting("telecmi_secret") or settings.telecmi_secret
+        secret = get_setting("telecmi_secret", tenant_id=log_row.data.get("tenant_id")) or settings.telecmi_secret
         if appid and secret:
             full_url = (
                 f"https://piopiy.telecmi.com/v1/play"
@@ -293,6 +305,7 @@ async def telecmi_cdr(request: Request, background_tasks: BackgroundTasks):
 @public_router.post("/telecmi-events")
 async def telecmi_live_events(request: Request):
     """Receive live call events from TeleCMI (optional — for real-time UI updates)."""
+    _verify_telecmi_webhook_secret(request)
     event = await request.json()
     logger.info(f"TeleCMI event: status={event.get('status')}, request_id={event.get('request_id')}")
     # Can be used for real-time call status updates in the future
@@ -416,12 +429,13 @@ async def _run_summarization(call_log_id: str, recording_url: str) -> None:
 # ── Outcome & Other Endpoints (unchanged) ────────────────────────────
 
 @router.patch("/{call_log_id}/outcome")
-async def set_outcome(call_log_id: str, payload: OutcomeUpdate):
+async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depends(get_tenant_and_role)):
     db = get_supabase()
     log = (
         db.table("call_logs")
         .select("caller_id,duration_seconds,lead_id")
         .eq("id", call_log_id)
+        .eq("tenant_id", ctx["tenant_id"])
         .maybe_single()
         .execute()
     )
@@ -432,7 +446,7 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate):
     db.table("call_logs").update({
         "outcome": payload.outcome,
         "score": score,
-    }).eq("id", call_log_id).execute()
+    }).eq("id", call_log_id).eq("tenant_id", ctx["tenant_id"]).execute()
 
     new_caller_score = None
     if log.data.get("caller_id"):
@@ -466,7 +480,7 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate):
                 lead_updates["segment"] = "D"
 
             if lead_updates:
-                updated_lead = db.table("leads").update(lead_updates).eq("id", str(lead_id)).execute()
+                updated_lead = db.table("leads").update(lead_updates).eq("id", str(lead_id)).eq("tenant_id", ctx["tenant_id"]).execute()
                 if updated_lead.data:
                     lead_data = updated_lead.data[0]
             if target_segment and target_segment != lead.data.get("segment"):
@@ -526,7 +540,7 @@ async def stats_today(ctx: dict = Depends(get_tenant_and_role)):
 
 
 @router.get("/recent-by-leads")
-async def recent_by_leads(lead_ids: str = Query(..., description="Comma-separated lead UUIDs, max 50")):
+async def recent_by_leads(lead_ids: str = Query(..., description="Comma-separated lead UUIDs, max 50"), ctx: dict = Depends(get_tenant_and_role)):
     ids = [i.strip() for i in lead_ids.split(",") if i.strip()][:50]
     if not ids:
         return {}
@@ -535,6 +549,7 @@ async def recent_by_leads(lead_ids: str = Query(..., description="Comma-separate
         db.table("call_logs")
         .select("lead_id,created_at")
         .in_("lead_id", ids)
+        .eq("tenant_id", ctx["tenant_id"])
         .order("created_at", desc=True)
         .execute()
     )
@@ -547,12 +562,13 @@ async def recent_by_leads(lead_ids: str = Query(..., description="Comma-separate
 
 
 @router.post("/backfill-summaries")
-async def backfill_summaries(background_tasks: BackgroundTasks, limit: int = Query(10, ge=1, le=50)):
+async def backfill_summaries(background_tasks: BackgroundTasks, limit: int = Query(10, ge=1, le=50), ctx: dict = Depends(get_tenant_and_role)):
     """Re-run summarization on call logs that have recording_url but no ai_summary."""
     db = get_supabase()
     rows = (
         db.table("call_logs")
         .select("id,recording_url")
+        .eq("tenant_id", ctx["tenant_id"])
         .not_.is_("recording_url", "null")
         .is_("ai_summary", "null")
         .order("created_at", desc=True)
@@ -567,9 +583,9 @@ async def backfill_summaries(background_tasks: BackgroundTasks, limit: int = Que
 
 
 @router.delete("/{call_log_id}")
-async def delete_call_log(call_log_id: str):
+async def delete_call_log(call_log_id: str, ctx: dict = Depends(get_tenant_and_role)):
     db = get_supabase()
-    result = db.table("call_logs").delete().eq("id", call_log_id).execute()
+    result = db.table("call_logs").delete().eq("id", call_log_id).eq("tenant_id", ctx["tenant_id"]).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Call log not found")
     return {"deleted": True}
