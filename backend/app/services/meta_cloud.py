@@ -571,6 +571,78 @@ def _iso_to_unix(iso_str: Optional[str]) -> Optional[int]:
         return None
 
 
+async def get_whatsapp_insights_bulk(
+    phone_number_id: str,
+    tenant_id: str,
+    since_date_str: str,
+    until_date_str: str,
+) -> dict[str, dict]:
+    """
+    Fetch insights for a date range in 2 API calls instead of N daily calls.
+    Returns dict keyed by YYYY-MM-DD, each value is an _empty_insights_result dict
+    with cost_usd keys (caller must convert via _convert_costs).
+    """
+    pid, tok = _creds(phone_number_id, None, tenant_id)
+    waba_id = get_setting("meta_waba_id", tenant_id=tenant_id)
+    headers = {"Authorization": f"Bearer {tok}"}
+
+    since_dt = datetime.fromisoformat(since_date_str).replace(tzinfo=timezone.utc)
+    until_dt = datetime.fromisoformat(until_date_str).replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
+    since_ts = int(since_dt.timestamp())
+    until_ts = int(until_dt.timestamp())
+
+    per_day: dict[str, dict] = {}
+
+    if not waba_id:
+        logger.warning("get_whatsapp_insights_bulk: no meta_waba_id for tenant %s", tenant_id)
+        return per_day
+
+    # 1. Delivery analytics — one call for entire range
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{_GRAPH_BASE}/{waba_id}",
+                params={"fields": f"analytics.start({since_ts}).end({until_ts}).granularity(DAY).phone_numbers(['{pid}'])"},
+                headers=headers,
+            )
+        if resp.is_success:
+            for dp in resp.json().get("analytics", {}).get("data_points", []):
+                date_str = datetime.fromtimestamp(dp.get("start", 0), tz=timezone.utc).date().isoformat()
+                day = per_day.setdefault(date_str, _empty_insights_result())
+                day["sent"] += dp.get("sent", 0)
+                day["delivered"] += dp.get("delivered", 0)
+        else:
+            logger.warning("Bulk analytics failed %s: %s %s", waba_id, resp.status_code, resp.text)
+    except Exception as e:
+        logger.error("Bulk analytics exception %s: %s", waba_id, e)
+
+    # 2. Conversation cost analytics — one call for entire range
+    try:
+        fields_str = (
+            f"conversation_analytics.start({since_ts}).end({until_ts})"
+            f".granularity(DAILY).dimensions(['CONVERSATION_CATEGORY','CONVERSATION_TYPE'])"
+            f".phone_numbers(['{pid}'])"
+        )
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{_GRAPH_BASE}/{waba_id}",
+                params={"fields": fields_str},
+                headers=headers,
+            )
+        if resp.is_success:
+            for bucket in resp.json().get("conversation_analytics", {}).get("data", []):
+                for dp in bucket.get("data_points", []):
+                    date_str = datetime.fromtimestamp(dp.get("start_time", 0), tz=timezone.utc).date().isoformat()
+                    day = per_day.setdefault(date_str, _empty_insights_result())
+                    _accumulate_cost(day, dp)
+        else:
+            logger.warning("Bulk conversation_analytics failed %s: %s %s", waba_id, resp.status_code, resp.text)
+    except Exception as e:
+        logger.error("Bulk conversation_analytics exception %s: %s", waba_id, e)
+
+    return per_day
+
+
 async def get_whatsapp_insights(
     phone_number_id: Optional[str] = None,
     access_token: Optional[str] = None,

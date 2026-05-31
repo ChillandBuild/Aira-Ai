@@ -96,10 +96,12 @@ function formatINR(val: number): string {
 }
 
 function formatDateRange(since: string, until: string): string {
-  const s = new Date(since);
-  const u = new Date(until);
-  const fmt = (d: Date) => d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-  return `${fmt(s)} – ${fmt(u)}`;
+  // Use the date portion only to avoid timezone shift (e.g. 23:59:59 UTC -> next day in IST)
+  const fmtDate = (iso: string) => {
+    const d = new Date(iso.slice(0, 10) + "T00:00:00");
+    return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  };
+  return `${fmtDate(since)} – ${fmtDate(until)}`;
 }
 
 function formatXLabel(d: string): string {
@@ -539,7 +541,7 @@ export default function InsightsPage() {
     }
   }
 
-  const totalCost = Object.values(agg.cost_by_category).reduce((s, v) => s + v.cost_inr, 0);
+  const totalCost = Object.values(agg.cost_by_category).reduce((s, v) => s + (v.cost_inr || 0), 0);
   const totalPaidConv = Object.values(agg.paid_by_category).reduce((s, v) => s + v.conversations, 0);
   const rangeLabel = range === "7d" ? "Last 7 days" : range === "30d" ? "Last 30 days" : "Custom range";
 

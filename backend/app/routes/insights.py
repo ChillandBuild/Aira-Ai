@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id
 from app.routes.app_settings import _get_setting_value
-from app.services.meta_cloud import get_number_quality, get_whatsapp_insights
+from app.services.meta_cloud import get_number_quality, get_whatsapp_insights, get_whatsapp_insights_bulk
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -23,11 +23,11 @@ def _date_range(range_str: str) -> tuple[str, str]:
     now = datetime.now(timezone.utc)
     until = now.replace(hour=23, minute=59, second=59, microsecond=0)
     if range_str == "7d":
-        since = (now - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
+        since = (now - timedelta(days=6)).replace(hour=0, minute=0, second=0, microsecond=0)
     elif range_str == "30d":
-        since = (now - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
+        since = (now - timedelta(days=29)).replace(hour=0, minute=0, second=0, microsecond=0)
     else:
-        since = (now - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
+        since = (now - timedelta(days=6)).replace(hour=0, minute=0, second=0, microsecond=0)
     return since.isoformat(), until.isoformat()
 
 
@@ -40,28 +40,29 @@ def _convert_costs(obj: dict) -> dict:
 
 
 async def _sync_number_to_db(db, tenant_id: str, meta_pid: str, display_name: str, number: str, days: int = 30):
-    """Fetch insights from Meta for the last N days and upsert snapshots into DB."""
+    """Fetch insights from Meta for the last N days and upsert snapshots into DB.
+    Makes 2 API calls for the full range instead of N separate calls.
+    """
     now = datetime.now(timezone.utc)
     until_date = now.date()
-    since_date = until_date - timedelta(days=days)
+    since_date = until_date - timedelta(days=days - 1)
 
     quality = await get_number_quality(phone_number_id=meta_pid, tenant_id=tenant_id)
 
-    for day_offset in range(days + 1):
-        day = since_date + timedelta(days=day_offset)
-        day_since = datetime(day.year, day.month, day.day, 0, 0, 0, tzinfo=timezone.utc).isoformat()
-        day_until = datetime(day.year, day.month, day.day, 23, 59, 59, tzinfo=timezone.utc).isoformat()
+    # Bulk fetch: 2 API calls cover the full date range
+    per_day = await get_whatsapp_insights_bulk(
+        phone_number_id=meta_pid,
+        tenant_id=tenant_id,
+        since_date_str=since_date.isoformat(),
+        until_date_str=until_date.isoformat(),
+    )
+    logger.info("Bulk sync for %s: got %d days of data", meta_pid, len(per_day))
 
-        try:
-            insights = await get_whatsapp_insights(
-                phone_number_id=meta_pid,
-                tenant_id=tenant_id,
-                since=day_since,
-                until=day_until,
-            )
-        except Exception as e:
-            logger.error(f"Insights fetch failed for {meta_pid} on {day}: {e}")
-            continue
+    for day_offset in range(days):
+        day = since_date + timedelta(days=day_offset)
+        date_str = day.isoformat()
+
+        insights = per_day.get(date_str, {})
 
         cost_by_cat = _convert_costs(insights.get("cost_by_category", {}))
         free_by_type = _convert_costs(insights.get("free_by_type", {}))
@@ -75,7 +76,7 @@ async def _sync_number_to_db(db, tenant_id: str, meta_pid: str, display_name: st
         snapshot = {
             "tenant_id": tenant_id,
             "meta_phone_number_id": meta_pid,
-            "snapshot_date": day.isoformat(),
+            "snapshot_date": date_str,
             "quality_rating": quality.get("quality_rating", "UNKNOWN"),
             "messaging_tier": quality.get("messaging_tier", 0),
             "sent": insights.get("sent", 0),
@@ -141,46 +142,41 @@ async def whatsapp_insights(
 
 
 async def _from_db(db, tenant_id: str, numbers: list, since_iso: str, until_iso: str):
-    """Load insights from DB snapshots."""
-    meta_pids = [n["meta_phone_number_id"] for n in numbers if n.get("meta_phone_number_id")]
-    if not meta_pids:
-        return {"numbers": [], "totals": _empty_totals(), "range": {"since": since_iso, "until": until_iso}}
-
+    """Load insights from DB snapshots.
+    Queries all tenant snapshots (no phone_number_id filter) to avoid mismatch
+    between what was synced and what's currently in the phone_numbers table.
+    """
     rows = (
         db.table("whatsapp_insights_snapshots")
         .select("*")
         .eq("tenant_id", tenant_id)
-        .in_("meta_phone_number_id", meta_pids)
         .gte("snapshot_date", since_iso[:10])
         .lte("snapshot_date", until_iso[:10])
         .order("snapshot_date", desc=True)
         .execute()
     ).data or []
 
+    if not rows:
+        return {"numbers": [], "totals": _empty_totals(), "range": {"since": since_iso, "until": until_iso}}
+
+    # Build lookup of configured phone numbers for display info
+    num_by_pid = {n["meta_phone_number_id"]: n for n in numbers if n.get("meta_phone_number_id")}
+
     by_number: dict[str, list] = {}
     for r in rows:
-        pid = r["meta_phone_number_id"]
-        by_number.setdefault(pid, []).append(r)
+        by_number.setdefault(r["meta_phone_number_id"], []).append(r)
 
     results = []
     totals = _empty_totals()
 
-    for num in numbers:
-        meta_pid = num.get("meta_phone_number_id")
-        if not meta_pid:
-            continue
-        snaps = by_number.get(meta_pid, [])
-        if not snaps:
-            continue
+    for meta_pid, snaps in by_number.items():
         latest = snaps[0]  # most recent for quality/tier
 
-        # Aggregate message counts across all snapshots in the range
         sent = sum(s.get("sent", 0) for s in snaps)
         delivered = sum(s.get("delivered", 0) for s in snaps)
         read = sum(s.get("read", 0) for s in snaps)
         received = sum(s.get("received", 0) for s in snaps)
 
-        # Aggregate costs across all snapshots
         cost_by_cat: dict = {}
         free_by_type_agg: dict = {}
         paid_by_cat: dict = {}
@@ -198,10 +194,11 @@ async def _from_db(db, tenant_id: str, numbers: list, since_iso: str, until_iso:
                 entry["conversations"] += data.get("conversations", 0)
                 entry["cost_inr"] += float(data.get("cost_inr", 0.0))
 
+        num_info = num_by_pid.get(meta_pid, {})
         number_data = {
             "meta_phone_number_id": meta_pid,
-            "display_name": num.get("display_name", ""),
-            "number": num.get("number", ""),
+            "display_name": num_info.get("display_name", ""),
+            "number": num_info.get("number", meta_pid),
             "quality_rating": latest.get("quality_rating", "UNKNOWN"),
             "messaging_tier": latest.get("messaging_tier", 0),
             "sent": sent,
@@ -359,6 +356,18 @@ async def sync_insights(tenant_id: str = Depends(get_tenant_id)):
         .execute()
     )
     numbers = numbers_result.data or []
+
+    # Same fallback as the whatsapp endpoint — use app_settings if phone_numbers table is empty
+    if not numbers:
+        meta_pid = _get_setting_value(db, tenant_id, "meta_phone_number_id")
+        if meta_pid:
+            numbers = [{
+                "id": None,
+                "number": meta_pid,
+                "display_name": "Primary number",
+                "meta_phone_number_id": meta_pid,
+            }]
+
     synced = []
     errors = []
 
