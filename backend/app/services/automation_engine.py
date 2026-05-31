@@ -242,7 +242,8 @@ def _is_url_safe(url: str) -> bool:
                 return False
             ip = ipaddress.ip_address(ip_str)
             if (ip.is_private or ip.is_loopback or ip.is_link_local
-                    or ip.is_reserved or ip.is_multicast):
+                    or ip.is_reserved or ip.is_multicast or not ip.is_global):
+                # not is_global also catches CGNAT (100.64.0.0/10) + unspecified.
                 return False
         return True
     except Exception as e:
@@ -626,20 +627,35 @@ async def _execute_step(
             body = _interpolate(body, lead_data, variables)
         json_path = config.get("json_path")
         try:
+            # Stream with a hard byte cap so a tenant can't OOM the worker by pointing
+            # a flow at an endpoint that streams a huge body within the timeout window.
+            import json as _json
+            _MAX_BYTES = 1_000_000
             async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
-                resp = await client.request(method, url, headers=headers, content=body if isinstance(body, str) else None)
-            text = resp.text[:100_000]
+                async with client.stream(
+                    method, url, headers=headers,
+                    content=body if isinstance(body, str) else None,
+                ) as resp:
+                    chunks: list[bytes] = []
+                    total = 0
+                    async for chunk in resp.aiter_bytes(65536):
+                        total += len(chunk)
+                        if total > _MAX_BYTES:
+                            _bump_counter(db, step["id"], "error_count")
+                            return {"status": "error", "detail": "http_api response too large"}
+                        chunks.append(chunk)
+                    status_code = resp.status_code
+            text = b"".join(chunks).decode("utf-8", errors="replace")
             value = text
             if json_path:
                 try:
-                    parsed = resp.json()
-                    value = _walk_json_path(parsed, json_path)
+                    value = _walk_json_path(_json.loads(text), json_path)
                 except Exception:
                     value = None
             vars_ = context.setdefault("variables", {})
             vars_[save_as] = value
             variables = vars_
-            return {"status": "ok", "detail": f"http_api {resp.status_code} → {save_as}"}
+            return {"status": "ok", "detail": f"http_api {status_code} → {save_as}"}
         except Exception as e:
             logger.error(f"automation http_api failed for lead {lead_id}: {e}")
             _bump_counter(db, step["id"], "error_count")
@@ -972,10 +988,19 @@ def _finish_run_no_run_row(
     )
 
 
+_STALE_RUNNING_MINUTES = 15  # a 'running' row older than this is presumed crash-stalled
+
+
 async def resume_due_flow_runs(db=None) -> int:
-    """Resume time-waiting flow runs whose resume_at has passed. Returns count processed."""
+    """Resume due time-waits AND reap crash-stalled 'running' rows. Each row is claimed
+    with a status-guarded update so concurrent cron ticks never double-drive a run.
+    A stalled 'running' row left by a crashed worker would otherwise permanently block
+    the lead via the one-active-run index — reaping it honours the >5-min North Star."""
     db = db or get_supabase()
-    now = _now_iso()
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat()
+    stale_before = (now_dt - timedelta(minutes=_STALE_RUNNING_MINUTES)).isoformat()
+
     due = (
         db.table("automation_flow_runs")
         .select("*")
@@ -984,8 +1009,19 @@ async def resume_due_flow_runs(db=None) -> int:
         .limit(50)
         .execute()
     )
+    stalled = (
+        db.table("automation_flow_runs")
+        .select("*")
+        .eq("status", "running")
+        .lt("updated_at", stale_before)
+        .limit(50)
+        .execute()
+    )
+    candidates = [(r, "waiting_time") for r in (due.data or [])] + \
+                 [(r, "running") for r in (stalled.data or [])]
+
     processed = 0
-    for run in (due.data or []):
+    for run, prior_status in candidates:
         try:
             auto_row = (
                 db.table("automations")
@@ -999,13 +1035,19 @@ async def resume_due_flow_runs(db=None) -> int:
                 # no counter bump — matches Phase-1, which wrote nothing here).
                 db.table("automation_flow_runs").update(
                     {"status": "done", "current_step_id": None, "updated_at": _now_iso()}
-                ).eq("id", run["id"]).execute()
+                ).eq("id", run["id"]).eq("status", prior_status).execute()
                 continue
 
-            # Optimistic guard: flip to running before advancing.
-            db.table("automation_flow_runs").update(
-                {"status": "running", "updated_at": _now_iso()}
-            ).eq("id", run["id"]).execute()
+            # CAS claim: only the worker that flips prior_status→running drives it.
+            claim = (
+                db.table("automation_flow_runs")
+                .update({"status": "running", "updated_at": _now_iso()})
+                .eq("id", run["id"])
+                .eq("status", prior_status)
+                .execute()
+            )
+            if not (claim.data or []):
+                continue  # another worker claimed this run first
 
             await _drive_run(run, db, auto_row.data["trigger_type"])
             processed += 1

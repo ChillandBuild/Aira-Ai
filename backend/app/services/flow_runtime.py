@@ -42,6 +42,7 @@ async def resume_for_inbound(lead_id: str, tenant_id: str, message: str, db) -> 
             db.table("automations")
             .select("id,active,trigger_type,tenant_id")
             .eq("id", automation_id)
+            .eq("tenant_id", tenant_id)
             .maybe_single()
             .execute()
         )
@@ -61,33 +62,49 @@ async def resume_for_inbound(lead_id: str, tenant_id: str, message: str, db) -> 
         node_type = node["step_type"]
         config = node.get("config") or {}
 
-        if node_type == "user_input":
-            save_as = config.get("save_as")
-            if save_as:
-                variables[save_as] = message
-            next_id = eng._next_step_id(steps_flat, node["id"])
-        elif node_type == "interactive":
-            # Map the reply to a button id → branch label; also capture into save_as.
+        if node_type == "interactive":
             branch = _match_interactive_choice(config, message)
+            if branch is None:
+                # Reply matched no button — keep waiting (the lead should tap a button).
+                # Don't advance and don't corrupt save_as; consume so no AI reply fires.
+                logger.info(f"interactive node {node['id']}: reply matched no button; staying waiting_reply")
+                return True
             save_as = config.get("save_as")
             if save_as:
                 variables[save_as] = message
             next_id = eng._next_step_id(steps_flat, node["id"], branch)
+        elif node_type == "user_input":
+            save_as = config.get("save_as")
+            if save_as:
+                variables[save_as] = message
+            next_id = eng._next_step_id(steps_flat, node["id"])
         else:
             # Not an input node — shouldn't be waiting_reply; advance linearly to be safe.
             next_id = eng._next_step_id(steps_flat, node["id"])
 
+        # CAS: only the worker that flips waiting_reply→running drives the run. A
+        # concurrent duplicate delivery loses the race (no rows updated) and just
+        # suppresses its own AI reply without double-driving.
+        upd = (
+            db.table("automation_flow_runs")
+            .update({
+                "status": "running",
+                "current_step_id": next_id,
+                "variables": variables,
+                "trigger_message": message,
+                "updated_at": eng._now_iso(),
+            })
+            .eq("id", run["id"])
+            .eq("status", "waiting_reply")
+            .execute()
+        )
+        if not (upd.data or []):
+            logger.info(f"flow_run {run['id']}: lost waiting_reply race; suppressing without re-driving")
+            return True
+
         run["variables"] = variables
         run["current_step_id"] = next_id
         run["trigger_message"] = message
-        db.table("automation_flow_runs").update({
-            "status": "running",
-            "current_step_id": next_id,
-            "variables": variables,
-            "trigger_message": message,
-            "updated_at": eng._now_iso(),
-        }).eq("id", run["id"]).execute()
-
         await eng._drive_run(run, db, auto.data.get("trigger_type") or "")
         return True
     except Exception as e:
