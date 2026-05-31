@@ -598,19 +598,25 @@ async def get_whatsapp_insights_bulk(
         return per_day
 
     # 1. Delivery analytics — one call for entire range
+    # Note: phone_numbers filter expects E.164 format (e.g. +919489010286), NOT the Meta
+    # phone_number_id. Omitting the filter returns all numbers in the WABA (correct for
+    # single-number accounts; for multi-number, data is still aggregated per day).
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(
                 f"{_GRAPH_BASE}/{waba_id}",
-                params={"fields": f"analytics.start({since_ts}).end({until_ts}).granularity(DAY).phone_numbers(['{pid}'])"},
+                params={"fields": f"analytics.start({since_ts}).end({until_ts}).granularity(DAY)"},
                 headers=headers,
             )
         if resp.is_success:
-            for dp in resp.json().get("analytics", {}).get("data_points", []):
+            body = resp.json()
+            logger.info("Bulk analytics response keys: %s", list(body.keys()))
+            for dp in body.get("analytics", {}).get("data_points", []):
                 date_str = datetime.fromtimestamp(dp.get("start", 0), tz=timezone.utc).date().isoformat()
                 day = per_day.setdefault(date_str, _empty_insights_result())
                 day["sent"] += dp.get("sent", 0)
                 day["delivered"] += dp.get("delivered", 0)
+            logger.info("Bulk analytics: got %d data points for %s", len(body.get("analytics", {}).get("data_points", [])), pid)
         else:
             logger.warning("Bulk analytics failed %s: %s %s", waba_id, resp.status_code, resp.text)
     except Exception as e:
@@ -621,7 +627,6 @@ async def get_whatsapp_insights_bulk(
         fields_str = (
             f"conversation_analytics.start({since_ts}).end({until_ts})"
             f".granularity(DAILY).dimensions(['CONVERSATION_CATEGORY','CONVERSATION_TYPE'])"
-            f".phone_numbers(['{pid}'])"
         )
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(
@@ -630,7 +635,9 @@ async def get_whatsapp_insights_bulk(
                 headers=headers,
             )
         if resp.is_success:
-            for bucket in resp.json().get("conversation_analytics", {}).get("data", []):
+            buckets = resp.json().get("conversation_analytics", {}).get("data", [])
+            logger.info("Bulk conversation_analytics: got %d buckets for %s", len(buckets), pid)
+            for bucket in buckets:
                 for dp in bucket.get("data_points", []):
                     date_str = datetime.fromtimestamp(dp.get("start_time", 0), tz=timezone.utc).date().isoformat()
                     day = per_day.setdefault(date_str, _empty_insights_result())
@@ -666,12 +673,12 @@ async def get_whatsapp_insights(
     headers = {"Authorization": f"Bearer {tok}"}
 
     # ── 1. Delivery analytics from WABA (sent / delivered) ────────────────────
-    # Note: analytics field exists on the WABA endpoint, NOT on phone number
+    # Omit phone_numbers filter — it expects E.164 format, not Meta phone_number_id.
     if waba_id and since_ts and until_ts:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(
                 f"{_GRAPH_BASE}/{waba_id}",
-                params={"fields": f"analytics.start({since_ts}).end({until_ts}).granularity(DAY).phone_numbers(['{pid}'])"},
+                params={"fields": f"analytics.start({since_ts}).end({until_ts}).granularity(DAY)"},
                 headers=headers,
             )
         if resp.is_success:
@@ -689,7 +696,6 @@ async def get_whatsapp_insights(
         fields_str = (
             f"conversation_analytics.start({since_ts}).end({until_ts})"
             f".granularity(DAILY).dimensions(['CONVERSATION_CATEGORY','CONVERSATION_TYPE'])"
-            f".phone_numbers(['{pid}'])"
         )
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(
