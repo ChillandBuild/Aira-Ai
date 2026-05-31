@@ -185,6 +185,23 @@ TelecallingConfigPanel: module on/off, auto-assign, per-segment assignment (A/B/
 | 061_number_health_engagement | phone_number_quality_history + outbound_no_reply_count + template variations |
 | 062 | conversation_last_message RPC |
 | 064 | leads.pinned_at |
+| 073 | Bot Flow Builder — extend automations in place (block types, node counters, flow_kind, messages↔node link, bump_automation_step_counter RPC) |
+| 074 | automation_flow_runs — resumable run-state (replaces broken wait-resume; powers pause-on-reply) |
+
+## Bot Flow Builder (replaces Automations UI)
+Visual WhatsApp flow builder at /dashboard/automations (sidebar "Bot Flows"). Backend
+extends the automations engine IN PLACE (no renames); "Bot Flow" is a UI name only.
+- Engine: `services/automation_engine.py` — resumable step-pointer state machine driven
+  by `automation_flow_runs` (`_drive_run`, `_next_step_id`, `resume_due_flow_runs` with
+  stale-running reaper). `{{var}}` interpolation reads the run's variable bag.
+- Pause-on-reply: `services/flow_runtime.resume_for_inbound` — intercepts inbound in all
+  4 channels (webhook/telegram/instagram/facebook) BEFORE trigger fan-out + generate_reply;
+  user_input/interactive nodes pause as `waiting_reply`. CAS-guarded against double-drive.
+- Blocks: send_message/image/video/file/location, cta_url, template, wait, condition,
+  user_input, interactive (N-way button branch = button id), http_api (SSRF-guarded),
+  random. Per-node analytics (sent/delivered/error) on automation_steps.
+- Specs: docs/superpowers/specs/2026-05-31-bot-flow-builder-design.md (Phase 1) +
+  -phase2-design.md (run-state, pause-on-reply, power blocks, residual risks).
 
 ## Response Style
 - One sentence per progress update while working
