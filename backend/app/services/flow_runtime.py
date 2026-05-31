@@ -62,7 +62,11 @@ async def resume_for_inbound(lead_id: str, tenant_id: str, message: str, db) -> 
         node_type = node["step_type"]
         config = node.get("config") or {}
 
-        if node_type == "interactive":
+        if node_type == "ai_agent":
+            # Re-run the SAME agent node with the inbound; the agent loop consumes the
+            # reply (via its awaiting state) and decides to pause again or finish.
+            next_id = node["id"]
+        elif node_type == "interactive":
             branch = _match_interactive_choice(config, message)
             if branch is None:
                 # Reply matched no button — keep waiting (the lead should tap a button).

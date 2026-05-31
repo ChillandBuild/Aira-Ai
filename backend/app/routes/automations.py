@@ -49,7 +49,7 @@ _VALID_STEPS = {
     "update_segment", "add_note", "send_webhook",
     "wait", "condition", "create_followup",
     "send_image", "send_video", "send_file", "send_location", "cta_url",
-    "user_input", "http_api", "random", "interactive",
+    "user_input", "http_api", "random", "interactive", "ai_agent",
 }
 
 
@@ -121,6 +121,24 @@ def _validate(trigger_type: str, trigger_config: dict, steps: list) -> list[str]
                         float(cfg.get(key))
                     except (TypeError, ValueError):
                         errors.append(f"Step {i}: random {key} must be numeric")
+        if step.get("step_type") == "ai_agent":
+            cfg = step.get("config", {})
+            if not cfg.get("goal"):
+                errors.append(f"Step {i}: ai_agent requires a goal")
+            outs = cfg.get("outcomes") or []
+            if not (1 <= len(outs) <= 5) or any(not str(o).strip() for o in outs):
+                errors.append(f"Step {i}: ai_agent requires 1..5 non-empty outcomes")
+            if not cfg.get("output_var"):
+                errors.append(f"Step {i}: ai_agent requires output_var")
+            mt = cfg.get("max_turns", 6)
+            try:
+                if not (1 <= int(mt) <= 20):
+                    errors.append(f"Step {i}: ai_agent max_turns must be 1..20")
+            except (TypeError, ValueError):
+                errors.append(f"Step {i}: ai_agent max_turns must be numeric")
+            for t in (cfg.get("tools") or []):
+                if t not in ("update_segment", "add_note", "assign_to_caller"):
+                    errors.append(f"Step {i}: ai_agent unknown tool {t}")
         if step.get("step_type") == "interactive":
             cfg = step.get("config", {})
             if not cfg.get("body"):

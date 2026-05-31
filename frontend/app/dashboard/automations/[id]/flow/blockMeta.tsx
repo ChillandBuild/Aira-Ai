@@ -12,6 +12,7 @@ import {
   ListChecks,
   Webhook,
   Dices,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import type { BlockType, BlockConfig, TriggerType } from "./types";
@@ -116,6 +117,13 @@ export const BLOCK_META: Record<BlockType, BlockMeta> = {
     iconText: "text-lime-600",
     description: "Pick a number in a range",
   },
+  ai_agent: {
+    label: "AI Agent",
+    icon: Sparkles,
+    iconBg: "bg-violet-100",
+    iconText: "text-violet-600",
+    description: "Let AI converse toward an outcome, then branch",
+  },
 };
 
 // Order shown in the block picker.
@@ -129,6 +137,7 @@ export const PICKER_BLOCKS: BlockType[] = [
   "send_template",
   "wait",
   "condition",
+  "ai_agent",
   "user_input",
   "interactive",
   "http_api",
@@ -224,6 +233,11 @@ export function blockSummary(type: BlockType, config: BlockConfig): string {
       return config.save_as
         ? `${config.min ?? 0}–${config.max ?? 0} → {{${config.save_as}}}`
         : `${config.min ?? 0}–${config.max ?? 0}`;
+    case "ai_agent": {
+      const count = config.outcomes?.length || 0;
+      if (!config.goal) return "Set a goal";
+      return `${truncate(config.goal, 40)} · ${count} outcome${count === 1 ? "" : "s"}`;
+    }
     default:
       return "";
   }
@@ -267,6 +281,15 @@ export function defaultConfig(type: BlockType): BlockConfig {
       return { method: "GET", url: "", headers: {}, body: "", save_as: "", json_path: "" };
     case "random":
       return { min: 1, max: 100, save_as: "" };
+    case "ai_agent":
+      return {
+        goal: "",
+        outcomes: ["qualified", "not_interested"],
+        output_var: "agent_outcome",
+        tools: [],
+        max_turns: 6,
+        use_knowledge: true,
+      };
     default:
       return {};
   }

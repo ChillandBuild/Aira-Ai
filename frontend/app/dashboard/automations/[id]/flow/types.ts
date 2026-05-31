@@ -13,10 +13,11 @@ export type BlockType =
   | "user_input"
   | "interactive"
   | "http_api"
-  | "random";
+  | "random"
+  | "ai_agent";
 
 // Block types that fan the flow out into multiple labeled lanes.
-export const BRANCHING_TYPES: readonly BlockType[] = ["condition", "interactive"];
+export const BRANCHING_TYPES: readonly BlockType[] = ["condition", "interactive", "ai_agent"];
 
 export function isBranching(type: BlockType): boolean {
   return BRANCHING_TYPES.includes(type);
@@ -87,6 +88,13 @@ export interface BlockConfig {
   // random
   min?: number;
   max?: number;
+  // ai_agent
+  goal?: string;
+  outcomes?: string[];
+  output_var?: string;
+  tools?: string[];
+  max_turns?: number;
+  use_knowledge?: boolean;
 }
 
 export interface TriggerConfig {
@@ -152,6 +160,13 @@ export function lanesOf(node: FlowNode): LaneSpec[] {
     return (node.config.buttons || []).map((b, i) => ({
       key: b.id,
       label: b.title.trim() || `Button ${i + 1}`,
+    }));
+  }
+  if (node.step_type === "ai_agent") {
+    // Each declared outcome is a branch lane; the outcome string is the branch key.
+    return (node.config.outcomes || []).map((o, i) => ({
+      key: o,
+      label: o.trim() || `Outcome ${i + 1}`,
     }));
   }
   return [];

@@ -286,7 +286,7 @@ async def _execute_step(
     variables = context.get("variables") or {}
 
     # ── Booking-flow guard for outbound message steps ──────────────────────
-    if step_type in ("send_message", "send_template", "user_input", "interactive", *_NEW_SEND_STEPS):
+    if step_type in ("send_message", "send_template", "user_input", "interactive", "ai_agent", *_NEW_SEND_STEPS):
         try:
             from app.services.booking_flow import get_or_create_state
             conv_state = get_or_create_state(lead_id, tenant_id, db)
@@ -713,6 +713,19 @@ async def _execute_step(
             _bump_counter(db, step["id"], "error_count")
             return {"status": "error", "detail": str(e)}
 
+    # ── ai_agent ───────────────────────────────────────────────────────────
+    # A contained LLM agent: converses toward one of the declared outcomes (each an
+    # outcome→branch lane) using safe tools. Pauses as wait_reply between turns; on
+    # finish returns status=ok + branch=outcome so _drive_run follows that lane.
+    if step_type == "ai_agent":
+        try:
+            from app.services import agent_runtime
+            return await agent_runtime.run_agent(step, lead_data, message, db, context)
+        except Exception as e:
+            logger.error(f"automation ai_agent failed for lead {lead_id}: {e}")
+            _bump_counter(db, step["id"], "error_count")
+            return {"status": "error", "detail": str(e)}
+
     return {"status": "error", "detail": f"unknown step_type: {step_type}"}
 
 
@@ -884,11 +897,9 @@ async def _drive_run(run: dict, db, trigger_type: str = "") -> None:
                 }).eq("id", run["id"]).execute()
                 return
 
-            if status == "ok" and step_type == "condition":
-                branch = result.get("branch")
-                current_step_id = _next_step_id(steps_flat, step["id"], branch)
-            else:
-                current_step_id = _next_step_id(steps_flat, step["id"])
+            # condition + ai_agent both return a branch label on success; follow it.
+            branch = result.get("branch") if status == "ok" else None
+            current_step_id = _next_step_id(steps_flat, step["id"], branch)
 
             # Crash-recovery: advance the pointer + variables each iteration.
             db.table("automation_flow_runs").update({

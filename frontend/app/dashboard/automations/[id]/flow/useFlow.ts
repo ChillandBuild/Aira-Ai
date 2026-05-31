@@ -178,6 +178,21 @@ function reconcileButtonLanes(
   return next;
 }
 
+// ai_agent lanes are keyed by the outcome string (the LLM emits the outcome, the
+// backend follows branch==outcome). Keep lanes whose outcome still exists; drop the
+// rest. Renaming an outcome resets its lane (outcomes are usually set before building).
+function reconcileOutcomeLanes(
+  branches: Record<string, FlowNode[]>,
+  outcomes: string[] | undefined,
+): Record<string, FlowNode[]> {
+  const live = new Set(outcomes || []);
+  const next: Record<string, FlowNode[]> = {};
+  for (const key of Object.keys(branches)) {
+    if (live.has(key)) next[key] = branches[key];
+  }
+  return next;
+}
+
 // Deep-copy a config's nested collections. Button ids are kept as-is: they are
 // branch labels scoped under their own parent, so a duplicate's lanes (keyed by
 // the same ids in deepCloneNode) stay linked to the copied buttons.
@@ -296,7 +311,12 @@ export function useFlow(flowId: string): FlowState {
         // For interactive nodes, keep child lanes linked to buttons by id:
         // drop lanes whose button was removed; seed nothing for new buttons
         // (lanesOf derives empty lanes from config).
-        branches: node.step_type === "interactive" ? reconcileButtonLanes(node.branches, config.buttons) : node.branches,
+        branches:
+          node.step_type === "interactive"
+            ? reconcileButtonLanes(node.branches, config.buttons)
+            : node.step_type === "ai_agent"
+              ? reconcileOutcomeLanes(node.branches, config.outcomes)
+              : node.branches,
       })),
     );
     markDirty();

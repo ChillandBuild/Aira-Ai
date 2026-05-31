@@ -12,6 +12,11 @@ import {
   TemplateForm,
   WaitForm,
   ConditionForm,
+  UserInputForm,
+  InteractiveForm,
+  HttpApiForm,
+  RandomForm,
+  AgentForm,
 } from "./forms";
 
 interface BlockConfigDrawerProps {
@@ -64,6 +69,16 @@ export default function BlockConfigDrawer({ node, onSave, onClose }: BlockConfig
         return <WaitForm config={config} patch={patch} />;
       case "condition":
         return <ConditionForm config={config} patch={patch} />;
+      case "user_input":
+        return <UserInputForm config={config} patch={patch} />;
+      case "interactive":
+        return <InteractiveForm config={config} patch={patch} />;
+      case "http_api":
+        return <HttpApiForm config={config} patch={patch} />;
+      case "random":
+        return <RandomForm config={config} patch={patch} />;
+      case "ai_agent":
+        return <AgentForm config={config} patch={patch} />;
       default:
         return null;
     }

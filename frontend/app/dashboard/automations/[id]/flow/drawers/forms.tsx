@@ -498,3 +498,123 @@ export function RandomForm({ config, patch }: FormProps) {
     </>
   );
 }
+
+const AGENT_TOOLS: { id: string; label: string; desc: string }[] = [
+  { id: "update_segment", label: "Re-segment lead", desc: "Move the lead to A/B/C/D" },
+  { id: "add_note", label: "Add a note", desc: "Log context for a human" },
+  { id: "assign_to_caller", label: "Assign to caller", desc: "Route to a telecaller" },
+];
+const MAX_OUTCOMES = 5;
+
+export function AgentForm({ config, patch }: FormProps) {
+  const outcomes: string[] = config.outcomes && config.outcomes.length ? config.outcomes : [""];
+  const tools: string[] = config.tools || [];
+
+  const setOutcome = (i: number, v: string) =>
+    patch({ outcomes: outcomes.map((o, idx) => (idx === i ? v : o)) });
+  const addOutcome = () => {
+    if (outcomes.length >= MAX_OUTCOMES) return;
+    patch({ outcomes: [...outcomes, ""] });
+  };
+  const removeOutcome = (i: number) =>
+    patch({ outcomes: outcomes.filter((_, idx) => idx !== i) });
+  const toggleTool = (id: string) =>
+    patch({ tools: tools.includes(id) ? tools.filter((t) => t !== id) : [...tools, id] });
+
+  return (
+    <>
+      <div>
+        <Label>Goal</Label>
+        <textarea
+          className={`${inputClass} min-h-[90px] resize-y`}
+          value={config.goal || ""}
+          placeholder="Qualify the lead, answer their questions, and decide if they're ready to buy."
+          onChange={(e) => patch({ goal: e.target.value })}
+        />
+        <Hint>Describe what the AI should achieve in plain language. It converses until it reaches an outcome.</Hint>
+      </div>
+
+      <div>
+        <Label>Outcomes (each becomes a branch)</Label>
+        <div className="space-y-2">
+          {outcomes.map((o, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input
+                className={inputClass}
+                value={o}
+                placeholder={i === 0 ? "qualified" : "not_interested"}
+                onChange={(e) => setOutcome(i, e.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() => removeOutcome(i)}
+                disabled={outcomes.length <= 1}
+                className="shrink-0 p-2 rounded-lg text-on-surface-muted hover:bg-red-50 hover:text-red-500 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                aria-label="Remove outcome"
+              >
+                <Trash2 size={15} />
+              </button>
+            </div>
+          ))}
+        </div>
+        {outcomes.length < MAX_OUTCOMES && (
+          <button type="button" onClick={addOutcome} className={`${ghostBtnClass} mt-2`}>
+            <Plus size={14} />
+            Add outcome
+          </button>
+        )}
+        <Hint>The AI must end on one of these. Each opens its own branch lane below the block.</Hint>
+      </div>
+
+      <div>
+        <Label>Tools the AI may use</Label>
+        <div className="space-y-1.5">
+          {AGENT_TOOLS.map((t) => (
+            <label key={t.id} className="flex items-start gap-2.5 p-2.5 rounded-xl border border-surface-mid cursor-pointer hover:border-primary/40 transition-colors">
+              <input
+                type="checkbox"
+                checked={tools.includes(t.id)}
+                onChange={() => toggleTool(t.id)}
+                className="mt-0.5 accent-primary"
+              />
+              <span>
+                <span className="block text-xs font-medium text-on-surface">{t.label}</span>
+                <span className="block text-[11px] text-on-surface-muted">{t.desc}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <label className="flex items-center justify-between gap-3 p-2.5 rounded-xl border border-surface-mid">
+        <span>
+          <span className="block text-xs font-medium text-on-surface">Use knowledge base</span>
+          <span className="block text-[11px] text-on-surface-muted">Let the AI answer questions from your KB</span>
+        </span>
+        <input
+          type="checkbox"
+          checked={config.use_knowledge !== false}
+          onChange={(e) => patch({ use_knowledge: e.target.checked })}
+          className="accent-primary w-4 h-4"
+        />
+      </label>
+
+      <div className="grid grid-cols-2 gap-3">
+        <NumberField
+          label="Max turns"
+          value={config.max_turns}
+          placeholder="6"
+          min={1}
+          onChange={(v) => patch({ max_turns: v })}
+        />
+        <TextField
+          label="Save outcome as"
+          value={config.output_var || ""}
+          placeholder="agent_outcome"
+          onChange={(v) => patch({ output_var: v })}
+        />
+      </div>
+      <Hint>Max turns caps the back-and-forth (safety). The chosen outcome is saved as {`{{${config.output_var || "agent_outcome"}}}`}.</Hint>
+    </>
+  );
+}
