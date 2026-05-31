@@ -716,15 +716,62 @@ export const api = {
         method: "POST",
         body: JSON.stringify(data),
       }),
+    delete: (id: string) =>
+      apiFetch<{ success: boolean }>(`/api/v1/todos/${id}`, {
+        method: "DELETE",
+      }),
     update: (id: string, data: { is_completed?: boolean; content?: string }) =>
       apiFetch<Todo>(`/api/v1/todos/${id}`, {
         method: "PATCH",
         body: JSON.stringify(data),
       }),
-    delete: (id: string) =>
-      apiFetch<{ success: boolean }>(`/api/v1/todos/${id}`, {
-        method: "DELETE",
-      }),
+  },
+  ctwaLeads: {
+    campaigns: async () => {
+      const res = await apiFetch<{ data: { id: string; campaign_name: string; platform: string }[] }>(`/api/v1/ctwa-leads/campaigns`);
+      return res.data || [];
+    },
+    list: async (params?: {
+      ad_campaign_id?: string;
+      source?: string;
+      date_from?: string;
+      date_to?: string;
+      page?: number;
+      limit?: number;
+    }) => {
+      const qs = new URLSearchParams();
+      if (params?.ad_campaign_id) qs.set("ad_campaign_id", params.ad_campaign_id);
+      if (params?.source) qs.set("source", params.source);
+      if (params?.date_from) qs.set("date_from", params.date_from);
+      if (params?.date_to) qs.set("date_to", params.date_to);
+      if (params?.page) qs.set("page", String(params.page));
+      if (params?.limit) qs.set("limit", String(params.limit));
+      return apiFetch<{ data: CtwaLead[]; total: number; page: number; limit: number }>(`/api/v1/ctwa-leads/?${qs}`);
+    },
+    exportCsv: async (params?: {
+      ad_campaign_id?: string;
+      source?: string;
+      date_from?: string;
+      date_to?: string;
+    }) => {
+      const qs = new URLSearchParams();
+      if (params?.ad_campaign_id) qs.set("ad_campaign_id", params.ad_campaign_id);
+      if (params?.source) qs.set("source", params.source);
+      if (params?.date_from) qs.set("date_from", params.date_from);
+      if (params?.date_to) qs.set("date_to", params.date_to);
+      const headers = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/ctwa-leads/export?${qs}`, { headers });
+      if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "ctwa_leads_ad_traffic.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    },
   },
 };
 
@@ -745,6 +792,22 @@ export interface HotLeadAlert {
   created_at: string;
   assigned_caller_id: string | null;
   lead: { id: string; name: string | null; phone: string; score: number; segment: string } | null;
+}
+
+export interface CtwaLead {
+  id: string;
+  phone: string;
+  name: string;
+  source: string;
+  channel_label: string;
+  score: number;
+  segment: string;
+  segment_label: string;
+  created_at: string;
+  ad_campaign_id: string | null;
+  campaign_name: string;
+  campaign_platform: string;
+  keyword: string;
 }
 
 export { API_URL };

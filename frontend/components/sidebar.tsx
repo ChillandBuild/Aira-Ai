@@ -7,7 +7,7 @@ import { API_URL, getAuthHeaders } from "@/lib/api";
 import {
   LayoutDashboard, MessageSquare, Users, Settings, Phone,
   BarChart2, Upload, BookOpen, Layers, FileCheck, StickyNote,
-  LogOut, Inbox, Zap, TrendingUp, ChevronDown, ChevronRight, ClipboardList, Tag,
+  LogOut, Inbox, Zap, TrendingUp, ChevronDown, ChevronRight, ClipboardList, Tag, MousePointerClick,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AiraLogo } from "./logo";
@@ -227,6 +227,22 @@ export function Sidebar() {
           >
             <Users size={16} className={pathname.startsWith("/dashboard/leads") ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
             <span>Leads</span>
+          </Link>
+        )}
+
+        {/* TOP LEVEL: CTWA Leads (Click-to-Ad) */}
+        {role === "owner" && waEnabled && (
+          <Link
+            href="/dashboard/ctwa-leads"
+            className={cn(
+              "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-150 group",
+              pathname.startsWith("/dashboard/ctwa-leads")
+                ? "bg-zinc-200/70 text-zinc-950"
+                : "text-zinc-700 hover:bg-zinc-200/40 hover:text-zinc-950"
+            )}
+          >
+            <MousePointerClick size={16} className={pathname.startsWith("/dashboard/ctwa-leads") ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
+            <span>CTWA Leads</span>
           </Link>
         )}
 
