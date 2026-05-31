@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id
@@ -63,12 +63,12 @@ async def _sync_number_to_db(db, tenant_id: str, meta_pid: str, display_name: st
             logger.error(f"Insights fetch failed for {meta_pid} on {day}: {e}")
             continue
 
-        cost_by_cat = insights.get("cost_by_category", {})
-        free_by_type = insights.get("free_by_type", {})
-        paid_by_cat = insights.get("paid_by_category", {})
+        cost_by_cat = _convert_costs(insights.get("cost_by_category", {}))
+        free_by_type = _convert_costs(insights.get("free_by_type", {}))
+        paid_by_cat = _convert_costs(insights.get("paid_by_category", {}))
 
         total_cost_inr = sum(
-            _usd_to_inr(v.get("cost_usd", 0))
+            v.get("cost_inr", 0)
             for v in list(cost_by_cat.values()) + list(free_by_type.values()) + list(paid_by_cat.values())
         )
 
@@ -172,27 +172,68 @@ async def _from_db(db, tenant_id: str, numbers: list, since_iso: str, until_iso:
         snaps = by_number.get(meta_pid, [])
         if not snaps:
             continue
-        latest = snaps[0]
+        latest = snaps[0]  # most recent for quality/tier
+
+        # Aggregate message counts across all snapshots in the range
+        sent = sum(s.get("sent", 0) for s in snaps)
+        delivered = sum(s.get("delivered", 0) for s in snaps)
+        read = sum(s.get("read", 0) for s in snaps)
+        received = sum(s.get("received", 0) for s in snaps)
+
+        # Aggregate costs across all snapshots
+        cost_by_cat: dict = {}
+        free_by_type_agg: dict = {}
+        paid_by_cat: dict = {}
+        for snap in snaps:
+            for cat, data in (snap.get("cost_by_category") or {}).items():
+                entry = cost_by_cat.setdefault(cat, {"conversations": 0, "cost_inr": 0.0})
+                entry["conversations"] += data.get("conversations", 0)
+                entry["cost_inr"] += float(data.get("cost_inr", 0.0))
+            for ft, data in (snap.get("free_by_type") or {}).items():
+                entry = free_by_type_agg.setdefault(ft, {"conversations": 0, "cost_inr": 0.0})
+                entry["conversations"] += data.get("conversations", 0)
+                entry["cost_inr"] += float(data.get("cost_inr", 0.0))
+            for cat, data in (snap.get("paid_by_category") or {}).items():
+                entry = paid_by_cat.setdefault(cat, {"conversations": 0, "cost_inr": 0.0})
+                entry["conversations"] += data.get("conversations", 0)
+                entry["cost_inr"] += float(data.get("cost_inr", 0.0))
+
         number_data = {
             "meta_phone_number_id": meta_pid,
             "display_name": num.get("display_name", ""),
             "number": num.get("number", ""),
             "quality_rating": latest.get("quality_rating", "UNKNOWN"),
             "messaging_tier": latest.get("messaging_tier", 0),
-            "sent": latest.get("sent", 0),
-            "delivered": latest.get("delivered", 0),
-            "read": latest.get("read", 0),
-            "received": latest.get("received", 0),
-            "cost_by_category": latest.get("cost_by_category", {}),
-            "free_by_type": latest.get("free_by_type", {}),
-            "paid_by_category": latest.get("paid_by_category", {}),
+            "sent": sent,
+            "delivered": delivered,
+            "read": read,
+            "received": received,
+            "cost_by_category": cost_by_cat,
+            "free_by_type": free_by_type_agg,
+            "paid_by_category": paid_by_cat,
             "snapshots": snaps,
         }
         results.append(number_data)
-        totals["sent"] += number_data["sent"]
-        totals["delivered"] += number_data["delivered"]
-        totals["read"] += number_data["read"]
-        totals["received"] += number_data["received"]
+        totals["sent"] += sent
+        totals["delivered"] += delivered
+        totals["read"] += read
+        totals["received"] += received
+        for cat in totals["cost_by_category"]:
+            totals["cost_by_category"][cat]["conversations"] += cost_by_cat.get(cat, {}).get("conversations", 0)
+            totals["cost_by_category"][cat]["cost_inr"] += cost_by_cat.get(cat, {}).get("cost_inr", 0.0)
+        for ft in totals["free_by_type"]:
+            totals["free_by_type"][ft]["conversations"] += free_by_type_agg.get(ft, {}).get("conversations", 0)
+            totals["free_by_type"][ft]["cost_inr"] += free_by_type_agg.get(ft, {}).get("cost_inr", 0.0)
+        for cat in totals["paid_by_category"]:
+            totals["paid_by_category"][cat]["conversations"] += paid_by_cat.get(cat, {}).get("conversations", 0)
+            totals["paid_by_category"][cat]["cost_inr"] += paid_by_cat.get(cat, {}).get("cost_inr", 0.0)
+
+    for cat in totals["cost_by_category"]:
+        totals["cost_by_category"][cat]["cost_inr"] = round(totals["cost_by_category"][cat]["cost_inr"], 2)
+    for ft in totals["free_by_type"]:
+        totals["free_by_type"][ft]["cost_inr"] = round(totals["free_by_type"][ft]["cost_inr"], 2)
+    for cat in totals["paid_by_category"]:
+        totals["paid_by_category"][cat]["cost_inr"] = round(totals["paid_by_category"][cat]["cost_inr"], 2)
 
     return {"numbers": results, "totals": totals, "range": {"since": since_iso, "until": until_iso}}
 
@@ -280,9 +321,9 @@ async def _from_meta(db, tenant_id: str, numbers: list, since_iso: str, until_is
             "delivered": insights.get("delivered", 0),
             "read": insights.get("read", 0),
             "received": 0,
-            "cost_by_category": insights.get("cost_by_category", {}),
-            "free_by_type": insights.get("free_by_type", {}),
-            "paid_by_category": insights.get("paid_by_category", {}),
+            "cost_by_category": cost_by_cat,
+            "free_by_type": free_by_type,
+            "paid_by_category": paid_by_cat,
             "total_cost_inr": total_cost_inr,
             "synced_at": datetime.now(timezone.utc).isoformat(),
         }, on_conflict="meta_phone_number_id,snapshot_date").execute()
