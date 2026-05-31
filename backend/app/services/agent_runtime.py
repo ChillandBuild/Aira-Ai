@@ -109,24 +109,53 @@ def _build_system(config: dict, lead_data: dict, kb_context: str) -> str:
     return "\n".join(parts)
 
 
+def _parse_decision(raw: str) -> dict:
+    """Parse a JSON decision. Tolerant of models that wrap JSON in prose: falls back
+    to extracting the first balanced {...} object."""
+    raw = (raw or "").strip()
+    try:
+        return json.loads(raw)
+    except Exception:
+        pass
+    start = raw.find("{")
+    if start == -1:
+        return {}
+    depth = 0
+    for i in range(start, len(raw)):
+        if raw[i] == "{":
+            depth += 1
+        elif raw[i] == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(raw[start:i + 1])
+                except Exception:
+                    return {}
+    return {}
+
+
 async def _decide(history: list[dict]) -> dict:
-    """One LLM decision as validated JSON. Fail-safe: returns {} on any error."""
+    """One LLM decision as validated JSON. Fail-safe: returns {} on any error.
+    Tries json-mode first; on a model/SDK that rejects response_format, retries plain."""
     from app.services.ai_reply import _groq_client, _REPLY_MODEL
     if not _groq_client:
         return {}
-    try:
-        resp = await _groq_client.chat.completions.create(
-            model=_REPLY_MODEL,
-            messages=history,
-            temperature=0.3,
-            max_tokens=_DECIDE_MAX_TOKENS,
-            response_format={"type": "json_object"},
-        )
-        raw = resp.choices[0].message.content.strip()
-        return json.loads(raw)
-    except Exception as e:
-        logger.warning(f"agent decide failed: {e}")
-        return {}
+    for use_json_mode in (True, False):
+        try:
+            kwargs = {
+                "model": _REPLY_MODEL,
+                "messages": history,
+                "temperature": 0.3,
+                "max_tokens": _DECIDE_MAX_TOKENS,
+            }
+            if use_json_mode:
+                kwargs["response_format"] = {"type": "json_object"}
+            resp = await _groq_client.chat.completions.create(**kwargs)
+            return _parse_decision(resp.choices[0].message.content)
+        except Exception as e:
+            logger.warning(f"agent decide failed (json_mode={use_json_mode}): {e}")
+            continue
+    return {}
 
 
 def _fallback_outcome(config: dict) -> str:
