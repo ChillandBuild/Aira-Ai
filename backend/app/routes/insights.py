@@ -423,10 +423,9 @@ async def meta_activity_log(
     waba_id = _get_setting_value(db, tenant_id, "meta_waba_id") or _get_setting_value(db, tenant_id, "whatsapp_business_account_id")
 
     if not access_token or not waba_id:
-        return {"logs": [], "paging": None, "error": "Meta credentials not configured (need meta_access_token and meta_waba_id)"}
+        raise HTTPException(status_code=400, detail="Meta credentials not configured (need meta_access_token and meta_waba_id)")
 
-    params = {
-        "access_token": access_token,
+    params: dict = {
         "fields": "id,actor_id,category,event_type,timestamp",
         "limit": limit,
     }
@@ -438,6 +437,7 @@ async def meta_activity_log(
             resp = await client.get(
                 f"https://graph.facebook.com/v21.0/{waba_id}/activities",
                 params=params,
+                headers={"Authorization": f"Bearer {access_token}"},
             )
         data = resp.json()
 

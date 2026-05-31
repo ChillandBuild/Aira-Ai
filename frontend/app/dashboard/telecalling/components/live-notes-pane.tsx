@@ -1,6 +1,6 @@
 "use client";
 import { toast } from "sonner";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { X, FileText, CalendarClock } from "lucide-react";
 import type { ActiveCallCtx } from "../types";
 import { createCallback, saveNote } from "../lib/notes-api";
@@ -31,14 +31,24 @@ export default function LiveNotesPane({ ctx, onClose }: Props) {
   const [savedFlash, setSavedFlash] = useState(false);
   const [showCallbackPicker, setShowCallbackPicker] = useState(false);
   const [callbackAt, setCallbackAt] = useState("");
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup timeout on unmount to avoid stale state updates
+  useEffect(() => {
+    return () => {
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    };
+  }, []);
 
   const canSave = !!ctx.leadId && (content.trim().length > 0 || selectedTags.length > 0);
 
   function toggleTag(tag: string) {
+    const isSelected = selectedTags.includes(tag);
     setSelectedTags((prev) =>
       prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
     );
-    if (CALLBACK_TAGS.has(tag)) {
+    // Only open callback picker when SELECTING a callback tag, not deselecting
+    if (CALLBACK_TAGS.has(tag) && !isSelected) {
       setShowCallbackPicker(true);
     }
   }
@@ -57,7 +67,7 @@ export default function LiveNotesPane({ ctx, onClose }: Props) {
       setCallbackAt("");
       setShowCallbackPicker(false);
       setSavedFlash(true);
-      setTimeout(() => {
+      flashTimerRef.current = setTimeout(() => {
         setSavedFlash(false);
         onClose();
       }, 1200);

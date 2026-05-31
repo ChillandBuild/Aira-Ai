@@ -368,11 +368,7 @@ async def submit_template(
         media_format = header_media_type.upper()
         header_component: dict = {"type": "HEADER", "format": media_format}
         if header_media_url:
-            # Add example for media approval
-            if media_format == "LOCATION":
-                header_component["example"] = {"header_handle": [header_media_url]}
-            else:
-                header_component["example"] = {"header_handle": [header_media_url]}
+            header_component["example"] = {"header_handle": [header_media_url]}
         components.append(header_component)
     elif header_text and header_text.strip():
         # Text header
@@ -535,7 +531,8 @@ def _iso_to_unix(iso_str: Optional[str]) -> Optional[int]:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return int(dt.timestamp())
-    except Exception:
+    except Exception as e:
+        logger.warning(f"_iso_to_unix: failed to parse '{iso_str}': {e}")
         return None
 
 

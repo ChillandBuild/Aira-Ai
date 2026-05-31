@@ -102,6 +102,8 @@ async def create_lead_note(lead_id: UUID, payload: CreateNote, tenant_id: str = 
             result = db.table("lead_notes").insert(insert_data).execute()
         else:
             raise
+    if not result.data:
+        raise HTTPException(status_code=500, detail="Note created but no data returned")
     return result.data[0]
 
 

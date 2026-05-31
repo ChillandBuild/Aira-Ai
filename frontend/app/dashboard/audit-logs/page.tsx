@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { RefreshCw, Clock, User, Tag, Activity, AlertCircle, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -61,6 +61,19 @@ export default function AuditLogsPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!showCategoryDropdown) return;
+    function handleClick(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowCategoryDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showCategoryDropdown]);
 
   const fetchLogs = useCallback(async (cursor?: string, append = false) => {
     if (!append) setLoading(true);
@@ -113,7 +126,10 @@ export default function AuditLogsPage() {
     setSyncing(true);
     await fetchLogs(undefined, false);
     setSyncing(false);
-    toast.success("Activity log refreshed from Meta");
+    // Only show success if no error was set during fetch
+    if (!error) {
+      toast.success("Activity log refreshed from Meta");
+    }
   }
 
   function handleLoadMore() {
@@ -154,7 +170,7 @@ export default function AuditLogsPage() {
 
             <div className="flex items-center gap-2">
               {/* Category filter */}
-              <div className="relative">
+              <div className="relative" ref={dropdownRef}>
                 <button
                   onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface-low border border-surface-mid font-label text-xs text-on-surface hover:bg-surface-mid transition-colors"
