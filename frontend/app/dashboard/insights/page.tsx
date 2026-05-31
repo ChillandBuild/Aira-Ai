@@ -470,7 +470,15 @@ export default function InsightsPage() {
       if (res.ok) {
         const json = await res.json();
         setLastSynced(new Date().toISOString());
-        toast.success(`Synced ${json.total} number(s) from Meta`);
+        if (json.total === 0) {
+          const errMsg = Array.isArray(json.errors) && json.errors.length > 0
+            ? (typeof json.errors[0] === "string" ? json.errors[0] : json.errors[0]?.error || "No phone numbers configured")
+            : "No phone numbers found – check Meta settings";
+          toast.error(errMsg);
+        } else {
+          const daysStr = Object.values(json.days_fetched as Record<string, number>).reduce((a: number, b: number) => a + b, 0);
+          toast.success(`Synced ${json.total} number(s) · ${daysStr} days of data from Meta`);
+        }
         await fetchInsights();
         await fetchTrends(trendsRange);
       } else {

@@ -39,9 +39,10 @@ def _convert_costs(obj: dict) -> dict:
     return {k: {"conversations": v["conversations"], "cost_inr": _usd_to_inr(v["cost_usd"])} for k, v in obj.items()}
 
 
-async def _sync_number_to_db(db, tenant_id: str, meta_pid: str, display_name: str, number: str, days: int = 30):
+async def _sync_number_to_db(db, tenant_id: str, meta_pid: str, display_name: str, number: str, days: int = 30) -> int:
     """Fetch insights from Meta for the last N days and upsert snapshots into DB.
     Makes 2 API calls for the full range instead of N separate calls.
+    Returns the number of days that had non-zero data from Meta.
     """
     now = datetime.now(timezone.utc)
     until_date = now.date()
@@ -56,7 +57,7 @@ async def _sync_number_to_db(db, tenant_id: str, meta_pid: str, display_name: st
         since_date_str=since_date.isoformat(),
         until_date_str=until_date.isoformat(),
     )
-    logger.info("Bulk sync for %s: got %d days of data", meta_pid, len(per_day))
+    logger.info("Bulk sync for %s: got %d days with API data (out of %d requested)", meta_pid, len(per_day), days)
 
     for day_offset in range(days):
         day = since_date + timedelta(days=day_offset)
@@ -93,6 +94,8 @@ async def _sync_number_to_db(db, tenant_id: str, meta_pid: str, display_name: st
         db.table("whatsapp_insights_snapshots").upsert(
             snapshot, on_conflict="meta_phone_number_id,snapshot_date"
         ).execute()
+
+    return len(per_day)
 
 
 @router.get("/whatsapp")
@@ -368,21 +371,26 @@ async def sync_insights(tenant_id: str = Depends(get_tenant_id)):
                 "meta_phone_number_id": meta_pid,
             }]
 
+    if not numbers:
+        return {"synced": [], "errors": ["No phone numbers found. Check phone_numbers table or meta_phone_number_id in settings."], "total": 0, "days_fetched": {}}
+
     synced = []
     errors = []
+    days_fetched: dict = {}
 
     for num in numbers:
         meta_pid = num.get("meta_phone_number_id")
         if not meta_pid:
             continue
         try:
-            await _sync_number_to_db(db, tenant_id, meta_pid, num.get("display_name", ""), num.get("number", ""))
+            count = await _sync_number_to_db(db, tenant_id, meta_pid, num.get("display_name", ""), num.get("number", ""))
             synced.append(meta_pid)
+            days_fetched[meta_pid] = count
         except Exception as e:
             logger.error(f"Sync failed for {meta_pid}: {e}")
             errors.append({"meta_phone_number_id": meta_pid, "error": str(e)})
 
-    return {"synced": synced, "errors": errors, "total": len(synced)}
+    return {"synced": synced, "errors": errors, "total": len(synced), "days_fetched": days_fetched}
 
 
 @router.get("/trends")
@@ -454,6 +462,41 @@ async def trends_insights(
             d["free_by_type"][ftype]["cost_inr"] = round(d["free_by_type"][ftype]["cost_inr"], 2)
 
     return {"daily": trend_list, "range": {"since": since, "until": until}}
+
+
+@router.get("/debug")
+async def debug_insights_config(tenant_id: str = Depends(get_tenant_id)):
+    """Return configuration state and recent snapshot count to diagnose sync issues."""
+    db = get_supabase()
+
+    phone_number_id = _get_setting_value(db, tenant_id, "meta_phone_number_id")
+    waba_id = _get_setting_value(db, tenant_id, "meta_waba_id")
+    access_token = _get_setting_value(db, tenant_id, "meta_access_token")
+
+    numbers_result = db.table("phone_numbers").select("id,number,meta_phone_number_id").eq("tenant_id", tenant_id).neq("status", "archived").execute()
+    phone_numbers_rows = numbers_result.data or []
+
+    # Count snapshots by date range
+    from datetime import date as _date
+    today = datetime.now(timezone.utc).date().isoformat()
+    week_ago = (datetime.now(timezone.utc).date() - timedelta(days=6)).isoformat()
+    snap_result = db.table("whatsapp_insights_snapshots").select("snapshot_date,meta_phone_number_id,sent,delivered").eq("tenant_id", tenant_id).gte("snapshot_date", week_ago).lte("snapshot_date", today).execute()
+    snaps = snap_result.data or []
+
+    return {
+        "config": {
+            "meta_phone_number_id": phone_number_id or "NOT SET",
+            "meta_waba_id": waba_id or "NOT SET",
+            "meta_access_token": "SET" if access_token else "NOT SET",
+        },
+        "phone_numbers_table": [{"number": n.get("number"), "meta_phone_number_id": n.get("meta_phone_number_id")} for n in phone_numbers_rows],
+        "snapshots_last_7d": {
+            "count": len(snaps),
+            "by_date": sorted(set(s["snapshot_date"] for s in snaps)),
+            "total_sent": sum(s.get("sent", 0) for s in snaps),
+            "total_delivered": sum(s.get("delivered", 0) for s in snaps),
+        },
+    }
 
 
 @router.get("/activity-log")
