@@ -773,6 +773,41 @@ async def generate_reply(
         except Exception as e:
             logger.error(f"Scoring update failed for lead {lead_id}: {e}")
 
+    # Step 5b: Update per-tag interest if this lead recently received a tagged broadcast
+    try:
+        from datetime import timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        tagged_rows = (
+            db.table("broadcast_recipients")
+            .select("tag_id")
+            .eq("lead_id", str(lead_id))
+            .not_.is_("tag_id", "null")
+            .gte("created_at", cutoff)
+            .execute()
+        )
+        seen_tag_ids: set[str] = set()
+        for tr in (tagged_rows.data or []):
+            tid = tr.get("tag_id")
+            if not tid or tid in seen_tag_ids:
+                continue
+            seen_tag_ids.add(tid)
+            hot = 1 if new_segment == "A" else 0
+            warm = 1 if new_segment == "B" else 0
+            cold = 1 if new_segment in ("C", "D") else 0
+            db.table("lead_tag_interest").upsert({
+                "tenant_id": tenant_id,
+                "lead_id": str(lead_id),
+                "tag_id": tid,
+                "hot": hot,
+                "warm": warm,
+                "cold": cold,
+                "last_seen": datetime.now(timezone.utc).isoformat(),
+                "broadcast_count": 1,
+            }, on_conflict="tenant_id,lead_id,tag_id").execute()
+            logger.info(f"Tag interest updated: lead {lead_id} tag {tid} segment {new_segment}")
+    except Exception as tag_err:
+        logger.warning(f"Tag interest update failed for lead {lead_id}: {tag_err}")
+
     # Step 6: Fire inbox escalation — trigger-based, no segment gate
     active_triggers = [
         t for t in _TRIGGER_PRIORITY

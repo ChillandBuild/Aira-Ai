@@ -36,6 +36,7 @@ async def execute_broadcast(row: dict) -> dict:
     template_name = row["template_name"]
     variable_mapping: list[str] = row.get("variable_mapping") or []
     opt_in_source = row.get("opt_in_source") or ""
+    tag_id: str | None = row.get("tag_id")
 
     db = get_supabase()
 
@@ -116,11 +117,21 @@ async def execute_broadcast(row: dict) -> dict:
         sent = 0
         failed = 0
         broadcast_id = row_id  # reuse scheduled_broadcast id as broadcast_id
+        recipient_rows = []
 
         for lead in leads_raw:
             phone = _normalize_phone(lead.get("phone", ""))
             if not phone or phone in opted_out_phones or phone in suppressed_phones:
                 failed += 1
+                recipient_rows.append({
+                    "tenant_id": tenant_id,
+                    "broadcast_id": broadcast_id,
+                    "lead_id": None,
+                    "phone": phone,
+                    "name": _clean_text(lead.get("name")),
+                    "send_status": "failed",
+                    "tag_id": tag_id,
+                })
                 continue
 
             lead_id = phone_to_lead_id.get(phone)
@@ -151,6 +162,15 @@ async def execute_broadcast(row: dict) -> dict:
                     tenant_id=tenant_id,
                 )
                 sent += 1
+                recipient_rows.append({
+                    "tenant_id": tenant_id,
+                    "broadcast_id": broadcast_id,
+                    "lead_id": lead_id,
+                    "phone": phone,
+                    "name": lead_name,
+                    "send_status": "sent",
+                    "tag_id": tag_id,
+                })
 
                 if lead_id:
                     try:
@@ -172,6 +192,24 @@ async def execute_broadcast(row: dict) -> dict:
             except Exception as e:
                 logger.error(f"Scheduled broadcast send failed for {phone}: {e}")
                 failed += 1
+                recipient_rows.append({
+                    "tenant_id": tenant_id,
+                    "broadcast_id": broadcast_id,
+                    "lead_id": lead_id,
+                    "phone": phone,
+                    "name": lead_name,
+                    "send_status": "failed",
+                    "tag_id": tag_id,
+                })
+
+        # Persist broadcast_recipients
+        if recipient_rows:
+            for i in range(0, len(recipient_rows), 100):
+                batch = recipient_rows[i:i+100]
+                try:
+                    db.table("broadcast_recipients").insert(batch).execute()
+                except Exception as br_err:
+                    logger.error(f"broadcast_recipients insert failed: {br_err}")
 
         if sent > 0:
             await increment_send_count(best_number["id"], delta=sent)

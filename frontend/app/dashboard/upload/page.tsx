@@ -140,6 +140,10 @@ export default function UploadPage() {
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templatesError, setTemplatesError] = useState(false);
 
+  const [tags, setTags] = useState<{ id: string; name: string; color: string }[]>([]);
+  const [tagsLoading, setTagsLoading] = useState(false);
+  const [selectedTag, setSelectedTag] = useState("");
+
   const [primaryNumber, setPrimaryNumber] = useState<{ number: string; display_name: string } | null>(null);
   const [primaryNumberLoading, setPrimaryNumberLoading] = useState(false);
 
@@ -286,6 +290,19 @@ export default function UploadPage() {
         });
       }
 
+      if (tags.length === 0 && !tagsLoading) {
+        setTagsLoading(true);
+        getAuthHeaders().then(auth => {
+          fetch(`${API_URL}/api/v1/broadcast-tags`, { headers: auth })
+            .then(r => r.json())
+            .then((res: { data: { id: string; name: string; color: string }[] }) => {
+              setTags(res.data || []);
+            })
+            .catch(() => {})
+            .finally(() => setTagsLoading(false));
+        });
+      }
+
       if (!primaryNumber && !primaryNumberLoading) {
         setPrimaryNumberLoading(true);
         getAuthHeaders().then(auth => {
@@ -406,6 +423,7 @@ export default function UploadPage() {
         csv_file_url: csvFileUrl,
         csv_file_name: csvFileName,
         variable_mapping: variableMapping.filter(Boolean),
+        tag_id: selectedTag || undefined,
       };
 
       const auth = await getAuthHeaders();
@@ -752,6 +770,34 @@ export default function UploadPage() {
                     {!templatesLoading && !templatesError && templates.length === 0 && (
                       <p className="font-label text-xs text-amber-600 mt-2 font-semibold">
                         No approved templates yet. <Link href="/dashboard/templates" className="underline">Create one →</Link>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* ── Broadcast Tag ─────────────────────────────────────── */}
+                  <div>
+                    <label htmlFor="tag-select" className="block font-label text-xs font-bold text-on-surface-muted uppercase tracking-wider mb-2">
+                      Broadcast Tag <span className="normal-case font-normal text-on-surface-muted">(optional)</span>
+                    </label>
+                    <select
+                      id="tag-select"
+                      value={selectedTag}
+                      onChange={(e) => setSelectedTag(e.target.value)}
+                      className={inputCls}
+                    >
+                      <option value="">No tag — skip interest tracking</option>
+                      {tags.map(t => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                    {tagsLoading && (
+                      <p className="font-label text-xs text-on-surface-muted mt-2">Loading tags…</p>
+                    )}
+                    {!tagsLoading && tags.length === 0 && (
+                      <p className="font-label text-xs text-on-surface-muted mt-2">
+                        No tags yet. <Link href="/dashboard/broadcast-tags" className="underline text-violet-600">Create one →</Link>
                       </p>
                     )}
                   </div>

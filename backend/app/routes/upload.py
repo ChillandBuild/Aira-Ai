@@ -300,6 +300,7 @@ class BulkSendRequest(BaseModel):
     csv_file_url: Optional[str] = None
     csv_file_name: Optional[str] = None
     variable_mapping: list[str] = []  # ordered CSV column names for {{1}}, {{2}}, ...
+    tag_id: Optional[str] = None  # broadcast tag for per-product interest tracking
 
 
 @router.post("/parse")
@@ -579,6 +580,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 "phone": phone,
                 "name": lead_name,
                 "send_status": "opted_out_skip",
+                "tag_id": body.tag_id,
             }
             if _has_fail_reason:
                 row["fail_reason"] = "opted_out"
@@ -614,6 +616,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 "phone": phone,
                 "name": lead_name,
                 "send_status": "sent",
+                "tag_id": body.tag_id,
             })
 
             meta_msg_id: str | None = None
@@ -648,6 +651,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 "phone": phone,
                 "name": lead_name,
                 "send_status": "failed",
+                "tag_id": body.tag_id,
             }
             if _has_fail_reason:
                 row["fail_reason"] = fail_reason
@@ -665,6 +669,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             "phone": raw_phone,
             "name": _clean_text(inv_lead.name),
             "send_status": "failed",
+            "tag_id": body.tag_id,
         }
         if _has_fail_reason:
             row["fail_reason"] = "invalid_number"
@@ -686,6 +691,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             "phone": phone,
             "name": lead_name,
             "send_status": "rejected",
+            "tag_id": body.tag_id,
         }
         if _has_fail_reason:
             row["fail_reason"] = "opt_in_source_missing"
@@ -1223,3 +1229,140 @@ async def refresh_broadcast_metrics(tenant_id: str = Depends(get_tenant_id)):
     }, on_conflict="tenant_id,key").execute()
     
     return {"refreshed": refreshed_count}
+
+
+# ─── Tag-based CSV downloads ─────────────────────────────────────────────────
+
+@router.get("/tag-csv")
+async def download_tag_csv(
+    tag_id: str = Query(..., description="Tag UUID to download CSV for"),
+    hot_only: bool = Query(False, description="Only include leads where HOT=1"),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    """Download per-tag interest CSV: name, phone, broadcast_id, HOT, WARM, COLD."""
+    db = get_supabase()
+
+    query = (
+        db.table("lead_tag_interest")
+        .select("lead_id, hot, warm, cold, last_seen, broadcast_count")
+        .eq("tenant_id", tenant_id)
+        .eq("tag_id", tag_id)
+    )
+    if hot_only:
+        query = query.eq("hot", 1)
+
+    rows = query.execute()
+    interest_map: dict[str, dict] = {}
+    for r in (rows.data or []):
+        interest_map[r["lead_id"]] = r
+
+    if not interest_map:
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "From Broadcast ID", "HOT", "WARM", "COLD"])
+        writer.writeheader()
+        return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=tag_no_data.csv"})
+
+    lead_ids = list(interest_map.keys())
+    leads = db.table("leads").select("id,name,phone").in_("id", lead_ids).execute()
+    lead_map = {l["id"]: l for l in (leads.data or [])}
+
+    # Get broadcast_id from recipients for each lead+tag combo
+    br_rows = (
+        db.table("broadcast_recipients")
+        .select("lead_id, broadcast_id")
+        .eq("tenant_id", tenant_id)
+        .eq("tag_id", tag_id)
+        .in_("lead_id", lead_ids)
+        .execute()
+    )
+    br_map: dict[str, str] = {}
+    for br in (br_rows.data or []):
+        br_map[br["lead_id"]] = br.get("broadcast_id", "")
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "From Broadcast ID", "HOT", "WARM", "COLD"])
+    writer.writeheader()
+    for lid, interest in interest_map.items():
+        lead = lead_map.get(lid, {})
+        writer.writerow({
+            "Name": lead.get("name", ""),
+            "Phone": lead.get("phone", ""),
+            "From Broadcast ID": br_map.get(lid, ""),
+            "HOT": interest.get("hot", 0),
+            "WARM": interest.get("warm", 0),
+            "COLD": interest.get("cold", 0),
+        })
+
+    tag_name = "tag"
+    try:
+        tag_row = db.table("broadcast_tags").select("name").eq("id", tag_id).maybe_single().execute()
+        if tag_row and tag_row.data:
+            tag_name = tag_row.data.get("name", "tag")
+    except Exception:
+        pass
+
+    safe_tag = tag_name.replace(" ", "_").lower()
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=tag_{safe_tag}_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"},
+    )
+
+
+@router.get("/all-tags-csv")
+async def download_all_tags_csv(tenant_id: str = Depends(get_tenant_id)):
+    """Download all-tags interest CSV (tall format): name, phone, tag, broadcast_id, HOT, WARM, COLD."""
+    db = get_supabase()
+
+    rows = db.table("lead_tag_interest").select("*").eq("tenant_id", tenant_id).execute()
+    interests = rows.data or []
+
+    if not interests:
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "Tag", "From Broadcast ID", "HOT", "WARM", "COLD"])
+        writer.writeheader()
+        return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=all_tags_no_data.csv"})
+
+    lead_ids = list({r["lead_id"] for r in interests})
+    tag_ids = list({r["tag_id"] for r in interests})
+
+    leads = db.table("leads").select("id,name,phone").in_("id", lead_ids).execute()
+    lead_map = {l["id"]: l for l in (leads.data or [])}
+
+    tags = db.table("broadcast_tags").select("id,name").in_("id", tag_ids).execute()
+    tag_map = {t["id"]: t.get("name", "unknown") for t in (tags.data or [])}
+
+    br_rows = (
+        db.table("broadcast_recipients")
+        .select("lead_id, tag_id, broadcast_id")
+        .eq("tenant_id", tenant_id)
+        .in_("tag_id", tag_ids)
+        .in_("lead_id", lead_ids)
+        .execute()
+    )
+    br_map: dict[tuple, str] = {}
+    for br in (br_rows.data or []):
+        br_map[(br["lead_id"], br["tag_id"])] = br.get("broadcast_id", "")
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "Tag", "From Broadcast ID", "HOT", "WARM", "COLD"])
+    writer.writeheader()
+    for r in interests:
+        lead = lead_map.get(r["lead_id"], {})
+        tag_name = tag_map.get(r["tag_id"], "unknown")
+        bid = br_map.get((r["lead_id"], r["tag_id"]), "")
+        writer.writerow({
+            "Name": lead.get("name", ""),
+            "Phone": lead.get("phone", ""),
+            "Tag": tag_name,
+            "From Broadcast ID": bid,
+            "HOT": r.get("hot", 0),
+            "WARM": r.get("warm", 0),
+            "COLD": r.get("cold", 0),
+        })
+
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=all_tags_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"},
+    )

@@ -7,7 +7,7 @@ import { API_URL, getAuthHeaders } from "@/lib/api";
 import {
   LayoutDashboard, MessageSquare, Users, Settings, Phone,
   BarChart2, Upload, BookOpen, Layers, FileCheck, StickyNote,
-  LogOut, Inbox, Zap, TrendingUp, ChevronDown, ChevronRight, ClipboardList,
+  LogOut, Inbox, Zap, TrendingUp, ChevronDown, ChevronRight, ClipboardList, Tag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AiraLogo } from "./logo";
@@ -25,6 +25,7 @@ type NavItem = {
 const CHANNELS_ITEMS: NavItem[] = [
   { href: "/dashboard/channels", icon: Settings, label: "Connect Channels" },
   { href: "/dashboard/upload", icon: Upload, label: "Upload", feature: "whatsapp" },
+  { href: "/dashboard/broadcast-tags", icon: Tag, label: "Broadcast Tags", feature: "whatsapp" },
   { href: "/dashboard/templates", icon: FileCheck, label: "Templates", feature: "whatsapp" },
   { href: "/dashboard/numbers", icon: Layers, label: "Numbers Pool", feature: "whatsapp" },
   { href: "/dashboard/insights", icon: TrendingUp, label: "Insights", feature: "whatsapp" },
