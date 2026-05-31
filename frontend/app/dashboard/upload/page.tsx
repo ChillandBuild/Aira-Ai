@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Upload, Check, AlertTriangle, ChevronRight, RotateCcw, MessageSquare, Clock, Send, Download, CheckCircle2, Eye, XCircle, Calendar, Phone, Search, Smartphone, ShieldCheck, FileSpreadsheet, PlayCircle, MapPin, Copy, Globe, Image as ImageIcon, FileText } from "lucide-react";
+import { Upload, Check, AlertTriangle, ChevronRight, RotateCcw, MessageSquare, Clock, Send, Download, CheckCircle2, Eye, XCircle, Calendar, Phone, Search, Smartphone, ShieldCheck, FileSpreadsheet, PlayCircle, MapPin, Copy, Globe, Image as ImageIcon, FileText, Tag } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -45,6 +45,7 @@ type BroadcastHistoryItem = {
   number_used: string;
   csv_file_url?: string;
   csv_file_name?: string;
+  tag_id?: string;
 };
 
 type ScheduleType = "now" | "scheduled" | "drip";
@@ -217,6 +218,28 @@ export default function UploadPage() {
       window.URL.revokeObjectURL(url);
     } catch {
       toast.error("Failed to download CSV");
+    }
+  }
+
+  async function downloadBroadcastTagCsv(broadcastId: string, tagId: string) {
+    try {
+      const auth = await getAuthHeaders();
+      const res = await fetch(
+        `${API_URL}/api/v1/upload/broadcast-tag-csv?broadcast_id=${broadcastId}&tag_id=${tagId}`,
+        { headers: auth }
+      );
+      if (!res.ok) throw new Error("Download failed");
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `broadcast_${broadcastId.slice(0, 8)}_interests.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Failed to download interest CSV");
     }
   }
 
@@ -1417,7 +1440,7 @@ export default function UploadPage() {
                   
                   {/* Failed CSV Download */}
                   {item.failed > 0 && item.broadcast_id ? (
-                    <button 
+                    <button
                       onClick={() => downloadFailedCsv(item.broadcast_id!)}
                       className="inline-flex items-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg font-label text-xs font-semibold transition-colors border border-red-200"
                     >
@@ -1430,6 +1453,17 @@ export default function UploadPage() {
                       No failures detected
                     </span>
                   ) : null}
+
+                  {/* Interest CSV Download */}
+                  {item.tag_id && item.broadcast_id && (
+                    <button
+                      onClick={() => downloadBroadcastTagCsv(item.broadcast_id!, item.tag_id!)}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-violet-50 hover:bg-violet-100 text-violet-700 rounded-lg font-label text-xs font-semibold transition-colors border border-violet-200"
+                    >
+                      <Tag size={14} />
+                      Download Interest CSV
+                    </button>
+                  )}
                 </div>
                 
                 {/* Metrics Grid - 4 Equal Columns */}

@@ -795,6 +795,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             "number_used": best_number.get("number"),
             "csv_file_url": body.csv_file_url,
             "csv_file_name": body.csv_file_name,
+            "tag_id": body.tag_id,
         })
         history = history[:50]
         new_value = json.dumps(history)
@@ -1313,9 +1314,6 @@ async def download_tag_csv(
             "Name": lead.get("name", ""),
             "Phone": lead.get("phone", ""),
             "From Broadcast ID": ",".join(br_map.get(lid, [])),
-            "Name": lead.get("name", ""),
-            "Phone": lead.get("phone", ""),
-            "From Broadcast ID": br_map.get(lid, ""),
             "HOT": interest.get("hot", 0),
             "WARM": interest.get("warm", 0),
             "COLD": interest.get("cold", 0),
@@ -1396,4 +1394,84 @@ async def download_all_tags_csv(tenant_id: str = Depends(get_tenant_id)):
         content=output.getvalue(),
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=all_tags_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"},
+    )
+
+
+def _segment_to_flags(segment: str | None) -> tuple[int, int, int]:
+    """Return (HOT, WARM, COLD) flags. D (disqualified) → all zero."""
+    s = (segment or "C").upper()
+    if s == "A":
+        return 1, 0, 0
+    if s == "B":
+        return 0, 1, 0
+    if s == "C":
+        return 0, 0, 1
+    return 0, 0, 0  # D or unknown
+
+
+@router.get("/broadcast-tag-csv")
+async def download_broadcast_tag_csv(
+    broadcast_id: str = Query(..., description="Broadcast UUID"),
+    tag_id: str = Query(..., description="Tag UUID (used for filename)"),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    """Per-broadcast interest CSV: every recipient with their current segment as HOT/WARM/COLD."""
+    db = get_supabase()
+
+    recipients_resp = (
+        db.table("broadcast_recipients")
+        .select("lead_id, phone, name")
+        .eq("tenant_id", tenant_id)
+        .eq("broadcast_id", broadcast_id)
+        .execute()
+    )
+    recipients = recipients_resp.data or []
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "From Broadcast ID", "HOT", "WARM", "COLD"])
+    writer.writeheader()
+
+    if not recipients:
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=broadcast_{broadcast_id[:8]}_interests.csv"},
+        )
+
+    lead_ids = list({r["lead_id"] for r in recipients if r.get("lead_id")})
+    segment_map: dict[str, str] = {}
+    if lead_ids:
+        leads_resp = db.table("leads").select("id,segment").in_("id", lead_ids).execute()
+        segment_map = {l["id"]: l.get("segment") or "C" for l in (leads_resp.data or [])}
+
+    seen: set[str] = set()
+    for r in recipients:
+        lead_id = r.get("lead_id") or ""
+        if lead_id in seen:
+            continue
+        seen.add(lead_id)
+        segment = segment_map.get(lead_id, "C")
+        hot, warm, cold = _segment_to_flags(segment)
+        writer.writerow({
+            "Name": r.get("name") or "",
+            "Phone": r.get("phone") or "",
+            "From Broadcast ID": broadcast_id,
+            "HOT": hot,
+            "WARM": warm,
+            "COLD": cold,
+        })
+
+    tag_name = "tag"
+    try:
+        tag_row = db.table("broadcast_tags").select("name").eq("id", tag_id).maybe_single().execute()
+        if tag_row and tag_row.data:
+            tag_name = tag_row.data.get("name", "tag")
+    except Exception:
+        pass
+
+    safe_tag = tag_name.replace(" ", "_").lower()
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=broadcast_{broadcast_id[:8]}_{safe_tag}_interests.csv"},
     )
