@@ -128,6 +128,8 @@ def _validate(trigger_type: str, trigger_config: dict, steps: list) -> list[str]
             outs = cfg.get("outcomes") or []
             if not (1 <= len(outs) <= 5) or any(not str(o).strip() for o in outs):
                 errors.append(f"Step {i}: ai_agent requires 1..5 non-empty outcomes")
+            elif len(outs) != len(set(outs)):
+                errors.append(f"Step {i}: ai_agent outcomes must be unique")
             if not cfg.get("output_var"):
                 errors.append(f"Step {i}: ai_agent requires output_var")
             mt = cfg.get("max_turns", 6)
@@ -136,8 +138,9 @@ def _validate(trigger_type: str, trigger_config: dict, steps: list) -> list[str]
                     errors.append(f"Step {i}: ai_agent max_turns must be 1..20")
             except (TypeError, ValueError):
                 errors.append(f"Step {i}: ai_agent max_turns must be numeric")
+            from app.services.agent_runtime import VALID_TOOLS
             for t in (cfg.get("tools") or []):
-                if t not in ("update_segment", "add_note", "assign_to_caller"):
+                if t not in VALID_TOOLS:
                     errors.append(f"Step {i}: ai_agent unknown tool {t}")
         if step.get("step_type") == "interactive":
             cfg = step.get("config", {})

@@ -718,13 +718,16 @@ async def _execute_step(
     # outcome→branch lane) using safe tools. Pauses as wait_reply between turns; on
     # finish returns status=ok + branch=outcome so _drive_run follows that lane.
     if step_type == "ai_agent":
+        from app.services import agent_runtime
         try:
-            from app.services import agent_runtime
             return await agent_runtime.run_agent(step, lead_data, message, db, context)
         except Exception as e:
+            # Never strand the flow: route to a fallback outcome lane on failure.
             logger.error(f"automation ai_agent failed for lead {lead_id}: {e}")
             _bump_counter(db, step["id"], "error_count")
-            return {"status": "error", "detail": str(e)}
+            fb = agent_runtime._fallback_outcome(config)
+            context.setdefault("variables", {})[config.get("output_var") or "agent_outcome"] = fb
+            return {"status": "ok", "branch": fb, "detail": f"agent error → {fb}"}
 
     return {"status": "error", "detail": f"unknown step_type: {step_type}"}
 
