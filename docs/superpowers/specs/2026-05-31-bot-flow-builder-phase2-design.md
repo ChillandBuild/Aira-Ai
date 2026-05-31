@@ -210,6 +210,20 @@ plan it before building.
   constraint + status flip to `running` before advancing (optimistic guard).
 - **LOW** — Interactive on non-WhatsApp channels degrades to numbered text menu.
 
+## Known residual risks (post code+security review)
+
+- **DNS rebinding on http_api (residual, accepted).** `_is_url_safe` resolves at guard
+  time; httpx re-resolves at connect time, so a hostile DNS could flip a public IP to a
+  private one between the two. Not closable in app code alone — mitigate at infra level
+  (egress firewall blocking RFC1918/link-local, or an IP-pinning transport). `follow_
+  redirects=False`, the `is_global` gate, and the 1MB stream cap are in place.
+- **Variable shadowing (LOW).** A flow author can set `save_as="name"`, letting an end
+  user's reply overwrite the seeded `{{name}}`. Operator-config footgun, single-tenant,
+  no privilege escalation. Could reserve seeded key names later.
+- **HTTP-header form uses array-index React keys (LOW, cosmetic).** Removing a mid-list
+  header row can transiently mis-bind inputs in the http_api form. Headers are rarely
+  reordered; fix with stable ids when touched next.
+
 ## Out of scope (later follow-up)
 
 - Google Sheets Fetch (native runtime Google auth).
