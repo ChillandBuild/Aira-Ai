@@ -1297,9 +1297,12 @@ async def download_tag_csv(
         .in_("lead_id", lead_ids)
         .execute()
     )
-    br_map: dict[str, str] = {}
+    br_map: dict[str, list[str]] = {}
     for br in (br_rows.data or []):
-        br_map[br["lead_id"]] = br.get("broadcast_id", "")
+        lid = br["lead_id"]
+        bid = br.get("broadcast_id", "")
+        if bid:
+            br_map.setdefault(lid, []).append(bid)
 
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "From Broadcast ID", "HOT", "WARM", "COLD"])
@@ -1307,6 +1310,9 @@ async def download_tag_csv(
     for lid, interest in interest_map.items():
         lead = lead_map.get(lid, {})
         writer.writerow({
+            "Name": lead.get("name", ""),
+            "Phone": lead.get("phone", ""),
+            "From Broadcast ID": ",".join(br_map.get(lid, [])),
             "Name": lead.get("name", ""),
             "Phone": lead.get("phone", ""),
             "From Broadcast ID": br_map.get(lid, ""),
@@ -1362,9 +1368,12 @@ async def download_all_tags_csv(tenant_id: str = Depends(get_tenant_id)):
         .in_("lead_id", lead_ids)
         .execute()
     )
-    br_map: dict[tuple, str] = {}
+    br_map: dict[tuple, list[str]] = {}
     for br in (br_rows.data or []):
-        br_map[(br["lead_id"], br["tag_id"])] = br.get("broadcast_id", "")
+        key = (br["lead_id"], br["tag_id"])
+        bid = br.get("broadcast_id", "")
+        if bid:
+            br_map.setdefault(key, []).append(bid)
 
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "Tag", "From Broadcast ID", "HOT", "WARM", "COLD"])
@@ -1372,7 +1381,7 @@ async def download_all_tags_csv(tenant_id: str = Depends(get_tenant_id)):
     for r in interests:
         lead = lead_map.get(r["lead_id"], {})
         tag_name = tag_map.get(r["tag_id"], "unknown")
-        bid = br_map.get((r["lead_id"], r["tag_id"]), "")
+        bid = ",".join(br_map.get((r["lead_id"], r["tag_id"]), []))
         writer.writerow({
             "Name": lead.get("name", ""),
             "Phone": lead.get("phone", ""),

@@ -854,6 +854,19 @@ async def generate_reply(
             hot = 1 if new_segment == "A" else 0
             warm = 1 if new_segment == "B" else 0
             cold = 1 if new_segment in ("C", "D") else 0
+            # Read existing count to increment
+            existing = (
+                db.table("lead_tag_interest")
+                .select("broadcast_count")
+                .eq("tenant_id", tenant_id)
+                .eq("lead_id", str(lead_id))
+                .eq("tag_id", tid)
+                .maybe_single()
+                .execute()
+            )
+            current_count = 0
+            if existing and existing.data:
+                current_count = existing.data.get("broadcast_count", 0)
             db.table("lead_tag_interest").upsert({
                 "tenant_id": tenant_id,
                 "lead_id": str(lead_id),
@@ -862,9 +875,9 @@ async def generate_reply(
                 "warm": warm,
                 "cold": cold,
                 "last_seen": datetime.now(timezone.utc).isoformat(),
-                "broadcast_count": 1,
+                "broadcast_count": current_count + 1,
             }, on_conflict="tenant_id,lead_id,tag_id").execute()
-            logger.info(f"Tag interest updated: lead {lead_id} tag {tid} segment {new_segment}")
+            logger.info(f"Tag interest updated: lead {lead_id} tag {tid} segment {new_segment} count={current_count + 1}")
     except Exception as tag_err:
         logger.warning(f"Tag interest update failed for lead {lead_id}: {tag_err}")
 
