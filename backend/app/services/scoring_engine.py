@@ -353,6 +353,7 @@ async def compute_score(
             "score_engagement_delta": 0, "segment": "D",
             "segment_drop_count": 0, "arc_message_count": 0,
             "last_inbound_at": now_iso,
+            "broadcast_negative_reply_at": now_iso,
         }
         db.table("leads").update(rejection_payload).eq("id", str(lead_id)).execute()
 

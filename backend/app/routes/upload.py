@@ -302,6 +302,11 @@ class BulkSendRequest(BaseModel):
     csv_file_name: Optional[str] = None
     variable_mapping: list[str] = []  # ordered CSV column names for {{1}}, {{2}}, ...
     tag_id: Optional[str] = None  # broadcast tag for per-product interest tracking
+    exclude_negative_replies: bool = False  # skip leads who previously rejected a broadcast
+
+
+class RiskAuditRequest(BaseModel):
+    leads: list[BulkLeadItem]
 
 
 @router.post("/parse")
@@ -374,6 +379,60 @@ async def validate_optin(body: OptInRequest):
     }
 
 
+@router.post("/risk-audit")
+async def risk_audit(body: RiskAuditRequest, tenant_id: str = Depends(get_tenant_id)):
+    """Return risk counts for a set of leads before a broadcast is confirmed."""
+    db = get_supabase()
+    all_phones = [_normalize_phone(l.phone or "") for l in body.leads if _normalize_phone(l.phone or "")]
+
+    negative_reply_count = 0
+    high_no_reply_count = 0
+    opted_out_count = 0
+
+    if all_phones:
+        neg_rows = (
+            db.table("leads")
+            .select("phone")
+            .in_("phone", all_phones)
+            .eq("tenant_id", tenant_id)
+            .not_.is_("broadcast_negative_reply_at", "null")
+            .execute()
+        )
+        negative_reply_count = len(neg_rows.data or [])
+
+        no_reply_rows = (
+            db.table("leads")
+            .select("phone")
+            .in_("phone", all_phones)
+            .eq("tenant_id", tenant_id)
+            .gte("outbound_no_reply_count", 2)
+            .is_("broadcast_negative_reply_at", "null")
+            .execute()
+        )
+        high_no_reply_count = len(no_reply_rows.data or [])
+
+        opt_rows = (
+            db.table("leads")
+            .select("phone")
+            .in_("phone", all_phones)
+            .eq("tenant_id", tenant_id)
+            .eq("opted_out", True)
+            .execute()
+        )
+        opted_out_count = len(opt_rows.data or [])
+
+    total = len(all_phones)
+    safe_count = total - negative_reply_count - high_no_reply_count - opted_out_count
+
+    return {
+        "total": total,
+        "negative_reply_count": negative_reply_count,
+        "high_no_reply_count": high_no_reply_count,
+        "opted_out_count": opted_out_count,
+        "safe_count": max(0, safe_count),
+    }
+
+
 @router.post("/bulk-send")
 async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_id)):
     broadcast_id = str(uuid.uuid4())
@@ -402,6 +461,23 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         raise HTTPException(status_code=400, detail="No eligible leads")
 
     db = get_supabase()
+
+    # ── Exclude leads who previously rejected a broadcast ────────────────────
+    if body.exclude_negative_replies:
+        _all_phones_pre = [_normalize_phone(l.phone or "") for l in eligible if _normalize_phone(l.phone or "")]
+        if _all_phones_pre:
+            _neg = (
+                db.table("leads")
+                .select("phone")
+                .in_("phone", _all_phones_pre)
+                .eq("tenant_id", tenant_id)
+                .not_.is_("broadcast_negative_reply_at", "null")
+                .execute()
+            )
+            _neg_phones = {r["phone"] for r in (_neg.data or [])}
+            eligible = [l for l in eligible if _normalize_phone(l.phone or "") not in _neg_phones]
+        if not eligible:
+            raise HTTPException(status_code=400, detail="No eligible leads after negative-reply exclusion")
 
     # ── Scheduled / Drip: store and return early ─────────────────────────────
     if body.schedule_type in ("scheduled", "drip"):
@@ -555,6 +631,18 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         rows = db.table("leads").select("phone").in_("phone", all_phones).eq("tenant_id", tenant_id).eq("opted_out", True).execute()
         opted_out_phones = {r["phone"] for r in (rows.data or [])}
 
+    negative_reply_phones: set[str] = set()
+    if all_phones and body.exclude_negative_replies:
+        neg_rows = (
+            db.table("leads")
+            .select("phone")
+            .in_("phone", all_phones)
+            .eq("tenant_id", tenant_id)
+            .not_.is_("broadcast_negative_reply_at", "null")
+            .execute()
+        )
+        negative_reply_phones = {r["phone"] for r in (neg_rows.data or [])}
+
     # Fetch template metadata
     tpl_lang = "en"
     tpl_body = ""
@@ -608,6 +696,23 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 row["fail_reason"] = "opted_out"
             recipient_rows.append(row)
             logger.info(f"Bulk-send skipped opted-out lead {phone}")
+            continue
+
+        if phone in negative_reply_phones:
+            failed += 1
+            row = {
+                "tenant_id": tenant_id,
+                "broadcast_id": broadcast_id,
+                "lead_id": lead_id,
+                "phone": phone,
+                "name": lead_name,
+                "send_status": "opted_out_skip",
+                "tag_id": body.tag_id,
+            }
+            if _has_fail_reason:
+                row["fail_reason"] = "negative_reply_excluded"
+            recipient_rows.append(row)
+            logger.info(f"Bulk-send skipped negative-reply lead {phone}")
             continue
 
         try:

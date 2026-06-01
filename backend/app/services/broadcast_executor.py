@@ -111,6 +111,19 @@ async def execute_broadcast(row: dict) -> dict:
             supp_rows = db.table("leads").select("phone").in_("phone", all_phones).eq("tenant_id", tenant_id).gte("outbound_no_reply_count", 3).execute()
             suppressed_phones = {r["phone"] for r in (supp_rows.data or [])}
 
+        # Suppress leads who previously replied negatively to any broadcast
+        negative_reply_phones: set[str] = set()
+        if all_phones:
+            neg_rows = (
+                db.table("leads")
+                .select("phone")
+                .in_("phone", all_phones)
+                .eq("tenant_id", tenant_id)
+                .not_.is_("broadcast_negative_reply_at", "null")
+                .execute()
+            )
+            negative_reply_phones = {r["phone"] for r in (neg_rows.data or [])}
+
         lead_rows = db.table("leads").select("id,phone,name").in_("phone", all_phones).eq("tenant_id", tenant_id).execute()
         phone_to_lead_id = {r["phone"]: r["id"] for r in (lead_rows.data or [])}
 
@@ -121,7 +134,7 @@ async def execute_broadcast(row: dict) -> dict:
 
         for lead in leads_raw:
             phone = _normalize_phone(lead.get("phone", ""))
-            if not phone or phone in opted_out_phones or phone in suppressed_phones:
+            if not phone or phone in opted_out_phones or phone in suppressed_phones or phone in negative_reply_phones:
                 failed += 1
                 recipient_rows.append({
                     "tenant_id": tenant_id,
