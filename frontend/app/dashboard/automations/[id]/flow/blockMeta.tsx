@@ -13,6 +13,10 @@ import {
   Webhook,
   Dices,
   Sparkles,
+  Volume2,
+  List,
+  Tag,
+  ShoppingBag,
   type LucideIcon,
 } from "lucide-react";
 import type { BlockType, BlockConfig, TriggerType } from "./types";
@@ -124,6 +128,35 @@ export const BLOCK_META: Record<BlockType, BlockMeta> = {
     iconText: "text-violet-600",
     description: "Let AI converse toward an outcome, then branch",
   },
+  // BotBiz blocks
+  send_audio: {
+    label: "Send Audio",
+    icon: Volume2,
+    iconBg: "bg-pink-100",
+    iconText: "text-pink-600",
+    description: "An audio or voice message",
+  },
+  send_list: {
+    label: "List Menu",
+    icon: List,
+    iconBg: "bg-emerald-100",
+    iconText: "text-emerald-600",
+    description: "Scrollable list of options, answer saved",
+  },
+  add_label: {
+    label: "Add Label",
+    icon: Tag,
+    iconBg: "bg-amber-100",
+    iconText: "text-amber-600",
+    description: "Tag or un-tag the lead",
+  },
+  send_catalog: {
+    label: "Product Catalog",
+    icon: ShoppingBag,
+    iconBg: "bg-cyan-100",
+    iconText: "text-cyan-600",
+    description: "WhatsApp product catalog listing",
+  },
 };
 
 // Order shown in the block picker.
@@ -133,15 +166,19 @@ export const PICKER_BLOCKS: BlockType[] = [
   "send_video",
   "send_file",
   "send_location",
+  "send_audio",
   "cta_url",
   "send_template",
+  "send_list",
   "wait",
   "condition",
   "ai_agent",
   "user_input",
   "interactive",
+  "add_label",
   "http_api",
   "random",
+  "send_catalog",
 ];
 
 export const TRIGGER_LABELS: Record<TriggerType, string> = {
@@ -214,14 +251,26 @@ export function blockSummary(type: BlockType, config: BlockConfig): string {
       return `Wait ${config.amount} ${config.amount === 1 ? unit.slice(0, -1) : unit}`;
     }
     case "condition": {
+      if (config.conditions && config.conditions.length > 0) {
+        const mode = config.condition_mode === "any" ? "Any" : "All";
+        const n = config.conditions.length;
+        return `${mode} match · ${n} condition${n === 1 ? "" : "s"}`;
+      }
       const subj = SUBJECT_LABELS[config.subject || ""] || "Field";
       if (!config.operator) return "Set a condition";
       const op = OPERATOR_LABELS[config.operator] || config.operator;
       const val = config.subject === "segment" ? SEGMENT_LABELS[config.value || ""] || config.value : config.value;
       return `${subj} ${op} ${val || "…"}`;
     }
-    case "user_input":
+    case "user_input": {
+      if (config.mode === "multiple_choice") {
+        const count = config.choices?.length || 0;
+        return config.prompt
+          ? `${truncate(config.prompt, 40)} · ${count} choice${count === 1 ? "" : "s"}`
+          : "No question yet";
+      }
       return config.prompt ? truncate(config.prompt) : "No question yet";
+    }
     case "interactive": {
       const count = config.buttons?.length || 0;
       if (!config.body) return "No message yet";
@@ -238,6 +287,21 @@ export function blockSummary(type: BlockType, config: BlockConfig): string {
       if (!config.goal) return "Set a goal";
       return `${truncate(config.goal, 40)} · ${count} outcome${count === 1 ? "" : "s"}`;
     }
+    case "send_audio":
+      return config.url ? "Audio" : "No audio URL yet";
+    case "send_list": {
+      const totalRows = (config.sections || []).reduce((n, s) => n + (s.rows?.length || 0), 0);
+      if (!config.body) return "No message yet";
+      return `${truncate(config.body, 40)} · ${totalRows} option${totalRows === 1 ? "" : "s"}`;
+    }
+    case "add_label":
+      return config.tag_id
+        ? `${config.action === "remove" ? "Remove" : "Add"} label`
+        : "No label selected";
+    case "send_catalog":
+      return config.catalog_id
+        ? `${(config.product_ids || []).length} product${(config.product_ids || []).length === 1 ? "" : "s"}`
+        : "No catalog configured";
     default:
       return "";
   }
@@ -290,6 +354,19 @@ export function defaultConfig(type: BlockType): BlockConfig {
         max_turns: 6,
         use_knowledge: true,
       };
+    case "send_audio":
+      return { url: "" };
+    case "send_list":
+      return {
+        body: "",
+        button_text: "Choose",
+        save_as: "",
+        sections: [{ title: "", rows: [{ id: `row_${Math.random().toString(36).slice(2, 7)}`, title: "", description: "" }] }],
+      };
+    case "add_label":
+      return { tag_id: "", action: "add" };
+    case "send_catalog":
+      return { body: "", catalog_id: "", section_title: "Products", product_ids: [] };
     default:
       return {};
   }

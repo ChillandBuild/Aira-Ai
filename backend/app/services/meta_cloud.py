@@ -264,6 +264,99 @@ async def send_interactive_buttons(
     return data
 
 
+async def send_audio_message(
+    to_number: str,
+    audio_url: str,
+    phone_number_id: Optional[str] = None,
+    access_token: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+) -> dict:
+    """Send an audio message. WhatsApp does not support captions on audio."""
+    return await send_media_message(
+        to_number=to_number,
+        wa_type="audio",
+        media_link=audio_url,
+        phone_number_id=phone_number_id,
+        access_token=access_token,
+        tenant_id=tenant_id,
+    )
+
+
+async def send_list_message(
+    to_number: str,
+    body_text: str,
+    button_text: str,
+    sections: list[dict],
+    header_text: Optional[str] = None,
+    footer_text: Optional[str] = None,
+    phone_number_id: Optional[str] = None,
+    access_token: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+) -> dict:
+    """Send a WhatsApp interactive list message (up to 10 rows across sections)."""
+    pid, tok = _creds(phone_number_id, access_token, tenant_id)
+    url = f"{_GRAPH_BASE}/{pid}/messages"
+    interactive: dict = {
+        "type": "list",
+        "body": {"text": body_text},
+        "action": {
+            "button": button_text[:20],
+            "sections": sections,
+        },
+    }
+    if header_text:
+        interactive["header"] = {"type": "text", "text": header_text[:60]}
+    if footer_text:
+        interactive["footer"] = {"text": footer_text[:60]}
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_number,
+        "type": "interactive",
+        "interactive": interactive,
+    }
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(url, json=payload, headers={"Authorization": f"Bearer {tok}"})
+    if not resp.is_success:
+        logger.error("send_list_message failed: %s %s", resp.status_code, resp.text)
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    logger.info("Meta list message sent to %s", to_number)
+    return resp.json()
+
+
+async def send_catalog_message(
+    to_number: str,
+    body_text: str,
+    catalog_id: str,
+    sections: list[dict],
+    phone_number_id: Optional[str] = None,
+    access_token: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+) -> dict:
+    """Send a WhatsApp product catalog message (product_list interactive type)."""
+    pid, tok = _creds(phone_number_id, access_token, tenant_id)
+    url = f"{_GRAPH_BASE}/{pid}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_number,
+        "type": "interactive",
+        "interactive": {
+            "type": "product_list",
+            "body": {"text": body_text},
+            "action": {
+                "catalog_id": catalog_id,
+                "sections": sections,
+            },
+        },
+    }
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(url, json=payload, headers={"Authorization": f"Bearer {tok}"})
+    if not resp.is_success:
+        logger.error("send_catalog_message failed: %s %s", resp.status_code, resp.text)
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    logger.info("Meta catalog message sent to %s", to_number)
+    return resp.json()
+
+
 async def download_media_from_meta(
     media_id: str,
     access_token: Optional[str] = None,

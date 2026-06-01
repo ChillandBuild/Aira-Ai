@@ -26,19 +26,34 @@ export default function TriggerCard({ triggerType, triggerConfig, onChange }: Tr
       </div>
 
       {triggerType === "keyword_match" && (
-        <div className="mt-3">
-          <label className="block text-xs font-medium text-on-surface mb-1.5">Keywords (comma-separated)</label>
-          <input
-            className={inputClass}
-            value={(triggerConfig.keywords || []).join(", ")}
-            placeholder="price, demo, buy"
-            onChange={(e) =>
-              onChange({
-                ...triggerConfig,
-                keywords: e.target.value.split(",").map((s) => s.trim()).filter((s) => s.length > 0),
-              })
-            }
-          />
+        <div className="mt-3 space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-on-surface mb-1.5">Keywords (comma-separated)</label>
+            <input
+              className={inputClass}
+              value={(triggerConfig.keywords || []).join(", ")}
+              placeholder="price, demo, buy"
+              onChange={(e) =>
+                onChange({
+                  ...triggerConfig,
+                  keywords: e.target.value.split(",").map((s) => s.trim()).filter((s) => s.length > 0),
+                })
+              }
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-on-surface mb-1.5">Match type</label>
+            <select
+              className={inputClass}
+              value={triggerConfig.match_mode || "contains"}
+              onChange={(e) =>
+                onChange({ ...triggerConfig, match_mode: e.target.value as "contains" | "exact" })
+              }
+            >
+              <option value="contains">Contains — keyword appears anywhere in message</option>
+              <option value="exact">Exact match — message equals keyword exactly</option>
+            </select>
+          </div>
         </div>
       )}
 

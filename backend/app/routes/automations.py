@@ -50,6 +50,8 @@ _VALID_STEPS = {
     "wait", "condition", "create_followup",
     "send_image", "send_video", "send_file", "send_location", "cta_url",
     "user_input", "http_api", "random", "interactive", "ai_agent",
+    # BotBiz blocks
+    "send_audio", "send_list", "add_label", "send_catalog",
 }
 
 
@@ -57,8 +59,12 @@ def _validate(trigger_type: str, trigger_config: dict, steps: list) -> list[str]
     errors: list[str] = []
     if trigger_type not in _VALID_TRIGGERS:
         errors.append(f"Invalid trigger_type: {trigger_type}")
-    if trigger_type == "keyword_match" and not trigger_config.get("keywords"):
-        errors.append("keyword_match requires at least one keyword")
+    if trigger_type == "keyword_match":
+        if not trigger_config.get("keywords"):
+            errors.append("keyword_match requires at least one keyword")
+        match_mode = trigger_config.get("match_mode", "contains")
+        if match_mode not in ("contains", "exact"):
+            errors.append("keyword_match match_mode must be 'contains' or 'exact'")
     if trigger_type == "segment_changed":
         seg = trigger_config.get("to_segment")
         if seg and seg not in ("A", "B", "C", "D"):
@@ -154,6 +160,39 @@ def _validate(trigger_type: str, trigger_config: dict, steps: list) -> list[str]
                     if not b.get("id") or not b.get("title"):
                         errors.append(f"Step {i}: each interactive button requires id and title")
                         break
+        if step.get("step_type") == "send_audio":
+            url = step.get("config", {}).get("url", "")
+            if not url.startswith("https://"):
+                errors.append(f"Step {i}: send_audio requires a valid https URL")
+        if step.get("step_type") == "send_list":
+            cfg = step.get("config", {})
+            if not cfg.get("body"):
+                errors.append(f"Step {i}: send_list requires body")
+            if not cfg.get("button_text"):
+                errors.append(f"Step {i}: send_list requires button_text")
+            if not cfg.get("save_as"):
+                errors.append(f"Step {i}: send_list requires save_as")
+            sections = cfg.get("sections") or []
+            if not sections:
+                errors.append(f"Step {i}: send_list requires at least one section")
+            else:
+                total_rows = sum(len(s.get("rows") or []) for s in sections)
+                if not (1 <= total_rows <= 10):
+                    errors.append(f"Step {i}: send_list total rows must be 1..10")
+        if step.get("step_type") == "add_label":
+            cfg = step.get("config", {})
+            if not cfg.get("tag_id"):
+                errors.append(f"Step {i}: add_label requires tag_id")
+            if cfg.get("action", "add") not in ("add", "remove"):
+                errors.append(f"Step {i}: add_label action must be 'add' or 'remove'")
+        if step.get("step_type") == "send_catalog":
+            cfg = step.get("config", {})
+            if not cfg.get("catalog_id"):
+                errors.append(f"Step {i}: send_catalog requires catalog_id")
+            if not cfg.get("body"):
+                errors.append(f"Step {i}: send_catalog requires body")
+            if not (cfg.get("sections") or cfg.get("product_ids")):
+                errors.append(f"Step {i}: send_catalog requires product_ids")
     return errors
 
 

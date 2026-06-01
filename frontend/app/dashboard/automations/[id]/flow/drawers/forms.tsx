@@ -1,7 +1,9 @@
 "use client";
+import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import type { BlockConfig, ConditionSubject, HttpMethod, InteractiveButton, WaitUnit } from "../types";
+import type { BlockConfig, ConditionSubject, HttpMethod, InteractiveButton, ListRow, ListSection, SingleCondition, WaitUnit } from "../types";
 import { newButtonId } from "../blockMeta";
+import { API_URL, getAuthHeaders } from "@/lib/api";
 
 export interface FormProps {
   config: BlockConfig;
@@ -240,14 +242,128 @@ const OPERATORS_BY_SUBJECT: Record<ConditionSubject, { value: string; label: str
   ],
 };
 
+function SingleConditionRow({
+  cond,
+  onChange,
+}: {
+  cond: SingleCondition;
+  onChange: (next: Partial<SingleCondition>) => void;
+}) {
+  const subject = (cond.subject || "segment") as ConditionSubject;
+  const operators = OPERATORS_BY_SUBJECT[subject];
+  const onSubjectChange = (next: ConditionSubject) => {
+    onChange({ subject: next, operator: OPERATORS_BY_SUBJECT[next][0].value, value: next === "segment" ? "A" : "" });
+  };
+  return (
+    <div className="space-y-2">
+      <SelectField label="If…" value={subject} options={SUBJECT_OPTIONS} onChange={onSubjectChange} />
+      <SelectField
+        label="Operator"
+        value={cond.operator || operators[0].value}
+        options={operators}
+        onChange={(v) => onChange({ operator: v })}
+      />
+      {subject === "segment" ? (
+        <SelectField
+          label="Segment"
+          value={cond.value || "A"}
+          options={[{ value: "A", label: "A — Hot" }, { value: "B", label: "B — Warm" }, { value: "C", label: "C — Cold" }, { value: "D", label: "D — Disqualified" }]}
+          onChange={(v) => onChange({ value: v })}
+        />
+      ) : subject === "channel" ? (
+        <SelectField
+          label="Channel"
+          value={cond.value || "whatsapp"}
+          options={[{ value: "whatsapp", label: "WhatsApp" }, { value: "instagram", label: "Instagram" }, { value: "facebook", label: "Facebook" }, { value: "telegram", label: "Telegram" }]}
+          onChange={(v) => onChange({ value: v })}
+        />
+      ) : subject === "score" ? (
+        <NumberField label="Score (1–10)" value={cond.value ? Number(cond.value) : undefined} min={1} placeholder="7" onChange={(v) => onChange({ value: String(v) })} />
+      ) : (
+        <TextField label="Text" value={cond.value || ""} placeholder="interested" onChange={(v) => onChange({ value: v })} />
+      )}
+    </div>
+  );
+}
+
 export function ConditionForm({ config, patch }: FormProps) {
+  const isMulti = !!(config.conditions && config.conditions.length > 0);
+  const conds: SingleCondition[] = config.conditions || [];
+  const mode = config.condition_mode || "all";
+
+  const switchToMulti = () => {
+    const existing: SingleCondition = {
+      subject: (config.subject || "segment") as ConditionSubject,
+      operator: config.operator || "equals",
+      value: config.value || "A",
+    };
+    patch({ conditions: [existing], condition_mode: "all", subject: undefined, operator: undefined, value: undefined });
+  };
+
+  const switchToSingle = () => {
+    const first = conds[0];
+    patch({
+      conditions: undefined,
+      condition_mode: undefined,
+      subject: (first?.subject || "segment") as ConditionSubject,
+      operator: first?.operator || "equals",
+      value: first?.value || "A",
+    });
+  };
+
+  const updateCond = (i: number, next: Partial<SingleCondition>) =>
+    patch({ conditions: conds.map((c, idx) => idx === i ? { ...c, ...next } : c) });
+
+  const addCond = () =>
+    patch({ conditions: [...conds, { subject: "segment" as ConditionSubject, operator: "equals", value: "A" }] });
+
+  const removeCond = (i: number) =>
+    patch({ conditions: conds.filter((_, idx) => idx !== i) });
+
+  if (isMulti) {
+    return (
+      <>
+        <div className="flex items-end gap-2">
+          <div className="flex-1">
+            <SelectField
+              label="Match mode"
+              value={mode}
+              options={[
+                { value: "all", label: "All conditions must match" },
+                { value: "any", label: "Any condition must match" },
+              ]}
+              onChange={(v) => patch({ condition_mode: v as "all" | "any" })}
+            />
+          </div>
+          <button type="button" onClick={switchToSingle} className="mb-1 px-3 py-2 text-xs text-on-surface-muted hover:text-primary transition-colors rounded-lg hover:bg-surface-low">
+            Simple
+          </button>
+        </div>
+        {conds.map((c, i) => (
+          <div key={i} className="border border-surface-mid rounded-xl p-3 space-y-2">
+            <SingleConditionRow cond={c} onChange={(next) => updateCond(i, next)} />
+            <button
+              type="button"
+              onClick={() => removeCond(i)}
+              disabled={conds.length <= 1}
+              className="text-xs text-red-500 disabled:opacity-30 hover:underline"
+            >
+              Remove condition
+            </button>
+          </div>
+        ))}
+        <button type="button" onClick={addCond} className={`${ghostBtnClass} mt-1`}>
+          <Plus size={14} /> Add condition
+        </button>
+      </>
+    );
+  }
+
+  // Single-condition mode (legacy)
   const subject = (config.subject || "segment") as ConditionSubject;
   const operators = OPERATORS_BY_SUBJECT[subject];
-
   const onSubjectChange = (next: ConditionSubject) => {
-    const op = OPERATORS_BY_SUBJECT[next][0].value;
-    const value = next === "segment" ? "A" : "";
-    patch({ subject: next, operator: op, value });
+    patch({ subject: next, operator: OPERATORS_BY_SUBJECT[next][0].value, value: next === "segment" ? "A" : "" });
   };
 
   return (
@@ -263,24 +379,14 @@ export function ConditionForm({ config, patch }: FormProps) {
         <SelectField
           label="Segment"
           value={config.value || "A"}
-          options={[
-            { value: "A", label: "A — Hot" },
-            { value: "B", label: "B — Warm" },
-            { value: "C", label: "C — Cold" },
-            { value: "D", label: "D — Disqualified" },
-          ]}
+          options={[{ value: "A", label: "A — Hot" }, { value: "B", label: "B — Warm" }, { value: "C", label: "C — Cold" }, { value: "D", label: "D — Disqualified" }]}
           onChange={(v) => patch({ value: v })}
         />
       ) : subject === "channel" ? (
         <SelectField
           label="Channel"
           value={config.value || "whatsapp"}
-          options={[
-            { value: "whatsapp", label: "WhatsApp" },
-            { value: "instagram", label: "Instagram" },
-            { value: "facebook", label: "Facebook" },
-            { value: "telegram", label: "Telegram" },
-          ]}
+          options={[{ value: "whatsapp", label: "WhatsApp" }, { value: "instagram", label: "Instagram" }, { value: "facebook", label: "Facebook" }, { value: "telegram", label: "Telegram" }]}
           onChange={(v) => patch({ value: v })}
         />
       ) : subject === "score" ? (
@@ -288,6 +394,9 @@ export function ConditionForm({ config, patch }: FormProps) {
       ) : (
         <TextField label="Text" value={config.value || ""} placeholder="interested" onChange={(v) => patch({ value: v })} />
       )}
+      <button type="button" onClick={switchToMulti} className={`${ghostBtnClass} mt-1`}>
+        <Plus size={14} /> Add another condition
+      </button>
     </>
   );
 }
@@ -298,24 +407,66 @@ const ghostBtnClass =
   "inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-dashed border-surface-mid text-xs font-medium text-on-surface-muted hover:text-on-surface hover:border-primary/40 transition-colors";
 
 export function UserInputForm({ config, patch }: FormProps) {
+  const mode = config.mode || "text";
+  const choices: string[] = config.choices || [];
+
   return (
     <>
+      <SelectField
+        label="Input type"
+        value={mode}
+        options={[
+          { value: "text", label: "Free text" },
+          { value: "multiple_choice", label: "Multiple choice" },
+        ]}
+        onChange={(v) => patch({ mode: v as "text" | "multiple_choice" })}
+      />
       <div>
         <Label>Question to ask</Label>
         <textarea
           className={`${inputClass} min-h-[100px] resize-y`}
           value={config.prompt || ""}
-          placeholder="What's your budget range?"
+          placeholder={mode === "multiple_choice" ? "Please choose one of the options:" : "What's your budget range?"}
           onChange={(e) => patch({ prompt: e.target.value })}
         />
         <Hint>{VAR_HINT}</Hint>
       </div>
+      {mode === "multiple_choice" && (
+        <div>
+          <Label>Choices</Label>
+          <div className="space-y-2">
+            {choices.map((c, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input
+                  className={inputClass}
+                  value={c}
+                  placeholder={`Option ${i + 1}`}
+                  onChange={(e) => patch({ choices: choices.map((x, j) => j === i ? e.target.value : x) })}
+                />
+                <button
+                  type="button"
+                  onClick={() => patch({ choices: choices.filter((_, j) => j !== i) })}
+                  disabled={choices.length <= 1}
+                  className="shrink-0 p-2 rounded-lg text-on-surface-muted hover:bg-red-50 hover:text-red-500 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                  aria-label="Remove choice"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={() => patch({ choices: [...choices, ""] })} className={`${ghostBtnClass} mt-2`}>
+            <Plus size={14} /> Add choice
+          </button>
+          <Hint>The lead&apos;s reply (a number or the text) is saved to the variable below.</Hint>
+        </div>
+      )}
       <TextField
         label="Save reply as"
         value={config.save_as || ""}
         placeholder="budget"
         onChange={(v) => patch({ save_as: v })}
-        hint="The lead's reply is stored in this variable — reference it later as {{budget}}."
+        hint={`The lead's reply is stored in this variable — reference it later as {{${config.save_as || "budget"}}}.`}
       />
     </>
   );
@@ -495,6 +646,250 @@ export function RandomForm({ config, patch }: FormProps) {
         onChange={(v) => patch({ save_as: v })}
         hint="Reference the number later as {{lucky_number}}."
       />
+    </>
+  );
+}
+
+// ── BotBiz forms ──────────────────────────────────────────────────────────────
+
+export function AudioForm({ config, patch }: FormProps) {
+  return (
+    <TextField
+      label="Audio URL"
+      value={config.url || ""}
+      placeholder="https://…/voice.ogg"
+      onChange={(v) => patch({ url: v })}
+      hint="WhatsApp supports OGG, AAC, MP3, AMR. Use a public https URL. Captions are not supported for audio."
+    />
+  );
+}
+
+function newRowId(): string {
+  return `row_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+export function ListMenuForm({ config, patch }: FormProps) {
+  const sections: ListSection[] = config.sections || [];
+  const totalRows = sections.reduce((n, s) => n + (s.rows?.length || 0), 0);
+
+  const updateSection = (si: number, next: Partial<ListSection>) =>
+    patch({ sections: sections.map((s, i) => i === si ? { ...s, ...next } : s) });
+
+  const addSection = () =>
+    patch({ sections: [...sections, { title: "", rows: [{ id: newRowId(), title: "", description: "" }] }] });
+
+  const removeSection = (si: number) =>
+    patch({ sections: sections.filter((_, i) => i !== si) });
+
+  const addRow = (si: number) => {
+    if (totalRows >= 10) return;
+    patch({
+      sections: sections.map((s, i) =>
+        i === si ? { ...s, rows: [...(s.rows || []), { id: newRowId(), title: "", description: "" }] } : s
+      ),
+    });
+  };
+
+  const updateRow = (si: number, ri: number, next: Partial<ListRow>) =>
+    patch({
+      sections: sections.map((s, i) =>
+        i === si ? { ...s, rows: (s.rows || []).map((r, j) => j === ri ? { ...r, ...next } : r) } : s
+      ),
+    });
+
+  const removeRow = (si: number, ri: number) =>
+    patch({
+      sections: sections.map((s, i) =>
+        i === si ? { ...s, rows: (s.rows || []).filter((_, j) => j !== ri) } : s
+      ),
+    });
+
+  return (
+    <>
+      <div>
+        <Label>Message body</Label>
+        <textarea
+          className={`${inputClass} min-h-[100px] resize-y`}
+          value={config.body || ""}
+          placeholder="Please choose an option below:"
+          onChange={(e) => patch({ body: e.target.value })}
+        />
+        <Hint>{VAR_HINT}</Hint>
+      </div>
+      <TextField
+        label="Button label"
+        value={config.button_text || "Choose"}
+        placeholder="Choose"
+        onChange={(v) => patch({ button_text: v })}
+        hint="The tap-to-open button text (max 20 chars)."
+      />
+      <div>
+        <Label>Options ({totalRows}/10)</Label>
+        <div className="space-y-3">
+          {sections.map((sec, si) => (
+            <div key={si} className="border border-surface-mid rounded-xl p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  className={inputClass}
+                  value={sec.title}
+                  placeholder={`Section ${si + 1} heading (optional)`}
+                  onChange={(e) => updateSection(si, { title: e.target.value })}
+                />
+                <button
+                  type="button"
+                  onClick={() => removeSection(si)}
+                  disabled={sections.length <= 1}
+                  className="shrink-0 p-2 rounded-lg text-on-surface-muted hover:bg-red-50 hover:text-red-500 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                  aria-label="Remove section"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+              {(sec.rows || []).map((row, ri) => (
+                <div key={row.id} className="flex items-start gap-2 ml-2">
+                  <div className="flex-1 space-y-1">
+                    <input
+                      className={inputClass}
+                      value={row.title}
+                      placeholder={`Option ${ri + 1}`}
+                      onChange={(e) => updateRow(si, ri, { title: e.target.value })}
+                    />
+                    <input
+                      className={inputClass}
+                      value={row.description || ""}
+                      placeholder="Description (optional)"
+                      onChange={(e) => updateRow(si, ri, { description: e.target.value })}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeRow(si, ri)}
+                    disabled={(sec.rows || []).length <= 1}
+                    className="shrink-0 mt-1 p-2 rounded-lg text-on-surface-muted hover:bg-red-50 hover:text-red-500 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                    aria-label="Remove option"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              ))}
+              {totalRows < 10 && (
+                <button type="button" onClick={() => addRow(si)} className={`${ghostBtnClass} ml-2 mt-1`}>
+                  <Plus size={14} /> Add option
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        {sections.length < 5 && totalRows < 10 && (
+          <button type="button" onClick={addSection} className={`${ghostBtnClass} mt-2`}>
+            <Plus size={14} /> Add section
+          </button>
+        )}
+        <Hint>Up to 10 options total. The selected option&apos;s ID is saved to the variable below.</Hint>
+      </div>
+      <TextField
+        label="Optional header"
+        value={config.header || ""}
+        placeholder="Choose a plan"
+        onChange={(v) => patch({ header: v })}
+      />
+      <TextField
+        label="Optional footer"
+        value={config.footer || ""}
+        placeholder="Tap to see options"
+        onChange={(v) => patch({ footer: v })}
+      />
+      <TextField
+        label="Save selection as"
+        value={config.save_as || ""}
+        placeholder="menu_choice"
+        onChange={(v) => patch({ save_as: v })}
+        hint="Reference as {{menu_choice}} in later steps."
+      />
+    </>
+  );
+}
+
+export function AddLabelForm({ config, patch }: FormProps) {
+  const [tags, setTags] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    getAuthHeaders().then((auth) =>
+      fetch(`${API_URL}/api/v1/broadcast-tags/`, { headers: auth })
+        .then((r) => r.json())
+        .then((d) => setTags(d.data || []))
+        .catch(() => {})
+    );
+  }, []);
+
+  return (
+    <>
+      <div>
+        <Label>Label</Label>
+        <select
+          className={inputClass}
+          value={config.tag_id || ""}
+          onChange={(e) => patch({ tag_id: e.target.value })}
+        >
+          <option value="">Select a label…</option>
+          {tags.map((t) => (
+            <option key={t.id} value={t.id}>{t.name}</option>
+          ))}
+        </select>
+        <Hint>Manage labels in the Broadcast Tags section.</Hint>
+      </div>
+      <SelectField
+        label="Action"
+        value={(config.action as "add" | "remove") || "add"}
+        options={[
+          { value: "add", label: "Add label to lead" },
+          { value: "remove", label: "Remove label from lead" },
+        ]}
+        onChange={(v) => patch({ action: v as "add" | "remove" })}
+      />
+    </>
+  );
+}
+
+export function CatalogForm({ config, patch }: FormProps) {
+  const ids = (config.product_ids || []).join(", ");
+  return (
+    <>
+      <div>
+        <Label>Message body</Label>
+        <textarea
+          className={`${inputClass} min-h-[80px] resize-y`}
+          value={config.body || ""}
+          placeholder="Check out our products!"
+          onChange={(e) => patch({ body: e.target.value })}
+        />
+        <Hint>{VAR_HINT}</Hint>
+      </div>
+      <TextField
+        label="Catalog ID"
+        value={config.catalog_id || ""}
+        placeholder="123456789"
+        onChange={(v) => patch({ catalog_id: v })}
+        hint="Find this in your Meta Commerce Manager settings."
+      />
+      <TextField
+        label="Section title"
+        value={config.section_title || "Products"}
+        placeholder="Products"
+        onChange={(v) => patch({ section_title: v })}
+      />
+      <div>
+        <Label>Product IDs (comma-separated)</Label>
+        <input
+          className={inputClass}
+          value={ids}
+          placeholder="SKU-001, SKU-002, SKU-003"
+          onChange={(e) =>
+            patch({ product_ids: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })
+          }
+        />
+        <Hint>Retailer product IDs from your catalog. Up to 30.</Hint>
+      </div>
     </>
   );
 }

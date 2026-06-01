@@ -14,7 +14,12 @@ export type BlockType =
   | "interactive"
   | "http_api"
   | "random"
-  | "ai_agent";
+  | "ai_agent"
+  // BotBiz blocks
+  | "send_audio"
+  | "send_list"
+  | "add_label"
+  | "send_catalog";
 
 // Block types that fan the flow out into multiple labeled lanes.
 export const BRANCHING_TYPES: readonly BlockType[] = ["condition", "interactive", "ai_agent"];
@@ -95,12 +100,48 @@ export interface BlockConfig {
   tools?: string[];
   max_turns?: number;
   use_knowledge?: boolean;
+  // send_list
+  sections?: ListSection[];
+  header?: string;
+  footer?: string;
+  // user_input multiple choice
+  mode?: "text" | "multiple_choice";
+  choices?: string[];
+  // condition multi-condition
+  conditions?: SingleCondition[];
+  condition_mode?: "all" | "any";
+  // add_label
+  tag_id?: string;
+  action?: "add" | "remove";
+  // send_catalog
+  catalog_id?: string;
+  section_title?: string;
+  product_ids?: string[];
+}
+
+export interface ListSection {
+  title: string;
+  rows: ListRow[];
+}
+
+export interface ListRow {
+  id: string;
+  title: string;
+  description?: string;
+}
+
+export interface SingleCondition {
+  subject: ConditionSubject;
+  operator: string;
+  value: string;
 }
 
 export interface TriggerConfig {
   keywords?: string[];
   to_segment?: "A" | "B" | "C" | "D";
   threshold?: number;
+  match_type?: "any" | "all";
+  match_mode?: "contains" | "exact";
 }
 
 // A flat step row as returned by the backend.

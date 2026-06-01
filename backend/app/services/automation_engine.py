@@ -100,7 +100,8 @@ def _next_step_id(
 
 # ─── Condition evaluator ─────────────────────────────────────────────────────
 
-def _evaluate_condition(config: dict, lead_data: dict, message: str) -> bool:
+def _eval_single(config: dict, lead_data: dict, message: str) -> bool:
+    """Evaluate one condition triplet (subject / operator / value)."""
     subject = config.get("subject", "")
     operator = config.get("operator", "equals")
     value = config.get("value", "")
@@ -137,9 +138,22 @@ def _evaluate_condition(config: dict, lead_data: dict, message: str) -> bool:
     return False
 
 
+def _evaluate_condition(config: dict, lead_data: dict, message: str) -> bool:
+    """Evaluate a condition block config. Supports both legacy single-condition shape
+    (subject/operator/value at top level) and new multi-condition shape
+    (conditions: list + condition_mode: "all"|"any"). Backward compatible."""
+    conditions = config.get("conditions")
+    if conditions and isinstance(conditions, list):
+        mode = config.get("condition_mode", "all")
+        results = [_eval_single(c, lead_data, message) for c in conditions]
+        return all(results) if mode == "all" else any(results)
+    return _eval_single(config, lead_data, message)
+
+
 # ─── Send helpers ────────────────────────────────────────────────────────────
 
-_NEW_SEND_STEPS = ("send_image", "send_video", "send_file", "send_location", "cta_url")
+_NEW_SEND_STEPS = ("send_image", "send_video", "send_file", "send_location", "cta_url",
+                   "send_audio", "send_list", "send_catalog")
 
 
 import re
@@ -405,6 +419,32 @@ async def _execute_step(
             _bump_counter(db, step["id"], "error_count")
             return {"status": "error", "detail": str(e)}
 
+    # ── send_audio ─────────────────────────────────────────────────────────
+    if step_type == "send_audio":
+        url_val = config.get("url", "")
+        if not url_val:
+            return {"status": "error", "detail": "empty url"}
+        try:
+            sid = None
+            if source == "whatsapp":
+                from app.services.meta_cloud import send_audio_message
+                phone = lead_data.get("phone")
+                if phone:
+                    data = await send_audio_message(
+                        to_number=phone, audio_url=url_val, tenant_id=tenant_id,
+                    )
+                    sid = (data.get("messages") or [{}])[0].get("id")
+            else:
+                sid = await _send_text_via_channel(source, lead_data, url_val, tenant_id)
+            _record_outbound(db, step, lead_data, source, url_val, sid, automation_id)
+            if not sid:
+                return {"status": "skipped", "detail": "no channel id for lead"}
+            return {"status": "ok", "detail": f"sent audio sid={sid}"}
+        except Exception as e:
+            logger.error(f"automation send_audio failed for lead {lead_id}: {e}")
+            _bump_counter(db, step["id"], "error_count")
+            return {"status": "error", "detail": str(e)}
+
     # ── cta_url ────────────────────────────────────────────────────────────
     if step_type == "cta_url":
         body = _interpolate(config.get("body", ""), lead_data, variables)
@@ -466,6 +506,55 @@ async def _execute_step(
             return {"status": "ok", "detail": f"template sent: {result}"}
         except Exception as e:
             logger.error(f"automation send_template failed for lead {lead_id}: {e}")
+            return {"status": "error", "detail": str(e)}
+
+    # ── send_list ──────────────────────────────────────────────────────────
+    # Sends a WhatsApp interactive list menu and pauses for the lead's selection.
+    # The selected row id is saved to save_as; flow resumes linearly (no branching).
+    if step_type == "send_list":
+        save_as = config.get("save_as")
+        body = _interpolate(config.get("body", ""), lead_data, variables)
+        button_text = config.get("button_text", "Choose")
+        sections = config.get("sections") or []
+        if not body:
+            return {"status": "error", "detail": "send_list requires body"}
+        if not save_as:
+            return {"status": "error", "detail": "send_list requires save_as"}
+        if not sections:
+            return {"status": "error", "detail": "send_list requires sections"}
+        try:
+            sid = None
+            if source == "whatsapp":
+                from app.services.meta_cloud import send_list_message
+                phone = lead_data.get("phone")
+                if phone:
+                    data = await send_list_message(
+                        to_number=phone,
+                        body_text=body,
+                        button_text=button_text,
+                        sections=sections,
+                        header_text=config.get("header") or None,
+                        footer_text=config.get("footer") or None,
+                        tenant_id=tenant_id,
+                    )
+                    sid = (data.get("messages") or [{}])[0].get("id")
+            else:
+                lines = [body]
+                row_num = 1
+                for sec in sections:
+                    if sec.get("title"):
+                        lines.append(f"\n{sec['title']}")
+                    for row in (sec.get("rows") or []):
+                        lines.append(f"{row_num}. {row.get('title', '')}")
+                        row_num += 1
+                sid = await _send_text_via_channel(source, lead_data, "\n".join(lines), tenant_id)
+            _record_outbound(db, step, lead_data, source, body, sid, automation_id)
+            if not sid:
+                return {"status": "skipped", "detail": "no channel id for lead"}
+            return {"status": "wait_reply", "save_as": save_as, "detail": f"awaiting list selection → {save_as}"}
+        except Exception as e:
+            logger.error(f"automation send_list failed for lead {lead_id}: {e}")
+            _bump_counter(db, step["id"], "error_count")
             return {"status": "error", "detail": str(e)}
 
     # ── assign_lead ───────────────────────────────────────────────────────
@@ -551,6 +640,65 @@ async def _execute_step(
         except Exception as e:
             return {"status": "error", "detail": str(e)}
 
+    # ── add_label ──────────────────────────────────────────────────────────
+    if step_type == "add_label":
+        tag_id = config.get("tag_id")
+        action = config.get("action", "add")
+        if not tag_id:
+            return {"status": "error", "detail": "add_label requires tag_id"}
+        try:
+            if action == "add":
+                db.table("lead_tag_interest").upsert({
+                    "tenant_id": tenant_id,
+                    "lead_id": lead_id,
+                    "tag_id": tag_id,
+                    "last_seen": datetime.now(timezone.utc).isoformat(),
+                }, on_conflict="tenant_id,lead_id,tag_id").execute()
+            else:
+                db.table("lead_tag_interest").delete().eq("lead_id", lead_id).eq("tag_id", tag_id).eq("tenant_id", tenant_id).execute()
+            return {"status": "ok", "detail": f"label {action}ed tag={tag_id}"}
+        except Exception as e:
+            logger.error(f"automation add_label failed for lead {lead_id}: {e}")
+            return {"status": "error", "detail": str(e)}
+
+    # ── send_catalog ───────────────────────────────────────────────────────
+    if step_type == "send_catalog":
+        if source != "whatsapp":
+            return {"status": "skipped", "detail": "catalog only on whatsapp"}
+        catalog_id = config.get("catalog_id", "")
+        body = _interpolate(config.get("body", ""), lead_data, variables)
+        section_title = config.get("section_title", "Products")
+        product_ids: list = config.get("product_ids") or []
+        if not catalog_id:
+            return {"status": "error", "detail": "send_catalog requires catalog_id"}
+        if not product_ids:
+            return {"status": "error", "detail": "send_catalog requires product_ids"}
+        sections = [{
+            "title": section_title,
+            "product_items": [{"product_retailer_id": pid} for pid in product_ids[:30]],
+        }]
+        try:
+            phone = lead_data.get("phone")
+            if not phone:
+                return {"status": "skipped", "detail": "no phone for lead"}
+            from app.services.meta_cloud import send_catalog_message
+            data = await send_catalog_message(
+                to_number=phone,
+                body_text=body,
+                catalog_id=catalog_id,
+                sections=sections,
+                tenant_id=tenant_id,
+            )
+            sid = (data.get("messages") or [{}])[0].get("id")
+            _record_outbound(db, step, lead_data, source, body, sid, automation_id)
+            if not sid:
+                return {"status": "skipped", "detail": "no channel id for lead"}
+            return {"status": "ok", "detail": f"sent catalog sid={sid}"}
+        except Exception as e:
+            logger.error(f"automation send_catalog failed for lead {lead_id}: {e}")
+            _bump_counter(db, step["id"], "error_count")
+            return {"status": "error", "detail": str(e)}
+
     # ── create_followup ───────────────────────────────────────────────────
     if step_type == "create_followup":
         due_in_minutes = int(config.get("due_in_minutes", 30))
@@ -588,6 +736,7 @@ async def _execute_step(
     # ── user_input ─────────────────────────────────────────────────────────
     # Send a prompt, then pause the run until the lead's next inbound message,
     # which flow_runtime.resume_for_inbound captures into variables[save_as].
+    # mode="multiple_choice" appends a numbered list of choices to the prompt.
     if step_type == "user_input":
         save_as = config.get("save_as")
         if not save_as:
@@ -595,6 +744,12 @@ async def _execute_step(
         prompt = _interpolate(config.get("prompt", ""), lead_data, variables)
         if not prompt:
             return {"status": "error", "detail": "user_input requires a prompt"}
+        mode = config.get("mode", "text")
+        if mode == "multiple_choice":
+            choices: list = config.get("choices") or []
+            if choices:
+                numbered = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(choices))
+                prompt = f"{prompt}\n\n{numbered}"
         try:
             sid = await _send_text_via_channel(source, lead_data, prompt, tenant_id)
             _record_outbound(db, step, lead_data, source, prompt, sid, automation_id)

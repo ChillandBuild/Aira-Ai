@@ -53,12 +53,19 @@ async def _dispatch(
                 cfg = auto.get("trigger_config") or {}
                 keywords: list[str] = [k.lower().strip() for k in (cfg.get("keywords") or [])]
                 match_type: str = cfg.get("match_type", "any")
-                text_lower = (message or "").lower()
+                match_mode: str = cfg.get("match_mode", "contains")  # "contains" or "exact"
+                text_lower = (message or "").lower().strip()
+
+                def _kw_match(kw: str) -> bool:
+                    if match_mode == "exact":
+                        return text_lower == kw
+                    return kw in text_lower  # contains (default)
+
                 if keywords:
                     if match_type == "all":
-                        matched = all(kw in text_lower for kw in keywords)
+                        matched = all(_kw_match(kw) for kw in keywords)
                     else:
-                        matched = any(kw in text_lower for kw in keywords)
+                        matched = any(_kw_match(kw) for kw in keywords)
                     if matched:
                         await run_automation(auto, lead_id, "keyword_match", message, db)
 

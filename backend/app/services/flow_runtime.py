@@ -77,6 +77,13 @@ async def resume_for_inbound(lead_id: str, tenant_id: str, message: str, db) -> 
             if save_as:
                 variables[save_as] = message
             next_id = eng._next_step_id(steps_flat, node["id"], branch)
+        elif node_type == "send_list":
+            # WhatsApp delivers the selected row id as the reply body (list_reply.id).
+            # On text channels (fallback menus) it's the user's typed number/text.
+            save_as = config.get("save_as")
+            if save_as:
+                variables[save_as] = message
+            next_id = eng._next_step_id(steps_flat, node["id"])
         elif node_type == "user_input":
             save_as = config.get("save_as")
             if save_as:

@@ -17,6 +17,10 @@ import {
   HttpApiForm,
   RandomForm,
   AgentForm,
+  AudioForm,
+  ListMenuForm,
+  AddLabelForm,
+  CatalogForm,
 } from "./forms";
 
 interface BlockConfigDrawerProps {
@@ -79,6 +83,14 @@ export default function BlockConfigDrawer({ node, onSave, onClose }: BlockConfig
         return <RandomForm config={config} patch={patch} />;
       case "ai_agent":
         return <AgentForm config={config} patch={patch} />;
+      case "send_audio":
+        return <AudioForm config={config} patch={patch} />;
+      case "send_list":
+        return <ListMenuForm config={config} patch={patch} />;
+      case "add_label":
+        return <AddLabelForm config={config} patch={patch} />;
+      case "send_catalog":
+        return <CatalogForm config={config} patch={patch} />;
       default:
         return null;
     }
