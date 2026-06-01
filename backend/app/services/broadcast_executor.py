@@ -111,6 +111,19 @@ async def execute_broadcast(row: dict) -> dict:
             supp_rows = db.table("leads").select("phone").in_("phone", all_phones).eq("tenant_id", tenant_id).gte("outbound_no_reply_count", 3).execute()
             suppressed_phones = {r["phone"] for r in (supp_rows.data or [])}
 
+        # Suppress leads who previously replied negatively to any broadcast
+        negative_reply_phones: set[str] = set()
+        if all_phones:
+            neg_rows = (
+                db.table("leads")
+                .select("phone")
+                .in_("phone", all_phones)
+                .eq("tenant_id", tenant_id)
+                .not_.is_("broadcast_negative_reply_at", "null")
+                .execute()
+            )
+            negative_reply_phones = {r["phone"] for r in (neg_rows.data or [])}
+
         lead_rows = db.table("leads").select("id,phone,name").in_("phone", all_phones).eq("tenant_id", tenant_id).execute()
         phone_to_lead_id = {r["phone"]: r["id"] for r in (lead_rows.data or [])}
 
@@ -121,7 +134,7 @@ async def execute_broadcast(row: dict) -> dict:
 
         for lead in leads_raw:
             phone = _normalize_phone(lead.get("phone", ""))
-            if not phone or phone in opted_out_phones or phone in suppressed_phones:
+            if not phone or phone in opted_out_phones or phone in suppressed_phones or phone in negative_reply_phones:
                 failed += 1
                 recipient_rows.append({
                     "tenant_id": tenant_id,
@@ -210,6 +223,63 @@ async def execute_broadcast(row: dict) -> dict:
                     db.table("broadcast_recipients").insert(batch).execute()
                 except Exception as br_err:
                     logger.error(f"broadcast_recipients insert failed: {br_err}")
+
+        # Seed a fresh broadcast_lead_scores row per successfully sent lead
+        sent_at = datetime.now(timezone.utc).isoformat()
+        bls_rows = [
+            {
+                "tenant_id": tenant_id,
+                "broadcast_id": broadcast_id,
+                "lead_id": r["lead_id"],
+                "tag_id": tag_id,
+                "score": 5,
+                "segment": "C",
+                "arc_score": 5,
+                "arc_message_count": 0,
+                "broadcast_sent_at": sent_at,
+            }
+            for r in recipient_rows
+            if r.get("send_status") == "sent" and r.get("lead_id")
+        ]
+        if bls_rows:
+            for i in range(0, len(bls_rows), 100):
+                try:
+                    db.table("broadcast_lead_scores").upsert(
+                        bls_rows[i:i+100],
+                        on_conflict="broadcast_id,lead_id",
+                    ).execute()
+                except Exception as bls_err:
+                    logger.error(f"broadcast_lead_scores seed failed: {bls_err}")
+
+        # Increment broadcast_count in lead_tag_interest for each successfully sent lead
+        if tag_id and bls_rows:
+            sent_lead_ids = [r["lead_id"] for r in bls_rows]
+            try:
+                existing_lti = (
+                    db.table("lead_tag_interest")
+                    .select("lead_id,broadcast_count")
+                    .eq("tenant_id", tenant_id)
+                    .eq("tag_id", tag_id)
+                    .in_("lead_id", sent_lead_ids)
+                    .execute().data or []
+                )
+                existing_counts = {r["lead_id"]: r.get("broadcast_count") or 0 for r in existing_lti}
+                lti_rows = [
+                    {
+                        "tenant_id": tenant_id,
+                        "lead_id": lid,
+                        "tag_id": tag_id,
+                        "broadcast_count": existing_counts.get(lid, 0) + 1,
+                    }
+                    for lid in sent_lead_ids
+                ]
+                for i in range(0, len(lti_rows), 100):
+                    db.table("lead_tag_interest").upsert(
+                        lti_rows[i:i+100],
+                        on_conflict="tenant_id,lead_id,tag_id",
+                    ).execute()
+            except Exception as lti_err:
+                logger.warning(f"lead_tag_interest broadcast_count update failed: {lti_err}")
 
         if sent > 0:
             await increment_send_count(best_number["id"], delta=sent)

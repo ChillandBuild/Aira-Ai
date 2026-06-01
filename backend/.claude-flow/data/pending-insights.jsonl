@@ -13,3 +13,10 @@
 {"type":"edit","file":"/Users/prem/Documents/Aira Ai/backend/app/routes/automations.py","timestamp":1780169738680,"sessionId":null}
 {"type":"edit","file":"/Users/prem/Documents/Aira Ai/backend/app/routes/automations.py","timestamp":1780169753600,"sessionId":null}
 {"type":"edit","file":"/Users/prem/Documents/Aira Ai/backend/app/routes/automations.py","timestamp":1780169765624,"sessionId":null}
+{"type":"edit","file":"/Users/prem/Documents/Aira Ai/backend/supabase/migrations/076_broadcast_lead_scores.sql","timestamp":1780307954169,"sessionId":null}
+{"type":"edit","file":"/Users/prem/Documents/Aira Ai/backend/app/services/scoring_engine.py","timestamp":1780308065453,"sessionId":null}
+{"type":"edit","file":"/Users/prem/Documents/Aira Ai/backend/app/services/broadcast_executor.py","timestamp":1780308113478,"sessionId":null}
+{"type":"edit","file":"/Users/prem/Documents/Aira Ai/backend/app/services/ai_reply.py","timestamp":1780308179103,"sessionId":null}
+{"type":"edit","file":"/Users/prem/Documents/Aira Ai/backend/app/services/ai_reply.py","timestamp":1780308230543,"sessionId":null}
+{"type":"edit","file":"/Users/prem/Documents/Aira Ai/backend/app/routes/upload.py","timestamp":1780308306056,"sessionId":null}
+{"type":"edit","file":"/Users/prem/Documents/Aira Ai/backend/supabase/migrations/076_broadcast_lead_scores.sql","timestamp":1780308371065,"sessionId":null}

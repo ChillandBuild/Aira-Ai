@@ -302,6 +302,11 @@ class BulkSendRequest(BaseModel):
     csv_file_name: Optional[str] = None
     variable_mapping: list[str] = []  # ordered CSV column names for {{1}}, {{2}}, ...
     tag_id: Optional[str] = None  # broadcast tag for per-product interest tracking
+    exclude_negative_replies: bool = False  # skip leads who previously rejected a broadcast
+
+
+class RiskAuditRequest(BaseModel):
+    leads: list[BulkLeadItem]
 
 
 @router.post("/parse")
@@ -374,6 +379,60 @@ async def validate_optin(body: OptInRequest):
     }
 
 
+@router.post("/risk-audit")
+async def risk_audit(body: RiskAuditRequest, tenant_id: str = Depends(get_tenant_id)):
+    """Return risk counts for a set of leads before a broadcast is confirmed."""
+    db = get_supabase()
+    all_phones = [_normalize_phone(l.phone or "") for l in body.leads if _normalize_phone(l.phone or "")]
+
+    negative_reply_count = 0
+    high_no_reply_count = 0
+    opted_out_count = 0
+
+    if all_phones:
+        neg_rows = (
+            db.table("leads")
+            .select("phone")
+            .in_("phone", all_phones)
+            .eq("tenant_id", tenant_id)
+            .not_.is_("broadcast_negative_reply_at", "null")
+            .execute()
+        )
+        negative_reply_count = len(neg_rows.data or [])
+
+        no_reply_rows = (
+            db.table("leads")
+            .select("phone")
+            .in_("phone", all_phones)
+            .eq("tenant_id", tenant_id)
+            .gte("outbound_no_reply_count", 2)
+            .is_("broadcast_negative_reply_at", "null")
+            .execute()
+        )
+        high_no_reply_count = len(no_reply_rows.data or [])
+
+        opt_rows = (
+            db.table("leads")
+            .select("phone")
+            .in_("phone", all_phones)
+            .eq("tenant_id", tenant_id)
+            .eq("opted_out", True)
+            .execute()
+        )
+        opted_out_count = len(opt_rows.data or [])
+
+    total = len(all_phones)
+    safe_count = total - negative_reply_count - high_no_reply_count - opted_out_count
+
+    return {
+        "total": total,
+        "negative_reply_count": negative_reply_count,
+        "high_no_reply_count": high_no_reply_count,
+        "opted_out_count": opted_out_count,
+        "safe_count": max(0, safe_count),
+    }
+
+
 @router.post("/bulk-send")
 async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_id)):
     broadcast_id = str(uuid.uuid4())
@@ -402,6 +461,23 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         raise HTTPException(status_code=400, detail="No eligible leads")
 
     db = get_supabase()
+
+    # ── Exclude leads who previously rejected a broadcast ────────────────────
+    if body.exclude_negative_replies:
+        _all_phones_pre = [_normalize_phone(l.phone or "") for l in eligible if _normalize_phone(l.phone or "")]
+        if _all_phones_pre:
+            _neg = (
+                db.table("leads")
+                .select("phone")
+                .in_("phone", _all_phones_pre)
+                .eq("tenant_id", tenant_id)
+                .not_.is_("broadcast_negative_reply_at", "null")
+                .execute()
+            )
+            _neg_phones = {r["phone"] for r in (_neg.data or [])}
+            eligible = [l for l in eligible if _normalize_phone(l.phone or "") not in _neg_phones]
+        if not eligible:
+            raise HTTPException(status_code=400, detail="No eligible leads after negative-reply exclusion")
 
     # ── Scheduled / Drip: store and return early ─────────────────────────────
     if body.schedule_type in ("scheduled", "drip"):
@@ -555,6 +631,18 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         rows = db.table("leads").select("phone").in_("phone", all_phones).eq("tenant_id", tenant_id).eq("opted_out", True).execute()
         opted_out_phones = {r["phone"] for r in (rows.data or [])}
 
+    negative_reply_phones: set[str] = set()
+    if all_phones and body.exclude_negative_replies:
+        neg_rows = (
+            db.table("leads")
+            .select("phone")
+            .in_("phone", all_phones)
+            .eq("tenant_id", tenant_id)
+            .not_.is_("broadcast_negative_reply_at", "null")
+            .execute()
+        )
+        negative_reply_phones = {r["phone"] for r in (neg_rows.data or [])}
+
     # Fetch template metadata
     tpl_lang = "en"
     tpl_body = ""
@@ -608,6 +696,23 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 row["fail_reason"] = "opted_out"
             recipient_rows.append(row)
             logger.info(f"Bulk-send skipped opted-out lead {phone}")
+            continue
+
+        if phone in negative_reply_phones:
+            failed += 1
+            row = {
+                "tenant_id": tenant_id,
+                "broadcast_id": broadcast_id,
+                "lead_id": lead_id,
+                "phone": phone,
+                "name": lead_name,
+                "send_status": "opted_out_skip",
+                "tag_id": body.tag_id,
+            }
+            if _has_fail_reason:
+                row["fail_reason"] = "negative_reply_excluded"
+            recipient_rows.append(row)
+            logger.info(f"Bulk-send skipped negative-reply lead {phone}")
             continue
 
         try:
@@ -1104,7 +1209,7 @@ async def get_failed_csv(
 
 @router.get("/history")
 async def get_broadcast_history(tenant_id: str = Depends(get_tenant_id)):
-    """Return the last 50 broadcast records stored in app_settings."""
+    """Return the last 50 broadcast records with per-broadcast hot/warm/cold counts."""
     db = get_supabase()
     row = (
         db.table("app_settings")
@@ -1120,7 +1225,106 @@ async def get_broadcast_history(tenant_id: str = Depends(get_tenant_id)):
             history = json.loads(row.data["value"])
         except Exception:
             history = []
+
+    # Enrich with hot/warm/cold from broadcast_lead_scores
+    broadcast_ids = [h["broadcast_id"] for h in history if h.get("broadcast_id")]
+    if broadcast_ids:
+        try:
+            score_rows = (
+                db.table("broadcast_lead_scores")
+                .select("broadcast_id,segment")
+                .eq("tenant_id", tenant_id)
+                .in_("broadcast_id", broadcast_ids)
+                .execute()
+                .data or []
+            )
+            hot_map: dict[str, int] = {}
+            warm_map: dict[str, int] = {}
+            cold_map: dict[str, int] = {}
+            for sr in score_rows:
+                bid = sr["broadcast_id"]
+                seg = sr.get("segment", "C")
+                if seg == "A":
+                    hot_map[bid] = hot_map.get(bid, 0) + 1
+                elif seg == "B":
+                    warm_map[bid] = warm_map.get(bid, 0) + 1
+                else:
+                    cold_map[bid] = cold_map.get(bid, 0) + 1
+            for h in history:
+                bid = h.get("broadcast_id", "")
+                h["hot"]  = hot_map.get(bid, 0)
+                h["warm"] = warm_map.get(bid, 0)
+                h["cold"] = cold_map.get(bid, 0)
+        except Exception:
+            pass
+
     return {"data": history}
+
+
+@router.get("/broadcast-scores-csv")
+async def download_broadcast_scores_csv(
+    broadcast_id: str = Query(..., description="Broadcast UUID"),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    """Download per-lead interest CSV for a specific broadcast (product-specific scoring)."""
+    db = get_supabase()
+
+    score_rows = (
+        db.table("broadcast_lead_scores")
+        .select("lead_id,score,segment,arc_score,last_inbound_at,broadcast_sent_at")
+        .eq("tenant_id", tenant_id)
+        .eq("broadcast_id", broadcast_id)
+        .execute()
+        .data or []
+    )
+
+    lead_ids = [r["lead_id"] for r in score_rows if r.get("lead_id")]
+    lead_map: dict[str, dict] = {}
+    if lead_ids:
+        leads = db.table("leads").select("id,name,phone").in_("id", lead_ids).execute()
+        lead_map = {l["id"]: l for l in (leads.data or [])}
+
+    # Resolve broadcast template name
+    broadcast_name = broadcast_id[:8]
+    try:
+        br_row = (
+            db.table("scheduled_broadcasts")
+            .select("template_name")
+            .eq("id", broadcast_id)
+            .maybe_single()
+            .execute()
+        )
+        if br_row and br_row.data:
+            broadcast_name = br_row.data.get("template_name") or broadcast_name
+    except Exception:
+        pass
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=[
+        "Name", "Phone", "Score", "Segment", "Arc Score",
+        "Last Reply At", "Broadcast Sent At",
+    ])
+    writer.writeheader()
+    for r in score_rows:
+        lead = lead_map.get(r.get("lead_id", ""), {})
+        seg = r.get("segment", "C")
+        writer.writerow({
+            "Name": lead.get("name", ""),
+            "Phone": lead.get("phone", ""),
+            "Score": r.get("score", 5),
+            "Segment": seg,
+            "Arc Score": r.get("arc_score", 5),
+            "Last Reply At": r.get("last_inbound_at") or "",
+            "Broadcast Sent At": r.get("broadcast_sent_at") or "",
+        })
+
+    safe_name = broadcast_name.replace(" ", "_").lower()
+    date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=broadcast_{safe_name}_{date_str}.csv"},
+    )
 
 
 @router.get("/history-csv")

@@ -149,6 +149,16 @@ export default function UploadPage() {
   const [primaryNumber, setPrimaryNumber] = useState<{ number: string; display_name: string } | null>(null);
   const [primaryNumberLoading, setPrimaryNumberLoading] = useState(false);
 
+  const [riskSummary, setRiskSummary] = useState<{
+    total: number;
+    negative_reply_count: number;
+    high_no_reply_count: number;
+    opted_out_count: number;
+    safe_count: number;
+  } | null>(null);
+  const [riskLoading, setRiskLoading] = useState(false);
+  const [excludeNegativeReplies, setExcludeNegativeReplies] = useState(false);
+
   const [broadcastHistory, setBroadcastHistory] = useState<BroadcastHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historySearch, setHistorySearch] = useState("");
@@ -363,6 +373,9 @@ export default function UploadPage() {
     setTemplatesLoading(false);
     setTemplatesError(false);
     setPrimaryNumber(null);
+    setRiskSummary(null);
+    setRiskLoading(false);
+    setExcludeNegativeReplies(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -414,6 +427,43 @@ export default function UploadPage() {
     }
   }
 
+  async function fetchRiskAudit() {
+    if (!parsedData || !csvFile) return;
+    setRiskLoading(true);
+    setRiskSummary(null);
+    try {
+      const text = await csvFile.text();
+      const lines = text.split(/\r?\n/).filter(Boolean);
+      const headers = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
+      const mapping = parsedData.suggested_mapping;
+      const phoneIdx = mapping.phone ? headers.indexOf(mapping.phone) : -1;
+      const nameIdx = mapping.name ? headers.indexOf(mapping.name) : -1;
+      const leads = lines.slice(1).map((line) => {
+        const cols = line.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
+        const extra_cols: Record<string, string> = {};
+        headers.forEach((h, i) => { extra_cols[h] = cols[i] ?? ""; });
+        return {
+          phone: phoneIdx >= 0 ? cols[phoneIdx] ?? "" : "",
+          name: nameIdx >= 0 ? cols[nameIdx] ?? undefined : undefined,
+          opt_in_source: optInSource,
+          extra_cols,
+        };
+      }).filter((l) => l.phone);
+
+      const auth = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/upload/risk-audit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...auth },
+        body: JSON.stringify({ leads }),
+      });
+      if (res.ok) setRiskSummary(await res.json());
+    } catch {
+      // risk audit is best-effort; don't block the flow
+    } finally {
+      setRiskLoading(false);
+    }
+  }
+
   async function handleSend() {
     if (!parsedData || !csvFile) return;
     setSendLoading(true);
@@ -451,6 +501,7 @@ export default function UploadPage() {
         csv_file_name: csvFileName,
         variable_mapping: variableMapping.filter(Boolean),
         tag_id: selectedTag || undefined,
+        exclude_negative_replies: excludeNegativeReplies,
       };
 
       const auth = await getAuthHeaders();
@@ -957,7 +1008,7 @@ export default function UploadPage() {
                       Back
                     </button>
                     <button
-                      onClick={() => setCurrentStep(5)}
+                      onClick={async () => { setCurrentStep(5); await fetchRiskAudit(); }}
                       disabled={!templateName.trim()}
                       className="flex items-center gap-2 px-5 py-2.5 bg-tertiary text-white rounded-xl font-label text-sm font-semibold hover:bg-tertiary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm"
                     >
@@ -988,6 +1039,49 @@ export default function UploadPage() {
                       </div>
                     ))}
                   </div>
+
+                  {/* ── Risk Audit Card ─────────────────────────────────── */}
+                  {riskLoading && (
+                    <div className="flex items-center gap-2 p-3.5 bg-surface-low rounded-xl border border-surface-mid font-body text-sm text-on-surface-muted">
+                      <div className="w-4 h-4 border-2 border-tertiary border-t-transparent rounded-full animate-spin" />
+                      Checking audience health…
+                    </div>
+                  )}
+                  {!riskLoading && riskSummary && (riskSummary.negative_reply_count > 0 || riskSummary.high_no_reply_count > 0) && (
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle size={15} className="text-amber-600 shrink-0" />
+                        <p className="font-label text-sm font-semibold text-amber-800">Audience Risk Summary</p>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="p-2.5 bg-white rounded-lg border border-amber-100">
+                          <p className="font-display text-xl font-bold text-red-600">{riskSummary.negative_reply_count}</p>
+                          <p className="font-label text-[9px] text-on-surface-muted uppercase font-bold mt-0.5">Said No</p>
+                        </div>
+                        <div className="p-2.5 bg-white rounded-lg border border-amber-100">
+                          <p className="font-display text-xl font-bold text-amber-600">{riskSummary.high_no_reply_count}</p>
+                          <p className="font-label text-[9px] text-on-surface-muted uppercase font-bold mt-0.5">Silent 2+</p>
+                        </div>
+                        <div className="p-2.5 bg-white rounded-lg border border-amber-100">
+                          <p className="font-display text-xl font-bold text-green-600">{riskSummary.safe_count}</p>
+                          <p className="font-label text-[9px] text-on-surface-muted uppercase font-bold mt-0.5">Safe</p>
+                        </div>
+                      </div>
+                      {riskSummary.negative_reply_count > 0 && (
+                        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={excludeNegativeReplies}
+                            onChange={(e) => setExcludeNegativeReplies(e.target.checked)}
+                            className="w-4 h-4 rounded border-amber-300 text-amber-600 accent-amber-600"
+                          />
+                          <span className="font-body text-sm text-amber-800">
+                            Exclude {riskSummary.negative_reply_count} lead{riskSummary.negative_reply_count !== 1 ? "s" : ""} who previously said no
+                          </span>
+                        </label>
+                      )}
+                    </div>
+                  )}
 
                   {sendError && (
                     <div className="flex items-start gap-2 p-3.5 bg-red-50 text-red-700 rounded-xl font-body text-sm border border-red-100">
