@@ -287,12 +287,6 @@ export function rfToSteps(rfNodes: Node[], rfEdges: Edge[]): StepIn[] {
   // Rules:
   //   - If incoming edge sourceHandle is a branch key (non-"out"), it's a branch child
   //   - If incoming edge sourceHandle is "out" (or missing), it's in the same lane as source
-  const branchingNodeIds = new Set<string>(
-    rfNodes
-      .filter((n) => n.id !== TRIGGER_NODE_ID && isBranching((n.data as { step_type: BlockType }).step_type))
-      .map((n) => n.id),
-  );
-
   function getParentLane(nodeId: string): { parentId: string | null; branch: string | null } {
     const edge = incoming.get(nodeId);
     if (!edge) return { parentId: null, branch: null };

@@ -22,7 +22,6 @@ import BlockNode from "./nodes/BlockNode";
 import TriggerNode from "./nodes/TriggerNode";
 import BlockConfigDrawer from "./drawers/BlockConfigDrawer";
 import { TRIGGER_NODE_ID, newBlockNode, rfToSteps, stepsToRF } from "./rfUtils";
-import { isBranching } from "./types";
 import type { BlockConfig, BlockType, FlowNode, Step, TriggerConfig, TriggerType } from "./types";
 
 // ── Node type registry ────────────────────────────────────────────────────────

@@ -353,7 +353,8 @@ export default function UploadPage() {
         });
       }
     }
-  }, [currentStep, templates.length, templatesLoading, primaryNumber, primaryNumberLoading]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep, templates.length, templatesLoading, tags.length, tagsLoading, primaryNumber, primaryNumberLoading]);
 
   function resetAll() {
     setCurrentStep(1);
