@@ -455,7 +455,7 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
                 </p>
 
                 {/* Row 3: status badges */}
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   {lead.needs_human_intervention && (
                     <span className="font-label text-[9px] font-bold text-white bg-red-500 px-1.5 py-0.5 rounded-full">ACTION</span>
                   )}
@@ -467,6 +467,12 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
                   )}>
                     {lead.ai_enabled !== false ? "Bot" : "You"}
                   </span>
+                  {lead.ad_campaign_id && (
+                    <span className="inline-flex items-center gap-0.5 font-label text-[9px] font-bold text-violet-700 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded-full">
+                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/></svg>
+                      Meta Ad
+                    </span>
+                  )}
                   <SegmentBadge segment={lead.segment} />
                   {lead.opted_out ? (
                     <span className="font-label text-[9px] font-bold text-red-500 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded-full">STOP</span>

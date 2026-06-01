@@ -25,6 +25,7 @@ export interface Lead {
   tg_username?: string | null;
   ig_user_id?: string | null;
   fb_user_id?: string | null;
+  ad_campaign_id?: string | null;
   created_at: string;
   last_message_content?: string | null;
   pinned_at?: string | null;

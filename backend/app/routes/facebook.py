@@ -4,7 +4,7 @@ from fastapi import APIRouter, Request, BackgroundTasks, Response
 from app.db.supabase import get_supabase
 from app.config import settings
 from app.config_dynamic import get_setting
-from app.services.growth import record_stage_event
+from app.services.growth import record_stage_event, get_or_create_campaign
 from app.services.ai_reply import generate_reply
 from app.services.meta_webhook_verify import verify_meta_signature, resolve_tenant_for_page
 from app.services.automation_triggers import fire_trigger
@@ -91,6 +91,10 @@ async def facebook_webhook(tenant_id: str, request: Request, background_tasks: B
             if not sender_id or not text or not message_id:
                 continue
 
+            # Meta Ad referral — present when user clicks a Click-to-Messenger ad
+            # Same referral object structure as WhatsApp CTWA
+            referral = event.get("referral") or message.get("referral") or {}
+
             # Step 1: Look up or create lead by fb_user_id
             existing = (
                 db.table("leads")
@@ -141,6 +145,38 @@ async def facebook_webhook(tenant_id: str, request: Request, background_tasks: B
                 except Exception as e:
                     logger.warning(f"Auto-assign failed for Facebook lead {lead_id}: {e}")
                 fire_trigger(background_tasks, lead_id, tenant_id, "lead_created", db=db)
+
+            # ── Meta Ad attribution (Click-to-Messenger) ────────────────────
+            # Only runs when referral.source_type == "ad" (user clicked a Messenger ad)
+            # Links the lead to an ad_campaign row so it appears in Meta Ad Leads page
+            if referral.get("source_type") == "ad":
+                try:
+                    ad_id    = referral.get("source_id", "")
+                    ad_title = referral.get("headline") or referral.get("ad_title") or ad_id
+                    campaign = get_or_create_campaign(
+                        db,
+                        tenant_id=tenant_id,
+                        platform="facebook",
+                        campaign_name=ad_title,
+                        external_campaign_id=ad_id or None,
+                    )
+                    if campaign:
+                        # Only set ad_campaign_id if not already attributed
+                        current = (
+                            db.table("leads").select("ad_campaign_id")
+                            .eq("id", lead_id).limit(1).execute()
+                        )
+                        if current.data and not current.data[0].get("ad_campaign_id"):
+                            db.table("leads").update(
+                                {"ad_campaign_id": campaign["id"]}
+                            ).eq("id", lead_id).execute()
+                            logger.info(
+                                f"Facebook Ad referral: lead {lead_id} linked to "
+                                f"campaign {campaign['id']} (ad_id={ad_id})"
+                            )
+                except Exception as fb_ad_err:
+                    logger.warning(f"Facebook ad referral tracking failed for lead {lead_id}: {fb_ad_err}")
+            # ─────────────────────────────────────────────────────────────────
 
             # Step 2: Prevent duplicate message insertion
             already = (
