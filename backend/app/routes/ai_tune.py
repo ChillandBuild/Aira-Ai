@@ -82,14 +82,15 @@ async def list_prompts(tenant_id: str = Depends(get_tenant_id)):
     return {"data": res.data or []}
 
 
-async def _auto_generate_rubric(system_prompt: str, tenant_id: str) -> None:
+async def _auto_generate_rubric(system_prompt: str, tenant_id: str, force: bool = False) -> None:
     """Generate a domain-appropriate scoring rubric from the tenant's system prompt."""
     try:
         from app.config_dynamic import get_setting, save_setting
-        existing_rubric = get_setting("scoring_rubric", tenant_id=tenant_id)
-        if existing_rubric and existing_rubric.strip():
-            logger.info(f"Scoring rubric already exists for tenant {tenant_id} — skipping auto-generation")
-            return
+        if not force:
+            existing_rubric = get_setting("scoring_rubric", tenant_id=tenant_id)
+            if existing_rubric and existing_rubric.strip():
+                logger.info(f"Scoring rubric already exists for tenant {tenant_id} — skipping auto-generation")
+                return
 
         if not settings.groq_api_key:
             return
@@ -133,7 +134,7 @@ async def update_prompt(name: str, payload: PromptUpdate, tenant_id: str = Depen
     if not res.data:
         raise HTTPException(status_code=404, detail=f"Prompt '{name}' not found")
     invalidate_prompt_cache(name)
-    _task = asyncio.create_task(_auto_generate_rubric(payload.content, tenant_id))
+    _task = asyncio.create_task(_auto_generate_rubric(payload.content, tenant_id, force=True))
     _task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
     return res.data[0]
 

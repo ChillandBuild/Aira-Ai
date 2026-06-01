@@ -242,8 +242,12 @@ export default function KnowledgePage() {
     setTuneSaving(true);
     try {
       await api.aiTune.updatePrompt(activeName, draft);
-      setTuneMsg("Prompt saved.");
+      setTuneMsg("Prompt saved. Generating scoring rubric…");
       await loadPrompts();
+      setTimeout(async () => {
+        await loadAiTuneSettings();
+        setTuneMsg("Prompt saved.");
+      }, 4000);
     } catch (err) {
       setTuneMsg(err instanceof Error ? err.message : "Save failed");
     } finally {
