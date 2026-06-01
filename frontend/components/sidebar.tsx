@@ -7,7 +7,7 @@ import { API_URL, getAuthHeaders } from "@/lib/api";
 import {
   LayoutDashboard, MessageSquare, Users, Settings, Phone,
   BarChart2, Upload, BookOpen, Layers, FileCheck, StickyNote,
-  LogOut, Inbox, Zap, TrendingUp, ChevronDown, ChevronRight, ClipboardList, Tag, RadioTower,
+  LogOut, Inbox, Zap, ChevronDown, ChevronRight, Tag, RadioTower,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AiraLogo } from "./logo";
@@ -28,8 +28,6 @@ const CHANNELS_ITEMS: NavItem[] = [
   { href: "/dashboard/broadcast-tags", icon: Tag, label: "Broadcast Tags", feature: "whatsapp" },
   { href: "/dashboard/templates", icon: FileCheck, label: "Templates", feature: "whatsapp" },
   { href: "/dashboard/numbers", icon: Layers, label: "Numbers Pool", feature: "whatsapp" },
-  { href: "/dashboard/insights", icon: TrendingUp, label: "Insights", feature: "whatsapp" },
-  { href: "/dashboard/audit-logs", icon: ClipboardList, label: "Audit Logs", feature: "whatsapp" },
 ];
 
 const TELECALLING_ITEMS: NavItem[] = [
