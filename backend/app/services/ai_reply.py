@@ -558,41 +558,56 @@ async def generate_reply(
             logger.info(f"Trigger D: lead {lead_id} repeated same question")
     if lead_data and lead_data.get("ai_enabled") is False:
         logger.info(f"Lead {lead_id} has AI disabled — skipping auto-reply")
-        # Still rescore so the admin sees segment updates even while handling manually
+        # Still rescore via Score Engine v2 so admin sees segment updates during manual handling
         try:
-            current_score = lead_data.get("score", 5)
+            from app.services.scoring_engine import compute_score as _compute_score
+            from datetime import timedelta
             _tid = lead_data.get("tenant_id")
-            new_score = current_score
-            new_segment = lead_data.get("segment") or "C"
-            if lead_data.get("segment") != "A":
-                from app.services.lead_scorer import score_with_safety_net
-                from app.config_dynamic import get_setting
-                new_score = await score_with_safety_net(
-                    message, current_score, context_block or "", db, str(lead_id), tenant_id=_tid
+            _bcast_ctx: dict | None = None
+            try:
+                _ctx_cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
+                _br = (
+                    db.table("broadcast_recipients")
+                    .select("broadcast_id,tag_id,created_at")
+                    .eq("lead_id", str(lead_id))
+                    .not_.is_("broadcast_id", "null")
+                    .gte("created_at", _ctx_cutoff)
+                    .order("created_at", desc=True)
+                    .limit(1)
+                    .execute()
                 )
-                _thresholds = parse_thresholds(get_setting("scoring_segment_thresholds", tenant_id=_tid))
-                new_segment = score_to_segment(new_score, thresholds=_thresholds)
-                db.table("leads").update({
-                    "score": new_score,
-                    "segment": new_segment,
-                }).eq("id", str(lead_id)).execute()
-                _score_meta = {
-                    "new_score": new_score,
-                    "prev_score": current_score,
-                    "message_snippet": message[:150],
-                    "channel": channel,
-                    "reason": "ai_disabled_inbound",
-                }
-                if new_segment != lead_data.get("segment") or new_score != current_score:
-                    record_stage_event(
-                        lead_id,
-                        from_segment=lead_data.get("segment"),
-                        to_segment=new_segment,
-                        event_type="segment_changed" if new_segment != lead_data.get("segment") else "score_updated",
-                        metadata=_score_meta,
-                        tenant_id=_tid,
-                        db=db,
-                    )
+                if _br.data:
+                    _b = _br.data[0]
+                    _bcast_ctx = {
+                        "broadcast_id": _b["broadcast_id"],
+                        "broadcast_sent_at": _b["created_at"],
+                        "tag_id": _b.get("tag_id"),
+                    }
+            except Exception:
+                pass
+            _sr = await _compute_score(
+                message=message, lead_id=str(lead_id), db=db,
+                tenant_id=_tid, broadcast_context=_bcast_ctx,
+            )
+            new_score = _sr["score"]
+            new_segment = _sr["segment"]
+            _score_meta = {
+                "new_score": new_score,
+                "prev_score": lead_data.get("score", 5),
+                "message_snippet": message[:150],
+                "channel": channel,
+                "reason": "ai_disabled_inbound",
+            }
+            if new_segment != lead_data.get("segment") or new_score != lead_data.get("score", 5):
+                record_stage_event(
+                    lead_id,
+                    from_segment=lead_data.get("segment"),
+                    to_segment=new_segment,
+                    event_type="segment_changed" if new_segment != lead_data.get("segment") else "score_updated",
+                    metadata=_score_meta,
+                    tenant_id=_tid,
+                    db=db,
+                )
             sync_follow_up_jobs(
                 lead_id,
                 segment=new_segment,
@@ -762,124 +777,103 @@ async def generate_reply(
         except Exception as _ce:
             logger.warning(f"[COLLECT_DONE] parse failed for lead {lead_id}: {_ce}")
 
-    # Step 5: Score Engine v2 — composite arc + intent + engagement
+    # Step 5: Score Engine v2 — composite arc + intent + engagement (no gate)
     new_segment = segment  # fallback if scoring fails
     new_score = lead_data.get("score", 5)
-    if not lead_data.get("assigned_to") and lead_data.get("segment") != "A":
-        try:
-            from app.services.scoring_engine import compute_score
-            score_result = await compute_score(
-                message=message,
-                lead_id=str(lead_id),
-                db=db,
-                tenant_id=tenant_id,
-            )
-            new_score = score_result["score"]
-            new_segment = score_result["segment"]
-
-            _score_meta = {
-                "new_score": new_score,
-                "prev_score": lead_data.get("score", 5),
-                "arc_score": score_result["arc_score"],
-                "intent_delta": score_result["intent_delta"],
-                "engagement_delta": score_result["engagement_delta"],
-                "intent_reason": score_result["intent_reason"],
-                "arc_updated": score_result["arc_updated"],
-                "message_snippet": message[:150],
-                "channel": channel,
-            }
-            if new_segment != lead_data.get("segment") or new_score != lead_data.get("score", 5):
-                record_stage_event(
-                    lead_id,
-                    from_segment=lead_data.get("segment"),
-                    to_segment=new_segment,
-                    event_type="segment_changed" if new_segment != lead_data.get("segment") else "score_updated",
-                    metadata=_score_meta,
-                    tenant_id=tenant_id,
-                    db=db,
-                )
-            old_segment = lead_data.get("segment") or "C"
-            if new_segment != old_segment and should_assign_to_telecalling(telecalling_cfg, new_segment, channel):
-                assigned_caller = auto_assign_lead(str(lead_id), tenant_id)
-                if assigned_caller:
-                    lead_data["assigned_to"] = assigned_caller
-
-            if new_score >= 7 and (lead_data.get("score") or 5) < 7:
-                try:
-                    from app.routes.alerts import create_alert
-                    create_alert(
-                        lead_id=str(lead_id),
-                        tenant_id=tenant_id,
-                        assigned_caller_id=lead_data.get("assigned_to"),
-                    )
-                except Exception as alert_err:
-                    logger.warning(f"Alert creation failed for lead {lead_id}: {alert_err}")
-
-                escalation_flags.add("E")
-
-                try:
-                    from app.services.automation_triggers import _dispatch
-                    import asyncio
-                    asyncio.create_task(_dispatch(
-                        lead_id=str(lead_id),
-                        tenant_id=tenant_id,
-                        trigger_type="score_threshold",
-                        message=message,
-                        is_first_message=False,
-                        db=db,
-                    ))
-                except Exception as auto_err:
-                    logger.warning(f"score_threshold trigger failed for lead {lead_id}: {auto_err}")
-        except Exception as e:
-            logger.error(f"Scoring update failed for lead {lead_id}: {e}")
-
-    # Step 5b: Update per-tag interest if this lead recently received a tagged broadcast
     try:
+        from app.services.scoring_engine import compute_score
         from datetime import timedelta
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-        tagged_rows = (
-            db.table("broadcast_recipients")
-            .select("tag_id")
-            .eq("lead_id", str(lead_id))
-            .not_.is_("tag_id", "null")
-            .gte("created_at", cutoff)
-            .execute()
-        )
-        seen_tag_ids: set[str] = set()
-        for tr in (tagged_rows.data or []):
-            tid = tr.get("tag_id")
-            if not tid or tid in seen_tag_ids:
-                continue
-            seen_tag_ids.add(tid)
-            hot = 1 if new_segment == "A" else 0
-            warm = 1 if new_segment == "B" else 0
-            cold = 1 if new_segment in ("C", "D") else 0
-            # Read existing count to increment
-            existing = (
-                db.table("lead_tag_interest")
-                .select("broadcast_count")
-                .eq("tenant_id", tenant_id)
+
+        # Detect broadcast context: most recent tagged broadcast within 14 days
+        _broadcast_context: dict | None = None
+        try:
+            _ctx_cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
+            _recent_br = (
+                db.table("broadcast_recipients")
+                .select("broadcast_id,tag_id,created_at")
                 .eq("lead_id", str(lead_id))
-                .eq("tag_id", tid)
-                .maybe_single()
+                .not_.is_("broadcast_id", "null")
+                .gte("created_at", _ctx_cutoff)
+                .order("created_at", desc=True)
+                .limit(1)
                 .execute()
             )
-            current_count = 0
-            if existing and existing.data:
-                current_count = existing.data.get("broadcast_count", 0)
-            db.table("lead_tag_interest").upsert({
-                "tenant_id": tenant_id,
-                "lead_id": str(lead_id),
-                "tag_id": tid,
-                "hot": hot,
-                "warm": warm,
-                "cold": cold,
-                "last_seen": datetime.now(timezone.utc).isoformat(),
-                "broadcast_count": current_count + 1,
-            }, on_conflict="tenant_id,lead_id,tag_id").execute()
-            logger.info(f"Tag interest updated: lead {lead_id} tag {tid} segment {new_segment} count={current_count + 1}")
-    except Exception as tag_err:
-        logger.warning(f"Tag interest update failed for lead {lead_id}: {tag_err}")
+            if _recent_br.data:
+                _br = _recent_br.data[0]
+                _broadcast_context = {
+                    "broadcast_id": _br["broadcast_id"],
+                    "broadcast_sent_at": _br["created_at"],
+                    "tag_id": _br.get("tag_id"),
+                }
+        except Exception as _ctx_err:
+            logger.warning(f"Broadcast context lookup failed for lead {lead_id}: {_ctx_err}")
+
+        score_result = await compute_score(
+            message=message,
+            lead_id=str(lead_id),
+            db=db,
+            tenant_id=tenant_id,
+            broadcast_context=_broadcast_context,
+        )
+        new_score = score_result["score"]
+        new_segment = score_result["segment"]
+
+        _score_meta = {
+            "new_score": new_score,
+            "prev_score": lead_data.get("score", 5),
+            "arc_score": score_result["arc_score"],
+            "intent_delta": score_result["intent_delta"],
+            "engagement_delta": score_result["engagement_delta"],
+            "intent_reason": score_result["intent_reason"],
+            "arc_updated": score_result["arc_updated"],
+            "message_snippet": message[:150],
+            "channel": channel,
+            "broadcast_id": (_broadcast_context or {}).get("broadcast_id"),
+        }
+        if new_segment != lead_data.get("segment") or new_score != lead_data.get("score", 5):
+            record_stage_event(
+                lead_id,
+                from_segment=lead_data.get("segment"),
+                to_segment=new_segment,
+                event_type="segment_changed" if new_segment != lead_data.get("segment") else "score_updated",
+                metadata=_score_meta,
+                tenant_id=tenant_id,
+                db=db,
+            )
+        old_segment = lead_data.get("segment") or "C"
+        if new_segment != old_segment and should_assign_to_telecalling(telecalling_cfg, new_segment, channel):
+            assigned_caller = auto_assign_lead(str(lead_id), tenant_id)
+            if assigned_caller:
+                lead_data["assigned_to"] = assigned_caller
+
+        if new_score >= 7 and (lead_data.get("score") or 5) < 7:
+            try:
+                from app.routes.alerts import create_alert
+                create_alert(
+                    lead_id=str(lead_id),
+                    tenant_id=tenant_id,
+                    assigned_caller_id=lead_data.get("assigned_to"),
+                )
+            except Exception as alert_err:
+                logger.warning(f"Alert creation failed for lead {lead_id}: {alert_err}")
+
+            escalation_flags.add("E")
+
+            try:
+                from app.services.automation_triggers import _dispatch
+                import asyncio
+                asyncio.create_task(_dispatch(
+                    lead_id=str(lead_id),
+                    tenant_id=tenant_id,
+                    trigger_type="score_threshold",
+                    message=message,
+                    is_first_message=False,
+                    db=db,
+                ))
+            except Exception as auto_err:
+                logger.warning(f"score_threshold trigger failed for lead {lead_id}: {auto_err}")
+    except Exception as e:
+        logger.error(f"Scoring update failed for lead {lead_id}: {e}")
 
     sync_follow_up_jobs(
         lead_id,

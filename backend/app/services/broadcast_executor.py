@@ -211,6 +211,33 @@ async def execute_broadcast(row: dict) -> dict:
                 except Exception as br_err:
                     logger.error(f"broadcast_recipients insert failed: {br_err}")
 
+        # Seed a fresh broadcast_lead_scores row per successfully sent lead
+        sent_at = datetime.now(timezone.utc).isoformat()
+        bls_rows = [
+            {
+                "tenant_id": tenant_id,
+                "broadcast_id": broadcast_id,
+                "lead_id": r["lead_id"],
+                "tag_id": tag_id,
+                "score": 5,
+                "segment": "C",
+                "arc_score": 5,
+                "arc_message_count": 0,
+                "broadcast_sent_at": sent_at,
+            }
+            for r in recipient_rows
+            if r.get("send_status") == "sent" and r.get("lead_id")
+        ]
+        if bls_rows:
+            for i in range(0, len(bls_rows), 100):
+                try:
+                    db.table("broadcast_lead_scores").upsert(
+                        bls_rows[i:i+100],
+                        on_conflict="broadcast_id,lead_id",
+                    ).execute()
+                except Exception as bls_err:
+                    logger.error(f"broadcast_lead_scores seed failed: {bls_err}")
+
         if sent > 0:
             await increment_send_count(best_number["id"], delta=sent)
 

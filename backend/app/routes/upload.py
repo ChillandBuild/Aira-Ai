@@ -1104,7 +1104,7 @@ async def get_failed_csv(
 
 @router.get("/history")
 async def get_broadcast_history(tenant_id: str = Depends(get_tenant_id)):
-    """Return the last 50 broadcast records stored in app_settings."""
+    """Return the last 50 broadcast records with per-broadcast hot/warm/cold counts."""
     db = get_supabase()
     row = (
         db.table("app_settings")
@@ -1120,7 +1120,106 @@ async def get_broadcast_history(tenant_id: str = Depends(get_tenant_id)):
             history = json.loads(row.data["value"])
         except Exception:
             history = []
+
+    # Enrich with hot/warm/cold from broadcast_lead_scores
+    broadcast_ids = [h["broadcast_id"] for h in history if h.get("broadcast_id")]
+    if broadcast_ids:
+        try:
+            score_rows = (
+                db.table("broadcast_lead_scores")
+                .select("broadcast_id,segment")
+                .eq("tenant_id", tenant_id)
+                .in_("broadcast_id", broadcast_ids)
+                .execute()
+                .data or []
+            )
+            hot_map: dict[str, int] = {}
+            warm_map: dict[str, int] = {}
+            cold_map: dict[str, int] = {}
+            for sr in score_rows:
+                bid = sr["broadcast_id"]
+                seg = sr.get("segment", "C")
+                if seg == "A":
+                    hot_map[bid] = hot_map.get(bid, 0) + 1
+                elif seg == "B":
+                    warm_map[bid] = warm_map.get(bid, 0) + 1
+                else:
+                    cold_map[bid] = cold_map.get(bid, 0) + 1
+            for h in history:
+                bid = h.get("broadcast_id", "")
+                h["hot"]  = hot_map.get(bid, 0)
+                h["warm"] = warm_map.get(bid, 0)
+                h["cold"] = cold_map.get(bid, 0)
+        except Exception:
+            pass
+
     return {"data": history}
+
+
+@router.get("/broadcast-scores-csv")
+async def download_broadcast_scores_csv(
+    broadcast_id: str = Query(..., description="Broadcast UUID"),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    """Download per-lead interest CSV for a specific broadcast (product-specific scoring)."""
+    db = get_supabase()
+
+    score_rows = (
+        db.table("broadcast_lead_scores")
+        .select("lead_id,score,segment,arc_score,last_inbound_at,broadcast_sent_at")
+        .eq("tenant_id", tenant_id)
+        .eq("broadcast_id", broadcast_id)
+        .execute()
+        .data or []
+    )
+
+    lead_ids = [r["lead_id"] for r in score_rows if r.get("lead_id")]
+    lead_map: dict[str, dict] = {}
+    if lead_ids:
+        leads = db.table("leads").select("id,name,phone").in_("id", lead_ids).execute()
+        lead_map = {l["id"]: l for l in (leads.data or [])}
+
+    # Resolve broadcast template name
+    broadcast_name = broadcast_id[:8]
+    try:
+        br_row = (
+            db.table("scheduled_broadcasts")
+            .select("template_name")
+            .eq("id", broadcast_id)
+            .maybe_single()
+            .execute()
+        )
+        if br_row and br_row.data:
+            broadcast_name = br_row.data.get("template_name") or broadcast_name
+    except Exception:
+        pass
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=[
+        "Name", "Phone", "Score", "Segment", "Arc Score",
+        "Last Reply At", "Broadcast Sent At",
+    ])
+    writer.writeheader()
+    for r in score_rows:
+        lead = lead_map.get(r.get("lead_id", ""), {})
+        seg = r.get("segment", "C")
+        writer.writerow({
+            "Name": lead.get("name", ""),
+            "Phone": lead.get("phone", ""),
+            "Score": r.get("score", 5),
+            "Segment": seg,
+            "Arc Score": r.get("arc_score", 5),
+            "Last Reply At": r.get("last_inbound_at") or "",
+            "Broadcast Sent At": r.get("broadcast_sent_at") or "",
+        })
+
+    safe_name = broadcast_name.replace(" ", "_").lower()
+    date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=broadcast_{safe_name}_{date_str}.csv"},
+    )
 
 
 @router.get("/history-csv")
