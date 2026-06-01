@@ -238,6 +238,36 @@ async def execute_broadcast(row: dict) -> dict:
                 except Exception as bls_err:
                     logger.error(f"broadcast_lead_scores seed failed: {bls_err}")
 
+        # Increment broadcast_count in lead_tag_interest for each successfully sent lead
+        if tag_id and bls_rows:
+            sent_lead_ids = [r["lead_id"] for r in bls_rows]
+            try:
+                existing_lti = (
+                    db.table("lead_tag_interest")
+                    .select("lead_id,broadcast_count")
+                    .eq("tenant_id", tenant_id)
+                    .eq("tag_id", tag_id)
+                    .in_("lead_id", sent_lead_ids)
+                    .execute().data or []
+                )
+                existing_counts = {r["lead_id"]: r.get("broadcast_count") or 0 for r in existing_lti}
+                lti_rows = [
+                    {
+                        "tenant_id": tenant_id,
+                        "lead_id": lid,
+                        "tag_id": tag_id,
+                        "broadcast_count": existing_counts.get(lid, 0) + 1,
+                    }
+                    for lid in sent_lead_ids
+                ]
+                for i in range(0, len(lti_rows), 100):
+                    db.table("lead_tag_interest").upsert(
+                        lti_rows[i:i+100],
+                        on_conflict="tenant_id,lead_id,tag_id",
+                    ).execute()
+            except Exception as lti_err:
+                logger.warning(f"lead_tag_interest broadcast_count update failed: {lti_err}")
+
         if sent > 0:
             await increment_send_count(best_number["id"], delta=sent)
 

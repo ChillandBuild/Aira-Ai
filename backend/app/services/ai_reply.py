@@ -591,6 +591,13 @@ async def generate_reply(
             )
             new_score = _sr["score"]
             new_segment = _sr["segment"]
+            if _sr.get("intent_reason") == "rejection" and lead_data.get("assigned_to"):
+                try:
+                    db.table("leads").update({"assigned_to": None}).eq("id", str(lead_id)).execute()
+                    lead_data["assigned_to"] = None
+                    logger.info(f"Lead {lead_id} unassigned after rejection (AI-disabled path)")
+                except Exception:
+                    pass
             _score_meta = {
                 "new_score": new_score,
                 "prev_score": lead_data.get("score", 5),
@@ -841,7 +848,14 @@ async def generate_reply(
                 db=db,
             )
         old_segment = lead_data.get("segment") or "C"
-        if new_segment != old_segment and should_assign_to_telecalling(telecalling_cfg, new_segment, channel):
+        if score_result.get("intent_reason") == "rejection" and lead_data.get("assigned_to"):
+            try:
+                db.table("leads").update({"assigned_to": None}).eq("id", str(lead_id)).execute()
+                lead_data["assigned_to"] = None
+                logger.info(f"Lead {lead_id} unassigned after rejection")
+            except Exception:
+                pass
+        if not lead_data.get("assigned_to") and new_segment != old_segment and should_assign_to_telecalling(telecalling_cfg, new_segment, channel):
             assigned_caller = auto_assign_lead(str(lead_id), tenant_id)
             if assigned_caller:
                 lead_data["assigned_to"] = assigned_caller
