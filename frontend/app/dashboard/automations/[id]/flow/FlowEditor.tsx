@@ -1,13 +1,12 @@
 "use client";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, Loader2, List, Map, Power } from "lucide-react";
-import { useFlow } from "./useFlow";
-import FlowCanvas from "./FlowCanvas";
-import MapView from "./MapView";
+import { ArrowLeft, Check, Loader2, Power, ChevronLeft, ChevronRight } from "lucide-react";
+import { API_URL, getAuthHeaders } from "@/lib/api";
+import FlowBuilderCanvas, { LOGIC_BLOCKS, SEND_BLOCKS, SidebarGroup, TOOL_BLOCKS } from "./FlowBuilderCanvas";
 import TriggerCard from "./TriggerCard";
-import BlockConfigDrawer from "./drawers/BlockConfigDrawer";
-import type { BlockConfig, FlowNode } from "./types";
+import { rfToSteps } from "./rfUtils";
+import type { FlowDetail, Step, StepIn, TriggerConfig, TriggerType } from "./types";
 
 interface FlowEditorProps {
   flowId: string;
@@ -15,138 +14,210 @@ interface FlowEditorProps {
 
 export default function FlowEditor({ flowId }: FlowEditorProps) {
   const router = useRouter();
-  const flow = useFlow(flowId);
-  const [editing, setEditing] = useState<FlowNode | null>(null);
-  const [view, setView] = useState<"stack" | "map">("stack");
 
-  if (flow.loading) {
+  // Flow metadata
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [active, setActive] = useState(false);
+  const [triggerType, setTriggerType] = useState<TriggerType>("lead_created");
+  const [triggerConfig, setTriggerConfig] = useState<TriggerConfig>({});
+
+  // Raw flat steps from last API load — used to init the canvas
+  const [steps, setSteps] = useState<Step[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  // Latest RF-derived steps (updated on every canvas change)
+  const rfStepsRef = useRef<StepIn[]>([]);
+
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // ── Load ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        const auth = await getAuthHeaders();
+        const res = await fetch(`${API_URL}/api/v1/automations/${flowId}`, { headers: auth });
+        if (!res.ok) { setError("Flow not found"); return; }
+        const json: { data: FlowDetail } = await res.json();
+        const d = json.data;
+        setName(d.name);
+        setActive(d.active);
+        setTriggerType(d.trigger_type);
+        setTriggerConfig(d.trigger_config || {});
+        setSteps((d.steps || []) as Step[]);
+      } catch {
+        setError("Could not load this flow");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [flowId]);
+
+  // ── Save ──────────────────────────────────────────────────────────────
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    try {
+      const auth = await getAuthHeaders();
+      const body = {
+        name,
+        active,
+        trigger_type: triggerType,
+        trigger_config: triggerConfig,
+        steps: rfStepsRef.current,
+      };
+      const res = await fetch(`${API_URL}/api/v1/automations/${flowId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...auth },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const json: { data: FlowDetail } = await res.json();
+        if (json.data.steps) setSteps(json.data.steps as Step[]);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }, [flowId, name, active, triggerType, triggerConfig]);
+
+  const handleStepsChange = useCallback((s: ReturnType<typeof rfToSteps>) => {
+    rfStepsRef.current = s;
+  }, []);
+
+  // ── Active toggle (save immediately) ─────────────────────────────────
+  const toggleActive = useCallback(async () => {
+    const next = !active;
+    setActive(next);
+    const auth = await getAuthHeaders();
+    await fetch(`${API_URL}/api/v1/automations/${flowId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...auth },
+      body: JSON.stringify({ active: next }),
+    });
+  }, [active, flowId]);
+
+  // ── Loading / error states ────────────────────────────────────────────
+  if (loading) {
     return (
-      <div className="p-6 max-w-2xl mx-auto space-y-3">
-        <div className="h-12 rounded-2xl bg-surface-subtle animate-pulse" />
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="h-20 rounded-2xl bg-surface-subtle animate-pulse" />
-        ))}
+      <div className="fixed inset-0 left-[220px] bg-slate-50 flex items-center justify-center z-40">
+        <div className="space-y-3 w-64">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-16 rounded-2xl bg-white/60 animate-pulse" />
+          ))}
+        </div>
       </div>
     );
   }
 
-  if (flow.error && !flow.name) {
+  if (error) {
     return (
-      <div className="p-6 max-w-2xl mx-auto">
-        <p className="text-sm text-on-surface-muted">{flow.error}</p>
-        <button onClick={() => router.push("/dashboard/automations")} className="mt-3 text-sm text-primary hover:underline">
-          Back to Bot Flows
-        </button>
-      </div>
-    );
-  }
-
-  const handleSaveConfig = (config: BlockConfig) => {
-    if (editing) flow.updateBlockConfig(editing.id, config);
-  };
-
-  return (
-    <div className="min-h-screen pb-24">
-      {/* Sticky header */}
-      <header className="sticky top-0 z-30 bg-surface/95 backdrop-blur border-b border-surface-mid">
-        <div className="max-w-2xl mx-auto flex items-center gap-2 px-4 py-3">
-          <button
-            onClick={() => router.push("/dashboard/automations")}
-            className="shrink-0 p-2 rounded-xl text-on-surface-muted hover:bg-surface-mid hover:text-on-surface transition-colors"
-            aria-label="Back"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <input
-            value={flow.name}
-            onChange={(e) => flow.setName(e.target.value)}
-            placeholder="Untitled flow"
-            className="flex-1 min-w-0 px-2 py-1.5 rounded-lg bg-transparent text-base font-semibold text-on-surface placeholder:text-on-surface-muted focus:outline-none focus:bg-surface-mid transition-colors"
-          />
-
-          <button
-            onClick={() => flow.setActive(!flow.active)}
-            className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
-              flow.active
-                ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-                : "bg-surface-mid text-on-surface-muted hover:bg-surface-mid/70"
-            }`}
-            title={flow.active ? "Flow is live" : "Flow is paused"}
-          >
-            <Power size={13} />
-            {flow.active ? "Active" : "Paused"}
-          </button>
-
-          <button
-            onClick={() => setView((v) => (v === "stack" ? "map" : "stack"))}
-            className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
-              view === "map"
-                ? "bg-primary-light text-primary"
-                : "bg-surface-mid text-on-surface-muted hover:bg-surface-mid/70 hover:text-on-surface"
-            }`}
-            title={view === "map" ? "Switch to editor" : "View flow map"}
-          >
-            {view === "map" ? <List size={13} /> : <Map size={13} />}
-            <span className="hidden sm:inline">{view === "map" ? "Editor" : "Map"}</span>
-          </button>
-
-          <button
-            onClick={flow.save}
-            disabled={!flow.dirty || flow.saving}
-            className={`shrink-0 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
-              flow.dirty && !flow.saving
-                ? "bg-primary text-white hover:bg-primary/90"
-                : "bg-surface-mid text-on-surface-muted cursor-default"
-            }`}
-          >
-            {flow.saving ? <Loader2 size={13} className="animate-spin" /> : flow.dirty ? <Check size={13} /> : <Check size={13} />}
-            {flow.saving ? "Saving" : flow.dirty ? "Save" : "Saved"}
+      <div className="fixed inset-0 left-[220px] bg-slate-50 flex items-center justify-center z-40">
+        <div className="text-center">
+          <p className="text-sm text-zinc-500 mb-3">{error}</p>
+          <button onClick={() => router.push("/dashboard/automations")} className="text-sm text-primary hover:underline">
+            Back to Bot Flows
           </button>
         </div>
-        {flow.dirty && (
-          <div className="max-w-2xl mx-auto px-4 pb-2">
-            <span className="text-[11px] text-amber-600">Unsaved changes</span>
-          </div>
-        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 left-[220px] z-40 flex flex-col bg-slate-50">
+
+      {/* ── Top bar ─────────────────────────────────────────────────────── */}
+      <header className="flex items-center gap-2 px-4 h-14 bg-white border-b border-zinc-200 shrink-0 shadow-sm z-10">
+        <button
+          onClick={() => router.push("/dashboard/automations")}
+          className="shrink-0 p-2 rounded-xl text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 transition-colors"
+          aria-label="Back"
+        >
+          <ArrowLeft size={16} />
+        </button>
+
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Untitled flow"
+          className="flex-1 min-w-0 px-2 py-1 text-[15px] font-semibold text-zinc-900 bg-transparent placeholder:text-zinc-400 focus:outline-none focus:bg-zinc-50 rounded-lg transition-colors"
+        />
+
+        <button
+          onClick={toggleActive}
+          className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
+            active
+              ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+              : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200"
+          }`}
+        >
+          <Power size={12} />
+          {active ? "Active" : "Paused"}
+        </button>
+
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="shrink-0 inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-semibold bg-primary text-white hover:bg-primary/90 disabled:opacity-60 transition-colors"
+        >
+          {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+          {saving ? "Saving…" : "Save"}
+        </button>
       </header>
 
-      {/* Canvas */}
-      {view === "map" ? (
-        <main className="max-w-5xl mx-auto px-4 py-6">
-          <MapView nodes={flow.tree} triggerType={flow.triggerType} triggerConfig={flow.triggerConfig} />
-        </main>
-      ) : (
-        <main className="max-w-2xl mx-auto px-4 py-6 space-y-1">
-          <TriggerCard triggerType={flow.triggerType} triggerConfig={flow.triggerConfig} onChange={flow.setTriggerConfig} />
+      {/* ── Body: sidebar + canvas ───────────────────────────────────────── */}
+      <div className="flex flex-1 min-h-0">
 
-          {flow.tree.length === 0 ? (
-            <div className="pt-2">
-              <p className="text-center text-xs text-on-surface-muted mb-3 mt-4">Then the bot will…</p>
-              <FlowCanvas
-                tree={flow.tree}
-                onAdd={flow.addBlock}
-                onEdit={setEditing}
-                onDuplicate={flow.duplicateBlock}
-                onDelete={flow.deleteBlock}
-                onMove={flow.moveBlock}
-                updateBlockConfig={flow.updateBlockConfig}
-              />
+        {/* Left sidebar */}
+        <aside
+          className={`flex flex-col bg-white border-r border-zinc-200 shrink-0 z-10 transition-all duration-200 overflow-hidden ${
+            sidebarOpen ? "w-56" : "w-10"
+          }`}
+        >
+          <div className="flex items-center justify-end px-2 py-2 border-b border-zinc-100 shrink-0">
+            <button
+              onClick={() => setSidebarOpen((v) => !v)}
+              className="p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors"
+              title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+            >
+              {sidebarOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+            </button>
+          </div>
+
+          {sidebarOpen && (
+            <div className="flex-1 overflow-y-auto p-3 space-y-5">
+              {/* Trigger section */}
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-2 px-1">
+                  Trigger
+                </p>
+                <TriggerCard
+                  triggerType={triggerType}
+                  triggerConfig={triggerConfig}
+                  onChange={setTriggerConfig}
+                />
+              </div>
+
+              <SidebarGroup title="Send" items={SEND_BLOCKS} />
+              <SidebarGroup title="Logic" items={LOGIC_BLOCKS} />
+              <SidebarGroup title="Tools" items={TOOL_BLOCKS} />
+
+              <p className="text-[10px] text-zinc-400 px-1 pb-2">
+                Drag blocks onto the canvas. Double-click to configure.
+              </p>
             </div>
-          ) : (
-            <FlowCanvas
-              tree={flow.tree}
-              onAdd={flow.addBlock}
-              onEdit={setEditing}
-              onDuplicate={flow.duplicateBlock}
-              onDelete={flow.deleteBlock}
-              onMove={flow.moveBlock}
-              updateBlockConfig={flow.updateBlockConfig}
-            />
           )}
-        </main>
-      )}
+        </aside>
 
-      {editing && <BlockConfigDrawer node={editing} onSave={handleSaveConfig} onClose={() => setEditing(null)} />}
+        {/* React Flow canvas */}
+        <div className="flex-1 relative min-w-0">
+          <FlowBuilderCanvas
+            steps={steps}
+            triggerType={triggerType}
+            triggerConfig={triggerConfig}
+            onStepsChange={handleStepsChange}
+          />
+        </div>
+      </div>
     </div>
   );
 }
