@@ -1412,7 +1412,7 @@ def _segment_to_flags(segment: str | None) -> tuple[int, int, int]:
 @router.get("/broadcast-tag-csv")
 async def download_broadcast_tag_csv(
     broadcast_id: str = Query(..., description="Broadcast UUID"),
-    tag_id: str = Query(..., description="Tag UUID (used for filename)"),
+    tag_id: str | None = Query(None, description="Tag UUID (optional, used for filename)"),
     tenant_id: str = Depends(get_tenant_id),
 ):
     """Per-broadcast interest CSV: every recipient with their current segment as HOT/WARM/COLD."""
@@ -1461,13 +1461,14 @@ async def download_broadcast_tag_csv(
             "COLD": cold,
         })
 
-    tag_name = "tag"
-    try:
-        tag_row = db.table("broadcast_tags").select("name").eq("id", tag_id).maybe_single().execute()
-        if tag_row and tag_row.data:
-            tag_name = tag_row.data.get("name", "tag")
-    except Exception:
-        pass
+    tag_name = "untagged"
+    if tag_id:
+        try:
+            tag_row = db.table("broadcast_tags").select("name").eq("id", tag_id).maybe_single().execute()
+            if tag_row and tag_row.data:
+                tag_name = tag_row.data.get("name", "tag")
+        except Exception:
+            pass
 
     safe_tag = tag_name.replace(" ", "_").lower()
     return Response(

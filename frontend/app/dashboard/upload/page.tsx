@@ -221,11 +221,13 @@ export default function UploadPage() {
     }
   }
 
-  async function downloadBroadcastTagCsv(broadcastId: string, tagId: string) {
+  async function downloadBroadcastTagCsv(broadcastId: string, tagId?: string) {
     try {
       const auth = await getAuthHeaders();
+      const params = new URLSearchParams({ broadcast_id: broadcastId });
+      if (tagId) params.set("tag_id", tagId);
       const res = await fetch(
-        `${API_URL}/api/v1/upload/broadcast-tag-csv?broadcast_id=${broadcastId}&tag_id=${tagId}`,
+        `${API_URL}/api/v1/upload/broadcast-tag-csv?${params.toString()}`,
         { headers: auth }
       );
       if (!res.ok) throw new Error("Download failed");
@@ -1455,9 +1457,9 @@ export default function UploadPage() {
                   ) : null}
 
                   {/* Interest CSV Download */}
-                  {item.tag_id && item.broadcast_id && (
+                  {item.broadcast_id && (
                     <button
-                      onClick={() => downloadBroadcastTagCsv(item.broadcast_id!, item.tag_id!)}
+                      onClick={() => downloadBroadcastTagCsv(item.broadcast_id!, item.tag_id)}
                       className="inline-flex items-center gap-2 px-4 py-2 bg-violet-50 hover:bg-violet-100 text-violet-700 rounded-lg font-label text-xs font-semibold transition-colors border border-violet-200"
                     >
                       <Tag size={14} />
