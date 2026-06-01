@@ -12,7 +12,7 @@ FOLLOW_UP_CADENCES = (
     ("1w", timedelta(days=7)),
     ("1m", timedelta(days=30)),
 )
-PLATFORMS = {"instagram", "facebook", "google"}
+PLATFORMS = {"instagram", "facebook", "google", "whatsapp"}
 
 
 def utcnow() -> datetime:
