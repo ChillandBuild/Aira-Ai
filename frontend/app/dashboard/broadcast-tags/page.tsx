@@ -278,9 +278,10 @@ export default function BroadcastTagsPage() {
           <button
             onClick={load}
             disabled={loading}
-            className="flex items-center justify-center p-2.5 rounded-xl bg-white border border-surface-mid text-on-surface-muted hover:text-on-surface hover:border-violet-300 transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-white border border-surface-mid text-on-surface hover:border-violet-300 font-label text-sm font-semibold transition-colors disabled:opacity-50"
           >
-            <RefreshCw size={16} className={cn("transition-transform", loading && "animate-spin")} />
+            <RefreshCw size={14} className={cn("transition-transform", loading && "animate-spin")} />
+            Refresh
           </button>
           <button
             onClick={() => setShowCreate(prev => !prev)}

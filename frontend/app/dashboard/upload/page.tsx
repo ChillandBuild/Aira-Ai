@@ -246,7 +246,7 @@ function ExportAllDropdown({ tagCount }: { tagCount: number }) {
       <button
         ref={btnRef}
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-surface-mid text-on-surface-muted hover:text-on-surface hover:border-violet-300 font-label text-sm font-semibold transition-colors"
+        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-surface-mid text-on-surface hover:border-violet-300 font-label text-sm font-semibold transition-colors"
       >
         <Download size={14} /> Export All
         <ChevronDown size={14} className={cn("transition-transform", open && "rotate-180")} />
@@ -1680,9 +1680,10 @@ export default function UploadPage() {
               <button
                 onClick={loadTags}
                 disabled={tagsListLoading}
-                className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-surface border border-surface-mid text-on-surface-muted hover:text-on-surface hover:border-violet-300 font-label text-sm font-semibold transition-colors disabled:opacity-50"
+                className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-surface border border-surface-mid text-on-surface hover:border-violet-300 font-label text-sm font-semibold transition-colors disabled:opacity-50"
               >
                 <RefreshCw size={14} className={cn("transition-transform", tagsListLoading && "animate-spin")} />
+                Refresh
               </button>
               <button
                 onClick={() => setShowCreateTag((p) => !p)}
@@ -1828,7 +1829,7 @@ export default function UploadPage() {
                   className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-lg font-label text-sm font-semibold hover:bg-emerald-600 transition-all shadow-sm"
                 >
                   <Download size={14} />
-                  Download CSV
+                  Broadcast History
                 </button>
                 <div className="flex bg-white border border-gray-200 rounded-lg overflow-hidden">
                   {(["all", "failures", "clean"] as const).map((f) => (
