@@ -71,8 +71,9 @@ type TagStats = {
 };
 
 const PRESET_COLORS = [
-  "#6D28D9", "#7C3AED", "#2563EB", "#0891B2", "#059669",
-  "#D97706", "#DC2626", "#DB2777", "#4F46E5", "#0D9488",
+  "#FFFFFF", "#FBBF24", "#22C55E", "#EF4444", "#3B82F6",
+  "#F97316", "#8B5CF6", "#1F2937", "#EC4899", "#14B8A6",
+  "#6366F1", "#84CC16",
 ];
 
 function hexToLightTint(hex: string): string {
@@ -1684,9 +1685,9 @@ export default function UploadPage() {
           </div>
 
           {showCreateTag && (
-            <div className="bg-surface rounded-2xl p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
-              <p className="font-label text-sm font-semibold text-on-surface mb-4">Create Tag</p>
-              <div className="flex flex-col sm:flex-row gap-4 items-end">
+            <div className="bg-surface rounded-2xl p-4 shadow-card ring-1 ring-[#c4c7c7]/15">
+              <p className="font-label text-sm font-semibold text-on-surface mb-3">Create Tag</p>
+              <div className="flex flex-col sm:flex-row gap-3 items-end">
                 <div className="flex-1">
                   <label className="font-label text-xs text-on-surface-muted mb-1 block">Name</label>
                   <input
@@ -1700,29 +1701,29 @@ export default function UploadPage() {
                 </div>
                 <div>
                   <label className="font-label text-xs text-on-surface-muted mb-1 block">Color</label>
-                  <div className="flex gap-1.5 flex-wrap max-w-[320px]">
+                  <div className="flex gap-1.5 flex-wrap max-w-[300px]">
                     {PRESET_COLORS.map((c) => (
                       <button
                         key={c}
                         onClick={() => { setCustomTagColor(""); setNewTagColor(c); }}
-                        className={cn("w-7 h-7 rounded-full transition-transform", newTagColor === c && !customTagColor ? "ring-2 ring-offset-2 ring-violet-500 scale-110" : "hover:scale-110")}
+                        className={cn("w-6 h-6 rounded-full transition-transform border border-surface-mid", newTagColor === c && !customTagColor ? "ring-2 ring-offset-1 ring-violet-500 scale-110" : "hover:scale-110")}
                         style={{ backgroundColor: c }}
                       />
                     ))}
                   </div>
-                  <div className="flex items-center gap-2 mt-2">
-                    <Palette size={14} className="text-on-surface-muted" />
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <Palette size={12} className="text-on-surface-muted" />
                     <input
                       type="color"
                       value={customTagColor || newTagColor}
                       onChange={(e) => { setCustomTagColor(e.target.value); setNewTagColor(e.target.value); }}
-                      className="w-8 h-8 rounded-lg cursor-pointer border border-surface-mid"
+                      className="w-6 h-6 rounded cursor-pointer border border-surface-mid"
                       title="Custom color"
                     />
                     <span className="font-mono text-xs text-on-surface-muted">{customTagColor || newTagColor}</span>
                   </div>
                 </div>
-                <button onClick={handleCreateTag} disabled={creatingTag || !newTagName.trim()} className="px-5 py-2 rounded-xl bg-violet-600 text-white font-label text-sm font-semibold hover:bg-violet-700 disabled:opacity-40 flex items-center gap-2">
+                <button onClick={handleCreateTag} disabled={creatingTag || !newTagName.trim()} className="px-4 py-2 rounded-xl bg-violet-600 text-white font-label text-sm font-semibold hover:bg-violet-700 disabled:opacity-40 flex items-center gap-2">
                   {creatingTag && <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}Create
                 </button>
               </div>

@@ -59,8 +59,9 @@ async function deleteTag(id: string): Promise<void> {
 }
 
 const PRESET_COLORS = [
-  "#6D28D9", "#7C3AED", "#2563EB", "#0891B2", "#059669",
-  "#D97706", "#DC2626", "#DB2777", "#4F46E5", "#0D9488",
+  "#FFFFFF", "#FBBF24", "#22C55E", "#EF4444", "#3B82F6",
+  "#F97316", "#8B5CF6", "#1F2937", "#EC4899", "#14B8A6",
+  "#6366F1", "#84CC16",
 ];
 
 function hexToLightTint(hex: string): string {
@@ -287,9 +288,9 @@ export default function BroadcastTagsPage() {
       </div>
 
       {showCreate && (
-        <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15 mb-6">
-          <h3 className="font-label text-sm font-semibold text-on-surface mb-4">Create Tag</h3>
-          <div className="flex flex-col sm:flex-row gap-4 items-start">
+        <div className="bg-surface rounded-card p-4 shadow-card ring-1 ring-[#c4c7c7]/15 mb-4">
+          <h3 className="font-label text-sm font-semibold text-on-surface mb-3">Create Tag</h3>
+          <div className="flex flex-col sm:flex-row gap-3 items-end">
             <div className="flex-1">
               <label className="font-label text-xs text-on-surface-muted mb-1 block">Tag Name</label>
               <input
@@ -309,20 +310,20 @@ export default function BroadcastTagsPage() {
                     key={c}
                     onClick={() => handlePresetColor(c)}
                     className={cn(
-                      "w-7 h-7 rounded-full transition-transform",
-                      newColor === c && !customColor ? "ring-2 ring-offset-2 ring-violet-500 scale-110" : "hover:scale-110"
+                      "w-6 h-6 rounded-full transition-transform border border-surface-mid",
+                      newColor === c && !customColor ? "ring-2 ring-offset-1 ring-violet-500 scale-110" : "hover:scale-110"
                     )}
                     style={{ backgroundColor: c }}
                   />
                 ))}
               </div>
-              <div className="flex items-center gap-2 mt-2">
-                <Palette size={14} className="text-on-surface-muted" />
+              <div className="flex items-center gap-2 mt-1.5">
+                <Palette size={12} className="text-on-surface-muted" />
                 <input
                   type="color"
                   value={customColor || newColor}
                   onChange={e => handleCustomColor(e.target.value)}
-                  className="w-8 h-8 rounded-lg cursor-pointer border border-surface-mid"
+                  className="w-6 h-6 rounded cursor-pointer border border-surface-mid"
                   title="Custom color"
                 />
                 <span className="font-mono text-xs text-on-surface-muted">{customColor || newColor}</span>
@@ -331,7 +332,7 @@ export default function BroadcastTagsPage() {
             <button
               onClick={handleCreate}
               disabled={creating || !newName.trim()}
-              className="mt-5 px-5 py-2 rounded-xl bg-violet-600 text-white font-label text-sm font-semibold hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-4 py-2 rounded-xl bg-violet-600 text-white font-label text-sm font-semibold hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {creating && <Loader2 size={14} className="animate-spin" />}
               Create
