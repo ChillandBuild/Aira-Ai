@@ -1701,26 +1701,25 @@ export default function UploadPage() {
                 </div>
                 <div>
                   <label className="font-label text-xs text-on-surface-muted mb-1 block">Color</label>
-                  <div className="flex gap-1.5 flex-wrap max-w-[300px]">
+                  <div className="flex items-center gap-1.5 flex-wrap max-w-[420px]">
                     {PRESET_COLORS.map((c) => (
                       <button
                         key={c}
                         onClick={() => { setCustomTagColor(""); setNewTagColor(c); }}
-                        className={cn("w-6 h-6 rounded-full transition-transform border border-surface-mid", newTagColor === c && !customTagColor ? "ring-2 ring-offset-1 ring-violet-500 scale-110" : "hover:scale-110")}
+                        className={cn("w-6 h-6 rounded-full transition-transform border border-surface-mid shrink-0", newTagColor === c && !customTagColor ? "ring-2 ring-offset-1 ring-violet-500 scale-110" : "hover:scale-110")}
                         style={{ backgroundColor: c }}
                       />
                     ))}
-                  </div>
-                  <div className="flex items-center gap-2 mt-1.5">
-                    <Palette size={12} className="text-on-surface-muted" />
+                    <div className="w-px h-6 bg-surface-mid mx-1 shrink-0" />
+                    <Palette size={12} className="text-on-surface-muted shrink-0" />
                     <input
                       type="color"
                       value={customTagColor || newTagColor}
                       onChange={(e) => { setCustomTagColor(e.target.value); setNewTagColor(e.target.value); }}
-                      className="w-6 h-6 rounded cursor-pointer border border-surface-mid"
+                      className="w-6 h-6 rounded cursor-pointer border border-surface-mid shrink-0"
                       title="Custom color"
                     />
-                    <span className="font-mono text-xs text-on-surface-muted">{customTagColor || newTagColor}</span>
+                    <span className="font-mono text-xs text-on-surface-muted shrink-0">{customTagColor || newTagColor}</span>
                   </div>
                 </div>
                 <button onClick={handleCreateTag} disabled={creatingTag || !newTagName.trim()} className="px-4 py-2 rounded-xl bg-violet-600 text-white font-label text-sm font-semibold hover:bg-violet-700 disabled:opacity-40 flex items-center gap-2">

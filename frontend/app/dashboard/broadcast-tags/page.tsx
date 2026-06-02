@@ -304,29 +304,28 @@ export default function BroadcastTagsPage() {
             </div>
             <div>
               <label className="font-label text-xs text-on-surface-muted mb-1 block">Color</label>
-              <div className="flex gap-1.5 flex-wrap max-w-[280px]">
+              <div className="flex items-center gap-1.5 flex-wrap max-w-[420px]">
                 {PRESET_COLORS.map(c => (
                   <button
                     key={c}
                     onClick={() => handlePresetColor(c)}
                     className={cn(
-                      "w-6 h-6 rounded-full transition-transform border border-surface-mid",
+                      "w-6 h-6 rounded-full transition-transform border border-surface-mid shrink-0",
                       newColor === c && !customColor ? "ring-2 ring-offset-1 ring-violet-500 scale-110" : "hover:scale-110"
                     )}
                     style={{ backgroundColor: c }}
                   />
                 ))}
-              </div>
-              <div className="flex items-center gap-2 mt-1.5">
-                <Palette size={12} className="text-on-surface-muted" />
+                <div className="w-px h-6 bg-surface-mid mx-1 shrink-0" />
+                <Palette size={12} className="text-on-surface-muted shrink-0" />
                 <input
                   type="color"
                   value={customColor || newColor}
                   onChange={e => handleCustomColor(e.target.value)}
-                  className="w-6 h-6 rounded cursor-pointer border border-surface-mid"
+                  className="w-6 h-6 rounded cursor-pointer border border-surface-mid shrink-0"
                   title="Custom color"
                 />
-                <span className="font-mono text-xs text-on-surface-muted">{customColor || newColor}</span>
+                <span className="font-mono text-xs text-on-surface-muted shrink-0">{customColor || newColor}</span>
               </div>
             </div>
             <button
