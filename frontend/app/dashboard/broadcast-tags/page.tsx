@@ -155,8 +155,23 @@ function ExportAllDropdown({ tagCount }: { tagCount: number }) {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  function download(mode: string) {
-    window.open(`${API_URL}/api/v1/uploads/all-tags-combined?mode=${mode}`, "_blank");
+  async function download(mode: string) {
+    try {
+      const auth = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/uploads/all-tags-combined?mode=${mode}`, { headers: auth });
+      if (!res.ok) throw new Error("Download failed");
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `all_tags_combined_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Failed to download");
+    }
     setOpen(false);
   }
 

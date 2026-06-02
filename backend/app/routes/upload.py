@@ -1563,13 +1563,14 @@ async def download_tag_csv(
         bid = broadcast["broadcast_id"]
         template_name = template_map.get(bid, bid[:8])
 
-        recipients_resp = (
-            db.table("broadcast_recipients")
-            .select("lead_id, phone, name")
-            .eq("tenant_id", tenant_id)
-            .eq("broadcast_id", bid)
-            .execute()
-        )
+            recipients_resp = (
+                db.table("broadcast_recipients")
+                .select("lead_id, phone, name")
+                .eq("tenant_id", tenant_id)
+                .eq("broadcast_id", bid)
+                .eq("send_status", "sent")
+                .execute()
+            )
         recipients = recipients_resp.data or []
         if not recipients:
             continue
@@ -1962,6 +1963,7 @@ async def download_broadcast_tag_csv(
         .select("lead_id, phone, name")
         .eq("tenant_id", tenant_id)
         .eq("broadcast_id", broadcast_id)
+        .eq("send_status", "sent")
         .execute()
     )
     recipients = recipients_resp.data or []
