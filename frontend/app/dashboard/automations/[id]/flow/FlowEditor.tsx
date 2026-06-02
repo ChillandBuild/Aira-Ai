@@ -2,11 +2,10 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, Check, Loader2, List, Map, Power,
+  ArrowLeft, Check, Loader2, Power, X,
   ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { useFlow } from "./useFlow";
-import FlowCanvas from "./FlowCanvas";
 import MapView from "./MapView";
 import TriggerCard from "./TriggerCard";
 import BlockConfigDrawer from "./drawers/BlockConfigDrawer";
@@ -31,7 +30,7 @@ function PaletteItem({
     <button
       onClick={() => onAdd(type)}
       title={collapsed ? meta.label : undefined}
-      className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-xl text-left transition-colors hover:bg-surface-mid group ${collapsed ? "justify-center" : ""}`}
+      className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-xl text-left transition-colors hover:bg-surface-mid ${collapsed ? "justify-center" : ""}`}
     >
       <span className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${meta.iconBg} ${meta.iconText}`}>
         <Icon size={14} />
@@ -58,7 +57,6 @@ function PaletteGroup({
   );
 }
 
-// Find a FlowNode by id anywhere in the tree (for MapView onEdit).
 function findNodeById(nodes: FlowNode[], id: string): FlowNode | null {
   for (const n of nodes) {
     if (n.id === id) return n;
@@ -78,10 +76,9 @@ export default function FlowEditor({ flowId }: FlowEditorProps) {
   const router = useRouter();
   const flow = useFlow(flowId);
   const [editing, setEditing] = useState<FlowNode | null>(null);
-  const [view, setView] = useState<"stack" | "map">("stack");
+  const [triggerOpen, setTriggerOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  // Add block to the end of the root lane from the palette.
   const addToEnd = useCallback((type: BlockType) => {
     flow.addBlock(type, { parentId: null, branch: null, position: flow.tree.length });
   }, [flow]);
@@ -92,8 +89,16 @@ export default function FlowEditor({ flowId }: FlowEditorProps) {
 
   const handleMapEdit = useCallback((nodeId: string) => {
     const node = findNodeById(flow.tree, nodeId);
-    if (node) setEditing(node);
+    if (node) {
+      setEditing(node);
+      setTriggerOpen(false);
+    }
   }, [flow.tree]);
+
+  const handleEditTrigger = useCallback(() => {
+    setTriggerOpen(true);
+    setEditing(null);
+  }, []);
 
   if (flow.loading) {
     return (
@@ -153,18 +158,6 @@ export default function FlowEditor({ flowId }: FlowEditorProps) {
         </button>
 
         <button
-          onClick={() => setView((v) => (v === "stack" ? "map" : "stack"))}
-          className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
-            view === "map"
-              ? "bg-primary-light text-primary"
-              : "bg-surface-mid text-on-surface-muted hover:bg-surface-mid/70 hover:text-on-surface"
-          }`}
-        >
-          {view === "map" ? <List size={13} /> : <Map size={13} />}
-          <span className="hidden sm:inline">{view === "map" ? "Editor" : "Map"}</span>
-        </button>
-
-        <button
           onClick={flow.save}
           disabled={!flow.dirty || flow.saving}
           className={`shrink-0 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
@@ -179,11 +172,11 @@ export default function FlowEditor({ flowId }: FlowEditorProps) {
       </header>
 
       {/* ── Body ────────────────────────────────────────────────────────── */}
-      <div className="flex flex-1 min-h-0">
+      <div className="flex flex-1 min-h-0 relative">
 
         {/* Left palette sidebar */}
         <aside
-          className={`flex flex-col bg-surface border-r border-surface-mid shrink-0 transition-all duration-200 overflow-hidden ${
+          className={`flex flex-col bg-surface border-r border-surface-mid shrink-0 transition-all duration-200 overflow-hidden z-10 ${
             sidebarOpen ? "w-52" : "w-11"
           }`}
         >
@@ -207,52 +200,41 @@ export default function FlowEditor({ flowId }: FlowEditorProps) {
           </div>
         </aside>
 
-        {/* Main canvas */}
-        <div className="flex-1 overflow-y-auto">
-          {view === "map" ? (
-            <main className="max-w-5xl mx-auto px-4 py-6">
-              <MapView
-                nodes={flow.tree}
+        {/* Main canvas — always the map view */}
+        <div className="flex-1 overflow-hidden relative">
+          <MapView
+            nodes={flow.tree}
+            triggerType={flow.triggerType}
+            triggerConfig={flow.triggerConfig}
+            onEdit={handleMapEdit}
+            onDelete={flow.deleteBlock}
+            onAddFirst={addToEnd}
+            onEditTrigger={handleEditTrigger}
+            className="absolute inset-0 bg-surface-low"
+          />
+        </div>
+
+        {/* Trigger settings panel — slides in from right */}
+        {triggerOpen && (
+          <div className="absolute inset-y-0 right-0 z-20 w-80 bg-surface border-l border-surface-mid shadow-xl flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-surface-mid shrink-0">
+              <span className="text-sm font-semibold text-on-surface">Trigger</span>
+              <button
+                onClick={() => setTriggerOpen(false)}
+                className="p-1.5 rounded-lg text-on-surface-muted hover:bg-surface-mid hover:text-on-surface transition-colors"
+              >
+                <X size={15} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              <TriggerCard
                 triggerType={flow.triggerType}
                 triggerConfig={flow.triggerConfig}
-                onEdit={handleMapEdit}
+                onChange={flow.setTriggerConfig}
               />
-            </main>
-          ) : (
-            <main className="max-w-2xl mx-auto px-4 py-6 space-y-1">
-              <TriggerCard triggerType={flow.triggerType} triggerConfig={flow.triggerConfig} onChange={flow.setTriggerConfig} />
-              {flow.tree.length === 0 ? (
-                <div className="pt-2">
-                  <p className="text-center text-xs text-on-surface-muted mb-3 mt-4">Then the bot will…</p>
-                  <FlowCanvas
-                    tree={flow.tree}
-                    onAdd={flow.addBlock}
-                    onEdit={setEditing}
-                    onDuplicate={flow.duplicateBlock}
-                    onDelete={flow.deleteBlock}
-                    onMove={flow.moveBlock}
-                    onReorder={flow.reorderBlock}
-                    updateBlockConfig={flow.updateBlockConfig}
-                  />
-                </div>
-              ) : (
-                <FlowCanvas
-                  tree={flow.tree}
-                  onAdd={flow.addBlock}
-                  onEdit={setEditing}
-                  onDuplicate={flow.duplicateBlock}
-                  onDelete={flow.deleteBlock}
-                  onMove={flow.moveBlock}
-                  onReorder={flow.reorderBlock}
-                  updateBlockConfig={flow.updateBlockConfig}
-                />
-              )}
-              {flow.dirty && (
-                <p className="text-center text-[11px] text-amber-600 pt-2">Unsaved changes</p>
-              )}
-            </main>
-          )}
-        </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {editing && (
