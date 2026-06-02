@@ -1226,7 +1226,7 @@ async def get_broadcast_history(tenant_id: str = Depends(get_tenant_id)):
         except Exception:
             history = []
 
-    # Enrich with hot/warm/cold from broadcast_lead_scores
+    # Enrich with hot/warm/cold from broadcast_lead_scores + reply_sentiment from broadcast_recipients
     broadcast_ids = [h["broadcast_id"] for h in history if h.get("broadcast_id")]
     if broadcast_ids:
         try:
@@ -1258,7 +1258,51 @@ async def get_broadcast_history(tenant_id: str = Depends(get_tenant_id)):
         except Exception:
             pass
 
+        try:
+            sentiment_rows = (
+                db.table("broadcast_recipients")
+                .select("broadcast_id,reply_sentiment")
+                .eq("tenant_id", tenant_id)
+                .in_("broadcast_id", broadcast_ids)
+                .not_.is_("reply_sentiment", "null")
+                .execute()
+                .data or []
+            )
+            pos_map: dict[str, int] = {}
+            neg_map: dict[str, int] = {}
+            neu_map: dict[str, int] = {}
+            for sr in sentiment_rows:
+                bid = sr["broadcast_id"]
+                s = sr.get("reply_sentiment")
+                if s == "positive":
+                    pos_map[bid] = pos_map.get(bid, 0) + 1
+                elif s == "negative":
+                    neg_map[bid] = neg_map.get(bid, 0) + 1
+                elif s == "neutral":
+                    neu_map[bid] = neu_map.get(bid, 0) + 1
+            for h in history:
+                bid = h.get("broadcast_id", "")
+                h["replied_positive"] = pos_map.get(bid, 0)
+                h["replied_negative"] = neg_map.get(bid, 0)
+                h["replied_neutral"]  = neu_map.get(bid, 0)
+        except Exception:
+            pass
+
     return {"data": history}
+
+
+@router.patch("/clear-negative-reply")
+async def clear_negative_reply(
+    body: RiskAuditRequest,
+    tenant_id: str = Depends(get_tenant_id),
+):
+    """Clear broadcast_negative_reply_at for a list of leads (re-include them in future broadcasts)."""
+    db = get_supabase()
+    all_phones = [_normalize_phone(l.phone or "") for l in body.leads if _normalize_phone(l.phone or "")]
+    if not all_phones:
+        return {"cleared": 0}
+    db.table("leads").update({"broadcast_negative_reply_at": None}).in_("phone", all_phones).eq("tenant_id", tenant_id).execute()
+    return {"cleared": len(all_phones)}
 
 
 @router.get("/broadcast-scores-csv")

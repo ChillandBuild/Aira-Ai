@@ -365,6 +365,7 @@ async def compute_score(
                 "last_inbound_at": now_iso, "updated_at": now_iso,
             }).eq("broadcast_id", bid).eq("lead_id", str(lead_id)).execute()
 
+            _update_recipient_sentiment(db, bid, lead_id, "negative")
             _rollup_tag_interest(db, lead_id, broadcast_context, 1, "D", now_iso, tenant_id)
 
         logger.info(f"Lead {lead_id} rejection detected — immediate D")
@@ -448,6 +449,8 @@ async def compute_score(
             "updated_at": now_iso,
         }).eq("broadcast_id", bid).eq("lead_id", str(lead_id)).execute()
 
+        _sentiment = "positive" if intent_delta > 0 else ("negative" if intent_delta < 0 else "neutral")
+        _update_recipient_sentiment(db, bid, lead_id, _sentiment)
         _rollup_tag_interest(db, lead_id, broadcast_context, final_score, final_segment, now_iso, tenant_id)
 
     logger.info(
@@ -467,6 +470,21 @@ async def compute_score(
         "arc_updated": arc_updated,
         "segment_drop_count": new_drop_count,
     }
+
+
+def _update_recipient_sentiment(
+    db,
+    broadcast_id: str,
+    lead_id: str,
+    sentiment: str,
+) -> None:
+    """Write reply_sentiment to the broadcast_recipients row for this lead."""
+    try:
+        db.table("broadcast_recipients").update(
+            {"reply_sentiment": sentiment}
+        ).eq("broadcast_id", broadcast_id).eq("lead_id", str(lead_id)).execute()
+    except Exception as e:
+        logger.warning(f"reply_sentiment update failed for lead {lead_id}: {e}")
 
 
 def _rollup_tag_interest(

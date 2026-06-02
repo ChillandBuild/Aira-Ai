@@ -25,7 +25,6 @@ type NavItem = {
 const CHANNELS_ITEMS: NavItem[] = [
   { href: "/dashboard/channels", icon: Settings, label: "Connect Channels" },
   { href: "/dashboard/upload", icon: Upload, label: "Upload", feature: "whatsapp" },
-  { href: "/dashboard/broadcast-tags", icon: Tag, label: "Broadcast Tags", feature: "whatsapp" },
   { href: "/dashboard/templates", icon: FileCheck, label: "Templates", feature: "whatsapp" },
   { href: "/dashboard/numbers", icon: Layers, label: "Numbers Pool", feature: "whatsapp" },
 ];

@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Upload, Check, AlertTriangle, ChevronRight, RotateCcw, MessageSquare, Clock, Send, Download, CheckCircle2, Eye, XCircle, Calendar, Phone, Search, Smartphone, ShieldCheck, FileSpreadsheet, PlayCircle, MapPin, Copy, Globe, Image as ImageIcon, FileText, Tag } from "lucide-react";
+import { Upload, Check, AlertTriangle, ChevronRight, RotateCcw, MessageSquare, Clock, Send, Download, CheckCircle2, Eye, XCircle, Calendar, Phone, Search, Smartphone, ShieldCheck, FileSpreadsheet, PlayCircle, MapPin, Copy, Globe, Image as ImageIcon, FileText, Tag, Plus, Trash2 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -46,7 +46,33 @@ type BroadcastHistoryItem = {
   csv_file_url?: string;
   csv_file_name?: string;
   tag_id?: string;
+  hot?: number;
+  warm?: number;
+  cold?: number;
+  replied_positive?: number;
+  replied_negative?: number;
+  replied_neutral?: number;
 };
+
+type BroadcastTag = {
+  id: string;
+  name: string;
+  color: string;
+  created_at: string;
+};
+
+type TagStats = {
+  tag_id: string;
+  total_sent: number;
+  hot: number;
+  warm: number;
+  cold: number;
+};
+
+const PRESET_COLORS = [
+  "#6D28D9", "#7C3AED", "#2563EB", "#0891B2", "#059669",
+  "#D97706", "#DC2626", "#DB2777", "#4F46E5", "#0D9488",
+];
 
 type ScheduleType = "now" | "scheduled" | "drip";
 
@@ -158,12 +184,23 @@ export default function UploadPage() {
   } | null>(null);
   const [riskLoading, setRiskLoading] = useState(false);
   const [excludeNegativeReplies, setExcludeNegativeReplies] = useState(false);
+  const [unflagging, setUnflagging] = useState(false);
+
+  // Tags management state
+  const [tagsList, setTagsList] = useState<BroadcastTag[]>([]);
+  const [tagStats, setTagStats] = useState<Record<string, TagStats>>({});
+  const [tagsListLoading, setTagsListLoading] = useState(false);
+  const [showCreateTag, setShowCreateTag] = useState(false);
+  const [newTagName, setNewTagName] = useState("");
+  const [newTagColor, setNewTagColor] = useState(PRESET_COLORS[0]);
+  const [creatingTag, setCreatingTag] = useState(false);
+  const [deletingTagId, setDeletingTagId] = useState<string | null>(null);
 
   const [broadcastHistory, setBroadcastHistory] = useState<BroadcastHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historySearch, setHistorySearch] = useState("");
   const [historyStatusFilter, setHistoryStatusFilter] = useState<"all" | "failures" | "clean">("all");
-  const [activeTab, setActiveTab] = useState<"upload" | "history">("upload");
+  const [activeTab, setActiveTab] = useState<"upload" | "history" | "tags">("upload");
 
   const filteredHistory = broadcastHistory.filter(item => {
     const s = historySearch.toLowerCase();
@@ -179,8 +216,11 @@ export default function UploadPage() {
   // Supabase client for realtime updates
   // Realtime subscription for message status updates
   useEffect(() => {
+    if (activeTab === "tags" && tagsList.length === 0 && !tagsListLoading) {
+      loadTags();
+    }
     if (activeTab !== "history") return;
-    
+
     const channel = supabase
       .channel("messages_status_updates")
       .on(
@@ -192,12 +232,11 @@ export default function UploadPage() {
           filter: "delivery_status=in.(delivered,read,failed)",
         },
         () => {
-          // Auto-refresh history when message status changes
           refreshHistory();
         }
       )
       .subscribe();
-    
+
     return () => {
       supabase.removeChannel(channel);
     };
@@ -378,6 +417,86 @@ export default function UploadPage() {
     setRiskLoading(false);
     setExcludeNegativeReplies(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  async function loadTags() {
+    setTagsListLoading(true);
+    try {
+      const auth = await getAuthHeaders();
+      const [tagsRes, statsRes] = await Promise.all([
+        fetch(`${API_URL}/api/v1/broadcast-tags`, { headers: auth }),
+        fetch(`${API_URL}/api/v1/broadcast-tags/stats`, { headers: auth }),
+      ]);
+      const tagsData = tagsRes.ok ? ((await tagsRes.json()).data ?? []) : [];
+      const statsData = statsRes.ok ? ((await statsRes.json()).data ?? []) : [];
+      setTagsList(tagsData);
+      const sm: Record<string, TagStats> = {};
+      for (const s of statsData) sm[s.tag_id] = s;
+      setTagStats(sm);
+    } catch { /* best-effort */ } finally {
+      setTagsListLoading(false);
+    }
+  }
+
+  async function handleCreateTag() {
+    if (!newTagName.trim()) return;
+    setCreatingTag(true);
+    try {
+      const auth = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/broadcast-tags`, {
+        method: "POST",
+        headers: { ...auth, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newTagName.trim(), color: newTagColor }),
+      });
+      if (!res.ok) throw new Error((await res.json()).detail || "Failed");
+      toast.success(`Tag "${newTagName}" created`);
+      setNewTagName("");
+      setShowCreateTag(false);
+      await loadTags();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create tag");
+    } finally {
+      setCreatingTag(false);
+    }
+  }
+
+  async function handleDeleteTag(tag: BroadcastTag) {
+    if (!confirm(`Delete tag "${tag.name}"?`)) return;
+    setDeletingTagId(tag.id);
+    try {
+      const auth = await getAuthHeaders();
+      await fetch(`${API_URL}/api/v1/broadcast-tags/${tag.id}`, { method: "DELETE", headers: auth });
+      toast.success(`Tag "${tag.name}" deleted`);
+      await loadTags();
+    } catch { toast.error("Failed to delete tag"); } finally {
+      setDeletingTagId(null);
+    }
+  }
+
+  async function handleUnflagAll() {
+    if (!parsedData || !csvFile) return;
+    setUnflagging(true);
+    try {
+      const text = await csvFile.text();
+      const lines = text.split(/\r?\n/).filter(Boolean);
+      const headers = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
+      const mapping = parsedData.suggested_mapping;
+      const phoneIdx = mapping.phone ? headers.indexOf(mapping.phone) : -1;
+      const leads = lines.slice(1).map((line) => {
+        const cols = line.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
+        return { phone: phoneIdx >= 0 ? cols[phoneIdx] ?? "" : "", opt_in_source: optInSource, extra_cols: {} };
+      }).filter((l) => l.phone);
+      const auth = await getAuthHeaders();
+      await fetch(`${API_URL}/api/v1/upload/clear-negative-reply`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...auth },
+        body: JSON.stringify({ leads }),
+      });
+      toast.success("Leads un-flagged — they'll be included in future broadcasts");
+      await fetchRiskAudit();
+    } catch { toast.error("Failed to un-flag leads"); } finally {
+      setUnflagging(false);
+    }
   }
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -564,24 +683,18 @@ export default function UploadPage() {
 
       {/* Tab Navigation */}
       <div className="flex items-center gap-1 border-b border-surface-mid mb-6">
-        <button 
-          onClick={() => setActiveTab("upload")}
-          className={cn(
-            "px-6 py-3 font-label font-semibold text-sm transition-all border-b-2",
-            activeTab === "upload" ? "border-tertiary text-tertiary" : "border-transparent text-on-surface-muted hover:text-on-surface"
-          )}
-        >
-          Broadcast Message
-        </button>
-        <button 
-          onClick={() => setActiveTab("history")}
-          className={cn(
-            "px-6 py-3 font-label font-semibold text-sm transition-all border-b-2",
-            activeTab === "history" ? "border-tertiary text-tertiary" : "border-transparent text-on-surface-muted hover:text-on-surface"
-          )}
-        >
-          Broadcast History
-        </button>
+        {(["upload", "history", "tags"] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={cn(
+              "px-6 py-3 font-label font-semibold text-sm transition-all border-b-2",
+              activeTab === tab ? "border-tertiary text-tertiary" : "border-transparent text-on-surface-muted hover:text-on-surface"
+            )}
+          >
+            {tab === "upload" ? "Broadcast Message" : tab === "history" ? "Broadcast History" : "Tags"}
+          </button>
+        ))}
       </div>
 
       {/* Upload Wizard */}
@@ -1069,17 +1182,26 @@ export default function UploadPage() {
                         </div>
                       </div>
                       {riskSummary.negative_reply_count > 0 && (
-                        <label className="flex items-center gap-2.5 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={excludeNegativeReplies}
-                            onChange={(e) => setExcludeNegativeReplies(e.target.checked)}
-                            className="w-4 h-4 rounded border-amber-300 text-amber-600 accent-amber-600"
-                          />
-                          <span className="font-body text-sm text-amber-800">
-                            Exclude {riskSummary.negative_reply_count} lead{riskSummary.negative_reply_count !== 1 ? "s" : ""} who previously said no
-                          </span>
-                        </label>
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={excludeNegativeReplies}
+                              onChange={(e) => setExcludeNegativeReplies(e.target.checked)}
+                              className="w-4 h-4 rounded border-amber-300 text-amber-600 accent-amber-600"
+                            />
+                            <span className="font-body text-sm text-amber-800">
+                              Exclude {riskSummary.negative_reply_count} lead{riskSummary.negative_reply_count !== 1 ? "s" : ""} who previously said no
+                            </span>
+                          </label>
+                          <button
+                            onClick={handleUnflagAll}
+                            disabled={unflagging}
+                            className="text-xs px-3 py-1.5 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50 font-label font-semibold"
+                          >
+                            {unflagging ? "Un-flagging…" : "Un-flag all — give them another chance"}
+                          </button>
+                        </div>
                       )}
                     </div>
                   )}
@@ -1402,6 +1524,117 @@ export default function UploadPage() {
       )}
 
       {/* Broadcast History */}
+      {/* Tags Tab */}
+      {activeTab === "tags" && (
+        <div className="space-y-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <h2 className="font-display text-xl font-bold text-on-surface">Tags</h2>
+              <p className="font-body text-sm text-on-surface-muted mt-0.5">Tag each broadcast by product to track interest per audience segment.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { window.open(`${API_URL}/api/v1/uploads/all-tags-csv`, "_blank"); }}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-surface-mid text-on-surface-muted hover:text-on-surface hover:border-violet-300 font-label text-sm transition-colors"
+              >
+                <Download size={14} /> Export All
+              </button>
+              <button
+                onClick={() => setShowCreateTag((p) => !p)}
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2.5 rounded-xl font-label text-sm font-semibold transition-colors border",
+                  showCreateTag ? "bg-violet-50 border-violet-200 text-violet-700" : "bg-surface border-surface-mid text-on-surface hover:border-violet-300"
+                )}
+              >
+                <Plus size={16} />{showCreateTag ? "Cancel" : "New Tag"}
+              </button>
+            </div>
+          </div>
+
+          {showCreateTag && (
+            <div className="bg-surface rounded-2xl p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
+              <p className="font-label text-sm font-semibold text-on-surface mb-4">Create Tag</p>
+              <div className="flex flex-col sm:flex-row gap-4 items-end">
+                <div className="flex-1">
+                  <label className="font-label text-xs text-on-surface-muted mb-1 block">Name</label>
+                  <input
+                    type="text"
+                    value={newTagName}
+                    onChange={(e) => setNewTagName(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleCreateTag()}
+                    placeholder="e.g. Biscuits, Ice Cream"
+                    className="w-full px-3 py-2 rounded-lg border border-surface-mid bg-surface-low font-label text-sm text-on-surface placeholder:text-on-surface-muted/50 focus:outline-none focus:ring-2 focus:ring-violet-400"
+                  />
+                </div>
+                <div>
+                  <label className="font-label text-xs text-on-surface-muted mb-1 block">Color</label>
+                  <div className="flex gap-1.5">
+                    {PRESET_COLORS.map((c) => (
+                      <button key={c} onClick={() => setNewTagColor(c)} className={cn("w-7 h-7 rounded-full transition-transform", newTagColor === c ? "ring-2 ring-offset-2 ring-violet-500 scale-110" : "hover:scale-110")} style={{ backgroundColor: c }} />
+                    ))}
+                  </div>
+                </div>
+                <button onClick={handleCreateTag} disabled={creatingTag || !newTagName.trim()} className="px-5 py-2 rounded-xl bg-violet-600 text-white font-label text-sm font-semibold hover:bg-violet-700 disabled:opacity-40 flex items-center gap-2">
+                  {creatingTag && <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}Create
+                </button>
+              </div>
+            </div>
+          )}
+
+          {tagsListLoading ? (
+            <div className="py-12 flex items-center justify-center">
+              <div className="w-6 h-6 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : tagsList.length === 0 ? (
+            <div className="bg-surface rounded-2xl p-12 shadow-card ring-1 ring-[#c4c7c7]/15 text-center">
+              <Tag size={32} className="text-on-surface-muted/30 mx-auto mb-3" />
+              <p className="font-display font-bold text-on-surface">No tags yet</p>
+              <p className="font-body text-sm text-on-surface-muted mt-1">Create your first tag to start tracking product-wise interest.</p>
+            </div>
+          ) : (
+            <div className="bg-surface rounded-2xl shadow-card ring-1 ring-[#c4c7c7]/15 overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-surface-mid">
+                    {["Tag", "Sent", "Hot", "Warm", "Cold", "Actions"].map((h) => (
+                      <th key={h} className={cn("font-label text-xs font-semibold text-on-surface-muted py-3", h === "Tag" || h === "Actions" ? "px-5" : "px-3 text-center", h === "Actions" ? "text-right" : "")}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-surface-mid/50">
+                  {tagsList.map((tag) => {
+                    const s = tagStats[tag.id];
+                    return (
+                      <tr key={tag.id} className="hover:bg-surface-low/50 transition-colors">
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-2.5">
+                            <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+                            <span className="font-label text-sm font-semibold text-on-surface">{tag.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 text-center font-label text-sm text-on-surface-muted">{s?.total_sent ?? 0}</td>
+                        <td className="px-3 py-3 text-center font-label text-sm font-semibold text-green-600">{s?.hot ?? 0}</td>
+                        <td className="px-3 py-3 text-center font-label text-sm font-semibold text-amber-600">{s?.warm ?? 0}</td>
+                        <td className="px-3 py-3 text-center font-label text-sm text-on-surface-muted">{s?.cold ?? 0}</td>
+                        <td className="px-5 py-3">
+                          <div className="flex items-center justify-end gap-2">
+                            <button onClick={() => window.open(`${API_URL}/api/v1/uploads/tag-csv?tag_id=${tag.id}`, "_blank")} className="text-xs px-2.5 py-1 rounded-lg border border-surface-mid text-on-surface-muted hover:text-on-surface hover:border-violet-300 transition-colors flex items-center gap-1"><Download size={12} /> All</button>
+                            <button onClick={() => window.open(`${API_URL}/api/v1/uploads/tag-csv?tag_id=${tag.id}&hot_only=true`, "_blank")} className="text-xs px-2.5 py-1 rounded-lg border border-green-200 text-green-700 hover:bg-green-50 transition-colors flex items-center gap-1"><Download size={12} /> Hot only</button>
+                            <button onClick={() => handleDeleteTag(tag)} disabled={deletingTagId === tag.id} className="p-1.5 rounded-lg text-on-surface-muted/50 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40">
+                              {deletingTagId === tag.id ? <div className="w-3.5 h-3.5 border-2 border-red-500 border-t-transparent rounded-full animate-spin" /> : <Trash2 size={14} />}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {activeTab === "history" && (
       <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
         <div className="bg-gradient-to-r from-emerald-50 to-white border-b border-emerald-100 px-8 py-5">
@@ -1563,6 +1796,37 @@ export default function UploadPage() {
                   )}
                 </div>
                 
+                {/* Reply Sentiment + Interest row */}
+                {((item.replied_positive ?? 0) + (item.replied_negative ?? 0) + (item.replied_neutral ?? 0) > 0 || (item.hot ?? 0) + (item.warm ?? 0) > 0) && (
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {(item.replied_positive ?? 0) > 0 && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-50 border border-green-200 rounded-full font-label text-xs font-semibold text-green-700">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500" />{item.replied_positive} positive repl{item.replied_positive === 1 ? "y" : "ies"}
+                      </span>
+                    )}
+                    {(item.replied_negative ?? 0) > 0 && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-50 border border-red-200 rounded-full font-label text-xs font-semibold text-red-700">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500" />{item.replied_negative} said no
+                      </span>
+                    )}
+                    {(item.replied_neutral ?? 0) > 0 && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-50 border border-gray-200 rounded-full font-label text-xs font-semibold text-gray-600">
+                        <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />{item.replied_neutral} neutral
+                      </span>
+                    )}
+                    {(item.hot ?? 0) > 0 && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-orange-50 border border-orange-200 rounded-full font-label text-xs font-semibold text-orange-700">
+                        🔥 {item.hot} hot
+                      </span>
+                    )}
+                    {(item.warm ?? 0) > 0 && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200 rounded-full font-label text-xs font-semibold text-amber-700">
+                        ✦ {item.warm} warm
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {/* Metrics Grid - 4 Equal Columns */}
                 <div className="grid grid-cols-4 gap-3">
                   {/* Sent */}
