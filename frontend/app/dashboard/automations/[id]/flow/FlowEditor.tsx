@@ -30,13 +30,13 @@ function PaletteItem({
     <button
       onClick={() => onAdd(type)}
       title={collapsed ? meta.label : undefined}
-      className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-xl text-left transition-colors hover:bg-surface-mid ${collapsed ? "justify-center" : ""}`}
+      className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-xl text-left transition-all hover:bg-surface-mid active:scale-95 ${collapsed ? "justify-center" : ""}`}
     >
-      <span className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${meta.iconBg} ${meta.iconText}`}>
-        <Icon size={14} />
+      <span className={`shrink-0 w-8 h-8 rounded-xl flex items-center justify-center shadow-sm ${meta.iconBg} ${meta.iconText}`}>
+        <Icon size={15} />
       </span>
       {!collapsed && (
-        <span className="text-[12px] font-medium text-on-surface truncate">{meta.label}</span>
+        <span className="text-[13px] font-semibold text-on-surface truncate">{meta.label}</span>
       )}
     </button>
   );
@@ -48,7 +48,7 @@ function PaletteGroup({
   return (
     <div>
       {!collapsed && (
-        <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-muted mb-1 px-2">{title}</p>
+        <p className="text-[11px] font-extrabold uppercase tracking-widest text-primary/70 mb-1.5 px-2.5">{title}</p>
       )}
       <div className="space-y-0.5">
         {types.map((t) => <PaletteItem key={t} type={t} collapsed={collapsed} onAdd={onAdd} />)}
@@ -177,23 +177,23 @@ export default function FlowEditor({ flowId }: FlowEditorProps) {
         {/* Left palette sidebar */}
         <aside
           className={`flex flex-col bg-surface border-r border-surface-mid shrink-0 transition-all duration-200 overflow-hidden z-10 ${
-            sidebarOpen ? "w-52" : "w-11"
+            sidebarOpen ? "w-64" : "w-12"
           }`}
         >
-          <div className={`flex items-center py-2 px-2 border-b border-surface-mid shrink-0 ${sidebarOpen ? "justify-between" : "justify-center"}`}>
+          <div className={`flex items-center h-12 px-3 border-b border-surface-mid shrink-0 ${sidebarOpen ? "justify-between" : "justify-center"}`}>
             {sidebarOpen && (
-              <span className="text-[11px] font-semibold text-on-surface-muted px-1">Blocks</span>
+              <span className="text-[13px] font-bold text-on-surface tracking-tight">Blocks</span>
             )}
             <button
               onClick={() => setSidebarOpen((v) => !v)}
               className="p-1.5 rounded-lg text-on-surface-muted hover:bg-surface-mid hover:text-on-surface transition-colors"
               title={sidebarOpen ? "Collapse" : "Expand"}
             >
-              {sidebarOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+              {sidebarOpen ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto py-3 px-1.5 space-y-4">
+          <div className="flex-1 overflow-y-auto py-4 px-2 space-y-5">
             <PaletteGroup title="Send" types={SEND_BLOCKS} collapsed={!sidebarOpen} onAdd={addToEnd} />
             <PaletteGroup title="Logic" types={LOGIC_BLOCKS} collapsed={!sidebarOpen} onAdd={addToEnd} />
             <PaletteGroup title="Tools" types={TOOLS_BLOCKS} collapsed={!sidebarOpen} onAdd={addToEnd} />
@@ -208,6 +208,7 @@ export default function FlowEditor({ flowId }: FlowEditorProps) {
             triggerConfig={flow.triggerConfig}
             onEdit={handleMapEdit}
             onDelete={flow.deleteBlock}
+            onInsert={flow.addBlock}
             onAddFirst={addToEnd}
             onEditTrigger={handleEditTrigger}
             className="absolute inset-0 bg-surface-low"
