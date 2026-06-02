@@ -60,10 +60,14 @@ async function deleteTag(id: string): Promise<void> {
 const PRESET_COLORS = [
   "#6D28D9", "#7C3AED", "#2563EB", "#0891B2", "#059669",
   "#D97706", "#DC2626", "#DB2777", "#4F46E5", "#0D9488",
-  "#1D4ED8", "#047857", "#B45309", "#BE123C", "#4338CA",
-  "#0E7490", "#15803D", "#A16207", "#9F1239", "#7E22CE",
-  "#0284C7", "#EA580C", "#9333EA", "#E11D48",
 ];
+
+function hexToLightTint(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, 0.07)`;
+}
 
 const SEGMENT_OPTIONS = [
   { label: "Hot", value: "A", color: "text-green-700 bg-green-50 border-green-200 hover:bg-green-100" },
@@ -321,7 +325,7 @@ export default function BroadcastTagsPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="bg-surface rounded-card shadow-card ring-1 ring-[#c4c7c7]/15 overflow-hidden">
+          <div className="bg-surface rounded-card shadow-card ring-1 ring-[#c4c7c7]/15">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-surface-mid">
@@ -337,12 +341,9 @@ export default function BroadcastTagsPage() {
                 {tags.map(tag => {
                   const s = stats[tag.id];
                   return (
-                    <tr key={tag.id} className="hover:bg-surface-subtle/50 transition-colors">
+                    <tr key={tag.id} className="hover:brightness-95 transition-all" style={{ backgroundColor: hexToLightTint(tag.color) }}>
                       <td className="px-5 py-3">
-                        <div className="flex items-center gap-2.5">
-                          <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
-                          <span className="font-label text-sm font-semibold text-on-surface">{tag.name}</span>
-                        </div>
+                        <span className="font-label text-sm font-semibold text-on-surface">{tag.name}</span>
                       </td>
                       <td className="px-3 py-3 text-center font-label text-sm text-on-surface-muted">{s?.total_sent ?? 0}</td>
                       <td className="px-3 py-3 text-center font-label text-sm font-semibold text-green-600">{s?.hot ?? 0}</td>
