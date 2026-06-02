@@ -1813,22 +1813,22 @@ export default function UploadPage() {
               </div>
             </div>
             {!historyLoading && broadcastHistory.length > 0 && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <div className="relative">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input
                     type="text"
                     placeholder="Search…"
                     value={historySearch}
                     onChange={(e) => setHistorySearch(e.target.value)}
-                    className="w-44 pl-9 pr-3 py-2 font-body text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-300 transition-all"
+                    className="w-40 pl-8 pr-3 py-1.5 font-body text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-300 transition-all"
                   />
                 </div>
                 <button
                   onClick={downloadHistoryCsv}
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-lg font-label text-sm font-semibold hover:bg-emerald-600 transition-all shadow-sm"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-white rounded-lg font-label text-xs font-semibold hover:bg-emerald-600 transition-all shadow-sm"
                 >
-                  <Download size={14} />
+                  <Download size={12} />
                   Broadcast History
                 </button>
                 <div className="flex bg-white border border-gray-200 rounded-lg overflow-hidden">
@@ -1837,7 +1837,7 @@ export default function UploadPage() {
                       key={f}
                       onClick={() => setHistoryStatusFilter(f)}
                       className={cn(
-                        "px-3 py-2 font-label text-xs font-semibold transition-all",
+                        "px-2.5 py-1.5 font-label text-xs font-semibold transition-all",
                         historyStatusFilter === f
                           ? "bg-emerald-500 text-white"
                           : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
@@ -1849,9 +1849,9 @@ export default function UploadPage() {
                 </div>
                 <button
                   onClick={refreshHistory}
-                  className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg font-label text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg font-label text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
                 >
-                  <RotateCcw size={14} />
+                  <RotateCcw size={12} />
                   Refresh
                 </button>
               </div>
