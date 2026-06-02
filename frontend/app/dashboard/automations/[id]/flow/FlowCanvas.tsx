@@ -96,6 +96,8 @@ export function Lane({ nodes, parentId, branch, emptyLabel, ...cb }: LaneProps) 
   };
 
   if (nodes.length === 0) {
+    // Root empty state — sidebar handles adding; branch empty state still needs the button.
+    if (parentId === null) return null;
     return (
       <div className="py-1">
         <AddButton
@@ -108,11 +110,15 @@ export function Lane({ nodes, parentId, branch, emptyLabel, ...cb }: LaneProps) 
     );
   }
 
+  // Root lane uses sidebar for adding — hide + buttons to reduce noise.
+  // Branch lanes keep + buttons since sidebar only targets root.
+  const showAddButtons = parentId !== null;
+
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <SortableContext items={nodes.map((n) => n.id)} strategy={verticalListSortingStrategy}>
         <div className="flex flex-col">
-          <AddButton target={{ parentId, branch, position: 0 }} onAdd={cb.onAdd} />
+          {showAddButtons && <AddButton target={{ parentId, branch, position: 0 }} onAdd={cb.onAdd} />}
           {nodes.map((node, idx) => (
             <Fragment key={node.id}>
               <SortableLaneItem
@@ -123,7 +129,7 @@ export function Lane({ nodes, parentId, branch, emptyLabel, ...cb }: LaneProps) 
                 branch={branch}
                 cb={cb}
               />
-              <AddButton target={{ parentId, branch, position: idx + 1 }} onAdd={cb.onAdd} />
+              {showAddButtons && <AddButton target={{ parentId, branch, position: idx + 1 }} onAdd={cb.onAdd} />}
             </Fragment>
           ))}
         </div>
