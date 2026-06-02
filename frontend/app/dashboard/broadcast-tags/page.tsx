@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
-import { Plus, Download, Trash2, Tag, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Plus, Download, Trash2, Tag, Loader2, ChevronDown, Palette } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -65,6 +65,107 @@ const PRESET_COLORS = [
   "#0284C7", "#EA580C", "#9333EA", "#E11D48",
 ];
 
+const SEGMENT_OPTIONS = [
+  { label: "Hot", value: "A", color: "text-green-700 bg-green-50 border-green-200 hover:bg-green-100" },
+  { label: "Warm", value: "B", color: "text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100" },
+  { label: "Cold", value: "C", color: "text-gray-700 bg-gray-50 border-gray-200 hover:bg-gray-100" },
+  { label: "Disqualified", value: "D", color: "text-red-700 bg-red-50 border-red-200 hover:bg-red-100" },
+];
+
+function SegmentDropdown({ tagId }: { tagId: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  function download(segment: string) {
+    window.open(`${API_URL}/api/v1/uploads/tag-csv?tag_id=${tagId}&segment=${segment}`, "_blank");
+    setOpen(false);
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="text-xs px-2.5 py-1 rounded-lg border border-violet-200 text-violet-700 hover:bg-violet-50 transition-colors flex items-center gap-1 font-medium"
+      >
+        <Download size={12} /> Segment Leads
+        <ChevronDown size={12} className={cn("transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-xl shadow-lg border border-surface-mid z-50 overflow-hidden">
+          {SEGMENT_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => download(opt.value)}
+              className={cn("w-full text-left text-xs px-3 py-2.5 font-label font-semibold transition-colors border-b border-surface-mid/30 last:border-0", opt.color)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExportAllDropdown({ tagCount }: { tagCount: number }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  function download(mode: string) {
+    window.open(`${API_URL}/api/v1/uploads/all-tags-combined?mode=${mode}`, "_blank");
+    setOpen(false);
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-surface-mid text-on-surface font-label text-sm font-semibold hover:border-violet-300 hover:text-violet-600 transition-colors"
+      >
+        <Download size={16} />
+        Export All
+        <ChevronDown size={14} className={cn("transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-xl shadow-lg border border-surface-mid z-50 overflow-hidden">
+          <button
+            onClick={() => download("all")}
+            className="w-full text-left text-xs px-4 py-3 font-label transition-colors border-b border-surface-mid/30 hover:bg-violet-50"
+          >
+            <p className="font-semibold text-on-surface">All Tags</p>
+            <p className="text-on-surface-muted mt-0.5">Combine all {tagCount} tags — {tagCount > 0 ? "no dedup" : "empty"}</p>
+          </button>
+          <button
+            onClick={() => download("cross")}
+            className="w-full text-left text-xs px-4 py-3 font-label transition-colors hover:bg-violet-50"
+          >
+            <p className="font-semibold text-on-surface">Cross-Tag</p>
+            <p className="text-on-surface-muted mt-0.5">Best segment per lead across all tags</p>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function BroadcastTagsPage() {
   const [tags, setTags] = useState<BroadcastTag[]>([]);
   const [stats, setStats] = useState<Record<string, TagStats>>({});
@@ -72,6 +173,7 @@ export default function BroadcastTagsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState(PRESET_COLORS[0]);
+  const [customColor, setCustomColor] = useState("");
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
 
@@ -91,15 +193,27 @@ export default function BroadcastTagsPage() {
     if (!newName.trim()) return;
     setCreating(true);
     try {
-      await createTag(newName.trim(), newColor);
+      const colorToUse = customColor || newColor;
+      await createTag(newName.trim(), colorToUse);
       toast.success(`Tag "${newName}" created`);
       setNewName("");
+      setCustomColor("");
       setShowCreate(false);
       await load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create tag");
     }
     setCreating(false);
+  }
+
+  function handleCustomColor(val: string) {
+    setCustomColor(val);
+    setNewColor(val);
+  }
+
+  function handlePresetColor(c: string) {
+    setCustomColor("");
+    setNewColor(c);
   }
 
   async function handleDelete(tag: BroadcastTag) {
@@ -119,33 +233,28 @@ export default function BroadcastTagsPage() {
     window.open(`${API_URL}/api/v1/uploads/tag-csv?tag_id=${tagId}`, "_blank");
   }
 
-  function downloadTagCsvHotOnly(tagId: string) {
-    window.open(`${API_URL}/api/v1/uploads/tag-csv?tag_id=${tagId}&hot_only=true`, "_blank");
-  }
-
-  function downloadAllTagsCsv() {
-    window.open(`${API_URL}/api/v1/uploads/all-tags-csv`, "_blank");
-  }
-
   return (
     <div>
       <div className="mb-7 flex items-start justify-between">
         <div>
-          <h1 className="page-title">Broadcast Tags</h1>
-          <p className="page-subtitle">Tag each bulk send by product. Download CSVs to see which customers are Hot, Warm, or Cold per product.</p>
+          <h1 className="page-title">Tags</h1>
+          <p className="page-subtitle">Tag each broadcast by product to track interest per audience segment.</p>
         </div>
-        <button
-          onClick={() => setShowCreate(prev => !prev)}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2.5 rounded-xl font-label text-sm font-semibold transition-colors border",
-            showCreate
-              ? "bg-violet-50 border-violet-200 text-violet-700 hover:bg-violet-100"
-              : "bg-white border-surface-mid text-on-surface hover:text-violet-600 hover:border-violet-300"
-          )}
-        >
-          <Plus size={16} />
-          {showCreate ? "Cancel" : "New Tag"}
-        </button>
+        <div className="flex items-center gap-3">
+          <ExportAllDropdown tagCount={tags.length} />
+          <button
+            onClick={() => setShowCreate(prev => !prev)}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2.5 rounded-xl font-label text-sm font-semibold transition-colors border",
+              showCreate
+                ? "bg-violet-50 border-violet-200 text-violet-700 hover:bg-violet-100"
+                : "bg-white border-surface-mid text-on-surface hover:text-violet-600 hover:border-violet-300"
+            )}
+          >
+            <Plus size={16} />
+            {showCreate ? "Cancel" : "New Tag"}
+          </button>
+        </div>
       </div>
 
       {showCreate && (
@@ -165,18 +274,29 @@ export default function BroadcastTagsPage() {
             </div>
             <div>
               <label className="font-label text-xs text-on-surface-muted mb-1 block">Color</label>
-              <div className="flex gap-1.5 flex-wrap">
+              <div className="flex gap-1.5 flex-wrap max-w-[280px]">
                 {PRESET_COLORS.map(c => (
                   <button
                     key={c}
-                    onClick={() => setNewColor(c)}
+                    onClick={() => handlePresetColor(c)}
                     className={cn(
                       "w-7 h-7 rounded-full transition-transform",
-                      newColor === c ? "ring-2 ring-offset-2 ring-violet-500 scale-110" : "hover:scale-110"
+                      newColor === c && !customColor ? "ring-2 ring-offset-2 ring-violet-500 scale-110" : "hover:scale-110"
                     )}
                     style={{ backgroundColor: c }}
                   />
                 ))}
+              </div>
+              <div className="flex items-center gap-2 mt-2">
+                <Palette size={14} className="text-on-surface-muted" />
+                <input
+                  type="color"
+                  value={customColor || newColor}
+                  onChange={e => handleCustomColor(e.target.value)}
+                  className="w-8 h-8 rounded-lg cursor-pointer border border-surface-mid"
+                  title="Custom color"
+                />
+                <span className="font-mono text-xs text-on-surface-muted">{customColor || newColor}</span>
               </div>
             </div>
             <button
@@ -232,18 +352,12 @@ export default function BroadcastTagsPage() {
                         <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => downloadTagCsv(tag.id)}
-                            className="text-xs px-2.5 py-1 rounded-lg border border-surface-mid text-on-surface-muted hover:text-on-surface hover:border-violet-300 transition-colors flex items-center gap-1"
-                            title="Download full CSV (Hot + Warm + Cold)"
+                            className="text-xs px-2.5 py-1.5 rounded-lg border border-surface-mid text-on-surface-muted hover:text-on-surface hover:border-violet-300 hover:bg-violet-50 transition-all flex items-center gap-1.5 font-medium"
+                            title="Download all leads for this tag"
                           >
-                            <Download size={12} /> All
+                            <Download size={12} /> All Leads
                           </button>
-                          <button
-                            onClick={() => downloadTagCsvHotOnly(tag.id)}
-                            className="text-xs px-2.5 py-1 rounded-lg border border-green-200 text-green-700 hover:bg-green-50 transition-colors flex items-center gap-1"
-                            title="Download Hot leads only"
-                          >
-                            <Download size={12} /> Hot only
-                          </button>
+                          <SegmentDropdown tagId={tag.id} />
                           <button
                             onClick={() => handleDelete(tag)}
                             disabled={deleting === tag.id}
@@ -259,16 +373,6 @@ export default function BroadcastTagsPage() {
                 })}
               </tbody>
             </table>
-          </div>
-
-          <div className="flex justify-end">
-            <button
-              onClick={downloadAllTagsCsv}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 text-white font-label text-sm font-semibold hover:bg-violet-700 transition-colors shadow-sm"
-            >
-              <Download size={16} />
-              Download All Tags CSV
-            </button>
           </div>
         </div>
       )}

@@ -1507,7 +1507,7 @@ async def refresh_broadcast_metrics(tenant_id: str = Depends(get_tenant_id)):
 @router.get("/tag-csv")
 async def download_tag_csv(
     tag_id: str = Query(..., description="Tag UUID to download CSV for"),
-    hot_only: bool = Query(False, description="Only include leads where HOT=1"),
+    segment: str = Query("", description="Filter by segment: A=hot, B=warm, C=cold, D=disqualified, empty=all"),
     tenant_id: str = Depends(get_tenant_id),
 ):
     """Per-tag CSV grouped by broadcast: name, phone, template, broadcast_id, HOT, WARM, COLD.
@@ -1517,7 +1517,6 @@ async def download_tag_csv(
     """
     db = get_supabase()
 
-    # 1. Get all distinct broadcasts under this tag, ordered by send time
     br_broadcasts = (
         db.table("broadcast_recipients")
         .select("broadcast_id, created_at")
@@ -1528,7 +1527,6 @@ async def download_tag_csv(
         .execute()
     )
 
-    # Deduplicate while preserving order
     seen_broadcasts: set[str] = set()
     ordered_broadcasts: list[dict] = []
     for row in (br_broadcasts.data or []):
@@ -1543,7 +1541,6 @@ async def download_tag_csv(
         writer.writeheader()
         return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=tag_no_data.csv"})
 
-    # 2. Resolve template names for each broadcast
     broadcast_ids = [b["broadcast_id"] for b in ordered_broadcasts]
     template_map: dict[str, str] = {}
     try:
@@ -1558,7 +1555,6 @@ async def download_tag_csv(
     except Exception:
         pass
 
-    # 3. Build rows: for each broadcast, get recipients + their frozen segment
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "Template", "Broadcast ID", "HOT", "WARM", "COLD"])
     writer.writeheader()
@@ -1567,7 +1563,6 @@ async def download_tag_csv(
         bid = broadcast["broadcast_id"]
         template_name = template_map.get(bid, bid[:8])
 
-        # Get all recipients for this broadcast
         recipients_resp = (
             db.table("broadcast_recipients")
             .select("lead_id, phone, name")
@@ -1581,7 +1576,6 @@ async def download_tag_csv(
 
         lead_ids = list({r["lead_id"] for r in recipients if r.get("lead_id")})
 
-        # Primary: get segment from broadcast_lead_scores (frozen per-broadcast)
         segment_map: dict[str, str] = {}
         if lead_ids:
             bls_resp = (
@@ -1593,14 +1587,12 @@ async def download_tag_csv(
             )
             segment_map = {r["lead_id"]: r.get("segment") or "C" for r in (bls_resp.data or [])}
 
-        # Fallback: use global leads table for leads without broadcast_lead_scores
         missing_ids = [lid for lid in lead_ids if lid not in segment_map]
         if missing_ids:
             leads_resp = db.table("leads").select("id,segment").in_("id", missing_ids).execute()
             for l in (leads_resp.data or []):
                 segment_map[l["id"]] = l.get("segment") or "C"
 
-        # Write rows for this broadcast
         seen_leads: set[str] = set()
         for r in recipients:
             lead_id = r.get("lead_id") or ""
@@ -1608,11 +1600,19 @@ async def download_tag_csv(
                 continue
             seen_leads.add(lead_id)
 
-            segment = segment_map.get(lead_id, "C")
-            hot, warm, cold = _segment_to_flags(segment)
+            seg = segment_map.get(lead_id, "C")
+            hot, warm, cold = _segment_to_flags(seg)
 
-            if hot_only and hot != 1:
-                continue
+            if segment:
+                seg_upper = segment.upper()
+                if seg_upper == "A" and hot != 1:
+                    continue
+                if seg_upper == "B" and warm != 1:
+                    continue
+                if seg_upper == "C" and cold != 1:
+                    continue
+                if seg_upper == "D" and (hot != 0 or warm != 0 or cold != 0):
+                    continue
 
             writer.writerow({
                 "Name": r.get("name") or "",
@@ -1632,12 +1632,20 @@ async def download_tag_csv(
     except Exception:
         pass
 
-    suffix = "hot_only" if hot_only else "all"
+    seg_label = segment.upper() if segment else "all"
+    if seg_label == "D":
+        seg_label = "disqualified"
+    elif seg_label == "A":
+        seg_label = "hot"
+    elif seg_label == "B":
+        seg_label = "warm"
+    elif seg_label == "C":
+        seg_label = "cold"
     safe_tag = tag_name.replace(" ", "_").lower()
     return Response(
         content=output.getvalue(),
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=tag_{safe_tag}_{suffix}_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"},
+        headers={"Content-Disposition": f"attachment; filename={safe_tag}_{seg_label}_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"},
     )
 
 
@@ -1760,6 +1768,171 @@ async def download_all_tags_csv(tenant_id: str = Depends(get_tenant_id)):
         content=output.getvalue(),
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=all_tags_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"},
+    )
+
+
+@router.get("/all-tags-combined")
+async def download_all_tags_combined(
+    mode: str = Query("all", description="all=concatenate all tags, cross=best-segment dedup per lead"),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    """Combined CSV across all tags.
+
+    mode=all: simple concatenation of all tags (no dedup).
+    mode=cross: per-lead dedup — keeps only the row with the best segment (Hot > Warm > Cold > Disq).
+    """
+    db = get_supabase()
+
+    tags_resp = db.table("broadcast_tags").select("id,name").eq("tenant_id", tenant_id).execute()
+    tags = tags_resp.data or []
+    if not tags:
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "Tag", "Template", "Broadcast ID", "HOT", "WARM", "COLD"])
+        writer.writeheader()
+        return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=all_tags_combined_no_data.csv"})
+
+    SEG_PRIORITY = {"A": 4, "B": 3, "C": 2, "D": 1}
+
+    # Collect all rows
+    all_rows: list[dict] = []
+
+    for tag in tags:
+        tag_id = tag["id"]
+        tag_name = tag.get("name", "unknown")
+
+        br_broadcasts = (
+            db.table("broadcast_recipients")
+            .select("broadcast_id, created_at")
+            .eq("tenant_id", tenant_id)
+            .eq("tag_id", tag_id)
+            .not_.is_("broadcast_id", "null")
+            .order("created_at", desc=False)
+            .execute()
+        )
+
+        seen_broadcasts: set[str] = set()
+        ordered_broadcasts: list[dict] = []
+        for row in (br_broadcasts.data or []):
+            bid = row.get("broadcast_id", "")
+            if bid and bid not in seen_broadcasts:
+                seen_broadcasts.add(bid)
+                ordered_broadcasts.append({"broadcast_id": bid})
+
+        if not ordered_broadcasts:
+            continue
+
+        broadcast_ids = [b["broadcast_id"] for b in ordered_broadcasts]
+        template_map: dict[str, str] = {}
+        try:
+            sb_rows = (
+                db.table("scheduled_broadcasts")
+                .select("id, template_name")
+                .in_("id", broadcast_ids)
+                .execute()
+            )
+            for sb in (sb_rows.data or []):
+                template_map[sb["id"]] = sb.get("template_name", sb["id"][:8])
+        except Exception:
+            pass
+
+        for broadcast in ordered_broadcasts:
+            bid = broadcast["broadcast_id"]
+            template_name = template_map.get(bid, bid[:8])
+
+            recipients_resp = (
+                db.table("broadcast_recipients")
+                .select("lead_id, phone, name")
+                .eq("tenant_id", tenant_id)
+                .eq("broadcast_id", bid)
+                .execute()
+            )
+            recipients = recipients_resp.data or []
+            if not recipients:
+                continue
+
+            lead_ids = list({r["lead_id"] for r in recipients if r.get("lead_id")})
+
+            segment_map: dict[str, str] = {}
+            if lead_ids:
+                bls_resp = (
+                    db.table("broadcast_lead_scores")
+                    .select("lead_id,segment")
+                    .eq("broadcast_id", bid)
+                    .in_("lead_id", lead_ids)
+                    .execute()
+                )
+                segment_map = {r["lead_id"]: r.get("segment") or "C" for r in (bls_resp.data or [])}
+
+            missing_ids = [lid for lid in lead_ids if lid not in segment_map]
+            if missing_ids:
+                leads_resp = db.table("leads").select("id,segment").in_("id", missing_ids).execute()
+                for l in (leads_resp.data or []):
+                    segment_map[l["id"]] = l.get("segment") or "C"
+
+            seen_leads: set[str] = set()
+            for r in recipients:
+                lead_id = r.get("lead_id") or ""
+                if lead_id in seen_leads:
+                    continue
+                seen_leads.add(lead_id)
+
+                seg = segment_map.get(lead_id, "C")
+                hot, warm, cold = _segment_to_flags(seg)
+
+                all_rows.append({
+                    "Name": r.get("name") or "",
+                    "Phone": r.get("phone") or "",
+                    "Tag": tag_name,
+                    "Template": template_name,
+                    "Broadcast ID": bid,
+                    "HOT": hot,
+                    "WARM": warm,
+                    "COLD": cold,
+                    "_lead_id": lead_id,
+                    "_seg_priority": SEG_PRIORITY.get(seg.upper(), 1),
+                })
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "Tag", "Template", "Broadcast ID", "HOT", "WARM", "COLD"])
+    writer.writeheader()
+
+    if mode == "cross":
+        # Best-segment dedup: per (phone, tag) keep highest priority segment
+        # Actually per phone across all tags — keep only the best segment row per phone
+        best_per_phone: dict[str, dict] = {}
+        for row in all_rows:
+            phone = row["Phone"]
+            priority = row["_seg_priority"]
+            if phone not in best_per_phone or priority > best_per_phone[phone]["_seg_priority"]:
+                best_per_phone[phone] = row
+            elif priority == best_per_phone[phone]["_seg_priority"]:
+                # Same priority — keep both (e.g., Hot in tag1 and Hot in tag2)
+                pass
+
+        # For cross-tag: group by phone, keep only the best segment row(s)
+        # If a phone has Hot in tag1 and Cold in tag2, only show tag1
+        # If a phone has Hot in tag1 and Hot in tag2, show both
+        phone_best_priority: dict[str, int] = {}
+        for row in all_rows:
+            phone = row["Phone"]
+            p = row["_seg_priority"]
+            if phone not in phone_best_priority or p > phone_best_priority[phone]:
+                phone_best_priority[phone] = p
+
+        for row in all_rows:
+            if row["_seg_priority"] >= phone_best_priority[row["Phone"]]:
+                clean = {k: v for k, v in row.items() if not k.startswith("_")}
+                writer.writerow(clean)
+    else:
+        # mode=all: simple concatenation, no dedup
+        for row in all_rows:
+            clean = {k: v for k, v in row.items() if not k.startswith("_")}
+            writer.writerow(clean)
+
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=all_tags_combined_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"},
     )
 
 
