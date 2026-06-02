@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Plus, Download, Trash2, Tag, Loader2, ChevronDown, Palette } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -78,12 +79,19 @@ const SEGMENT_OPTIONS = [
 
 function SegmentDropdown({ tagId }: { tagId: string }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [position, setPosition] = useState({ top: 0, right: 0 });
+
+  useEffect(() => {
+    if (!open || !btnRef.current) return;
+    const rect = btnRef.current.getBoundingClientRect();
+    setPosition({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (btnRef.current && !btnRef.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -95,16 +103,20 @@ function SegmentDropdown({ tagId }: { tagId: string }) {
   }
 
   return (
-    <div ref={ref} className="relative">
+    <>
       <button
+        ref={btnRef}
         onClick={() => setOpen(!open)}
-        className="text-xs px-2.5 py-1 rounded-lg border border-violet-200 text-violet-700 hover:bg-violet-50 transition-colors flex items-center gap-1 font-medium"
+        className="text-xs px-2.5 py-1.5 rounded-lg border border-violet-200 text-violet-700 hover:bg-violet-50 transition-colors flex items-center gap-1 font-medium"
       >
         <Download size={12} /> Segment Leads
         <ChevronDown size={12} className={cn("transition-transform", open && "rotate-180")} />
       </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-xl shadow-lg border border-surface-mid z-50 overflow-hidden">
+      {open && createPortal(
+        <div
+          className="fixed w-40 bg-white rounded-xl shadow-xl border border-surface-mid z-[9999] overflow-hidden"
+          style={{ top: position.top, right: position.right }}
+        >
           {SEGMENT_OPTIONS.map(opt => (
             <button
               key={opt.value}
@@ -114,20 +126,28 @@ function SegmentDropdown({ tagId }: { tagId: string }) {
               {opt.label}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   );
 }
 
 function ExportAllDropdown({ tagCount }: { tagCount: number }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [position, setPosition] = useState({ top: 0, right: 0 });
+
+  useEffect(() => {
+    if (!open || !btnRef.current) return;
+    const rect = btnRef.current.getBoundingClientRect();
+    setPosition({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (btnRef.current && !btnRef.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -139,8 +159,9 @@ function ExportAllDropdown({ tagCount }: { tagCount: number }) {
   }
 
   return (
-    <div ref={ref} className="relative">
+    <>
       <button
+        ref={btnRef}
         onClick={() => setOpen(!open)}
         className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-surface-mid text-on-surface font-label text-sm font-semibold hover:border-violet-300 hover:text-violet-600 transition-colors"
       >
@@ -148,8 +169,11 @@ function ExportAllDropdown({ tagCount }: { tagCount: number }) {
         Export All
         <ChevronDown size={14} className={cn("transition-transform", open && "rotate-180")} />
       </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-xl shadow-lg border border-surface-mid z-50 overflow-hidden">
+      {open && createPortal(
+        <div
+          className="fixed w-56 bg-white rounded-xl shadow-xl border border-surface-mid z-[9999] overflow-hidden"
+          style={{ top: position.top, right: position.right }}
+        >
           <button
             onClick={() => download("all")}
             className="w-full text-left text-xs px-4 py-3 font-label transition-colors border-b border-surface-mid/30 hover:bg-violet-50"
@@ -164,9 +188,10 @@ function ExportAllDropdown({ tagCount }: { tagCount: number }) {
             <p className="font-semibold text-on-surface">Cross-Tag</p>
             <p className="text-on-surface-muted mt-0.5">Best segment per lead across all tags</p>
           </button>
-        </div>
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   );
 }
 
