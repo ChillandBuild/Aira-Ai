@@ -223,6 +223,7 @@ export interface FlowState {
   deleteBlock: (id: string) => void;
   duplicateBlock: (id: string) => void;
   moveBlock: (target: InsertTarget, dir: -1 | 1) => void;
+  reorderBlock: (parentId: string | null, branch: Branch, from: number, to: number) => void;
   save: () => Promise<boolean>;
 }
 
@@ -347,6 +348,19 @@ export function useFlow(flowId: string): FlowState {
     markDirty();
   }, [markDirty]);
 
+  const reorderBlock = useCallback((parentId: string | null, branch: Branch, from: number, to: number) => {
+    setTree((prev) =>
+      mapLane(prev, parentId, branch, (lane) => {
+        if (from === to || from < 0 || to < 0 || from >= lane.length || to >= lane.length) return lane;
+        const next = [...lane];
+        const [moved] = next.splice(from, 1);
+        next.splice(to, 0, moved);
+        return next;
+      }),
+    );
+    markDirty();
+  }, [markDirty]);
+
   // Reorder the block at target within its own lane by dir (-1 up, +1 down).
   const moveBlock = useCallback((target: InsertTarget, dir: -1 | 1) => {
     setTree((prev) =>
@@ -417,12 +431,13 @@ export function useFlow(flowId: string): FlowState {
       deleteBlock,
       duplicateBlock,
       moveBlock,
+      reorderBlock,
       save,
     }),
     [
       loading, error, name, active, triggerType, triggerConfig, tree, dirty, saving,
       setName, setActive, setTriggerConfig, addBlock, updateBlockConfig, deleteBlock,
-      duplicateBlock, moveBlock, save,
+      duplicateBlock, moveBlock, reorderBlock, save,
     ],
   );
 }

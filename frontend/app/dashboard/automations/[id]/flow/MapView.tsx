@@ -9,6 +9,7 @@ interface MapViewProps {
   nodes: FlowNode[];
   triggerType: TriggerType;
   triggerConfig: TriggerConfig;
+  onEdit?: (nodeId: string) => void;
 }
 
 interface Pan {
@@ -56,7 +57,7 @@ function TriggerNodeCard({ node, triggerType }: { node: MapNode; triggerType: Tr
   );
 }
 
-function BlockNodeCard({ node, active, onSelect }: { node: MapNode; active: boolean; onSelect: () => void }) {
+function BlockNodeCard({ node, active, onSelect, onEdit }: { node: MapNode; active: boolean; onSelect: () => void; onEdit?: (id: string) => void }) {
   if (!node.stepType) return null;
   const meta = BLOCK_META[node.stepType];
   const Icon = meta.icon;
@@ -66,7 +67,7 @@ function BlockNodeCard({ node, active, onSelect }: { node: MapNode; active: bool
   return (
     <button
       type="button"
-      onClick={onSelect}
+      onClick={() => { onSelect(); onEdit?.(node.key); }}
       className={`absolute text-left rounded-2xl bg-surface border p-3.5 transition-colors ${
         active ? "border-primary shadow-md ring-2 ring-primary/20" : "border-surface-mid hover:border-primary/30 hover:shadow-sm"
       }`}
@@ -115,7 +116,7 @@ function EdgeLabelChip({ edge }: { edge: MapEdge }) {
   );
 }
 
-export default function MapView({ nodes, triggerType }: MapViewProps) {
+export default function MapView({ nodes, triggerType, onEdit }: MapViewProps) {
   const reducedMotion = usePrefersReducedMotion();
   const layout = useMemo(() => computeMapLayout(nodes, triggerType), [nodes, triggerType]);
 
@@ -262,6 +263,7 @@ export default function MapView({ nodes, triggerType }: MapViewProps) {
                 node={node}
                 active={selected === node.key}
                 onSelect={() => setSelected((cur) => (cur === node.key ? null : node.key))}
+                onEdit={onEdit}
               />
             ),
           )}

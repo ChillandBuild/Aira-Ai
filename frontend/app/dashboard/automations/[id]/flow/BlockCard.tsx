@@ -1,5 +1,5 @@
 "use client";
-import { Pencil, Copy, Trash2, ChevronUp, ChevronDown } from "lucide-react";
+import { Pencil, Copy, Trash2, ChevronUp, ChevronDown, GripVertical } from "lucide-react";
 import { BLOCK_META, blockSummary } from "./blockMeta";
 import type { FlowNode } from "./types";
 
@@ -12,6 +12,7 @@ interface BlockCardProps {
   onDelete: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
 }
 
 function StatsBadge({ node }: { node: FlowNode }) {
@@ -71,7 +72,7 @@ function HoverActions({ onEdit, onDuplicate, onDelete }: Pick<BlockCardProps, "o
 }
 
 export default function BlockCard(props: BlockCardProps) {
-  const { node, canMoveUp, canMoveDown, onEdit, onMoveUp, onMoveDown } = props;
+  const { node, canMoveUp, canMoveDown, onEdit, onMoveUp, onMoveDown, dragHandleProps } = props;
   const meta = BLOCK_META[node.step_type];
   const Icon = meta.icon;
   const summary = blockSummary(node.step_type, node.config);
@@ -80,6 +81,11 @@ export default function BlockCard(props: BlockCardProps) {
   if (node.step_type === "wait") {
     return (
       <div className="group flex items-center justify-center gap-2">
+        {dragHandleProps && (
+          <div {...dragHandleProps} className="cursor-grab active:cursor-grabbing text-on-surface-muted opacity-0 group-hover:opacity-100 transition-opacity touch-none">
+            <GripVertical size={14} />
+          </div>
+        )}
         <button
           onClick={onEdit}
           className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-mid border border-surface-mid text-on-surface-muted hover:text-on-surface hover:border-primary/30 transition-colors"
@@ -89,7 +95,9 @@ export default function BlockCard(props: BlockCardProps) {
         </button>
         <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center">
           <HoverActions onEdit={onEdit} onDuplicate={props.onDuplicate} onDelete={props.onDelete} />
-          <MoveControls canMoveUp={canMoveUp} canMoveDown={canMoveDown} onMoveUp={onMoveUp} onMoveDown={onMoveDown} />
+          {!dragHandleProps && (
+            <MoveControls canMoveUp={canMoveUp} canMoveDown={canMoveDown} onMoveUp={onMoveUp} onMoveDown={onMoveDown} />
+          )}
         </div>
       </div>
     );
@@ -97,6 +105,11 @@ export default function BlockCard(props: BlockCardProps) {
 
   return (
     <div className="group relative flex items-start gap-3 p-3.5 rounded-2xl bg-surface border border-surface-mid hover:border-primary/30 hover:shadow-sm transition-all">
+      {dragHandleProps && (
+        <div {...dragHandleProps} className="shrink-0 self-center cursor-grab active:cursor-grabbing text-on-surface-muted opacity-0 group-hover:opacity-100 transition-opacity touch-none">
+          <GripVertical size={15} />
+        </div>
+      )}
       <span className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center ${meta.iconBg} ${meta.iconText}`}>
         <Icon size={17} />
       </span>
@@ -107,7 +120,9 @@ export default function BlockCard(props: BlockCardProps) {
       </button>
       <div className="flex items-start gap-1">
         <HoverActions onEdit={onEdit} onDuplicate={props.onDuplicate} onDelete={props.onDelete} />
-        <MoveControls canMoveUp={canMoveUp} canMoveDown={canMoveDown} onMoveUp={onMoveUp} onMoveDown={onMoveDown} />
+        {!dragHandleProps && (
+          <MoveControls canMoveUp={canMoveUp} canMoveDown={canMoveDown} onMoveUp={onMoveUp} onMoveDown={onMoveDown} />
+        )}
       </div>
     </div>
   );
