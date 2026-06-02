@@ -217,6 +217,7 @@ export interface FlowState {
   saving: boolean;
   setName: (name: string) => void;
   setActive: (active: boolean) => void;
+  setTriggerType: (type: TriggerType) => void;
   setTriggerConfig: (config: TriggerConfig) => void;
   addBlock: (type: BlockType, target: InsertTarget) => void;
   updateBlockConfig: (id: string, config: BlockConfig) => void;
@@ -275,6 +276,11 @@ export function useFlow(flowId: string): FlowState {
 
   const setActive = useCallback((next: boolean) => {
     setActiveState(next);
+    markDirty();
+  }, [markDirty]);
+
+  const setTriggerTypeWrapped = useCallback((next: TriggerType) => {
+    setTriggerType(next);
     markDirty();
   }, [markDirty]);
 
@@ -425,6 +431,7 @@ export function useFlow(flowId: string): FlowState {
       saving,
       setName,
       setActive,
+      setTriggerType: setTriggerTypeWrapped,
       setTriggerConfig,
       addBlock,
       updateBlockConfig,
@@ -436,7 +443,7 @@ export function useFlow(flowId: string): FlowState {
     }),
     [
       loading, error, name, active, triggerType, triggerConfig, tree, dirty, saving,
-      setName, setActive, setTriggerConfig, addBlock, updateBlockConfig, deleteBlock,
+      setName, setActive, setTriggerTypeWrapped, setTriggerConfig, addBlock, updateBlockConfig, deleteBlock,
       duplicateBlock, moveBlock, reorderBlock, save,
     ],
   );

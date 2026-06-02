@@ -73,7 +73,7 @@ function laneChildren(lane: FlowNode[], index: number): { node: FlowNode; label:
     const out: { node: FlowNode; label: EdgeLabel }[] = [];
     for (const spec of lanesOf(current)) {
       const first = (current.branches[spec.key] ?? [])[0];
-      if (first) out.push({ node: first, label: spec.label });
+      if (first) out.push({ node: first, label: spec.key });
     }
     // A block placed after the branching node in the same lane hangs off it.
     if (next) out.push({ node: next, label: null });

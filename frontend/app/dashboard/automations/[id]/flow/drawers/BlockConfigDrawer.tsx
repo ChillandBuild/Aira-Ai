@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { BLOCK_META } from "../blockMeta";
 import type { BlockConfig, FlowNode } from "../types";
@@ -96,8 +97,8 @@ export default function BlockConfigDrawer({ node, onSave, onClose }: BlockConfig
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end">
+  const content = (
+    <div className="fixed inset-0 z-[200] flex justify-end">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} aria-hidden />
       <div className="relative w-full sm:max-w-md h-full max-h-screen flex flex-col bg-surface border-l border-surface-mid shadow-2xl rounded-t-3xl sm:rounded-none mt-auto sm:mt-0 sm:h-full animate-in slide-in-from-bottom sm:slide-in-from-right">
         <div className="flex items-center gap-3 px-5 py-4 border-b border-surface-mid">
@@ -136,4 +137,5 @@ export default function BlockConfigDrawer({ node, onSave, onClose }: BlockConfig
       </div>
     </div>
   );
+  return typeof document !== "undefined" ? createPortal(content, document.body) : null;
 }

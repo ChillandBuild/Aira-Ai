@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useRef, useState, useCallback, useEffect } from "react";
-import { Zap, Plus, Minus, Maximize2, Pencil, Trash2, X } from "lucide-react";
+import { Zap, Plus, Minus, Maximize2, Pencil, Trash2, Copy, X } from "lucide-react";
 import { BLOCK_META, blockSummary, TRIGGER_LABELS } from "./blockMeta";
 import { computeMapLayout, NODE_W, NODE_H, GAP_Y, type MapNode, type MapEdge } from "./mapLayout";
 import { isBranching, lanesOf, type BlockType, type Branch, type FlowNode, type InsertTarget, type TriggerType, type TriggerConfig } from "./types";
@@ -26,12 +26,13 @@ interface AddButton {
   target: InsertTarget;
 }
 
-interface MapViewProps {
+interface CanvasProps {
   nodes: FlowNode[];
   triggerType: TriggerType;
   triggerConfig: TriggerConfig;
   onEdit?: (nodeId: string) => void;
   onDelete?: (nodeId: string) => void;
+  onDuplicate?: (nodeId: string) => void;
   onInsert?: (type: BlockType, target: InsertTarget) => void;
   onAddFirst?: (type: BlockType) => void;
   onEditTrigger?: () => void;
@@ -173,12 +174,13 @@ function TriggerNodeCard({
 }
 
 function BlockNodeCard({
-  node, active, onSelect, onEdit, onDelete,
+  node, active, onSelect, onEdit, onDuplicate, onDelete,
 }: {
   node: MapNode;
   active: boolean;
   onSelect: () => void;
   onEdit?: (id: string) => void;
+  onDuplicate?: (id: string) => void;
   onDelete?: (id: string) => void;
 }) {
   if (!node.stepType) return null;
@@ -238,6 +240,14 @@ function BlockNodeCard({
         </button>
         <button
           type="button"
+          onClick={(e) => { e.stopPropagation(); onDuplicate?.(node.key); }}
+          className="p-1.5 rounded-lg bg-surface border border-surface-mid shadow-sm text-on-surface-muted hover:text-on-surface transition-colors"
+          aria-label="Duplicate"
+        >
+          <Copy size={12} />
+        </button>
+        <button
+          type="button"
           onClick={(e) => { e.stopPropagation(); onDelete?.(node.key); }}
           className="p-1.5 rounded-lg bg-surface border border-surface-mid shadow-sm text-on-surface-muted hover:text-red-500 transition-colors"
           aria-label="Delete"
@@ -249,34 +259,38 @@ function BlockNodeCard({
   );
 }
 
+const LANE_CHIP: Record<string, { bg: string; text: string; display: string }> = {
+  yes: { bg: "bg-emerald-100", text: "text-emerald-700", display: "yes" },
+  no:  { bg: "bg-zinc-100",    text: "text-zinc-600",    display: "no" },
+};
+
 function EdgeLabelChip({ edge }: { edge: MapEdge }) {
   if (!edge.label) return null;
-  const isYes = edge.label === "yes";
+  const chip = LANE_CHIP[edge.label] ?? { bg: "bg-violet-100", text: "text-violet-600", display: edge.label };
   const cx = edge.fromX + (edge.toX - edge.fromX) / 2;
   const cy = edge.fromY + (edge.toY - edge.fromY) / 2;
   return (
     <div
-      className={`absolute -translate-x-1/2 -translate-y-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold pointer-events-none ${
-        isYes ? "bg-emerald-100 text-emerald-700" : "bg-zinc-100 text-zinc-600"
-      }`}
+      className={`absolute -translate-x-1/2 -translate-y-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold pointer-events-none ${chip.bg} ${chip.text}`}
       style={{ left: cx, top: cy }}
     >
-      {isYes ? "yes" : "no"}
+      {chip.display}
     </div>
   );
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function MapView({
+export default function Canvas({
   nodes,
   triggerType,
   onEdit,
   onDelete,
+  onDuplicate,
   onInsert,
   onAddFirst,
   onEditTrigger,
   className,
-}: MapViewProps) {
+}: CanvasProps) {
   const reducedMotion = usePrefersReducedMotion();
   const layout = useMemo(() => computeMapLayout(nodes, triggerType), [nodes, triggerType]);
   const addButtons = useMemo(() => computeAddButtons(nodes, layout), [nodes, layout]);
@@ -437,7 +451,7 @@ export default function MapView({
                 fill="none"
                 stroke="currentColor"
                 strokeWidth={2}
-                className={edge.label === "yes" ? "text-emerald-300" : edge.label === "no" ? "text-zinc-300" : "text-surface-mid"}
+                className={edge.label === "yes" ? "text-emerald-300" : edge.label === "no" ? "text-zinc-400" : edge.label ? "text-violet-300" : "text-surface-mid"}
               />
             ))}
           </svg>
@@ -488,6 +502,7 @@ export default function MapView({
                 active={selected === node.key}
                 onSelect={() => setSelected((cur) => (cur === node.key ? null : node.key))}
                 onEdit={onEdit}
+                onDuplicate={onDuplicate}
                 onDelete={onDelete}
               />
             ),

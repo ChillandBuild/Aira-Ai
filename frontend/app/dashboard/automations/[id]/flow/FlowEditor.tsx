@@ -6,7 +6,7 @@ import {
   ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { useFlow } from "./useFlow";
-import MapView from "./MapView";
+import Canvas from "./Canvas";
 import TriggerCard from "./TriggerCard";
 import BlockConfigDrawer from "./drawers/BlockConfigDrawer";
 import { BLOCK_META } from "./blockMeta";
@@ -202,11 +202,12 @@ export default function FlowEditor({ flowId }: FlowEditorProps) {
 
         {/* Main canvas — always the map view */}
         <div className="flex-1 overflow-hidden relative">
-          <MapView
+          <Canvas
             nodes={flow.tree}
             triggerType={flow.triggerType}
             triggerConfig={flow.triggerConfig}
             onEdit={handleMapEdit}
+            onDuplicate={flow.duplicateBlock}
             onDelete={flow.deleteBlock}
             onInsert={flow.addBlock}
             onAddFirst={addToEnd}
@@ -232,6 +233,7 @@ export default function FlowEditor({ flowId }: FlowEditorProps) {
                 triggerType={flow.triggerType}
                 triggerConfig={flow.triggerConfig}
                 onChange={flow.setTriggerConfig}
+                onChangeTriggerType={flow.setTriggerType}
               />
             </div>
           </div>
