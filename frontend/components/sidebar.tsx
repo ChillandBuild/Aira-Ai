@@ -7,7 +7,7 @@ import { API_URL, getAuthHeaders } from "@/lib/api";
 import {
   LayoutDashboard, MessageSquare, Users, Settings, Phone,
   BarChart2, Upload, BookOpen, Layers, FileCheck, StickyNote,
-  LogOut, Inbox, Zap, ChevronDown, ChevronRight, Tag, RadioTower,
+  LogOut, Inbox, Zap, ChevronDown, ChevronRight, RadioTower,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AiraLogo } from "./logo";

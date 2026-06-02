@@ -240,7 +240,7 @@ export default function UploadPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [activeTab]);
+  }, [activeTab, tagsList.length, tagsListLoading]);
 
   const [csvFileUrl, setCsvFileUrl] = useState<string | null>(null);
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
