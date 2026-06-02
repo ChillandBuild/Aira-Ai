@@ -60,6 +60,9 @@ async function deleteTag(id: string): Promise<void> {
 const PRESET_COLORS = [
   "#6D28D9", "#7C3AED", "#2563EB", "#0891B2", "#059669",
   "#D97706", "#DC2626", "#DB2777", "#4F46E5", "#0D9488",
+  "#1D4ED8", "#047857", "#B45309", "#BE123C", "#4338CA",
+  "#0E7490", "#15803D", "#A16207", "#9F1239", "#7E22CE",
+  "#0284C7", "#EA580C", "#9333EA", "#E11D48",
 ];
 
 export default function BroadcastTagsPage() {

@@ -1510,62 +1510,119 @@ async def download_tag_csv(
     hot_only: bool = Query(False, description="Only include leads where HOT=1"),
     tenant_id: str = Depends(get_tenant_id),
 ):
-    """Download per-tag interest CSV: name, phone, broadcast_id, HOT, WARM, COLD."""
+    """Per-tag CSV grouped by broadcast: name, phone, template, broadcast_id, HOT, WARM, COLD.
+
+    Rows are ordered chronologically by broadcast. Each broadcast section shows
+    all recipients with their frozen segment from broadcast_lead_scores.
+    """
     db = get_supabase()
 
-    query = (
-        db.table("lead_tag_interest")
-        .select("lead_id, hot, warm, cold, last_seen, broadcast_count")
+    # 1. Get all distinct broadcasts under this tag, ordered by send time
+    br_broadcasts = (
+        db.table("broadcast_recipients")
+        .select("broadcast_id, created_at")
         .eq("tenant_id", tenant_id)
         .eq("tag_id", tag_id)
+        .not_.is_("broadcast_id", "null")
+        .order("created_at", desc=False)
+        .execute()
     )
-    if hot_only:
-        query = query.eq("hot", 1)
 
-    rows = query.execute()
-    interest_map: dict[str, dict] = {}
-    for r in (rows.data or []):
-        interest_map[r["lead_id"]] = r
+    # Deduplicate while preserving order
+    seen_broadcasts: set[str] = set()
+    ordered_broadcasts: list[dict] = []
+    for row in (br_broadcasts.data or []):
+        bid = row.get("broadcast_id", "")
+        if bid and bid not in seen_broadcasts:
+            seen_broadcasts.add(bid)
+            ordered_broadcasts.append({"broadcast_id": bid, "created_at": row.get("created_at")})
 
-    if not interest_map:
+    if not ordered_broadcasts:
         output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "From Broadcast ID", "HOT", "WARM", "COLD"])
+        writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "Template", "Broadcast ID", "HOT", "WARM", "COLD"])
         writer.writeheader()
         return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=tag_no_data.csv"})
 
-    lead_ids = list(interest_map.keys())
-    leads = db.table("leads").select("id,name,phone").in_("id", lead_ids).execute()
-    lead_map = {l["id"]: l for l in (leads.data or [])}
+    # 2. Resolve template names for each broadcast
+    broadcast_ids = [b["broadcast_id"] for b in ordered_broadcasts]
+    template_map: dict[str, str] = {}
+    try:
+        sb_rows = (
+            db.table("scheduled_broadcasts")
+            .select("id, template_name")
+            .in_("id", broadcast_ids)
+            .execute()
+        )
+        for sb in (sb_rows.data or []):
+            template_map[sb["id"]] = sb.get("template_name", sb["id"][:8])
+    except Exception:
+        pass
 
-    # Get broadcast_id from recipients for each lead+tag combo
-    br_rows = (
-        db.table("broadcast_recipients")
-        .select("lead_id, broadcast_id")
-        .eq("tenant_id", tenant_id)
-        .eq("tag_id", tag_id)
-        .in_("lead_id", lead_ids)
-        .execute()
-    )
-    br_map: dict[str, list[str]] = {}
-    for br in (br_rows.data or []):
-        lid = br["lead_id"]
-        bid = br.get("broadcast_id", "")
-        if bid:
-            br_map.setdefault(lid, []).append(bid)
-
+    # 3. Build rows: for each broadcast, get recipients + their frozen segment
     output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "From Broadcast ID", "HOT", "WARM", "COLD"])
+    writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "Template", "Broadcast ID", "HOT", "WARM", "COLD"])
     writer.writeheader()
-    for lid, interest in interest_map.items():
-        lead = lead_map.get(lid, {})
-        writer.writerow({
-            "Name": lead.get("name", ""),
-            "Phone": lead.get("phone", ""),
-            "From Broadcast ID": ",".join(br_map.get(lid, [])),
-            "HOT": interest.get("hot", 0),
-            "WARM": interest.get("warm", 0),
-            "COLD": interest.get("cold", 0),
-        })
+
+    for broadcast in ordered_broadcasts:
+        bid = broadcast["broadcast_id"]
+        template_name = template_map.get(bid, bid[:8])
+
+        # Get all recipients for this broadcast
+        recipients_resp = (
+            db.table("broadcast_recipients")
+            .select("lead_id, phone, name")
+            .eq("tenant_id", tenant_id)
+            .eq("broadcast_id", bid)
+            .execute()
+        )
+        recipients = recipients_resp.data or []
+        if not recipients:
+            continue
+
+        lead_ids = list({r["lead_id"] for r in recipients if r.get("lead_id")})
+
+        # Primary: get segment from broadcast_lead_scores (frozen per-broadcast)
+        segment_map: dict[str, str] = {}
+        if lead_ids:
+            bls_resp = (
+                db.table("broadcast_lead_scores")
+                .select("lead_id,segment")
+                .eq("broadcast_id", bid)
+                .in_("lead_id", lead_ids)
+                .execute()
+            )
+            segment_map = {r["lead_id"]: r.get("segment") or "C" for r in (bls_resp.data or [])}
+
+        # Fallback: use global leads table for leads without broadcast_lead_scores
+        missing_ids = [lid for lid in lead_ids if lid not in segment_map]
+        if missing_ids:
+            leads_resp = db.table("leads").select("id,segment").in_("id", missing_ids).execute()
+            for l in (leads_resp.data or []):
+                segment_map[l["id"]] = l.get("segment") or "C"
+
+        # Write rows for this broadcast
+        seen_leads: set[str] = set()
+        for r in recipients:
+            lead_id = r.get("lead_id") or ""
+            if lead_id in seen_leads:
+                continue
+            seen_leads.add(lead_id)
+
+            segment = segment_map.get(lead_id, "C")
+            hot, warm, cold = _segment_to_flags(segment)
+
+            if hot_only and hot != 1:
+                continue
+
+            writer.writerow({
+                "Name": r.get("name") or "",
+                "Phone": r.get("phone") or "",
+                "Template": template_name,
+                "Broadcast ID": bid,
+                "HOT": hot,
+                "WARM": warm,
+                "COLD": cold,
+            })
 
     tag_name = "tag"
     try:
@@ -1575,68 +1632,129 @@ async def download_tag_csv(
     except Exception:
         pass
 
+    suffix = "hot_only" if hot_only else "all"
     safe_tag = tag_name.replace(" ", "_").lower()
     return Response(
         content=output.getvalue(),
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=tag_{safe_tag}_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"},
+        headers={"Content-Disposition": f"attachment; filename=tag_{safe_tag}_{suffix}_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"},
     )
 
 
 @router.get("/all-tags-csv")
 async def download_all_tags_csv(tenant_id: str = Depends(get_tenant_id)):
-    """Download all-tags interest CSV (tall format): name, phone, tag, broadcast_id, HOT, WARM, COLD."""
+    """Download all-tags CSV grouped by tag then broadcast: name, phone, tag, template, broadcast_id, HOT, WARM, COLD."""
     db = get_supabase()
 
-    rows = db.table("lead_tag_interest").select("*").eq("tenant_id", tenant_id).execute()
-    interests = rows.data or []
-
-    if not interests:
+    # 1. Get all tags for this tenant
+    tags_resp = db.table("broadcast_tags").select("id,name").eq("tenant_id", tenant_id).execute()
+    tags = tags_resp.data or []
+    if not tags:
         output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "Tag", "From Broadcast ID", "HOT", "WARM", "COLD"])
+        writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "Tag", "Template", "Broadcast ID", "HOT", "WARM", "COLD"])
         writer.writeheader()
         return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=all_tags_no_data.csv"})
 
-    lead_ids = list({r["lead_id"] for r in interests})
-    tag_ids = list({r["tag_id"] for r in interests})
-
-    leads = db.table("leads").select("id,name,phone").in_("id", lead_ids).execute()
-    lead_map = {l["id"]: l for l in (leads.data or [])}
-
-    tags = db.table("broadcast_tags").select("id,name").in_("id", tag_ids).execute()
-    tag_map = {t["id"]: t.get("name", "unknown") for t in (tags.data or [])}
-
-    br_rows = (
-        db.table("broadcast_recipients")
-        .select("lead_id, tag_id, broadcast_id")
-        .eq("tenant_id", tenant_id)
-        .in_("tag_id", tag_ids)
-        .in_("lead_id", lead_ids)
-        .execute()
-    )
-    br_map: dict[tuple, list[str]] = {}
-    for br in (br_rows.data or []):
-        key = (br["lead_id"], br["tag_id"])
-        bid = br.get("broadcast_id", "")
-        if bid:
-            br_map.setdefault(key, []).append(bid)
-
     output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "Tag", "From Broadcast ID", "HOT", "WARM", "COLD"])
+    writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "Tag", "Template", "Broadcast ID", "HOT", "WARM", "COLD"])
     writer.writeheader()
-    for r in interests:
-        lead = lead_map.get(r["lead_id"], {})
-        tag_name = tag_map.get(r["tag_id"], "unknown")
-        bid = ",".join(br_map.get((r["lead_id"], r["tag_id"]), []))
-        writer.writerow({
-            "Name": lead.get("name", ""),
-            "Phone": lead.get("phone", ""),
-            "Tag": tag_name,
-            "From Broadcast ID": bid,
-            "HOT": r.get("hot", 0),
-            "WARM": r.get("warm", 0),
-            "COLD": r.get("cold", 0),
-        })
+
+    for tag in tags:
+        tag_id = tag["id"]
+        tag_name = tag.get("name", "unknown")
+
+        # 2. Get all distinct broadcasts under this tag, ordered by send time
+        br_broadcasts = (
+            db.table("broadcast_recipients")
+            .select("broadcast_id, created_at")
+            .eq("tenant_id", tenant_id)
+            .eq("tag_id", tag_id)
+            .not_.is_("broadcast_id", "null")
+            .order("created_at", desc=False)
+            .execute()
+        )
+
+        seen_broadcasts: set[str] = set()
+        ordered_broadcasts: list[dict] = []
+        for row in (br_broadcasts.data or []):
+            bid = row.get("broadcast_id", "")
+            if bid and bid not in seen_broadcasts:
+                seen_broadcasts.add(bid)
+                ordered_broadcasts.append({"broadcast_id": bid})
+
+        if not ordered_broadcasts:
+            continue
+
+        # 3. Resolve template names
+        broadcast_ids = [b["broadcast_id"] for b in ordered_broadcasts]
+        template_map: dict[str, str] = {}
+        try:
+            sb_rows = (
+                db.table("scheduled_broadcasts")
+                .select("id, template_name")
+                .in_("id", broadcast_ids)
+                .execute()
+            )
+            for sb in (sb_rows.data or []):
+                template_map[sb["id"]] = sb.get("template_name", sb["id"][:8])
+        except Exception:
+            pass
+
+        # 4. Build rows for each broadcast
+        for broadcast in ordered_broadcasts:
+            bid = broadcast["broadcast_id"]
+            template_name = template_map.get(bid, bid[:8])
+
+            recipients_resp = (
+                db.table("broadcast_recipients")
+                .select("lead_id, phone, name")
+                .eq("tenant_id", tenant_id)
+                .eq("broadcast_id", bid)
+                .execute()
+            )
+            recipients = recipients_resp.data or []
+            if not recipients:
+                continue
+
+            lead_ids = list({r["lead_id"] for r in recipients if r.get("lead_id")})
+
+            segment_map: dict[str, str] = {}
+            if lead_ids:
+                bls_resp = (
+                    db.table("broadcast_lead_scores")
+                    .select("lead_id,segment")
+                    .eq("broadcast_id", bid)
+                    .in_("lead_id", lead_ids)
+                    .execute()
+                )
+                segment_map = {r["lead_id"]: r.get("segment") or "C" for r in (bls_resp.data or [])}
+
+            missing_ids = [lid for lid in lead_ids if lid not in segment_map]
+            if missing_ids:
+                leads_resp = db.table("leads").select("id,segment").in_("id", missing_ids).execute()
+                for l in (leads_resp.data or []):
+                    segment_map[l["id"]] = l.get("segment") or "C"
+
+            seen_leads: set[str] = set()
+            for r in recipients:
+                lead_id = r.get("lead_id") or ""
+                if lead_id in seen_leads:
+                    continue
+                seen_leads.add(lead_id)
+
+                segment = segment_map.get(lead_id, "C")
+                hot, warm, cold = _segment_to_flags(segment)
+
+                writer.writerow({
+                    "Name": r.get("name") or "",
+                    "Phone": r.get("phone") or "",
+                    "Tag": tag_name,
+                    "Template": template_name,
+                    "Broadcast ID": bid,
+                    "HOT": hot,
+                    "WARM": warm,
+                    "COLD": cold,
+                })
 
     return Response(
         content=output.getvalue(),
