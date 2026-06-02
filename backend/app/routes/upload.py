@@ -1687,10 +1687,25 @@ async def download_broadcast_tag_csv(
         )
 
     lead_ids = list({r["lead_id"] for r in recipients if r.get("lead_id")})
+
+    # Primary: get segment from broadcast_lead_scores (per-broadcast historical snapshot)
     segment_map: dict[str, str] = {}
     if lead_ids:
-        leads_resp = db.table("leads").select("id,segment").in_("id", lead_ids).execute()
-        segment_map = {l["id"]: l.get("segment") or "C" for l in (leads_resp.data or [])}
+        bls_resp = (
+            db.table("broadcast_lead_scores")
+            .select("lead_id,segment")
+            .eq("broadcast_id", broadcast_id)
+            .in_("lead_id", lead_ids)
+            .execute()
+        )
+        segment_map = {r["lead_id"]: r.get("segment") or "C" for r in (bls_resp.data or [])}
+
+    # Fallback: for leads without a broadcast_lead_scores row, use global leads table
+    missing_ids = [lid for lid in lead_ids if lid not in segment_map]
+    if missing_ids:
+        leads_resp = db.table("leads").select("id,segment").in_("id", missing_ids).execute()
+        for l in (leads_resp.data or []):
+            segment_map[l["id"]] = l.get("segment") or "C"
 
     seen: set[str] = set()
     for r in recipients:
