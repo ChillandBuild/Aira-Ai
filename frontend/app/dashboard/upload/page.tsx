@@ -4,10 +4,11 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Upload, Check, AlertTriangle, ChevronRight, ChevronDown, RotateCcw, MessageSquare, Clock, Send, Download, CheckCircle2, Eye, XCircle, Calendar, Phone, Search, Smartphone, ShieldCheck, FileSpreadsheet, PlayCircle, MapPin, Copy, Globe, Image as ImageIcon, FileText, Tag, Plus, Trash2, Palette } from "lucide-react";
+import { Upload, Check, AlertTriangle, ChevronRight, ChevronDown, RotateCcw, MessageSquare, Clock, Send, Download, CheckCircle2, Eye, XCircle, Calendar, Phone, Search, Smartphone, ShieldCheck, FileSpreadsheet, PlayCircle, MapPin, Copy, Globe, Image as ImageIcon, FileText, Tag, Plus, Trash2, Palette, RefreshCw } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
+import { usePolling } from "@/hooks/usePolling";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -379,6 +380,10 @@ export default function UploadPage() {
       supabase.removeChannel(channel);
     };
   }, [activeTab, tagsList.length, tagsListLoading]);
+
+  usePolling(() => {
+    if (activeTab === "tags") loadTags();
+  }, 30000, activeTab === "tags");
 
   const [csvFileUrl, setCsvFileUrl] = useState<string | null>(null);
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
@@ -1673,6 +1678,13 @@ export default function UploadPage() {
             <div className="flex items-center gap-3">
               <ExportAllDropdown tagCount={tagsList.length} />
               <button
+                onClick={loadTags}
+                disabled={tagsListLoading}
+                className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-surface border border-surface-mid text-on-surface-muted hover:text-on-surface hover:border-violet-300 font-label text-sm font-semibold transition-colors disabled:opacity-50"
+              >
+                <RefreshCw size={14} className={cn("transition-transform", tagsListLoading && "animate-spin")} />
+              </button>
+              <button
                 onClick={() => setShowCreateTag((p) => !p)}
                 className={cn(
                   "flex items-center gap-2 px-4 py-2.5 rounded-xl font-label text-sm font-semibold transition-colors border",
@@ -1912,10 +1924,12 @@ export default function UploadPage() {
                       target="_blank" 
                       rel="noopener noreferrer" 
                       download={item.csv_file_name || "broadcast.csv"}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg font-label text-xs font-semibold transition-colors border border-gray-200"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg font-label text-[11px] font-semibold transition-colors border border-gray-200"
                     >
-                      <Download size={14} />
-                      Download CSV
+                      <Download size={12} />
+                      {item.csv_file_name && item.csv_file_name.length > 20
+                        ? item.csv_file_name.slice(0, 10) + "..." + item.csv_file_name.slice(-4)
+                        : item.csv_file_name || "CSV"}
                     </a>
                   )}
                   
@@ -1923,15 +1937,15 @@ export default function UploadPage() {
                   {item.failed > 0 && item.broadcast_id ? (
                     <button
                       onClick={() => downloadFailedCsv(item.broadcast_id!)}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg font-label text-xs font-semibold transition-colors border border-red-200"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg font-label text-[11px] font-semibold transition-colors border border-red-200"
                     >
-                      <Download size={14} />
-                      Download Failed CSV
+                      <Download size={12} />
+                      Failed Leads
                     </button>
                   ) : item.failed === 0 ? (
-                    <span className="inline-flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-lg font-label text-xs font-medium border border-green-100">
-                      <CheckCircle2 size={14} />
-                      No failures detected
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-green-50 text-green-700 rounded-lg font-label text-[11px] font-medium border border-green-100">
+                      <CheckCircle2 size={12} />
+                      No failures
                     </span>
                   ) : null}
 
@@ -1939,10 +1953,10 @@ export default function UploadPage() {
                   {item.broadcast_id && (
                     <button
                       onClick={() => downloadBroadcastTagCsv(item.broadcast_id!, item.tag_id)}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-violet-50 hover:bg-violet-100 text-violet-700 rounded-lg font-label text-xs font-semibold transition-colors border border-violet-200"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 rounded-lg font-label text-[11px] font-semibold transition-colors border border-violet-200"
                     >
-                      <Tag size={14} />
-                      Download Interest CSV
+                      <Tag size={12} />
+                      Segment Leads
                     </button>
                   )}
                 </div>

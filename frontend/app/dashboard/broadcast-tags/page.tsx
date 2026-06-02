@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Download, Trash2, Tag, Loader2, ChevronDown, Palette } from "lucide-react";
+import { Plus, Download, Trash2, Tag, Loader2, ChevronDown, Palette, RefreshCw } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { usePolling } from "@/hooks/usePolling";
 import { toast } from "sonner";
 
 type BroadcastTag = {
@@ -219,6 +220,8 @@ export default function BroadcastTagsPage() {
 
   useEffect(() => { load(); }, []);
 
+  usePolling(load, 30000);
+
   async function handleCreate() {
     if (!newName.trim()) return;
     setCreating(true);
@@ -272,6 +275,13 @@ export default function BroadcastTagsPage() {
         </div>
         <div className="flex items-center gap-3">
           <ExportAllDropdown tagCount={tags.length} />
+          <button
+            onClick={load}
+            disabled={loading}
+            className="flex items-center justify-center p-2.5 rounded-xl bg-white border border-surface-mid text-on-surface-muted hover:text-on-surface hover:border-violet-300 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={16} className={cn("transition-transform", loading && "animate-spin")} />
+          </button>
           <button
             onClick={() => setShowCreate(prev => !prev)}
             className={cn(
