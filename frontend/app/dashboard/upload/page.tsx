@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Upload, Check, AlertTriangle, ChevronRight, RotateCcw, MessageSquare, Clock, Send, Download, CheckCircle2, Eye, XCircle, Calendar, Phone, Search, Smartphone, ShieldCheck, FileSpreadsheet, PlayCircle, MapPin, Copy, Globe, Image as ImageIcon, FileText, Tag, Plus, Trash2 } from "lucide-react";
+import { Upload, Check, AlertTriangle, ChevronRight, ChevronDown, RotateCcw, MessageSquare, Clock, Send, Download, CheckCircle2, Eye, XCircle, Calendar, Phone, Search, Smartphone, ShieldCheck, FileSpreadsheet, PlayCircle, MapPin, Copy, Globe, Image as ImageIcon, FileText, Tag, Plus, Trash2, Palette } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -72,6 +72,9 @@ type TagStats = {
 const PRESET_COLORS = [
   "#6D28D9", "#7C3AED", "#2563EB", "#0891B2", "#059669",
   "#D97706", "#DC2626", "#DB2777", "#4F46E5", "#0D9488",
+  "#1D4ED8", "#047857", "#B45309", "#BE123C", "#4338CA",
+  "#0E7490", "#15803D", "#A16207", "#9F1239", "#7E22CE",
+  "#0284C7", "#EA580C", "#9333EA", "#E11D48",
 ];
 
 type ScheduleType = "now" | "scheduled" | "drip";
@@ -139,7 +142,111 @@ function StepIndicator({ current }: { current: number }) {
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// ─── Segment Dropdown ─────────────────────────────────────────────────────────
+
+const SEGMENT_OPTIONS = [
+  { label: "Hot", value: "A", color: "text-green-700 bg-green-50 border-green-200 hover:bg-green-100" },
+  { label: "Warm", value: "B", color: "text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100" },
+  { label: "Cold", value: "C", color: "text-gray-700 bg-gray-50 border-gray-200 hover:bg-gray-100" },
+  { label: "Disqualified", value: "D", color: "text-red-700 bg-red-50 border-red-200 hover:bg-red-100" },
+];
+
+function SegmentDropdown({ tagId }: { tagId: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  function download(segment: string) {
+    window.open(`${API_URL}/api/v1/uploads/tag-csv?tag_id=${tagId}&segment=${segment}`, "_blank");
+    setOpen(false);
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="text-xs px-2.5 py-1.5 rounded-lg border border-violet-200 text-violet-700 hover:bg-violet-50 transition-colors flex items-center gap-1 font-medium"
+      >
+        <Download size={12} /> Segment Leads
+        <ChevronDown size={12} className={cn("transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-xl shadow-lg border border-surface-mid z-50 overflow-hidden">
+          {SEGMENT_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => download(opt.value)}
+              className={cn("w-full text-left text-xs px-3 py-2.5 font-label font-semibold transition-colors border-b border-surface-mid/30 last:border-0", opt.color)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Export All Dropdown ──────────────────────────────────────────────────────
+
+function ExportAllDropdown({ tagCount }: { tagCount: number }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  function download(mode: string) {
+    window.open(`${API_URL}/api/v1/uploads/all-tags-combined?mode=${mode}`, "_blank");
+    setOpen(false);
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-surface-mid text-on-surface-muted hover:text-on-surface hover:border-violet-300 font-label text-sm font-semibold transition-colors"
+      >
+        <Download size={14} /> Export All
+        <ChevronDown size={14} className={cn("transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-xl shadow-lg border border-surface-mid z-50 overflow-hidden">
+          <button
+            onClick={() => download("all")}
+            className="w-full text-left text-xs px-4 py-3 font-label transition-colors border-b border-surface-mid/30 hover:bg-violet-50"
+          >
+            <p className="font-semibold text-on-surface">All Tags</p>
+            <p className="text-on-surface-muted mt-0.5">Combine all {tagCount} tags — no dedup</p>
+          </button>
+          <button
+            onClick={() => download("cross")}
+            className="w-full text-left text-xs px-4 py-3 font-label transition-colors hover:bg-violet-50"
+          >
+            <p className="font-semibold text-on-surface">Cross-Tag</p>
+            <p className="text-on-surface-muted mt-0.5">Best segment per lead across all tags</p>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function UploadPage() {
   const [currentStep, setCurrentStep] = useState(1);
@@ -193,6 +300,7 @@ export default function UploadPage() {
   const [showCreateTag, setShowCreateTag] = useState(false);
   const [newTagName, setNewTagName] = useState("");
   const [newTagColor, setNewTagColor] = useState(PRESET_COLORS[0]);
+  const [customTagColor, setCustomTagColor] = useState("");
   const [creatingTag, setCreatingTag] = useState(false);
   const [deletingTagId, setDeletingTagId] = useState<string | null>(null);
 
@@ -446,7 +554,7 @@ export default function UploadPage() {
       const res = await fetch(`${API_URL}/api/v1/broadcast-tags`, {
         method: "POST",
         headers: { ...auth, "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newTagName.trim(), color: newTagColor }),
+        body: JSON.stringify({ name: newTagName.trim(), color: customTagColor || newTagColor }),
       });
       if (!res.ok) throw new Error((await res.json()).detail || "Failed");
       toast.success(`Tag "${newTagName}" created`);
@@ -1532,13 +1640,8 @@ export default function UploadPage() {
               <h2 className="font-display text-xl font-bold text-on-surface">Tags</h2>
               <p className="font-body text-sm text-on-surface-muted mt-0.5">Tag each broadcast by product to track interest per audience segment.</p>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => { window.open(`${API_URL}/api/v1/uploads/all-tags-csv`, "_blank"); }}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-surface-mid text-on-surface-muted hover:text-on-surface hover:border-violet-300 font-label text-sm transition-colors"
-              >
-                <Download size={14} /> Export All
-              </button>
+            <div className="flex items-center gap-3">
+              <ExportAllDropdown tagCount={tagsList.length} />
               <button
                 onClick={() => setShowCreateTag((p) => !p)}
                 className={cn(
@@ -1568,10 +1671,26 @@ export default function UploadPage() {
                 </div>
                 <div>
                   <label className="font-label text-xs text-on-surface-muted mb-1 block">Color</label>
-                  <div className="flex gap-1.5">
+                  <div className="flex gap-1.5 flex-wrap max-w-[320px]">
                     {PRESET_COLORS.map((c) => (
-                      <button key={c} onClick={() => setNewTagColor(c)} className={cn("w-7 h-7 rounded-full transition-transform", newTagColor === c ? "ring-2 ring-offset-2 ring-violet-500 scale-110" : "hover:scale-110")} style={{ backgroundColor: c }} />
+                      <button
+                        key={c}
+                        onClick={() => { setCustomTagColor(""); setNewTagColor(c); }}
+                        className={cn("w-7 h-7 rounded-full transition-transform", newTagColor === c && !customTagColor ? "ring-2 ring-offset-2 ring-violet-500 scale-110" : "hover:scale-110")}
+                        style={{ backgroundColor: c }}
+                      />
                     ))}
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Palette size={14} className="text-on-surface-muted" />
+                    <input
+                      type="color"
+                      value={customTagColor || newTagColor}
+                      onChange={(e) => { setCustomTagColor(e.target.value); setNewTagColor(e.target.value); }}
+                      className="w-8 h-8 rounded-lg cursor-pointer border border-surface-mid"
+                      title="Custom color"
+                    />
+                    <span className="font-mono text-xs text-on-surface-muted">{customTagColor || newTagColor}</span>
                   </div>
                 </div>
                 <button onClick={handleCreateTag} disabled={creatingTag || !newTagName.trim()} className="px-5 py-2 rounded-xl bg-violet-600 text-white font-label text-sm font-semibold hover:bg-violet-700 disabled:opacity-40 flex items-center gap-2">
@@ -1618,8 +1737,14 @@ export default function UploadPage() {
                         <td className="px-3 py-3 text-center font-label text-sm text-on-surface-muted">{s?.cold ?? 0}</td>
                         <td className="px-5 py-3">
                           <div className="flex items-center justify-end gap-2">
-                            <button onClick={() => window.open(`${API_URL}/api/v1/uploads/tag-csv?tag_id=${tag.id}`, "_blank")} className="text-xs px-2.5 py-1 rounded-lg border border-surface-mid text-on-surface-muted hover:text-on-surface hover:border-violet-300 transition-colors flex items-center gap-1"><Download size={12} /> All</button>
-                            <button onClick={() => window.open(`${API_URL}/api/v1/uploads/tag-csv?tag_id=${tag.id}&hot_only=true`, "_blank")} className="text-xs px-2.5 py-1 rounded-lg border border-green-200 text-green-700 hover:bg-green-50 transition-colors flex items-center gap-1"><Download size={12} /> Hot only</button>
+                            <button
+                              onClick={() => window.open(`${API_URL}/api/v1/uploads/tag-csv?tag_id=${tag.id}`, "_blank")}
+                              className="text-xs px-2.5 py-1.5 rounded-lg border border-surface-mid text-on-surface-muted hover:text-on-surface hover:border-violet-300 hover:bg-violet-50 transition-all flex items-center gap-1.5 font-medium"
+                              title="Download all leads for this tag"
+                            >
+                              <Download size={12} /> All Leads
+                            </button>
+                            <SegmentDropdown tagId={tag.id} />
                             <button onClick={() => handleDeleteTag(tag)} disabled={deletingTagId === tag.id} className="p-1.5 rounded-lg text-on-surface-muted/50 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40">
                               {deletingTagId === tag.id ? <div className="w-3.5 h-3.5 border-2 border-red-500 border-t-transparent rounded-full animate-spin" /> : <Trash2 size={14} />}
                             </button>
