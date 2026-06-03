@@ -303,6 +303,7 @@ class BulkSendRequest(BaseModel):
     variable_mapping: list[str] = []  # ordered CSV column names for {{1}}, {{2}}, ...
     tag_id: Optional[str] = None  # broadcast tag for per-product interest tracking
     exclude_negative_replies: bool = False  # skip leads who previously rejected a broadcast
+    include_opted_out: bool = False  # send to opted-out leads if True
 
 
 class RiskAuditRequest(BaseModel):
@@ -663,6 +664,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
 
     sent = 0
     failed = 0
+    opted_out_skipped = 0
     recipient_rows = []
 
     # Check if fail_reason column exists (migration 058 may not be applied yet)
@@ -681,7 +683,8 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         lead_id = phone_to_lead_id.get(phone)
         lead_name = phone_to_lead_name.get(phone)
 
-        if phone in opted_out_phones:
+        if phone in opted_out_phones and not body.include_opted_out:
+            opted_out_skipped += 1
             failed += 1
             row = {
                 "tenant_id": tenant_id,
@@ -917,6 +920,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         "queued": len(upsert_rows),
         "sent": sent,
         "failed": failed + len(rejected),
+        "opted_out_skipped": opted_out_skipped,
         "number_used": best_number.get("number"),
         "broadcast_id": broadcast_id,
     }

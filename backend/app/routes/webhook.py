@@ -12,25 +12,13 @@ from app.services.meta_webhook_verify import verify_meta_signature
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Exact-match opt-out phrases (short replies)
-_STOP_WORDS = frozenset({
-    "stop", "unsubscribe", "cancel", "quit", "end", "optout", "opt out", "opt-out",
-    "not interested", "no thanks", "remove me", "dont send", "don't send", "no",
-    "ஆர்வமில்லை", "ஆர்வம் இல்லை", "வேண்டாம்", "வேண்டாம்", "நோ", "வேண்டாம் நன்றி",
-})
-
-# Phrases that signal opt-out even when embedded in a longer message
-_OPT_OUT_PHRASES = (
-    "not interested", "no thanks", "dont contact", "don't contact", "remove me",
-    "ஆர்வம் இல்லை", "ஆர்வமில்லை", "வேண்டாம்",
-)
+# Exact-match opt-out phrases (only 2 words)
+_STOP_WORDS = frozenset({"unsubscribe", "ஆர்வம் இல்லை"})
 
 
 def _is_opt_out(body: str) -> bool:
     normalized = body.lower().strip()
-    if normalized in _STOP_WORDS:
-        return True
-    return any(phrase in normalized for phrase in _OPT_OUT_PHRASES)
+    return normalized in _STOP_WORDS
 
 
 def _get_tenant_id_for_meta_number(phone_number_id: str, db) -> str | None:
@@ -190,10 +178,6 @@ async def whatsapp_webhook(
 
                         logger.info(f"Inbound Meta WhatsApp from {phone}: type={msg_type} body={body!r}")
 
-                        if body and _is_opt_out(body):
-                            await _handle_opt_out(phone, tenant_id, db)
-                            continue
-
                         existing = db.table("leads").select("id,score,segment,deleted_at,ai_enabled").eq("phone", phone).eq("tenant_id", tenant_id).limit(1).execute()
                         if existing.data:
                             lead_id = existing.data[0]["id"]
@@ -256,6 +240,15 @@ async def whatsapp_webhook(
                             .execute()
                         )
                         is_first_message = not bool(_is_first.data)
+
+                        # Context-dependent opt-out: hard opt-out only for first-time senders
+                        if body and _is_opt_out(body):
+                            if is_first_message:
+                                # Hard opt-out for first-time senders
+                                await _handle_opt_out(phone, tenant_id, db)
+                                continue
+                            # else: let it flow through normal pipeline for engaged users
+                            # Scoring engine will handle it as rejection (segment D, low engagement)
 
                         insert_row: dict = {
                             "lead_id": lead_id,
@@ -419,10 +412,6 @@ async def whatsapp_webhook(
         tenant_id = "00000000-0000-0000-0000-000000000001"
     logger.info(f"Inbound WhatsApp from {phone}: {Body!r}")
 
-    if Body and _is_opt_out(Body):
-        await _handle_opt_out(phone, tenant_id, db)
-        return Response(content='<?xml version="1.0" encoding="UTF-8"?><Response></Response>', media_type="text/xml")
-
     # Upsert lead
     existing = db.table("leads").select("id,score,segment").eq("phone", phone).eq("tenant_id", tenant_id).is_("deleted_at", "null").limit(1).execute()
     if existing.data:
@@ -444,6 +433,26 @@ async def whatsapp_webhook(
             tenant_id=tenant_id,
             db=db,
         )
+
+    # Check if this is the first inbound message
+    _is_first = (
+        db.table("messages")
+        .select("id")
+        .eq("lead_id", lead_id)
+        .eq("direction", "inbound")
+        .limit(1)
+        .execute()
+    )
+    is_first_message = not bool(_is_first.data)
+
+    # Context-dependent opt-out: hard opt-out only for first-time senders
+    if Body and _is_opt_out(Body):
+        if is_first_message:
+            # Hard opt-out for first-time senders
+            await _handle_opt_out(phone, tenant_id, db)
+            return Response(content='<?xml version="1.0" encoding="UTF-8"?><Response></Response>', media_type="text/xml")
+        # else: let it flow through normal pipeline for engaged users
+        # Scoring engine will handle it as rejection (segment D, low engagement)
 
     # Store inbound message
     db.table("messages").insert({

@@ -31,6 +31,7 @@ type OptInValidation = {
 type SendResult = {
   queued: number;
   failed: number;
+  opted_out_skipped: number;
   number_used: string;
 };
 
@@ -352,6 +353,7 @@ export default function UploadPage() {
   } | null>(null);
   const [riskLoading, setRiskLoading] = useState(false);
   const [excludeNegativeReplies, setExcludeNegativeReplies] = useState(false);
+  const [includeOptedOut, setIncludeOptedOut] = useState(false);
   const [unflagging, setUnflagging] = useState(false);
 
   // Tags management state
@@ -590,6 +592,7 @@ export default function UploadPage() {
     setRiskSummary(null);
     setRiskLoading(false);
     setExcludeNegativeReplies(false);
+    setIncludeOptedOut(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -797,6 +800,7 @@ export default function UploadPage() {
         variable_mapping: variableMapping.filter(Boolean),
         tag_id: selectedTag || undefined,
         exclude_negative_replies: excludeNegativeReplies,
+        include_opted_out: includeOptedOut,
       };
 
       const auth = await getAuthHeaders();
@@ -1336,13 +1340,13 @@ export default function UploadPage() {
                       Checking audience health…
                     </div>
                   )}
-                  {!riskLoading && riskSummary && (riskSummary.negative_reply_count > 0 || riskSummary.high_no_reply_count > 0) && (
+                  {!riskLoading && riskSummary && (riskSummary.negative_reply_count > 0 || riskSummary.high_no_reply_count > 0 || riskSummary.opted_out_count > 0) && (
                     <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
                       <div className="flex items-center gap-2">
                         <AlertTriangle size={15} className="text-amber-600 shrink-0" />
                         <p className="font-label text-sm font-semibold text-amber-800">Audience Risk Summary</p>
                       </div>
-                      <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="grid grid-cols-4 gap-2 text-center">
                         <div className="p-2.5 bg-white rounded-lg border border-amber-100">
                           <p className="font-display text-xl font-bold text-red-600">{riskSummary.negative_reply_count}</p>
                           <p className="font-label text-[9px] text-on-surface-muted uppercase font-bold mt-0.5">Said No</p>
@@ -1350,6 +1354,10 @@ export default function UploadPage() {
                         <div className="p-2.5 bg-white rounded-lg border border-amber-100">
                           <p className="font-display text-xl font-bold text-amber-600">{riskSummary.high_no_reply_count}</p>
                           <p className="font-label text-[9px] text-on-surface-muted uppercase font-bold mt-0.5">Silent 2+</p>
+                        </div>
+                        <div className="p-2.5 bg-white rounded-lg border border-amber-100">
+                          <p className="font-display text-xl font-bold text-gray-600">{riskSummary.opted_out_count}</p>
+                          <p className="font-label text-[9px] text-on-surface-muted uppercase font-bold mt-0.5">Opted Out</p>
                         </div>
                         <div className="p-2.5 bg-white rounded-lg border border-amber-100">
                           <p className="font-display text-xl font-bold text-green-600">{riskSummary.safe_count}</p>
@@ -1377,6 +1385,19 @@ export default function UploadPage() {
                             {unflagging ? "Un-flagging…" : "Un-flag all — give them another chance"}
                           </button>
                         </div>
+                      )}
+                      {riskSummary.opted_out_count > 0 && (
+                        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={includeOptedOut}
+                            onChange={(e) => setIncludeOptedOut(e.target.checked)}
+                            className="w-4 h-4 rounded border-amber-300 text-amber-600 accent-amber-600"
+                          />
+                          <span className="font-body text-sm text-amber-800">
+                            Send to {riskSummary.opted_out_count} opted-out contact{riskSummary.opted_out_count !== 1 ? "s" : ""}
+                          </span>
+                        </label>
                       )}
                     </div>
                   )}
@@ -1420,7 +1441,7 @@ export default function UploadPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-4 gap-3">
                     <div className="p-4 bg-green-50/50 border border-green-200/50 rounded-xl text-center">
                       <p className="font-display text-3xl font-bold text-green-700">{sendResult.queued.toLocaleString()}</p>
                       <p className="font-label text-[10px] text-green-600 mt-1 uppercase tracking-wide font-bold">Sent</p>
@@ -1428,6 +1449,10 @@ export default function UploadPage() {
                     <div className="p-4 bg-surface-low border border-surface-mid rounded-xl text-center">
                       <p className="font-display text-3xl font-bold text-on-surface-muted">{sendResult.failed.toLocaleString()}</p>
                       <p className="font-label text-[10px] text-on-surface-muted mt-1 uppercase tracking-wide font-bold">Failed</p>
+                    </div>
+                    <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl text-center">
+                      <p className="font-display text-3xl font-bold text-gray-600">{sendResult.opted_out_skipped.toLocaleString()}</p>
+                      <p className="font-label text-[10px] text-gray-500 mt-1 uppercase tracking-wide font-bold">Opted Out</p>
                     </div>
                     <div className="p-4 bg-tertiary/5 border border-tertiary/15 rounded-xl text-center">
                       <p className="font-display text-sm font-bold text-tertiary truncate leading-10">{sendResult.number_used}</p>
