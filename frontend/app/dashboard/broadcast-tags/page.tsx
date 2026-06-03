@@ -99,8 +99,23 @@ function SegmentDropdown({ tagId }: { tagId: string }) {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  function download(segment: string) {
-    window.open(`${API_URL}/api/v1/uploads/tag-csv?tag_id=${tagId}&segment=${segment}`, "_blank");
+  async function download(segment: string) {
+    try {
+      const auth = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/upload/tag-csv?tag_id=${tagId}&segment=${segment}`, { headers: auth });
+      if (!res.ok) throw new Error("failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `tag_leads_${segment.toLowerCase()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Download failed");
+    }
     setOpen(false);
   }
 
@@ -155,8 +170,23 @@ function ExportAllDropdown({ tagCount }: { tagCount: number }) {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  function download(mode: string) {
-    window.open(`${API_URL}/api/v1/uploads/all-tags-combined?mode=${mode}`, "_blank");
+  async function download(mode: string) {
+    try {
+      const auth = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/upload/all-tags-combined?mode=${mode}`, { headers: auth });
+      if (!res.ok) throw new Error("failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `all_tags_combined_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Download failed");
+    }
     setOpen(false);
   }
 
@@ -262,8 +292,23 @@ export default function BroadcastTagsPage() {
     setDeleting(null);
   }
 
-  function downloadTagCsv(tagId: string) {
-    window.open(`${API_URL}/api/v1/uploads/tag-csv?tag_id=${tagId}`, "_blank");
+  async function downloadTagCsv(tagId: string) {
+    try {
+      const auth = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/upload/tag-csv?tag_id=${tagId}`, { headers: auth });
+      if (!res.ok) throw new Error("failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "tag_leads.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Download failed");
+    }
   }
 
   return (

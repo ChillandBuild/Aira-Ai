@@ -1965,12 +1965,21 @@ async def download_broadcast_tag_csv(
         .select("lead_id, phone, name")
         .eq("tenant_id", tenant_id)
         .eq("broadcast_id", broadcast_id)
+        .eq("send_status", "sent")
         .execute()
     )
     recipients = recipients_resp.data or []
 
+    template_name = broadcast_id[:8]
+    try:
+        sb_resp = db.table("scheduled_broadcasts").select("template_name").eq("id", broadcast_id).maybe_single().execute()
+        if sb_resp and sb_resp.data:
+            template_name = sb_resp.data.get("template_name") or broadcast_id[:8]
+    except Exception:
+        pass
+
     output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "From Broadcast ID", "HOT", "WARM", "COLD"])
+    writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "Template", "From Broadcast ID", "HOT", "WARM", "COLD"])
     writer.writeheader()
 
     if not recipients:
@@ -1982,7 +1991,6 @@ async def download_broadcast_tag_csv(
 
     lead_ids = list({r["lead_id"] for r in recipients if r.get("lead_id")})
 
-    # Primary: get segment from broadcast_lead_scores (per-broadcast historical snapshot)
     segment_map: dict[str, str] = {}
     if lead_ids:
         bls_resp = (
@@ -1994,7 +2002,6 @@ async def download_broadcast_tag_csv(
         )
         segment_map = {r["lead_id"]: r.get("segment") or "C" for r in (bls_resp.data or [])}
 
-    # Fallback: for leads without a broadcast_lead_scores row, use global leads table
     missing_ids = [lid for lid in lead_ids if lid not in segment_map]
     if missing_ids:
         leads_resp = db.table("leads").select("id,segment").in_("id", missing_ids).execute()
@@ -2012,6 +2019,7 @@ async def download_broadcast_tag_csv(
         writer.writerow({
             "Name": r.get("name") or "",
             "Phone": r.get("phone") or "",
+            "Template": template_name,
             "From Broadcast ID": broadcast_id,
             "HOT": hot,
             "WARM": warm,
