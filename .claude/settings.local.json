@@ -28,9 +28,13 @@
       "Bash(curl -s http://127.0.0.1:8000/api/v1/*)",
       "mcp__claude_ai_Supabase__list_migrations",
       "mcp__claude_ai_Supabase__list_tables",
-      "mcp__claude_ai_Supabase__execute_sql"
+      "mcp__claude_ai_Supabase__execute_sql",
+      "Write(/Users/prem/Documents/Aira Ai/graphify-out/*)"
     ]
   },
+  "enabledMcpjsonServers": [
+    "render"
+  ],
   "hooks": {
     "PostToolUse": [
       {
@@ -61,5 +65,6 @@
         ]
       }
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true
 }

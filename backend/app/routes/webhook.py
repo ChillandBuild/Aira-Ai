@@ -288,6 +288,14 @@ async def whatsapp_webhook(
                                     logger.warning(f"Bot-flow scoring failed for lead {lead_id}: {_se}")
                                 continue
 
+                        # Booking state machine: takes priority over bot triggers + AI.
+                        # If a booking is in progress OR booking intent is detected,
+                        # the state machine owns this message.
+                        if body:
+                            from app.services.booking_flow import route_booking_intent
+                            if await route_booking_intent(lead_id, tenant_id, phone, body, db):
+                                continue
+
                         if body:
                             fire_trigger(
                                 background_tasks, lead_id, tenant_id,

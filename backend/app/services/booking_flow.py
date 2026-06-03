@@ -1,6 +1,7 @@
 # backend/app/services/booking_flow.py
 import logging
 import re
+import uuid
 from typing import Any
 
 from app.db.supabase import get_supabase
@@ -33,7 +34,30 @@ _INTENT_KEYWORDS = frozenset({
     "புக்", "வேணும்", "பதிவு",
 })
 
-BOOKING_AMOUNT_PAISE = 50000
+_BOOKING_DEFAULTS = {
+    "event_name": "Booking",
+    "ref_prefix": "BK",
+    "amount_paise": 50000,
+}
+
+
+def _get_booking_settings(tenant_id: str | None) -> dict:
+    if not tenant_id:
+        return dict(_BOOKING_DEFAULTS)
+    try:
+        from app.services.config_dynamic import get_setting
+        event_name = get_setting("booking_event_name", _BOOKING_DEFAULTS["event_name"], tenant_id=tenant_id)
+        ref_prefix = (get_setting("booking_ref_prefix", _BOOKING_DEFAULTS["ref_prefix"], tenant_id=tenant_id) or "").upper() or "BK"
+        amount_raw = get_setting("booking_amount_paise", str(_BOOKING_DEFAULTS["amount_paise"]), tenant_id=tenant_id)
+        amount = int(amount_raw) if amount_raw else _BOOKING_DEFAULTS["amount_paise"]
+        return {"event_name": event_name, "ref_prefix": ref_prefix, "amount_paise": amount}
+    except Exception as e:
+        logger.warning(f"Failed to read booking settings for tenant {tenant_id}: {e}")
+        return dict(_BOOKING_DEFAULTS)
+
+
+def _generate_booking_ref(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex[:6].upper()}"
 
 
 async def detect_booking_intent(message: str) -> bool:
@@ -41,6 +65,47 @@ async def detect_booking_intent(message: str) -> bool:
     # Use token split to avoid substring matches (e.g. "book" in "facebook")
     tokens = set(re.findall(r"[\w஀-௿]+", text))
     return bool(tokens & _INTENT_KEYWORDS)
+
+
+async def route_booking_intent(
+    lead_id: str,
+    tenant_id: str,
+    phone: str,
+    body: str,
+    db,
+) -> bool:
+    """Webhook-level routing for the 5-step booking state machine.
+
+    Returns True if the inbound message was consumed by the booking flow
+    (caller must skip bot trigger fan-out + AI reply for this message).
+
+    Priority:
+      1. Active booking state (collecting_*) → advance_state (saves the field,
+         sends next prompt, or fires payment link on the last step).
+      2. No state + booking intent detected → start_booking_flow (sends first
+         prompt: "share your name").
+      3. Otherwise → False (caller continues to bot + AI).
+    """
+    if not body:
+        return False
+    try:
+        conv_state = get_or_create_state(lead_id, tenant_id, db)
+        current_state = conv_state.get("state", "idle")
+        if current_state in _BOOKING_COLLECT_STATES:
+            await advance_state(state=conv_state, message=body, phone=phone, db=db)
+            return True
+        if current_state == "idle" and await detect_booking_intent(body):
+            await start_booking_flow(lead_id, tenant_id, phone, db=db, existing_state=conv_state)
+            return True
+    except Exception as e:
+        logger.error(f"route_booking_intent failed for lead {lead_id}: {e}")
+    return False
+
+
+_BOOKING_COLLECT_STATES = frozenset({
+    "collecting_name", "collecting_rasi", "collecting_nakshatram",
+    "collecting_gotram", "collecting_address",
+})
 
 
 def get_or_create_state(lead_id: str, tenant_id: str, db=None) -> dict:
@@ -96,24 +161,36 @@ def get_or_create_state(lead_id: str, tenant_id: str, db=None) -> dict:
                 if gap > timedelta(hours=6):
                     state["state"] = "idle"
                     logger.info(f"Session reset for lead {lead_id} after {gap} inactivity — summary retained for context")
-                    
-                    # Send re-engagement message
+
+                    # Re-engagement message: only fires if BOTH ai_auto_reply_enabled AND
+                    # reengagement_enabled are on. Reuses the same gate pattern as the
+                    # auto-reply pipeline so operators get a single consistent kill switch.
                     try:
-                        phone = (
-                            db.table("leads")
-                            .select("phone")
-                            .eq("id", lead_id)
-                            .maybe_single()
-                            .execute()
-                        )
-                        phone_number = (phone.data or {}).get("phone")
-                        if phone_number:
-                            reengagement_msg = "🙏 Welcome back! How can I help you continue?"
-                            import asyncio
-                            asyncio.create_task(send_whatsapp_text(phone=phone_number, text=reengagement_msg, tenant_id=tenant_id, lead_id=lead_id))
-                            logger.info(f"Re-engagement message sent to lead {lead_id}")
-                    except Exception as reeng_err:
-                        logger.error(f"Re-engagement message failed for lead {lead_id}: {reeng_err}")
+                        from app.services.config_dynamic import get_setting
+                        ai_on = get_setting("ai_auto_reply_enabled", "true", tenant_id=tenant_id) == "true"
+                        re_on = get_setting("reengagement_enabled", "true", tenant_id=tenant_id) == "true"
+                    except Exception:
+                        ai_on, re_on = True, True
+
+                    if ai_on and re_on:
+                        try:
+                            phone = (
+                                db.table("leads")
+                                .select("phone")
+                                .eq("id", lead_id)
+                                .maybe_single()
+                                .execute()
+                            )
+                            phone_number = (phone.data or {}).get("phone")
+                            if phone_number:
+                                reengagement_msg = "🙏 Welcome back! How can I help you continue?"
+                                import asyncio
+                                asyncio.create_task(send_whatsapp_text(phone=phone_number, text=reengagement_msg, tenant_id=tenant_id, lead_id=lead_id))
+                                logger.info(f"Re-engagement message sent to lead {lead_id}")
+                        except Exception as reeng_err:
+                            logger.error(f"Re-engagement message failed for lead {lead_id}: {reeng_err}")
+                    else:
+                        logger.info(f"Re-engagement skipped for lead {lead_id} (ai_enabled={ai_on}, reengagement_enabled={re_on})")
             except Exception as parse_err:
                 logger.warning(f"Failed to parse last_activity_at for lead {lead_id}: {parse_err}")
         
@@ -202,12 +279,14 @@ def _create_draft_booking(lead_id: str, tenant_id: str, db) -> dict:
     )
     if existing.data:
         return existing.data[0]
+    settings = _get_booking_settings(tenant_id)
     result = db.table("bookings").insert({
         "lead_id": lead_id,
         "tenant_id": tenant_id,
-        "event_name": "Booking",
+        "event_name": settings["event_name"],
+        "booking_ref": _generate_booking_ref(settings["ref_prefix"]),
         "status": "draft",
-        "amount_paise": BOOKING_AMOUNT_PAISE,
+        "amount_paise": settings["amount_paise"],
     }).execute()
     return result.data[0]
 
@@ -259,6 +338,7 @@ async def advance_state(state: dict, message: str, phone: str, db=None) -> None:
 async def _send_payment_link(state: dict, phone: str, db) -> None:
     booking_id = state["booking_id"]
     draft = state["draft_data"]
+    settings = _get_booking_settings(state.get("tenant_id"))
 
     booking_row = (
         db.table("bookings")
@@ -268,8 +348,8 @@ async def _send_payment_link(state: dict, phone: str, db) -> None:
         .execute()
     )
     booking = booking_row.data or {}
-    booking_ref = booking.get("booking_ref", "GPH-????")
-    amount_paise = booking.get("amount_paise", BOOKING_AMOUNT_PAISE)
+    booking_ref = booking.get("booking_ref") or _generate_booking_ref(settings["ref_prefix"])
+    amount_paise = booking.get("amount_paise") or settings["amount_paise"]
 
     db.table("bookings").update({
         "devotee_name":    draft.get("devotee_name"),

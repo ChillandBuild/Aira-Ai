@@ -119,7 +119,7 @@ export function TelecallingConfigPanel() {
               />
               <div>
                 <div className="font-label text-sm font-semibold text-ink">Enable Telecalling Module</div>
-                <div className="font-body text-xs text-ink-muted mt-0.5">Master switch — enables hot-lead alerts and telecaller assignment</div>
+                <div className="font-body text-xs text-ink-muted mt-0.5">Master switch — enables telecaller assignment on segment changes</div>
               </div>
             </label>
 

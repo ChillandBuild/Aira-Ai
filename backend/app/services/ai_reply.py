@@ -133,8 +133,6 @@ def _recent_thread(db, lead_id: str, limit: int = 6) -> list[dict]:
         or []
     )
 
-_FAQ_MIN_KEYWORD_LEN = 3  # ignore "no", "ok", "hi" etc. at match time
-
 _LANG_NAMES = {"ta": "Tamil", "hi": "Hindi", "te": "Telugu", "kn": "Kannada", "ml": "Malayalam", "en": "English"}
 
 _FALLBACK_BY_LANG = {
@@ -168,84 +166,6 @@ def _detect_lang(text: str) -> str:
             counts["en"] = counts.get("en", 0) + 1
     return max(counts, key=counts.__getitem__) if counts else "en"
 
-
-def _check_faq(message: str, db, tenant_id: str | None = None) -> str | None:
-    """Pick the best-matching active FAQ for an inbound message.
-
-    Scoring (lexicographic — earlier signal dominates):
-      1. Distinct keywords matched with word boundary (\\bkeyword\\b)
-      2. Total length of matched keywords (longer phrase = more specific)
-      3. hit_count (battle-tested FAQs win ties)
-
-    Word-boundary matching prevents 'app' hitting 'happens', 'book' hitting
-    'facebook', etc. Returns the chosen FAQ's answer, or None if nothing matched.
-    """
-    try:
-        message_lower = (message or "").lower()
-        if not message_lower:
-            return None
-
-        query = db.table("faqs").select("id,answer,keywords,hit_count,question").eq("active", True)
-        if tenant_id:
-            query = query.eq("tenant_id", tenant_id)
-        faqs = (query.execute().data or [])
-        # Stable iteration order so true ties always resolve to the same FAQ
-        faqs.sort(key=lambda f: str(f.get("id") or ""))
-
-        best_faq: dict | None = None
-        best_score: tuple[int, int, int] = (0, 0, -1)
-
-        for faq in faqs:
-            keywords = faq.get("keywords") or []
-            matched: set[str] = set()
-            for kw in keywords:
-                if not kw:
-                    continue
-                kw_lower = kw.lower().strip()
-                if len(kw_lower) < _FAQ_MIN_KEYWORD_LEN:
-                    continue
-                try:
-                    if re.search(rf"\b{re.escape(kw_lower)}\b", message_lower):
-                        matched.add(kw_lower)
-                except re.error:
-                    # Malformed keyword — fall back to safe substring check
-                    if kw_lower in message_lower:
-                        matched.add(kw_lower)
-
-            if not matched:
-                continue
-
-            score = (
-                len(matched),
-                sum(len(k) for k in matched),
-                faq.get("hit_count", 0) or 0,
-            )
-            if score > best_score:
-                best_score = score
-                best_faq = faq
-
-        if not best_faq:
-            return None
-
-        logger.info(
-            "FAQ matched id=%s q=%r score=(kw=%d chars=%d hits=%d)",
-            best_faq.get("id"),
-            best_faq.get("question"),
-            best_score[0],
-            best_score[1],
-            best_score[2],
-        )
-        try:
-            db.table("faqs").update(
-                {"hit_count": (best_faq.get("hit_count", 0) or 0) + 1}
-            ).eq("id", best_faq["id"]).execute()
-        except Exception as e:
-            logger.warning(f"FAQ hit_count update failed: {e}")
-        return best_faq["answer"]
-
-    except Exception as e:
-        logger.error(f"FAQ check failed: {e}")
-    return None
 
 _LAST_SEND_ERROR: str | None = None
 
@@ -793,10 +713,19 @@ async def generate_reply(
                     logger.warning(f"Payment link failed for lead {lead_id}: {_pe}")
             elif _post_action == "notify_telecaller":
                 try:
-                    from app.routes.alerts import create_alert
-                    create_alert(lead_id=str(lead_id), tenant_id=tenant_id, assigned_caller_id=lead_data.get("assigned_to"))
+                    from app.services.assignment import get_inbox_config, should_escalate_hot_lead
+                    _inbox = get_inbox_config(tenant_id)
+                    if should_escalate_hot_lead(_inbox, new_segment, channel):
+                        _trigger_chat_escalation(
+                            lead_id=str(lead_id),
+                            reason=f"Lead collected booking data (segment {new_segment})",
+                            tenant_id=tenant_id,
+                            assigned_to=lead_data.get("assigned_to"),
+                            db=db,
+                            auto_assign=_inbox.get("auto_assign_enabled", False),
+                        )
                 except Exception as _ae:
-                    logger.warning(f"Telecaller alert failed for lead {lead_id}: {_ae}")
+                    logger.warning(f"Telecaller notify failed for lead {lead_id}: {_ae}")
         except Exception as _ce:
             logger.warning(f"[COLLECT_DONE] parse failed for lead {lead_id}: {_ce}")
 
@@ -878,31 +807,23 @@ async def generate_reply(
                 lead_data["assigned_to"] = assigned_caller
 
         if new_score >= 7 and (lead_data.get("score") or 5) < 7:
-            try:
-                from app.routes.alerts import create_alert
-                create_alert(
-                    lead_id=str(lead_id),
-                    tenant_id=tenant_id,
-                    assigned_caller_id=lead_data.get("assigned_to"),
-                )
-            except Exception as alert_err:
-                logger.warning(f"Alert creation failed for lead {lead_id}: {alert_err}")
-
-            escalation_flags.add("E")
-
-            try:
-                from app.services.automation_triggers import _dispatch
-                import asyncio
-                asyncio.create_task(_dispatch(
-                    lead_id=str(lead_id),
-                    tenant_id=tenant_id,
-                    trigger_type="score_threshold",
-                    message=message,
-                    is_first_message=False,
-                    db=db,
-                ))
-            except Exception as auto_err:
-                logger.warning(f"score_threshold trigger failed for lead {lead_id}: {auto_err}")
+            # Segment-driven hot lead escalation. Replaces the old Trigger E +
+            # hot_lead_alerts path. Single gate: inbox_cfg.enabled + segment match
+            # + channel match. Caller is auto-assigned only if auto_assign_enabled.
+            from app.services.assignment import should_escalate_hot_lead, should_assign_to_telecalling
+            if should_escalate_hot_lead(inbox_cfg, new_segment, channel):
+                try:
+                    _trigger_chat_escalation(
+                        lead_id=str(lead_id),
+                        reason=f"Lead entered {new_segment} segment (score {new_score})",
+                        tenant_id=tenant_id,
+                        assigned_to=lead_data.get("assigned_to"),
+                        db=db,
+                        auto_assign=inbox_cfg.get("auto_assign_enabled", False) and should_assign_to_telecalling(telecalling_cfg, new_segment, channel) is False,
+                    )
+                    trigger_escalated = True
+                except Exception as esc_err:
+                    logger.error(f"Hot lead escalation failed for lead {lead_id}: {esc_err}")
     except Exception as e:
         logger.error(f"Scoring update failed for lead {lead_id}: {e}")
 

@@ -275,8 +275,7 @@ export default function SettingsPage() {
       if (isSecret) {
         if (draft && draft.length > 0) updates[k] = draft;
       } else {
-        if (!current) return;
-        const stored = current.display_value === "Not set" ? "" : current.display_value;
+        const stored = current ? (current.display_value === "Not set" ? "" : current.display_value) : "";
         if (draft !== undefined && draft !== stored) updates[k] = draft;
       }
     });
@@ -522,17 +521,7 @@ export default function SettingsPage() {
                                 type="button"
                                 onClick={() => {
                                   const nextVal = enabled ? "false" : "true";
-                                  setDrafts(d => {
-                                    const updated = { ...d, [toggle.key]: nextVal };
-                                    if (nextVal === "true") {
-                                      if (toggle.key === "ai_auto_reply_enabled") {
-                                        updated["bot_auto_reply_enabled"] = "false";
-                                      } else if (toggle.key === "bot_auto_reply_enabled") {
-                                        updated["ai_auto_reply_enabled"] = "false";
-                                      }
-                                    }
-                                    return updated;
-                                  });
+                                  setDrafts(d => ({ ...d, [toggle.key]: nextVal }));
                                 }}
                                 className={`relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ${enabled ? "bg-green-600" : "bg-gray-300"}`}
                               >

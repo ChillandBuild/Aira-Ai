@@ -160,7 +160,7 @@ _INBOX_CONFIG_DEFAULT: dict = {
     "auto_assign_enabled": False,
     "segments": ["A"],
     "channels": ["whatsapp", "instagram", "facebook", "telegram"],
-    "triggers": ["A", "B", "C", "E", "F"],
+    "triggers": ["A", "B", "C", "F"],
 }
 
 _TELECALLING_CONFIG_DEFAULT: dict = {
@@ -248,6 +248,18 @@ def should_escalate_to_inbox(config: dict, trigger: str, channel: str) -> bool:
     if not config.get("enabled"):
         return False
     if trigger not in config.get("triggers", []):
+        return False
+    if channel not in config.get("channels", []):
+        return False
+    return True
+
+
+def should_escalate_hot_lead(config: dict, segment: str, channel: str) -> bool:
+    """Segment-driven hot lead escalation. Used by score ≥ 7 events
+    in both AI and bot paths. Single gate: master + segment + channel."""
+    if not config.get("enabled"):
+        return False
+    if segment not in config.get("segments", []):
         return False
     if channel not in config.get("channels", []):
         return False

@@ -234,6 +234,52 @@ def _record_outbound(db, step, lead_data, source, content, sid, automation_id) -
     _bump_counter(db, step_id, "sent_count")
 
 
+async def _score_after_drive(db, run, lead_id: str, tenant_id: str, message: str) -> None:
+    """Bot-path scoring. Runs ONCE per drive (wait, wait_reply, finish) so a
+    multi-send flow doesn't re-score per step. Segment-driven escalation: if score
+    crosses 7 AND the lead's new segment is in inbox_cfg.segments AND the channel
+    matches, creates a chat_handover (auto-assigned if inbox_cfg.auto_assign_enabled)."""
+    try:
+        from app.services.scoring_engine import compute_score
+        from app.services.assignment import get_inbox_config, get_telecalling_config, should_escalate_hot_lead
+        from app.services.ai_reply import _trigger_chat_escalation
+
+        result = await compute_score(
+            message=message or "",
+            lead_id=lead_id,
+            db=db,
+            tenant_id=tenant_id,
+        )
+        new_score = (result or {}).get("score") if isinstance(result, dict) else None
+        if new_score is None:
+            return
+        try:
+            old_row = db.table("leads").select("score,segment,source").eq("id", lead_id).maybe_single().execute()
+            old_score = (old_row.data or {}).get("score") or 5
+            new_segment = (old_row.data or {}).get("segment") or "C"
+            source = (old_row.data or {}).get("source") or "whatsapp"
+        except Exception:
+            return
+
+        if new_score >= 7 and old_score < 7:
+            inbox_cfg = get_inbox_config(tenant_id)
+            if should_escalate_hot_lead(inbox_cfg, new_segment, source):
+                try:
+                    lead = db.table("leads").select("assigned_to").eq("id", lead_id).maybe_single().execute()
+                    _trigger_chat_escalation(
+                        lead_id=lead_id,
+                        reason=f"Lead entered {new_segment} segment (score {new_score})",
+                        tenant_id=tenant_id,
+                        assigned_to=(lead.data or {}).get("assigned_to"),
+                        db=db,
+                        auto_assign=inbox_cfg.get("auto_assign_enabled", False),
+                    )
+                except Exception as esc_err:
+                    logger.error(f"Hot lead escalation failed for {lead_id}: {esc_err}")
+    except Exception as e:
+        logger.error(f"Bot-path scoring failed for lead {lead_id}: {e}")
+
+
 def _maps_link(lat, lon) -> str:
     return f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
 
@@ -719,6 +765,69 @@ async def _execute_step(
             logger.error(f"create_followup failed for lead {lead_id}: {e}")
             return {"status": "error", "detail": str(e)}
 
+    # ── booking_create ────────────────────────────────────────────────────
+    if step_type == "booking_create":
+        # Wraps the booking state machine + Razorpay link in a single bot step.
+        # Config: { "variables_map": {"devotee_name": "name", "rasi": "rasi", ...} }
+        # Reads the named variables from run.variables, writes them to the booking
+        # row, creates a payment link, and sends it to the lead.
+        try:
+            from app.services.booking_flow import (
+                _get_booking_settings, _generate_booking_ref, _create_draft_booking,
+            )
+            from app.services.payment_razorpay import create_payment_link
+
+            settings = _get_booking_settings(tenant_id)
+            variables_map = config.get("variables_map") or {}
+            booking_data: dict = {}
+            for booking_field, var_name in variables_map.items():
+                value = variables.get(var_name)
+                if value is not None and str(value).strip():
+                    booking_data[booking_field] = str(value).strip()
+
+            existing = (
+                db.table("bookings").select("id, booking_ref, amount_paise")
+                .eq("lead_id", lead_id).eq("tenant_id", tenant_id)
+                .neq("status", "cancelled")
+                .order("created_at", desc=True).limit(1).execute()
+            )
+            booking = existing.data[0] if existing.data else _create_draft_booking(lead_id, tenant_id, db)
+            booking_ref = booking.get("booking_ref") or _generate_booking_ref(settings["ref_prefix"])
+            amount_paise = booking.get("amount_paise") or settings["amount_paise"]
+
+            if booking_data:
+                db.table("bookings").update(booking_data).eq("id", booking["id"]).execute()
+
+            customer_name = booking_data.get("devotee_name") or booking_data.get("name") or "Customer"
+            customer_phone = lead_data.get("phone") or ""
+            payment = await create_payment_link(
+                booking_id=booking["id"],
+                booking_ref=booking_ref,
+                amount_paise=amount_paise,
+                customer_name=customer_name,
+                customer_phone=customer_phone,
+                description=f"{settings['event_name']} - {customer_name} ({booking_ref})",
+                tenant_id=tenant_id,
+            )
+            db.table("bookings").update({
+                "status": "pending_payment",
+                "payment_link": payment["payment_link_url"],
+                "razorpay_payment_id": payment["razorpay_payment_id"],
+            }).eq("id", booking["id"]).execute()
+
+            if customer_phone and source == "whatsapp":
+                from app.services.ai_reply import send_whatsapp
+                link_msg = (
+                    f"🙏 Your booking reference: {booking_ref}\n"
+                    f"💳 Pay here to confirm:\n{payment['payment_link_url']}"
+                )
+                await send_whatsapp(customer_phone, link_msg, tenant_id=tenant_id)
+
+            return {"status": "ok", "detail": f"booking {booking_ref} created, payment link sent", "save_as": "booking_ref"}
+        except Exception as e:
+            logger.error(f"booking_create failed for lead {lead_id}: {e}")
+            return {"status": "error", "detail": str(e)}
+
     # ── wait ──────────────────────────────────────────────────────────────
     if step_type == "wait":
         amount = int(config.get("amount", 1))
@@ -1042,6 +1151,7 @@ async def _drive_run(run: dict, db, trigger_type: str = "") -> None:
                     "variables": variables,
                     "updated_at": _now_iso(),
                 }).eq("id", run["id"]).execute()
+                await _score_after_drive(db, run, lead_id, tenant_id, message)
                 return
 
             if status == "wait_reply":
@@ -1053,6 +1163,7 @@ async def _drive_run(run: dict, db, trigger_type: str = "") -> None:
                     "variables": variables,
                     "updated_at": _now_iso(),
                 }).eq("id", run["id"]).execute()
+                await _score_after_drive(db, run, lead_id, tenant_id, message)
                 return
 
             # condition + ai_agent both return a branch label on success; follow it.
@@ -1066,10 +1177,15 @@ async def _drive_run(run: dict, db, trigger_type: str = "") -> None:
                 "updated_at": _now_iso(),
             }).eq("id", run["id"]).execute()
 
+        await _score_after_drive(db, run, lead_id, tenant_id, message)
         _finish_run(db, run, "done", steps_results, trigger_type)
     except Exception as e:
         logger.error(f"flow_run {run['id']} execution error: {e}")
         steps_results.append({"status": "error", "detail": str(e)})
+        try:
+            await _score_after_drive(db, run, lead_id, tenant_id, message)
+        except Exception:
+            pass
         _finish_run(db, run, "failed", steps_results, trigger_type)
 
 

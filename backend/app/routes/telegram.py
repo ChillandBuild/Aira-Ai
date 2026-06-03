@@ -142,6 +142,13 @@ async def telegram_webhook(tenant_id: str, request: Request, background_tasks: B
         if await resume_for_inbound(lead_id, tenant_id, text, db):
             return {"status": "ok"}
 
+    # Booking state machine: takes priority over bot triggers + AI.
+    if text:
+        from app.services.booking_flow import route_booking_intent
+        phone = (db.table("leads").select("phone").eq("id", lead_id).maybe_single().execute().data or {}).get("phone", "")
+        if phone and await route_booking_intent(lead_id, tenant_id, phone, text, db):
+            return {"status": "ok"}
+
     fire_trigger(
         background_tasks, lead_id, tenant_id,
         "new_message_received", message=text,

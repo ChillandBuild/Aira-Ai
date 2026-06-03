@@ -17,8 +17,13 @@ WITH expected_settings(key, value, is_secret) AS (
     ('razorpay_key_secret', NULL, true),
     ('razorpay_webhook_secret', NULL, true),
     ('ai_auto_reply_enabled', 'true', false),
+    ('bot_auto_reply_enabled', 'false', false),
+    ('reengagement_enabled', 'true', false),
     ('faq_match_threshold', '0.85', false),
-    ('round_robin_enabled', 'true', false)
+    ('round_robin_enabled', 'true', false),
+    ('booking_event_name', 'Booking', false),
+    ('booking_ref_prefix', 'BK', false),
+    ('booking_amount_paise', '50000', false)
 )
 INSERT INTO app_settings (tenant_id, key, value, is_secret)
 SELECT tenants.id, expected_settings.key, expected_settings.value, expected_settings.is_secret

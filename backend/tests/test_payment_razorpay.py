@@ -28,11 +28,11 @@ async def test_create_payment_link_returns_url():
 
         result = await create_payment_link(
             booking_id="booking-uuid-1",
-            booking_ref="GPH-2026-0001",
+            booking_ref="BK-TEST01",
             amount_paise=50000,
             customer_name="Rajan Kumar",
             customer_phone="+919876543210",
-            description="Guru Peyarchi Homam - Rajan Kumar",
+            description="Booking - Rajan Kumar",
             tenant_id="tenant-1",
         )
 
@@ -64,7 +64,7 @@ async def test_create_payment_link_raises_on_failure():
         with pytest.raises(RuntimeError, match="Razorpay"):
             await create_payment_link(
                 booking_id="booking-uuid-1",
-                booking_ref="GPH-2026-0001",
+                booking_ref="BK-TEST01",
                 amount_paise=0,
             customer_name="Test",
             customer_phone="+919876543210",

@@ -50,6 +50,7 @@ _VALID_STEPS = {
     "wait", "condition", "create_followup",
     "send_image", "send_video", "send_file", "send_location", "cta_url",
     "user_input", "http_api", "random", "interactive", "ai_agent",
+    "booking_create",
     # BotBiz blocks
     "send_audio", "send_list", "add_label", "send_catalog",
 }
@@ -131,6 +132,15 @@ def _validate(trigger_type: str, trigger_config: dict, steps: list) -> list[str]
             cfg = step.get("config", {})
             if not cfg.get("goal"):
                 errors.append(f"Step {i}: ai_agent requires a goal")
+        if step.get("step_type") == "booking_create":
+            cfg = step.get("config", {})
+            vm = cfg.get("variables_map")
+            if vm is not None and not isinstance(vm, dict):
+                errors.append(f"Step {i}: booking_create variables_map must be an object")
+            elif isinstance(vm, dict):
+                for field, var in vm.items():
+                    if not isinstance(var, str) or not var.strip():
+                        errors.append(f"Step {i}: booking_create variables_map.{field} must be a non-empty string")
             outs = cfg.get("outcomes") or []
             if not (1 <= len(outs) <= 5) or any(not str(o).strip() for o in outs):
                 errors.append(f"Step {i}: ai_agent requires 1..5 non-empty outcomes")

@@ -9,7 +9,7 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Component | Status |
 |---|---|
 | WhatsApp webhook (inbound/outbound) | ✅ Built — X-Hub-Signature-256 verified |
-| AI reply pipeline (FAQ → Groq/Llama fallback) | ✅ Built — uses Groq, NOT Gemini |
+| AI reply pipeline (Knowledge base → Groq/Llama) | ✅ Built — uses Groq, NOT Gemini |
 | Lead CRUD + CSV import | ✅ Built |
 | Lead scoring (1–10, Groq/Llama) | ✅ Built |
 | Segmentation A/B/C/D | ✅ Built |
@@ -18,13 +18,13 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | AI coaching post-call (call_coach.py) | ✅ Built |
 | Call scoring (call_scorer.py) | ✅ Built |
 | Follow-up scheduler | ✅ Built |
-| Knowledge/FAQ base | ✅ Built |
+| Knowledge base | ✅ Built |
 | AI Tune (integrated into Knowledge page tab) | ✅ Built |
 | Analytics page | ✅ Built — WhatsApp tab + Telecalling tab + funnel API |
 | Instagram webhook | ✅ Built — tenant-scoped at /webhook/instagram/{tenant_id}, X-Hub-Signature-256 verified |
 | Telegram webhook + Bot API | ✅ Built — secret_token verified, per-tenant |
 | Facebook Messenger webhook | ✅ Built — tenant-scoped at /webhook/facebook/{tenant_id}, X-Hub-Signature-256 verified |
-| Provider abstraction layer | ✅ Built — meta_cloud.py + wati_cloud.py |
+| Provider abstraction layer | ✅ Built — meta_cloud.py |
 | phone_numbers table + pool management | ✅ Built — migration 009 + numbers.py |
 | Numbers page (frontend) | ✅ Built — dashboard/numbers/ (outdated health sub-page deleted) |
 | opt_in_source on leads + bulk-send gating | ✅ Built — migration 010 + upload.py |
@@ -45,10 +45,10 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Manual template sync | ✅ Built — POST /api/v1/templates/{id}/sync |
 | Template Quick Reply buttons | ✅ Built — up to 3 buttons |
 | Knowledge base (full-text injection, no embeddings) | ✅ Built — services/knowledge_service.py |
-| Reply source badge (FAQ / Knowledge Base / AI) | ✅ Built — messages.reply_source |
+| Reply source badge (Knowledge Base / AI / Automation) | ✅ Built — messages.reply_source |
 | Callback scheduler & reminders | ✅ Built — follow_up_jobs cadence=callback, in-app due reminders + 60s polling |
 | Telecaller multi-tenancy + role-based access | ✅ Built — migration 025 |
-| Hot lead alert system (score ≥7, 5-min escalation) | ✅ Built — migration 026 |
+| Hot lead alert system (score ≥7, 5-min escalation) | ⛔ Removed — replaced by segment-driven chat_handover escalation |
 | Lead assignment (manual + round-robin auto) | ✅ Built |
 | Team management page | ✅ Built — dashboard/team/, routes/team.py |
 | Onboarding flow | ✅ Built — dashboard/onboarding/, routes/onboarding.py |
@@ -69,17 +69,16 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | WABA onboarding (self-service) | ✅ Built — WABA ID + Phone Number ID configurable in Settings UI |
 
 ## Hard Invariants — Never Break
-1. **FAQ-first**: ai_reply.py checks FAQ table BEFORE any Groq/LLM call
-2. Lead score always integer 1–10
-3. Segments: A=Hot, B=Warm, C=Cold, D=Disqualified — labels immutable
-4. WhatsApp 24h session window — approved templates only outside window
-5. All segment lists: GET /api/v1/leads?segment=A&format=csv
-6. Call recordings → Supabase Storage only, never local disk
-7. Tenant isolation enforced at app layer via `get_tenant_and_role()` — DB-level RLS not yet enabled
-8. Bulk-send endpoint rejects leads with null opt_in_source
-9. **Template submission** always uses `meta_waba_id` (NOT `meta_phone_number_id`)
-10. AI model is Groq `llama-3.3-70b-versatile` — do NOT add Gemini/OpenAI imports
-11. WhatsApp webhook verifies X-Hub-Signature-256 before processing — returns 200 but drops invalid
+1. Lead score always integer 1–10
+2. Segments: A=Hot, B=Warm, C=Cold, D=Disqualified — labels immutable
+3. WhatsApp 24h session window — approved templates only outside window
+4. All segment lists: GET /api/v1/leads?segment=A&format=csv
+5. Call recordings → Supabase Storage only, never local disk
+6. Tenant isolation enforced at app layer via `get_tenant_and_role()` — DB-level RLS not yet enabled
+7. Bulk-send endpoint rejects leads with null opt_in_source
+8. **Template submission** always uses `meta_waba_id` (NOT `meta_phone_number_id`)
+9. AI model is Groq `llama-3.3-70b-versatile` — do NOT add Gemini/OpenAI imports
+10. WhatsApp webhook verifies X-Hub-Signature-256 before processing — returns 200 but drops invalid
 
 ## Stack
 | Layer | Tech | Location |
@@ -88,15 +87,14 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | DB | Supabase (PostgreSQL + Realtime) | — |
 | Frontend | Next.js 14 App Router, TypeScript, Tailwind | frontend/app/dashboard/ |
 | AI (replies + scoring) | Groq — llama-3.3-70b-versatile | services/ai_reply.py, lead_scorer.py |
-| WhatsApp | Meta Cloud API Direct (primary) + WATI (secondary) | — |
+| WhatsApp | Meta Cloud API Direct | — |
 | Voice | TeleCMI click-to-call + recording | services/telecmi_client.py |
 | Payments | Razorpay Payment Links API | services/payment_razorpay.py |
 | Scheduler | APScheduler (AsyncIO) — automations, broadcasts, token health | app/main.py |
-| Cache | Redis (FAQ prompt cache, 60s TTL) | — |
+| Cache | In-process prompt cache (60s TTL) | ai_reply.py:_prompt_cache |
 
 ## Provider Decisions (locked)
-- WhatsApp primary: Meta Cloud API Direct
-- WhatsApp secondary: WATI
+- WhatsApp: Meta Cloud API Direct
 - Voice: TeleCMI
 - AI (replies + scoring): Groq / llama-3.3-70b-versatile (NOT Gemini)
 - Payments: Razorpay (Payment Links API — no SDK, direct httpx calls)
@@ -125,7 +123,7 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 ## Task Router — Read This File Before Acting
 | Task involves | Read first |
 |---|---|
-| WhatsApp, Meta API, WATI, provider layer, phone_numbers | backend/app/routes/webhook.py + services/meta_cloud.py + services/outbound_router.py |
+| WhatsApp, Meta API, provider layer, phone_numbers | backend/app/routes/webhook.py + services/meta_cloud.py + services/outbound_router.py |
 | Telecalling, TeleCMI, call logs, notes, briefing modal | backend/app/routes/calls.py + services/telecmi_client.py + services/call_summarizer.py |
 | Leads, scoring, segments, opt-in | backend/app/routes/leads.py + services/lead_scorer.py |
 | Number pool, failover, Numbers page, Incidents page | backend/app/routes/numbers.py + services/failover.py + routes/incidents.py |
@@ -145,7 +143,6 @@ TelecallingConfigPanel: module on/off, auto-assign, per-segment assignment (A/B/
 
 ## Known Tech Debt
 - RLS DISABLED on 18 tables — app-layer tenant filter is only guard
-- Booking amount hardcoded at ₹500 flat (needs booking_type + dynamic pricing)
 
 ## Key File Locations
 | File | Purpose |
@@ -156,7 +153,7 @@ TelecallingConfigPanel: module on/off, auto-assign, per-segment assignment (A/B/
 | backend/app/routes/templates.py | Template CRUD + Meta submission |
 | backend/app/routes/bookings.py | Booking REST + Razorpay webhook |
 | backend/app/routes/upload.py | CSV upload, bulk send, scheduled/drip broadcasts |
-| backend/app/services/ai_reply.py | FAQ check → Groq reply pipeline |
+| backend/app/services/ai_reply.py | Knowledge base → Groq reply pipeline |
 | backend/app/services/booking_flow.py | Booking state machine |
 | backend/app/services/broadcast_executor.py | Executes a scheduled_broadcasts row |
 | backend/app/services/failover.py | Quality RED/YELLOW handlers + auto-failover |
@@ -187,6 +184,9 @@ TelecallingConfigPanel: module on/off, auto-assign, per-segment assignment (A/B/
 | 064 | leads.pinned_at |
 | 073 | Bot Flow Builder — extend automations in place (block types, node counters, flow_kind, messages↔node link, bump_automation_step_counter RPC) |
 | 074 | automation_flow_runs — resumable run-state (replaces broken wait-resume; powers pause-on-reply) |
+| 081 | Drop WATI provider — tighten phone_numbers.provider check to 'meta_cloud' only, drop unused api_key column |
+| 082 | Generic booking config — drop GPH hardcode, event_name + ref_prefix + amount_paise moved to per-tenant app_settings |
+| 083 | Drop hot_lead_alerts table — score-threshold escalation now goes through chat_handovers gated by inbox_cfg.segments |
 
 ## Bot Flow Builder (replaces Automations UI)
 Visual WhatsApp flow builder at /dashboard/automations (sidebar "Bot Flows"). Backend

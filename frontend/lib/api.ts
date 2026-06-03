@@ -135,7 +135,6 @@ export interface SystemStatus {
   has_groq: boolean;
   supabase_url: string;
   active_prompt: { name: string; updated_at: string } | null;
-  active_faq_count: number;
 }
 
 export interface AnalyticsOverview {
@@ -247,7 +246,6 @@ export interface WhatsAppAnalytics {
   messages_received_today: number;
   ai_reply_count_today: number;
   avg_reply_time_seconds: number | null;
-  top_faqs: { question: string; hit_count: number }[];
 }
 
 export interface TelecallingAnalytics {
@@ -697,14 +695,6 @@ export const api = {
     remove: (userId: string) =>
       apiFetch<{ removed: boolean }>(`/api/v1/team/${userId}`, { method: "DELETE" }),
   },
-  alerts: {
-    mine: async (): Promise<HotLeadAlert[]> => {
-      const res = await apiFetch<{ data: HotLeadAlert[] }>("/api/v1/alerts/mine");
-      return res.data || [];
-    },
-    acknowledge: (id: string) =>
-      apiFetch<{ success: boolean }>(`/api/v1/alerts/${id}/acknowledge`, { method: "PATCH" }),
-  },
   todos: {
     list: async (params?: { start_date?: string; end_date?: string }) => {
       const qs = new URLSearchParams();
@@ -778,21 +768,11 @@ export const api = {
 
 export interface Todo {
   id: string;
-  user_id: string;
   todo_date: string;
   content: string;
   is_completed: boolean;
   created_at: string;
   updated_at: string;
-}
-
-export interface HotLeadAlert {
-  id: string;
-  lead_id: string;
-  status: "pending" | "acknowledged" | "escalated";
-  created_at: string;
-  assigned_caller_id: string | null;
-  lead: { id: string; name: string | null; phone: string; score: number; segment: string } | null;
 }
 
 export interface CtwaLead {

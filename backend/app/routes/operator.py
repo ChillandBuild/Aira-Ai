@@ -51,7 +51,9 @@ _SETTING_KEYS: list[tuple[str, bool]] = [
     ("telecmi_user_id", False), ("telecmi_secret", True),
     ("telecmi_callerid", False), ("telecmi_recording_base_url", False),
     ("groq_api_key", True),
-    ("ai_auto_reply_enabled", False), ("bot_auto_reply_enabled", False), ("faq_match_threshold", False),
+    ("ai_auto_reply_enabled", False), ("bot_auto_reply_enabled", False),
+    ("reengagement_enabled", False),
+    ("booking_event_name", False), ("booking_ref_prefix", False), ("booking_amount_paise", False),
     ("razorpay_key_id", False), ("razorpay_key_secret", True),
     ("razorpay_webhook_secret", True),
 ]
@@ -188,7 +190,7 @@ def wipe_leads(tenant_id: str, _admin: dict = Depends(get_system_admin)):
 
     # Clear dependent tables first (tenant-scoped) to avoid FK violations
     for table in (
-        "messages", "lead_notes", "hot_lead_alerts", "chat_handovers",
+        "messages", "lead_notes", "chat_handovers",
         "follow_up_jobs", "bookings",
         # Broadcast history — fully wiped per operator request
         "broadcast_recipients", "broadcast_lead_scores",

@@ -8,7 +8,7 @@ from app.dependencies.auth import get_current_user
 
 import os
 from app.config import settings
-from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team, media, alerts, todos, bookings, conversations, operator, chat_handovers, telegram, instagram, facebook, automations, tags, ctwa_leads
+from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team, media, todos, bookings, conversations, operator, chat_handovers, telegram, instagram, facebook, automations, tags, ctwa_leads
 from app.routes.calls import public_router as calls_public_router
 
 # Configure logging
@@ -271,7 +271,6 @@ app.include_router(templates.router, prefix="/api/v1/templates", tags=["template
 app.include_router(onboarding.router, prefix="/api/v1/onboarding", tags=["onboarding"], dependencies=_auth)
 app.include_router(team.router, prefix="/api/v1/team", tags=["team"], dependencies=_auth)
 app.include_router(media.router, prefix="/api/v1/leads", tags=["media"], dependencies=_auth)
-app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["alerts"], dependencies=_auth)
 app.include_router(todos.router, prefix="/api/v1/todos", tags=["todos"], dependencies=_auth)
 app.include_router(bookings.router, prefix="/api/v1/bookings", tags=["bookings"], dependencies=_auth)
 app.include_router(conversations.router, prefix="/api/v1/conversations", tags=["conversations"], dependencies=_auth)

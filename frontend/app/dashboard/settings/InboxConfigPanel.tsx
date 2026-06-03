@@ -16,7 +16,7 @@ const DEFAULT: InboxConfig = {
   auto_assign_enabled: false,
   segments: ["A"],
   channels: ["whatsapp", "instagram", "facebook", "telegram"],
-  triggers: ["A", "B", "C", "E", "F"],
+  triggers: ["A", "B", "C", "F"],
 };
 
 const TRIGGER_LABELS: Record<string, { label: string; always?: boolean }> = {
@@ -24,7 +24,6 @@ const TRIGGER_LABELS: Record<string, { label: string; always?: boolean }> = {
   B: { label: "AI failed completely (technical error)" },
   C: { label: "User explicitly asked to speak to a person", always: true },
   D: { label: "User repeated the same question (AI not resolving it)" },
-  E: { label: "Lead score crossed the hot threshold above" },
   F: { label: "AI response indicated the team would follow up" },
 };
 
