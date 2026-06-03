@@ -33,6 +33,10 @@ async def resume_for_inbound(lead_id: str, tenant_id: str, message: str, db) -> 
     """If a flow run is waiting on this lead's reply, capture it and resume. Returns
     True if the message was consumed by a flow (caller suppresses trigger + AI reply)."""
     try:
+        from app.config_dynamic import get_setting
+        if get_setting("bot_auto_reply_enabled", fallback="false", tenant_id=tenant_id) == "false":
+            return False
+
         run = _find_waiting_run(db, lead_id, tenant_id)
         if not run:
             return False

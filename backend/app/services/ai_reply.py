@@ -54,11 +54,11 @@ def _fetch_conversation_summary(db, lead_id: str) -> str | None:
             db.table("lead_conversation_state")
             .select("conversation_summary")
             .eq("lead_id", str(lead_id))
-            .maybe_single()
+            .limit(1)
             .execute()
         )
         if row and row.data:
-            summary = (row.data.get("conversation_summary") or "").strip()
+            summary = (row.data[0].get("conversation_summary") or "").strip()
             return summary or None
     except Exception as e:
         logger.warning(f"Conversation summary fetch failed for lead {lead_id}: {e}")
@@ -103,8 +103,8 @@ def _get_prompt(name: str, tenant_id: str | None = None) -> str:
         query = db.table("ai_prompts").select("content").eq("name", name)
         if tenant_id:
             query = query.eq("tenant_id", tenant_id)
-        row = query.maybe_single().execute()
-        content = (row.data or {}).get("content") or FALLBACK_PROMPT
+        row = query.limit(1).execute()
+        content = (row.data[0].get("content") if row.data else None) or FALLBACK_PROMPT
     except Exception as e:
         logger.error(f"Failed to load prompt {name}: {e}")
         content = FALLBACK_PROMPT
@@ -374,10 +374,10 @@ async def generate_reengagement_message(lead_id: str, cadence: str, db=None) -> 
         db.table("leads")
         .select("name,segment")
         .eq("id", str(lead_id))
-        .maybe_single()
+        .limit(1)
         .execute()
     )
-    lead_data = lead.data or {}
+    lead_data = lead.data[0] if lead.data else {}
     history_rows = list(reversed(_recent_thread(db, lead_id, limit=6)))
     history = "\n".join(
         f"{row.get('direction', 'unknown')}: {row.get('content', '').strip()}"
@@ -529,10 +529,10 @@ async def generate_reply(
         db.table("leads")
         .select("ai_enabled,score,segment,phone,converted_at,tenant_id,assigned_to,name")
         .eq("id", str(lead_id))
-        .maybe_single()
+        .limit(1)
         .execute()
     )
-    lead_data = lead_row.data or {}
+    lead_data = lead_row.data[0] if lead_row.data else {}
     tenant_id = lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001"
     segment = lead_data.get("segment") or "C"
 
@@ -542,10 +542,10 @@ async def generate_reply(
         .select("display_value")
         .eq("tenant_id", tenant_id)
         .eq("key", "ai_auto_reply_enabled")
-        .maybe_single()
+        .limit(1)
         .execute()
     )
-    if _ai_setting.data and _ai_setting.data.get("display_value") == "false":
+    if _ai_setting.data and _ai_setting.data[0].get("display_value") == "false":
         logger.info(f"AI auto-reply globally disabled for tenant {tenant_id} — skipping reply")
         return
 
@@ -570,8 +570,10 @@ async def generate_reply(
         if prev_inbound and _is_similar(message, prev_inbound.get("content", "")):
             escalation_flags.add("D")
             logger.info(f"Trigger D: lead {lead_id} repeated same question")
-    if lead_data and lead_data.get("ai_enabled") is False:
-        logger.info(f"Lead {lead_id} has AI disabled — skipping auto-reply")
+    from app.config_dynamic import get_setting
+    global_ai_enabled = get_setting("ai_auto_reply_enabled", fallback="true", tenant_id=tenant_id) == "true"
+    if (lead_data and lead_data.get("ai_enabled") is False) or not global_ai_enabled:
+        logger.info(f"AI auto-reply is disabled (lead_ai_enabled={lead_data.get('ai_enabled')}, global_ai_enabled={global_ai_enabled}) — skipping auto-reply")
         # Still rescore via Score Engine v2 so admin sees segment updates during manual handling
         try:
             from app.services.scoring_engine import compute_score as _compute_score

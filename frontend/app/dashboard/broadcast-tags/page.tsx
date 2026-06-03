@@ -361,7 +361,7 @@ export default function BroadcastTagsPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="bg-surface rounded-card shadow-card ring-1 ring-[#c4c7c7]/15">
+          <div className="bg-surface rounded-card shadow-card ring-1 ring-[#c4c7c7]/15 overflow-hidden">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-surface-mid">

@@ -51,7 +51,7 @@ _SETTING_KEYS: list[tuple[str, bool]] = [
     ("telecmi_user_id", False), ("telecmi_secret", True),
     ("telecmi_callerid", False), ("telecmi_recording_base_url", False),
     ("groq_api_key", True),
-    ("ai_auto_reply_enabled", False), ("faq_match_threshold", False),
+    ("ai_auto_reply_enabled", False), ("bot_auto_reply_enabled", False), ("faq_match_threshold", False),
     ("razorpay_key_id", False), ("razorpay_key_secret", True),
     ("razorpay_webhook_secret", True),
 ]

@@ -172,13 +172,27 @@ async def update_settings(payload: SettingsUpdate, tenant_id: str = Depends(get_
                         "is_secret": True,
                     }).execute()
 
+    _SECRET_KEYS = {
+        "meta_access_token",
+        "meta_webhook_verify_token",
+        "telecmi_secret",
+        "groq_api_key",
+        "razorpay_key_secret",
+        "razorpay_webhook_secret",
+        "telegram_webhook_secret",
+    }
     updated = []
     for key, value in payload.updates.items():
+        is_secret = key in _SECRET_KEYS
         result = (
             db.table("app_settings")
-            .update({"value": value, "updated_at": "now()"})
-            .eq("key", key)
-            .eq("tenant_id", tenant_id)
+            .upsert({
+                "tenant_id": tenant_id,
+                "key": key,
+                "value": value,
+                "is_secret": is_secret,
+                "updated_at": "now()",
+            })
             .execute()
         )
         if result.data:

@@ -24,7 +24,7 @@ type FieldDef = {
   hint?: string;
 };
 
-type ToggleDef = { key: string; label: string; description: string };
+type ToggleDef = { key: string; label: string; description: string; defaultEnabled?: boolean };
 
 type SectionDef = {
   id: string;
@@ -62,7 +62,8 @@ const SECTIONS: SectionDef[] = [
       { key: "groq_api_key", label: "Groq API Key", secret: true, required: true },
     ],
     toggles: [
-      { key: "ai_auto_reply_enabled", label: "AI Auto-Reply", description: "Automatically reply to inbound WhatsApp messages using AI" },
+      { key: "ai_auto_reply_enabled", label: "AI Auto-Reply", description: "Automatically reply to inbound WhatsApp messages using AI", defaultEnabled: true },
+      { key: "bot_auto_reply_enabled", label: "Bot Auto-Reply", description: "Automatically run bot flows on inbound WhatsApp messages", defaultEnabled: false },
     ],
   },
 ];
@@ -248,7 +249,11 @@ export default function SettingsPage() {
         const meta = settingFor(t.key);
         const draft = drafts[t.key];
         if (draft === undefined) return false;
-        const stored = meta?.display_value !== "false" ? "true" : "false";
+        const isDefaultEnabled = t.defaultEnabled !== false;
+        const storedVal = meta?.display_value;
+        const stored = storedVal === "Not set" || !storedVal
+          ? (isDefaultEnabled ? "true" : "false")
+          : (storedVal === "true" ? "true" : "false");
         return draft !== stored;
       });
       map[section.id] = dirty;
@@ -503,7 +508,10 @@ export default function SettingsPage() {
                         {section.toggles.map((toggle) => {
                           const val = drafts[toggle.key];
                           const stored = settingFor(toggle.key)?.display_value;
-                          const enabled = val !== undefined ? val === "true" : stored !== "false";
+                          const isDefaultEnabled = toggle.defaultEnabled !== false;
+                          const enabled = val !== undefined
+                            ? val === "true"
+                            : (stored === "Not set" || !stored ? isDefaultEnabled : stored === "true");
                           return (
                             <div key={toggle.key} className="flex items-center justify-between p-4 rounded-2xl bg-surface-subtle border border-border-subtle">
                               <div>
@@ -512,7 +520,20 @@ export default function SettingsPage() {
                               </div>
                               <button
                                 type="button"
-                                onClick={() => setDrafts(d => ({ ...d, [toggle.key]: enabled ? "false" : "true" }))}
+                                onClick={() => {
+                                  const nextVal = enabled ? "false" : "true";
+                                  setDrafts(d => {
+                                    const updated = { ...d, [toggle.key]: nextVal };
+                                    if (nextVal === "true") {
+                                      if (toggle.key === "ai_auto_reply_enabled") {
+                                        updated["bot_auto_reply_enabled"] = "false";
+                                      } else if (toggle.key === "bot_auto_reply_enabled") {
+                                        updated["ai_auto_reply_enabled"] = "false";
+                                      }
+                                    }
+                                    return updated;
+                                  });
+                                }}
                                 className={`relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ${enabled ? "bg-green-600" : "bg-gray-300"}`}
                               >
                                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ${enabled ? "translate-x-5" : "translate-x-0"}`} />

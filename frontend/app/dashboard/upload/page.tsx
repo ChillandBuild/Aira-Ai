@@ -358,6 +358,7 @@ export default function UploadPage() {
   const [tagsList, setTagsList] = useState<BroadcastTag[]>([]);
   const [tagStats, setTagStats] = useState<Record<string, TagStats>>({});
   const [tagsListLoading, setTagsListLoading] = useState(false);
+  const [tagsLoaded, setTagsLoaded] = useState(false);
   const [showCreateTag, setShowCreateTag] = useState(false);
   const [newTagName, setNewTagName] = useState("");
   const [newTagColor, setNewTagColor] = useState(PRESET_COLORS[0]);
@@ -385,7 +386,7 @@ export default function UploadPage() {
   // Supabase client for realtime updates
   // Realtime subscription for message status updates
   useEffect(() => {
-    if (activeTab === "tags" && tagsList.length === 0 && !tagsListLoading) {
+    if (activeTab === "tags" && !tagsLoaded && !tagsListLoading) {
       loadTags();
     }
     if (activeTab !== "history") return;
@@ -409,7 +410,7 @@ export default function UploadPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [activeTab, tagsList.length, tagsListLoading]);
+  }, [activeTab, tagsLoaded, tagsListLoading]);
 
   usePolling(() => {
     if (activeTab === "tags") loadTags();
@@ -606,6 +607,7 @@ export default function UploadPage() {
       const sm: Record<string, TagStats> = {};
       for (const s of statsData) sm[s.tag_id] = s;
       setTagStats(sm);
+      setTagsLoaded(true);
     } catch { /* best-effort */ } finally {
       setTagsListLoading(false);
     }
@@ -1783,7 +1785,7 @@ export default function UploadPage() {
               <p className="font-body text-sm text-on-surface-muted mt-1">Create your first tag to start tracking product-wise interest.</p>
             </div>
           ) : (
-            <div className="bg-surface rounded-2xl shadow-card ring-1 ring-[#c4c7c7]/15">
+            <div className="bg-surface rounded-2xl shadow-card ring-1 ring-[#c4c7c7]/15 overflow-hidden">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-surface-mid">

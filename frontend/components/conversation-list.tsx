@@ -111,9 +111,16 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const getLeadPlatform = (lead: Lead) => {
+    if (lead.source === "instagram" || lead.source === "telegram" || lead.source === "facebook") {
+      return lead.source;
+    }
+    return "whatsapp";
+  };
+
   const visible = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    const base = platform === "all" ? leads : leads.filter((l) => l.source === platform);
+    const base = platform === "all" ? leads : leads.filter((l) => getLeadPlatform(l) === platform);
     return (segment ? base.filter((l) => l.segment === segment) : base)
       .filter((l) => {
         if (!q) return true;
@@ -139,7 +146,8 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
   const platformCounts = useMemo(() => {
     const counts: Record<string, number> = { whatsapp: 0, instagram: 0, facebook: 0, telegram: 0, all: leads.length };
     for (const l of leads) {
-      if (l.source in counts) counts[l.source]++;
+      const plat = getLeadPlatform(l);
+      if (plat in counts) counts[plat]++;
     }
     return counts;
   }, [leads]);
@@ -288,7 +296,7 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
                 )}
               >
                 <Filter size={14} />
-                {(segment !== null || platform !== "whatsapp") && !filtersOpen && (
+                {(segment !== null || platform !== "all") && !filtersOpen && (
                   <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-tertiary rounded-full" />
                 )}
               </button>
@@ -329,7 +337,7 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
                 </div>
                 <div className="flex gap-1.5 flex-wrap">
                   {SEGMENTS.map((f) => {
-                    const count = leads.filter(l => l.segment === f.value && (platform === "all" || l.source === platform)).length;
+                    const count = leads.filter(l => l.segment === f.value && (platform === "all" || getLeadPlatform(l) === platform)).length;
                     return (
                       <button
                         key={f.value}

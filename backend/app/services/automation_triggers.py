@@ -22,6 +22,11 @@ async def _dispatch(
 ) -> None:
     """Find matching active automations and run them."""
     try:
+        from app.config_dynamic import get_setting
+        if get_setting("bot_auto_reply_enabled", fallback="false", tenant_id=tenant_id) == "false":
+            logger.info(f"Bot auto-reply is disabled globally for tenant {tenant_id} — skipping automation dispatch")
+            return
+
         from app.services.automation_engine import run_automation
 
         rows = (

@@ -470,7 +470,8 @@ export function ChatThread({
   const isInstagram = current.source === "instagram";
   const isTelegram = current.source === "telegram";
   const isFacebook = current.source === "facebook";
-  const canSendMedia = !aiEnabled && current.source === "whatsapp";
+  const isWhatsApp = !isInstagram && !isTelegram && !isFacebook;
+  const canSendMedia = !aiEnabled && isWhatsApp;
 
   const lastInbound = [...messages].reverse().find((m) => m.direction === "inbound");
   const hoursSinceInbound = lastInbound
@@ -601,7 +602,7 @@ export function ChatThread({
 
       {/* Input area */}
       <div className="border-t border-surface-mid bg-surface px-4 py-3">
-        {outsideWindow && current.source === "whatsapp" && (
+        {outsideWindow && isWhatsApp && (
           <div className="mb-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800">
             <AlertTriangle size={13} className="mt-0.5 shrink-0" />
             <p className="font-label text-[11px] leading-snug">
