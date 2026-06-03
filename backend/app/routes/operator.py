@@ -187,8 +187,13 @@ def wipe_leads(tenant_id: str, _admin: dict = Depends(get_system_admin)):
         raise HTTPException(status_code=404, detail="Tenant not found")
 
     # Clear dependent tables first (tenant-scoped) to avoid FK violations
-    for table in ("messages", "lead_notes", "hot_lead_alerts", "chat_handovers",
-                  "follow_up_jobs", "bookings", "broadcast_recipients"):
+    for table in (
+        "messages", "lead_notes", "hot_lead_alerts", "chat_handovers",
+        "follow_up_jobs", "bookings",
+        # Broadcast history — fully wiped per operator request
+        "broadcast_recipients", "broadcast_lead_scores",
+        "broadcast_failed_contacts", "broadcast_tags", "scheduled_broadcasts",
+    ):
         try:
             db.table(table).delete().eq("tenant_id", tenant_id).execute()
         except Exception as e:
