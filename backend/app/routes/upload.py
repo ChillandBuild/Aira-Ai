@@ -1590,7 +1590,7 @@ async def download_tag_csv(
 
         missing_ids = [lid for lid in lead_ids if lid not in segment_map]
         if missing_ids:
-            leads_resp = db.table("leads").select("id,segment").in_("id", missing_ids).execute()
+            leads_resp = db.table("leads").select("id,segment").in_("id", missing_ids).eq("tenant_id", tenant_id).execute()
             for l in (leads_resp.data or []):
                 segment_map[l["id"]] = l.get("segment") or "C"
 
@@ -1627,7 +1627,7 @@ async def download_tag_csv(
 
     tag_name = "tag"
     try:
-        tag_row = db.table("broadcast_tags").select("name").eq("id", tag_id).maybe_single().execute()
+        tag_row = db.table("broadcast_tags").select("name").eq("id", tag_id).eq("tenant_id", tenant_id).maybe_single().execute()
         if tag_row and tag_row.data:
             tag_name = tag_row.data.get("name", "tag")
     except Exception:
@@ -1741,7 +1741,7 @@ async def download_all_tags_csv(tenant_id: str = Depends(get_tenant_id)):
 
             missing_ids = [lid for lid in lead_ids if lid not in segment_map]
             if missing_ids:
-                leads_resp = db.table("leads").select("id,segment").in_("id", missing_ids).execute()
+                leads_resp = db.table("leads").select("id,segment").in_("id", missing_ids).eq("tenant_id", tenant_id).execute()
                 for l in (leads_resp.data or []):
                     segment_map[l["id"]] = l.get("segment") or "C"
 
@@ -2004,7 +2004,7 @@ async def download_broadcast_tag_csv(
 
     missing_ids = [lid for lid in lead_ids if lid not in segment_map]
     if missing_ids:
-        leads_resp = db.table("leads").select("id,segment").in_("id", missing_ids).execute()
+        leads_resp = db.table("leads").select("id,segment").in_("id", missing_ids).eq("tenant_id", tenant_id).execute()
         for l in (leads_resp.data or []):
             segment_map[l["id"]] = l.get("segment") or "C"
 
@@ -2029,7 +2029,7 @@ async def download_broadcast_tag_csv(
     tag_name = "untagged"
     if tag_id:
         try:
-            tag_row = db.table("broadcast_tags").select("name").eq("id", tag_id).maybe_single().execute()
+            tag_row = db.table("broadcast_tags").select("name").eq("id", tag_id).eq("tenant_id", tenant_id).maybe_single().execute()
             if tag_row and tag_row.data:
                 tag_name = tag_row.data.get("name", "tag")
         except Exception:

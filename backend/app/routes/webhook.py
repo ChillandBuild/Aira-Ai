@@ -281,6 +281,11 @@ async def whatsapp_webhook(
                         if body:
                             from app.services.flow_runtime import resume_for_inbound
                             if await resume_for_inbound(lead_id, tenant_id, body, db):
+                                try:
+                                    from app.services.scoring_engine import compute_score as _bot_score
+                                    await _bot_score(message=body, lead_id=str(lead_id), db=db, tenant_id=tenant_id)
+                                except Exception as _se:
+                                    logger.warning(f"Bot-flow scoring failed for lead {lead_id}: {_se}")
                                 continue
 
                         if body:

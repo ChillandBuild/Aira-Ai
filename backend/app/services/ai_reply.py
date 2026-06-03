@@ -539,13 +539,13 @@ async def generate_reply(
     # Enforce global AI auto-reply toggle
     _ai_setting = (
         db.table("app_settings")
-        .select("display_value")
+        .select("value")
         .eq("tenant_id", tenant_id)
         .eq("key", "ai_auto_reply_enabled")
         .limit(1)
         .execute()
     )
-    if _ai_setting.data and _ai_setting.data[0].get("display_value") == "false":
+    if _ai_setting.data and _ai_setting.data[0].get("value") == "false":
         logger.info(f"AI auto-reply globally disabled for tenant {tenant_id} — skipping reply")
         return
 
