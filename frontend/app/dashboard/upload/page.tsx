@@ -178,8 +178,23 @@ function SegmentDropdown({ tagId }: { tagId: string }) {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  function download(segment: string) {
-    window.open(`${API_URL}/api/v1/uploads/tag-csv?tag_id=${tagId}&segment=${segment}`, "_blank");
+  async function download(segment: string) {
+    try {
+      const auth = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/upload/tag-csv?tag_id=${tagId}&segment=${segment}`, { headers: auth });
+      if (!res.ok) throw new Error("failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `tag_leads_${segment.toLowerCase()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Download failed");
+    }
     setOpen(false);
   }
 
@@ -236,8 +251,23 @@ function ExportAllDropdown({ tagCount }: { tagCount: number }) {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  function download(mode: string) {
-    window.open(`${API_URL}/api/v1/uploads/all-tags-combined?mode=${mode}`, "_blank");
+  async function download(mode: string) {
+    try {
+      const auth = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/upload/all-tags-combined?mode=${mode}`, { headers: auth });
+      if (!res.ok) throw new Error("failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `all_tags_combined_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Download failed");
+    }
     setOpen(false);
   }
 
@@ -1777,7 +1807,22 @@ export default function UploadPage() {
                         <td className="px-5 py-3">
                           <div className="flex items-center justify-end gap-2">
                             <button
-                              onClick={() => window.open(`${API_URL}/api/v1/uploads/tag-csv?tag_id=${tag.id}`, "_blank")}
+                              onClick={async () => {
+                                try {
+                                  const auth = await getAuthHeaders();
+                                  const res = await fetch(`${API_URL}/api/v1/upload/tag-csv?tag_id=${tag.id}`, { headers: auth });
+                                  if (!res.ok) throw new Error("failed");
+                                  const blob = await res.blob();
+                                  const url = URL.createObjectURL(blob);
+                                  const a = document.createElement("a");
+                                  a.href = url;
+                                  a.download = `${tag.name.replace(/\s+/g, "_").toLowerCase()}_leads.csv`;
+                                  document.body.appendChild(a);
+                                  a.click();
+                                  a.remove();
+                                  URL.revokeObjectURL(url);
+                                } catch { toast.error("Download failed"); }
+                              }}
                               className="text-xs px-2.5 py-1.5 rounded-lg border border-surface-mid text-on-surface-muted hover:text-on-surface hover:border-violet-300 hover:bg-violet-50 transition-all flex items-center gap-1.5 font-medium"
                               title="Download all leads for this tag"
                             >

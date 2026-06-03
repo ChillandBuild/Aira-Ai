@@ -90,6 +90,13 @@ async def export_leads(
     result = query.order("score", desc=True).execute()
     leads = result.data or []
 
+    # Exclude leads that appear only in failed broadcasts (never successfully sent to)
+    any_br = db.table("broadcast_recipients").select("lead_id").eq("tenant_id", tenant_id).execute()
+    any_br_ids = {r["lead_id"] for r in (any_br.data or []) if r.get("lead_id")}
+    sent_br = db.table("broadcast_recipients").select("lead_id").eq("tenant_id", tenant_id).eq("send_status", "sent").execute()
+    sent_br_ids = {r["lead_id"] for r in (sent_br.data or []) if r.get("lead_id")}
+    leads = [l for l in leads if l["id"] not in any_br_ids or l["id"] in sent_br_ids]
+
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=["id","phone","name","source","score","segment","notes","created_at"])
     writer.writeheader()

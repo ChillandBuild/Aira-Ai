@@ -1568,6 +1568,7 @@ async def download_tag_csv(
             .select("lead_id, phone, name")
             .eq("tenant_id", tenant_id)
             .eq("broadcast_id", bid)
+            .eq("send_status", "sent")
             .execute()
         )
         recipients = recipients_resp.data or []
@@ -1718,6 +1719,7 @@ async def download_all_tags_csv(tenant_id: str = Depends(get_tenant_id)):
                 .select("lead_id, phone, name")
                 .eq("tenant_id", tenant_id)
                 .eq("broadcast_id", bid)
+                .eq("send_status", "sent")
                 .execute()
             )
             recipients = recipients_resp.data or []
@@ -1844,6 +1846,7 @@ async def download_all_tags_combined(
                 .select("lead_id, phone, name")
                 .eq("tenant_id", tenant_id)
                 .eq("broadcast_id", bid)
+                .eq("send_status", "sent")
                 .execute()
             )
             recipients = recipients_resp.data or []

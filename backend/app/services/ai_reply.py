@@ -535,6 +535,20 @@ async def generate_reply(
     lead_data = lead_row.data or {}
     tenant_id = lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001"
     segment = lead_data.get("segment") or "C"
+
+    # Enforce global AI auto-reply toggle
+    _ai_setting = (
+        db.table("app_settings")
+        .select("display_value")
+        .eq("tenant_id", tenant_id)
+        .eq("key", "ai_auto_reply_enabled")
+        .maybe_single()
+        .execute()
+    )
+    if _ai_setting.data and _ai_setting.data.get("display_value") == "false":
+        logger.info(f"AI auto-reply globally disabled for tenant {tenant_id} — skipping reply")
+        return
+
     inbox_cfg = get_inbox_config(tenant_id)
     telecalling_cfg = get_telecalling_config(tenant_id)
     escalation_flags: set[str] = set()
