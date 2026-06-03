@@ -805,7 +805,7 @@ async def generate_reply(
     new_score = lead_data.get("score", 5)
     try:
         from app.services.scoring_engine import compute_score
-        from datetime import timedelta
+        from datetime import datetime, timezone, timedelta
 
         # Detect broadcast context: most recent tagged broadcast within 14 days
         _broadcast_context: dict | None = None
