@@ -439,7 +439,10 @@ async def compute_score(
     # ── 11. Persist broadcast + roll-up ───────────────────────────────────────
     if broadcast_context:
         bid = broadcast_context["broadcast_id"]
-        db.table("broadcast_lead_scores").update({
+        db.table("broadcast_lead_scores").upsert({
+            "broadcast_id": bid,
+            "lead_id": str(lead_id),
+            "tenant_id": tenant_id or "",
             "score": final_score,
             "arc_score": current_arc,
             "segment": final_segment,
@@ -447,7 +450,7 @@ async def compute_score(
             "segment_drop_count": new_drop_count,
             "last_inbound_at": now_iso,
             "updated_at": now_iso,
-        }).eq("broadcast_id", bid).eq("lead_id", str(lead_id)).execute()
+        }, on_conflict="broadcast_id,lead_id").execute()
 
         _sentiment = "positive" if intent_delta > 0 else ("negative" if intent_delta < 0 else "neutral")
         _update_recipient_sentiment(db, bid, lead_id, _sentiment)

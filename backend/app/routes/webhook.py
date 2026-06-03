@@ -365,11 +365,21 @@ async def whatsapp_webhook(
                                         raise
                                 logger.info(f"Message {message_id} status updated to {status}")
                                 # Mark lead as undeliverable so it's hidden from active views
+                                # Also flip broadcast_recipients row so failed leads are excluded
+                                # from Segment CSVs, scoring, and all dashboard analytics.
                                 if status == "failed" and updated.data:
                                     failed_lead_id = updated.data[0].get("lead_id")
                                     if failed_lead_id:
                                         db.table("leads").update({"whatsapp_undeliverable": True}) \
                                             .eq("id", failed_lead_id).eq("tenant_id", tenant_id).execute()
+                                        try:
+                                            db.table("broadcast_recipients") \
+                                                .update({"send_status": "delivery_failed"}) \
+                                                .eq("meta_message_id", message_id) \
+                                                .eq("tenant_id", tenant_id) \
+                                                .execute()
+                                        except Exception as _br_err:
+                                            logger.warning(f"broadcast_recipients delivery_failed update failed: {_br_err}")
                                 # Bot Flow Builder per-node analytics: bump node delivered_count once
                                 if status == "delivered" and updated.data:
                                     step_id = updated.data[0].get("automation_step_id")

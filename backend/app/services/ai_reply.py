@@ -815,6 +815,7 @@ async def generate_reply(
                 db.table("broadcast_recipients")
                 .select("broadcast_id,tag_id,created_at")
                 .eq("lead_id", str(lead_id))
+                .eq("send_status", "sent")      # exclude API-failed AND delivery-failed leads
                 .not_.is_("broadcast_id", "null")
                 .gte("created_at", _ctx_cutoff)
                 .order("created_at", desc=True)

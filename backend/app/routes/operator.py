@@ -199,6 +199,16 @@ def wipe_leads(tenant_id: str, _admin: dict = Depends(get_system_admin)):
         except Exception as e:
             logger.warning("wipe-leads: could not clear %s for tenant %s: %s", table, tenant_id, e)
 
+    # Broadcast history is stored as a JSON blob in app_settings — clear it too
+    try:
+        db.table("app_settings") \
+            .delete() \
+            .eq("tenant_id", tenant_id) \
+            .eq("key", "broadcast_history") \
+            .execute()
+    except Exception as e:
+        logger.warning("wipe-leads: could not clear broadcast_history for tenant %s: %s", tenant_id, e)
+
     result = db.table("leads").delete().eq("tenant_id", tenant_id).execute()
     deleted = len(result.data or [])
     logger.warning("OPERATOR WIPE: %d leads deleted for tenant %s (%s)", deleted, tenant_id, tenant.data["name"])
