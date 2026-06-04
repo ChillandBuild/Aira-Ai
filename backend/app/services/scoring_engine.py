@@ -105,21 +105,22 @@ _REJECTION_SENTINEL = -99
 def _compute_intent_delta(message: str, flow_state: str) -> tuple[int, str]:
     """
     Returns (delta, reason).
-    delta is -3..+3 or _REJECTION_SENTINEL for immediate D override.
+    delta is -2..+2 or _REJECTION_SENTINEL for immediate D override.
+    Max +2 so arc must carry the weight to reach Hot (A≥9).
     """
     for pat in _REJECTION_PATTERNS:
         if re.search(pat, message, re.IGNORECASE):
             return _REJECTION_SENTINEL, "rejection"
 
     if flow_state in _ACTIVE_BOOKING_STATES:
-        return 3, "active_booking_flow"
+        return 2, "active_booking_flow"
 
     delta = 0
     reasons: list[str] = []
 
     for pat in _BOOKING_PATTERNS:
         if re.search(pat, message, re.IGNORECASE):
-            delta += 2
+            delta += 1
             reasons.append("booking_intent")
             break
 
@@ -133,7 +134,7 @@ def _compute_intent_delta(message: str, flow_state: str) -> tuple[int, str]:
         delta += 1
         reasons.append("detailed_message")
 
-    return max(-3, min(3, delta)), ",".join(reasons) or "neutral"
+    return max(-3, min(2, delta)), ",".join(reasons) or "neutral"
 
 
 def _compute_engagement_delta(last_inbound_at: datetime | None) -> int:
