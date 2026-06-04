@@ -422,7 +422,8 @@ async def risk_audit(body: RiskAuditRequest, tenant_id: str = Depends(get_tenant
             .eq("opted_out", True)
             .execute()
         )
-        opted_out_count = len(opt_rows.data or [])
+        globally_opted_out_phones: set[str] = {r["phone"] for r in (opt_rows.data or []) if r.get("phone")}
+        opted_out_count = len(globally_opted_out_phones)
 
         tag_opted_out_phones: set[str] = set()
         try:
@@ -451,8 +452,12 @@ async def risk_audit(body: RiskAuditRequest, tenant_id: str = Depends(get_tenant
             logger.warning(f"risk_audit per-tag opt-out lookup failed: {e}")
         tag_opted_out_count = len(tag_opted_out_phones)
 
+        total_opted_out_count = len(tag_opted_out_phones | globally_opted_out_phones)
+    else:
+        total_opted_out_count = 0
+
     total = len(all_phones)
-    safe_count = total - negative_reply_count - high_no_reply_count - tag_opted_out_count
+    safe_count = total - negative_reply_count - high_no_reply_count - total_opted_out_count
 
     return {
         "total": total,
@@ -460,6 +465,7 @@ async def risk_audit(body: RiskAuditRequest, tenant_id: str = Depends(get_tenant
         "high_no_reply_count": high_no_reply_count,
         "opted_out_count": opted_out_count,
         "tag_opted_out_count": tag_opted_out_count,
+        "total_opted_out_count": total_opted_out_count,
         "safe_count": max(0, safe_count),
     }
 
@@ -658,6 +664,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
     phone_to_lead_name = {r["phone"]: r.get("name") for r in (lead_rows.data or [])}
 
     tag_opted_out_phones: set[str] = set()
+    globally_opted_out_phones: set[str] = set()
     if all_phones and body.tag_id:
         try:
             rows = (
@@ -687,6 +694,22 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                     tag_opted_out_phones.add(r["leads"]["phone"])
         except Exception as e:
             logger.warning(f"Global tag opt-out lookup failed: {e}")
+
+    if all_phones:
+        try:
+            rows = (
+                db.table("leads")
+                .select("phone")
+                .in_("phone", all_phones)
+                .eq("tenant_id", tenant_id)
+                .eq("opted_out", True)
+                .execute()
+            )
+            globally_opted_out_phones = {r["phone"] for r in (rows.data or []) if r.get("phone")}
+        except Exception as e:
+            logger.warning(f"Global opted-out lead lookup failed: {e}")
+
+    all_opted_out_phones = tag_opted_out_phones | globally_opted_out_phones
 
     negative_reply_phones: set[str] = set()
     if all_phones and body.exclude_negative_replies:
@@ -739,7 +762,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         lead_id = phone_to_lead_id.get(phone)
         lead_name = phone_to_lead_name.get(phone)
 
-        if phone in tag_opted_out_phones and not body.include_opted_out:
+        if phone in all_opted_out_phones and not body.include_opted_out:
             opted_out_skipped += 1
             failed += 1
             row = {
@@ -752,9 +775,17 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 "tag_id": body.tag_id,
             }
             if _has_fail_reason:
-                row["fail_reason"] = "tag_opted_out"
+                if phone in tag_opted_out_phones and phone not in globally_opted_out_phones:
+                    row["fail_reason"] = "tag_opted_out"
+                elif phone in globally_opted_out_phones and phone not in tag_opted_out_phones:
+                    row["fail_reason"] = "globally_opted_out"
+                else:
+                    row["fail_reason"] = "opted_out"
             recipient_rows.append(row)
-            logger.info(f"Bulk-send skipped tag-opted-out lead {phone} for tag {body.tag_id}")
+            if phone in globally_opted_out_phones:
+                logger.info(f"Bulk-send skipped globally-opted-out lead (id={lead_id})")
+            else:
+                logger.info(f"Bulk-send skipped tag-opted-out lead (id={lead_id}) for tag {body.tag_id}")
             continue
 
         if phone in negative_reply_phones:
@@ -1058,11 +1089,15 @@ def _classify_broadcast_outcomes(
       1. send_status in {failed, rejected}             -> failed (send error)
       2. broadcast_recipients.opted_out_at IS NOT NULL  -> failed (per-broadcast opt-out event)
       3. send_status == opted_out_skip                  -> failed (opted out at send time)
-      4. lead currently opted_out=True                  -> failed (legacy fallback)
-      5. messages.delivery_status == failed in window   -> failed (delivery failure)
-      6. messages.delivery_status == read               -> opened (+delivered +sent)
-      7. messages.delivery_status == delivered          -> delivered (+sent)
-      8. everything else                                -> sent
+      4. messages.delivery_status == failed in window   -> failed (delivery failure)
+      5. messages.delivery_status == read               -> opened (+delivered +sent)
+      6. messages.delivery_status == delivered          -> delivered (+sent)
+      7. everything else                                -> sent
+
+    Note: rule "lead currently opted_out=True" was removed — it caused cross-broadcast
+    contamination (a lead opted out in broadcast N would falsely appear in broadcast N+1's
+    failed CSV even when they were sent and delivered successfully). The per-broadcast
+    opted_out_at (Rule 2) and send-time skip (Rule 3) now cover all opt-out cases.
     """
     # Check fail_reason column exists (migration 058 compat)
     has_fail_reason = True
@@ -1182,10 +1217,10 @@ def _classify_broadcast_outcomes(
             reason = "not_interested"
             fail_reason = r.get("fail_reason") or "opted_out"
             opted_out_at = opted_out_map.get(lead_id)
-        elif lead_id and lead_id in opted_out_map:
-            reason = "not_interested"
-            fail_reason = "opted_out"
-            opted_out_at = opted_out_map[lead_id]
+        # Rule 4 (legacy leads.opted_out fallback) removed: per-broadcast opted_out_at
+        # (Rule 2) and send-time skip (Rule 3) cover all opt-out cases; reading the
+        # global leads.opted_out flag here caused cross-broadcast contamination when
+        # a prior broadcast's opt-out leaked into a later broadcast's CSV.
         else:
             delivery = msg_status_by_lead.get(lead_id) if lead_id else None
             if delivery == "failed":

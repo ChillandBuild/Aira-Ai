@@ -1391,11 +1391,17 @@ export default function UploadPage() {
                           </button>
                         </div>
                       )}
-                      {riskSummary.tag_opted_out_count > 0 && (
+                      {(riskSummary.total_opted_out_count ?? riskSummary.tag_opted_out_count ?? 0) > 0 && (
                         <div className="space-y-2">
                           <div className="flex items-center gap-2 text-amber-800 font-body text-sm">
                             <AlertTriangle size={14} className="shrink-0" />
-                            {riskSummary.tag_opted_out_count} contact{riskSummary.tag_opted_out_count !== 1 ? "s" : ""} opted out of this tag.
+                            {(() => {
+                              const n = riskSummary.total_opted_out_count ?? riskSummary.tag_opted_out_count ?? 0;
+                              const tagOnly = (riskSummary.tag_opted_out_count ?? 0) > 0 && (riskSummary.opted_out_count ?? 0) === 0;
+                              const globalOnly = (riskSummary.opted_out_count ?? 0) > 0 && (riskSummary.tag_opted_out_count ?? 0) === 0;
+                              const suffix = globalOnly ? " globally" : tagOnly ? " of this tag" : " of this tag or globally";
+                              return `${n} contact${n !== 1 ? "s" : ""} opted out${suffix}.`;
+                            })()}
                           </div>
                           <label className="flex items-center gap-2.5 cursor-pointer select-none">
                             <input
@@ -1405,7 +1411,10 @@ export default function UploadPage() {
                               className="w-4 h-4 rounded border-amber-300 text-amber-600 accent-amber-600"
                             />
                             <span className="font-body text-sm text-amber-800">
-                              Send to {riskSummary.tag_opted_out_count} tag-opted-out contact{riskSummary.tag_opted_out_count !== 1 ? "s" : ""} anyway
+                              {(() => {
+                                const n = riskSummary.total_opted_out_count ?? riskSummary.tag_opted_out_count ?? 0;
+                                return `Send to opted-out contact${n !== 1 ? "s" : ""} anyway`;
+                              })()}
                             </span>
                           </label>
                         </div>
