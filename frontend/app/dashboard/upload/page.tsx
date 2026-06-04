@@ -350,6 +350,7 @@ export default function UploadPage() {
     high_no_reply_count: number;
     opted_out_count: number;
     tag_opted_out_count: number;
+    total_opted_out_count: number;
     safe_count: number;
   } | null>(null);
   const [riskLoading, setRiskLoading] = useState(false);
