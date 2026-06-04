@@ -70,6 +70,9 @@ type TagStats = {
   hot: number;
   warm: number;
   cold: number;
+  disqualified: number;
+  opted_out: number;
+  failed: number;
 };
 
 const PRESET_COLORS = [
@@ -153,6 +156,7 @@ function StepIndicator({ current }: { current: number }) {
 // ─── Segment Dropdown ─────────────────────────────────────────────────────────
 
 const SEGMENT_OPTIONS = [
+  { label: "All Leads", value: "", color: "text-violet-700 bg-violet-50 border-violet-200 hover:bg-violet-100" },
   { label: "Hot", value: "A", color: "text-green-700 bg-green-50 border-green-200 hover:bg-green-100" },
   { label: "Warm", value: "B", color: "text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100" },
   { label: "Cold", value: "C", color: "text-gray-700 bg-gray-50 border-gray-200 hover:bg-gray-100" },
@@ -189,7 +193,7 @@ function SegmentDropdown({ tagId }: { tagId: string }) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `tag_leads_${segment.toLowerCase()}.csv`;
+      a.download = `tag_leads_${segment ? segment.toLowerCase() : "all"}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1907,9 +1911,13 @@ export default function UploadPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-surface-mid">
-                    {["Tag", "Sent", "Hot", "Warm", "Cold", "Actions"].map((h) => (
-                      <th key={h} className={cn("font-label text-xs font-semibold text-on-surface-muted py-3", h === "Tag" || h === "Actions" ? "px-5" : "px-3 text-center", h === "Actions" ? "text-right" : "")}>{h}</th>
+                    {["Tag", "Sent", "Hot", "Warm", "Cold"].map((h) => (
+                      <th key={h} className={cn("font-label text-xs font-semibold text-on-surface-muted py-3", h === "Tag" ? "px-5" : "px-3 text-center")}>{h}</th>
                     ))}
+                    <th className="font-label text-xs font-semibold text-red-500 text-center px-3 py-3">DQ</th>
+                    <th className="font-label text-xs font-semibold text-orange-500 text-center px-3 py-3">Opted Out</th>
+                    <th className="font-label text-xs font-semibold text-on-surface-muted text-center px-3 py-3">Failed</th>
+                    <th className="font-label text-xs font-semibold text-on-surface-muted text-right px-5 py-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-surface-mid/50">
@@ -1924,30 +1932,11 @@ export default function UploadPage() {
                         <td className="px-3 py-3 text-center font-label text-sm font-semibold text-green-600">{s?.hot ?? 0}</td>
                         <td className="px-3 py-3 text-center font-label text-sm font-semibold text-amber-600">{s?.warm ?? 0}</td>
                         <td className="px-3 py-3 text-center font-label text-sm text-on-surface-muted">{s?.cold ?? 0}</td>
+                        <td className="px-3 py-3 text-center font-label text-sm font-semibold text-red-500">{s?.disqualified ?? 0}</td>
+                        <td className="px-3 py-3 text-center font-label text-sm font-semibold text-orange-500">{s?.opted_out ?? 0}</td>
+                        <td className="px-3 py-3 text-center font-label text-sm text-on-surface-muted">{s?.failed ?? 0}</td>
                         <td className="px-5 py-3">
                           <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={async () => {
-                                try {
-                                  const auth = await getAuthHeaders();
-                                  const res = await fetch(`${API_URL}/api/v1/upload/tag-csv?tag_id=${tag.id}`, { headers: auth });
-                                  if (!res.ok) throw new Error("failed");
-                                  const blob = await res.blob();
-                                  const url = URL.createObjectURL(blob);
-                                  const a = document.createElement("a");
-                                  a.href = url;
-                                  a.download = `${tag.name.replace(/\s+/g, "_").toLowerCase()}_leads.csv`;
-                                  document.body.appendChild(a);
-                                  a.click();
-                                  a.remove();
-                                  URL.revokeObjectURL(url);
-                                } catch { toast.error("Download failed"); }
-                              }}
-                              className="text-xs px-2.5 py-1.5 rounded-lg border border-surface-mid text-on-surface-muted hover:text-on-surface hover:border-violet-300 hover:bg-violet-50 transition-all flex items-center gap-1.5 font-medium"
-                              title="Download all leads for this tag"
-                            >
-                              <Download size={12} /> All Leads
-                            </button>
                             <SegmentDropdown tagId={tag.id} />
                             <button onClick={() => handleDeleteTag(tag)} disabled={deletingTagId === tag.id} className="p-1.5 rounded-lg text-on-surface-muted/50 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40">
                               {deletingTagId === tag.id ? <div className="w-3.5 h-3.5 border-2 border-red-500 border-t-transparent rounded-full animate-spin" /> : <Trash2 size={14} />}
