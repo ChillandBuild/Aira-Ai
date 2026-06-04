@@ -1093,11 +1093,15 @@ def _classify_broadcast_outcomes(
       5. messages.delivery_status == read               -> opened (+delivered +sent)
       6. messages.delivery_status == delivered          -> delivered (+sent)
       7. everything else                                -> sent
+      8. fallback: lead.opted_out_at >= recipient.created_at -> failed (webhook missed update)
 
-    Note: rule "lead currently opted_out=True" was removed — it caused cross-broadcast
-    contamination (a lead opted out in broadcast N would falsely appear in broadcast N+1's
-    failed CSV even when they were sent and delivered successfully). The per-broadcast
-    opted_out_at (Rule 2) and send-time skip (Rule 3) now cover all opt-out cases.
+    Rule 4 (legacy "lead currently opted_out=True" fallback) is intentionally NOT a rule —
+    it caused cross-broadcast contamination (a lead opted out in broadcast N would falsely
+    appear in broadcast N+1's failed CSV). Rules 2 and 3 are the primary opt-out paths.
+    Rule 8 is a time-scoped recovery for the rare case where the webhook's
+    broadcast_recipients update didn't persist; it scopes to broadcasts sent BEFORE the
+    opt-out (leads.opted_out_at >= recipient.created_at) so a later opt-out cannot leak
+    into an earlier broadcast's CSV.
     """
     # Check fail_reason column exists (migration 058 compat)
     has_fail_reason = True
@@ -1113,7 +1117,7 @@ def _classify_broadcast_outcomes(
     except Exception:
         has_opted_out_at = False
 
-    base_cols = "lead_id, phone, name, send_status"
+    base_cols = "lead_id, phone, name, send_status, created_at"
     select_cols = base_cols
     if has_fail_reason:
         select_cols += ", fail_reason"
@@ -1217,6 +1221,22 @@ def _classify_broadcast_outcomes(
             reason = "not_interested"
             fail_reason = r.get("fail_reason") or "opted_out"
             opted_out_at = opted_out_map.get(lead_id)
+        elif lead_id and lead_id in opted_out_map and r.get("created_at") and opted_out_map[lead_id]:
+            # Rule 8 (fallback): lead opted out AFTER this broadcast was sent, but the
+            # webhook's broadcast_recipients update didn't persist (e.g., the migration-085
+            # column was missing or the update silently failed). Scope-check via
+            # leads.opted_out_at >= broadcast_recipient.created_at so a later opt-out
+            # never contaminates an earlier broadcast.
+            leads_at = opted_out_map[lead_id]
+            br_at = r["created_at"]
+            try:
+                if datetime.fromisoformat(leads_at.replace("Z", "+00:00")) >= \
+                   datetime.fromisoformat(br_at.replace("Z", "+00:00")):
+                    reason = "not_interested"
+                    fail_reason = "opted_out"
+                    opted_out_at = leads_at
+            except (ValueError, TypeError):
+                pass
         # Rule 4 (legacy leads.opted_out fallback) removed: per-broadcast opted_out_at
         # (Rule 2) and send-time skip (Rule 3) cover all opt-out cases; reading the
         # global leads.opted_out flag here caused cross-broadcast contamination when
