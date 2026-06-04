@@ -238,22 +238,6 @@ async def execute_broadcast(row: dict) -> dict:
             if r.get("send_status") == "sent" and r.get("lead_id")
         ]
 
-        # Fetch current global scores for all sent leads in one query
-        current_scores: dict[str, tuple[int, str]] = {}
-        if sent_lead_ids_for_bls:
-            try:
-                score_rows = (
-                    db.table("leads")
-                    .select("id,score,segment")
-                    .in_("id", sent_lead_ids_for_bls)
-                    .eq("tenant_id", tenant_id)
-                    .execute()
-                    .data or []
-                )
-                current_scores = {r["id"]: (r.get("score") or 5, r.get("segment") or "C") for r in score_rows}
-            except Exception as cs_err:
-                logger.warning(f"Could not fetch current scores for freeze: {cs_err}")
-
         # Freeze previous un-finalized rows for these leads
         if sent_lead_ids_for_bls:
             try:
@@ -271,9 +255,9 @@ async def execute_broadcast(row: dict) -> dict:
                 "broadcast_id": broadcast_id,
                 "lead_id": r["lead_id"],
                 "tag_id": tag_id,
-                "score": current_scores.get(r["lead_id"], (5, "C"))[0],
-                "segment": current_scores.get(r["lead_id"], (5, "C"))[1],
-                "arc_score": current_scores.get(r["lead_id"], (5, "C"))[0],
+                "score": 5,
+                "segment": "C",
+                "arc_score": 5,
                 "arc_message_count": 0,
                 "broadcast_sent_at": sent_at,
             }
