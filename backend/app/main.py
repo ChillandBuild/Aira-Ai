@@ -241,7 +241,7 @@ async def health():
 
 _auth = [Depends(get_current_user)]
 
-# Webhook routes — no auth (Meta/Twilio call directly)
+# Webhook routes — no auth (Meta calls directly)
 app.include_router(webhook.router, prefix="/webhook/whatsapp", tags=["webhook"])
 app.include_router(telegram.router, prefix="/webhook/telegram", tags=["telegram-webhook"])
 app.include_router(instagram.router, prefix="/webhook/instagram", tags=["instagram-webhook"])

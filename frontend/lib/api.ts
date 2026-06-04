@@ -39,7 +39,6 @@ export interface Message {
   content: string;
   is_ai_generated: boolean;
   reply_source?: "knowledge" | "ai" | null;
-  twilio_message_sid: string | null;
   meta_message_id?: string | null;
   media_url?: string | null;
   media_type?: "image" | "document" | "audio" | "video" | "sticker" | null;

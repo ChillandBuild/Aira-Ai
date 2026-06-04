@@ -1,7 +1,7 @@
 import json
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, BackgroundTasks, Form, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Request, Response
 from app.db.supabase import get_supabase
 from app.config import settings
 from app.services.growth import record_stage_event
@@ -24,14 +24,6 @@ def _is_opt_out(body: str) -> bool:
 def _get_tenant_id_for_meta_number(phone_number_id: str, db) -> str | None:
     try:
         result = db.table("phone_numbers").select("tenant_id").eq("meta_phone_number_id", phone_number_id).maybe_single().execute()
-        return (result.data or {}).get("tenant_id") if result else None
-    except Exception:
-        return None
-
-
-def _get_tenant_id_for_twilio_number(number: str, db) -> str | None:
-    try:
-        result = db.table("phone_numbers").select("tenant_id").eq("number", number).maybe_single().execute()
         return (result.data or {}).get("tenant_id") if result else None
     except Exception:
         return None
@@ -100,383 +92,299 @@ def _resolve_tenant_from_payload(payload: dict, db) -> str | None:
 async def whatsapp_webhook(
     request: Request,
     background_tasks: BackgroundTasks,
-    From: str | None = Form(None),
-    To: str | None = Form(None),
-    Body: str | None = Form(None),
-    MessageSid: str | None = Form(None),
 ):
-    content_type = request.headers.get("content-type", "")
-    if "application/json" in content_type:
-        raw_body = await request.body()
-        try:
-            payload = json.loads(raw_body)
-        except Exception:
-            payload = {}
+    raw_body = await request.body()
+    try:
+        payload = json.loads(raw_body)
+    except Exception:
+        payload = {}
 
-        # Verify Meta X-Hub-Signature-256 (fail-closed: missing or invalid signatures are ignored)
-        signature = request.headers.get("x-hub-signature-256")
-        if not signature:
-            logger.warning("WhatsApp webhook: missing signature — dropping")
-            return Response(content="OK", status_code=200)
-        db_sig = get_supabase()
-        tenant_for_sig = _resolve_tenant_from_payload(payload, db_sig)
-        if not tenant_for_sig:
-            logger.warning("WhatsApp webhook: no tenant for signed payload — dropping")
-            return Response(content="OK", status_code=200)
-        if not verify_meta_signature(raw_body, signature, tenant_for_sig):
-            logger.warning(f"WhatsApp webhook: invalid signature for tenant={tenant_for_sig} — dropping")
-            return Response(content="OK", status_code=200)
-        for entry in payload.get("entry", []):
-            for change in entry.get("changes", []):
-                field = change.get("field")
-                value = change.get("value", {})
+    # Verify Meta X-Hub-Signature-256 (fail-closed: missing or invalid signatures are ignored)
+    signature = request.headers.get("x-hub-signature-256")
+    if not signature:
+        logger.warning("WhatsApp webhook: missing signature — dropping")
+        return Response(content="OK", status_code=200)
+    db_sig = get_supabase()
+    tenant_for_sig = _resolve_tenant_from_payload(payload, db_sig)
+    if not tenant_for_sig:
+        logger.warning("WhatsApp webhook: no tenant for signed payload — dropping")
+        return Response(content="OK", status_code=200)
+    if not verify_meta_signature(raw_body, signature, tenant_for_sig):
+        logger.warning(f"WhatsApp webhook: invalid signature for tenant={tenant_for_sig} — dropping")
+        return Response(content="OK", status_code=200)
+    for entry in payload.get("entry", []):
+        for change in entry.get("changes", []):
+            field = change.get("field")
+            value = change.get("value", {})
 
-                if field == "phone_number_quality_update":
-                    meta_phone_number_id = value.get("phone_number_id")
-                    quality_rating = value.get("quality_rating", "")
-                    current_limit = value.get("current_limit")
-                    messaging_tier = None
-                    if current_limit and current_limit.startswith("TIER_"):
-                        try:
-                            messaging_tier = int(current_limit.replace("TIER_", ""))
-                        except ValueError:
-                            pass
-                    logger.info(f"phone_number_quality_update: meta_id={meta_phone_number_id} quality={quality_rating} limit={current_limit}")
-                    row_id = await update_number_quality(meta_phone_number_id, quality_rating, messaging_tier)
-                    if row_id:
-                        if quality_rating == "RED":
-                            await handle_quality_red(row_id)
-                        elif quality_rating == "YELLOW":
-                            await handle_quality_yellow(row_id)
+            if field == "phone_number_quality_update":
+                meta_phone_number_id = value.get("phone_number_id")
+                quality_rating = value.get("quality_rating", "")
+                current_limit = value.get("current_limit")
+                messaging_tier = None
+                if current_limit and current_limit.startswith("TIER_"):
+                    try:
+                        messaging_tier = int(current_limit.replace("TIER_", ""))
+                    except ValueError:
+                        pass
+                logger.info(f"phone_number_quality_update: meta_id={meta_phone_number_id} quality={quality_rating} limit={current_limit}")
+                row_id = await update_number_quality(meta_phone_number_id, quality_rating, messaging_tier)
+                if row_id:
+                    if quality_rating == "RED":
+                        await handle_quality_red(row_id)
+                    elif quality_rating == "YELLOW":
+                        await handle_quality_yellow(row_id)
 
-                elif field == "messages":
-                    meta_phone_number_id = value.get("metadata", {}).get("phone_number_id", "")
-                    db = get_supabase()
-                    tenant_id = _get_tenant_id_for_meta_number(meta_phone_number_id, db) if meta_phone_number_id else None
-                    if not tenant_id:
-                        logger.warning(f"No tenant for meta phone_number_id={meta_phone_number_id}, dropping WhatsApp payload")
+            elif field == "messages":
+                meta_phone_number_id = value.get("metadata", {}).get("phone_number_id", "")
+                db = get_supabase()
+                tenant_id = _get_tenant_id_for_meta_number(meta_phone_number_id, db) if meta_phone_number_id else None
+                if not tenant_id:
+                    logger.warning(f"No tenant for meta phone_number_id={meta_phone_number_id}, dropping WhatsApp payload")
+                    continue
+                for msg in value.get("messages", []):
+                    msg_type = msg.get("type")
+                    msg_id = msg.get("id", "")
+                    if msg_type not in ("text", "button", "interactive"):
                         continue
-                    for msg in value.get("messages", []):
-                        msg_type = msg.get("type")
-                        msg_id = msg.get("id", "")
-                        if msg_type not in ("text", "button", "interactive"):
-                            continue
-                        wa_id = msg.get("from", "")
-                        phone = f"+{wa_id}" if wa_id and not wa_id.startswith("+") else wa_id
-                        if msg_type == "text":
-                            body = msg.get("text", {}).get("body", "").strip()
-                        elif msg_type == "button":
-                            body = msg.get("button", {}).get("text", "").strip()
-                        elif msg_type == "interactive":
-                            inter = msg.get("interactive", {})
-                            body = (inter.get("button_reply") or inter.get("list_reply") or {}).get("title", "").strip()
-                        else:
-                            body = ""
+                    wa_id = msg.get("from", "")
+                    phone = f"+{wa_id}" if wa_id and not wa_id.startswith("+") else wa_id
+                    if msg_type == "text":
+                        body = msg.get("text", {}).get("body", "").strip()
+                    elif msg_type == "button":
+                        body = msg.get("button", {}).get("text", "").strip()
+                    elif msg_type == "interactive":
+                        inter = msg.get("interactive", {})
+                        body = (inter.get("button_reply") or inter.get("list_reply") or {}).get("title", "").strip()
+                    else:
+                        body = ""
 
-                        if not phone or not body:
-                            continue
+                    if not phone or not body:
+                        continue
 
-                        logger.info(f"Inbound Meta WhatsApp from {phone}: type={msg_type} body={body!r}")
+                    logger.info(f"Inbound Meta WhatsApp from {phone}: type={msg_type} body={body!r}")
 
-                        existing = db.table("leads").select("id,score,segment,deleted_at,ai_enabled").eq("phone", phone).eq("tenant_id", tenant_id).limit(1).execute()
-                        if existing.data:
-                            lead_id = existing.data[0]["id"]
-                            if existing.data[0].get("deleted_at"):
-                                db.table("leads").update({
-                                    "deleted_at": None,
-                                    "ai_enabled": True,
-                                    "needs_human_intervention": False,
-                                }).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
-                                logger.info(f"Restored soft-deleted lead {lead_id} on inbound message")
-                        else:
-                            new_lead = db.table("leads").insert({
-                                "phone": phone,
-                                "source": "whatsapp",
-                                "score": 5,
-                                "segment": "C",
-                                "tenant_id": tenant_id,
-                            }).execute()
-                            lead_id = new_lead.data[0]["id"]
-                            record_stage_event(lead_id, to_segment="C", event_type="created", metadata={"source": "whatsapp"}, tenant_id=tenant_id, db=db)
-                            try:
-                                from app.services.assignment import auto_assign_lead
-                                auto_assign_lead(lead_id, tenant_id)
-                            except Exception as e:
-                                logger.warning(f"Auto-assign failed for lead {lead_id}: {e}")
-                            fire_trigger(background_tasks, lead_id, tenant_id, "lead_created", db=db)
-
-                        # CTWA: capture Click-to-WhatsApp ad referral on first contact
-                        referral = msg.get("referral")
-                        if referral and referral.get("source_type") == "ad":
-                            try:
-                                from app.services.growth import get_or_create_campaign
-                                ad_id = referral.get("source_id", "")
-                                ads_ctx = referral.get("ads_context_data", {})
-                                ad_title = ads_ctx.get("ad_title") or referral.get("headline", "") or ad_id
-                                if ad_id:
-                                    campaign = get_or_create_campaign(
-                                        db=db,
-                                        tenant_id=tenant_id,
-                                        platform="whatsapp",
-                                        campaign_name=ad_title,
-                                        external_campaign_id=ad_id,
-                                    )
-                                    if campaign:
-                                        db.table("leads").update({"ad_campaign_id": campaign["id"]}).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
-                                        logger.info(f"CTWA referral: lead {lead_id} linked to ad campaign {campaign['id']} (ad_id={ad_id})")
-                            except Exception as ctwa_err:
-                                logger.warning(f"CTWA referral tracking failed for lead {lead_id}: {ctwa_err}")
-
-                        already = db.table("messages").select("id").eq("meta_message_id", msg_id).eq("tenant_id", tenant_id).limit(1).execute()
-                        if already.data:
-                            continue
-
-                        _is_first = (
-                            db.table("messages")
-                            .select("id")
-                            .eq("lead_id", lead_id)
-                            .eq("direction", "inbound")
-                            .limit(1)
-                            .execute()
-                        )
-                        is_first_message = not bool(_is_first.data)
-
-                        # Context-dependent opt-out: hard opt-out only for first-time senders
-                        if body and _is_opt_out(body):
-                            if is_first_message:
-                                # Hard opt-out for first-time senders
-                                await _handle_opt_out(phone, tenant_id, db)
-                                continue
-                            # else: let it flow through normal pipeline for engaged users
-                            # Scoring engine will handle it as rejection (segment D, low engagement)
-
-                        insert_row: dict = {
-                            "lead_id": lead_id,
-                            "direction": "inbound",
-                            "channel": "whatsapp",
-                            "content": body,
-                            "is_ai_generated": False,
-                            "meta_message_id": msg_id,
+                    existing = db.table("leads").select("id,score,segment,deleted_at,ai_enabled").eq("phone", phone).eq("tenant_id", tenant_id).limit(1).execute()
+                    if existing.data:
+                        lead_id = existing.data[0]["id"]
+                        if existing.data[0].get("deleted_at"):
+                            db.table("leads").update({
+                                "deleted_at": None,
+                                "ai_enabled": True,
+                                "needs_human_intervention": False,
+                            }).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
+                            logger.info(f"Restored soft-deleted lead {lead_id} on inbound message")
+                    else:
+                        new_lead = db.table("leads").insert({
+                            "phone": phone,
+                            "source": "whatsapp",
+                            "score": 5,
+                            "segment": "C",
                             "tenant_id": tenant_id,
-                        }
-                        db.table("messages").insert(insert_row).execute()
+                        }).execute()
+                        lead_id = new_lead.data[0]["id"]
+                        record_stage_event(lead_id, to_segment="C", event_type="created", metadata={"source": "whatsapp"}, tenant_id=tenant_id, db=db)
+                        try:
+                            from app.services.assignment import auto_assign_lead
+                            auto_assign_lead(lead_id, tenant_id)
+                        except Exception as e:
+                            logger.warning(f"Auto-assign failed for lead {lead_id}: {e}")
+                        fire_trigger(background_tasks, lead_id, tenant_id, "lead_created", db=db)
 
-                        # Reset engagement suppression counter on inbound reply
-                        if lead_id:
+                    # CTWA: capture Click-to-WhatsApp ad referral on first contact
+                    referral = msg.get("referral")
+                    if referral and referral.get("source_type") == "ad":
+                        try:
+                            from app.services.growth import get_or_create_campaign
+                            ad_id = referral.get("source_id", "")
+                            ads_ctx = referral.get("ads_context_data", {})
+                            ad_title = ads_ctx.get("ad_title") or referral.get("headline", "") or ad_id
+                            if ad_id:
+                                campaign = get_or_create_campaign(
+                                    db=db,
+                                    tenant_id=tenant_id,
+                                    platform="whatsapp",
+                                    campaign_name=ad_title,
+                                    external_campaign_id=ad_id,
+                                )
+                                if campaign:
+                                    db.table("leads").update({"ad_campaign_id": campaign["id"]}).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
+                                    logger.info(f"CTWA referral: lead {lead_id} linked to ad campaign {campaign['id']} (ad_id={ad_id})")
+                        except Exception as ctwa_err:
+                            logger.warning(f"CTWA referral tracking failed for lead {lead_id}: {ctwa_err}")
+
+                    already = db.table("messages").select("id").eq("meta_message_id", msg_id).eq("tenant_id", tenant_id).limit(1).execute()
+                    if already.data:
+                        continue
+
+                    _is_first = (
+                        db.table("messages")
+                        .select("id")
+                        .eq("lead_id", lead_id)
+                        .eq("direction", "inbound")
+                        .limit(1)
+                        .execute()
+                    )
+                    is_first_message = not bool(_is_first.data)
+
+                    # Context-dependent opt-out: hard opt-out only for first-time senders
+                    if body and _is_opt_out(body):
+                        if is_first_message:
+                            # Hard opt-out for first-time senders
+                            await _handle_opt_out(phone, tenant_id, db)
+                            continue
+                        # else: let it flow through normal pipeline for engaged users
+                        # Scoring engine will handle it as rejection (segment D, low engagement)
+
+                    insert_row: dict = {
+                        "lead_id": lead_id,
+                        "direction": "inbound",
+                        "channel": "whatsapp",
+                        "content": body,
+                        "is_ai_generated": False,
+                        "meta_message_id": msg_id,
+                        "tenant_id": tenant_id,
+                    }
+                    db.table("messages").insert(insert_row).execute()
+
+                    # Reset engagement suppression counter on inbound reply
+                    if lead_id:
+                        try:
+                            db.table("leads").update({"outbound_no_reply_count": 0}).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
+                        except Exception:
+                            pass
+
+                    # Bot Flow: if a flow run is waiting on this lead's reply, it
+                    # owns this message — capture it and skip BOTH the trigger
+                    # fan-out and the AI reply pipeline below.
+                    if body:
+                        from app.services.flow_runtime import resume_for_inbound
+                        if await resume_for_inbound(lead_id, tenant_id, body, db):
                             try:
-                                db.table("leads").update({"outbound_no_reply_count": 0}).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
-                            except Exception:
-                                pass
+                                from app.services.scoring_engine import compute_score as _bot_score
+                                await _bot_score(message=body, lead_id=str(lead_id), db=db, tenant_id=tenant_id)
+                            except Exception as _se:
+                                logger.warning(f"Bot-flow scoring failed for lead {lead_id}: {_se}")
+                            continue
 
-                        # Bot Flow: if a flow run is waiting on this lead's reply, it
-                        # owns this message — capture it and skip BOTH the trigger
-                        # fan-out and the AI reply pipeline below.
-                        if body:
-                            from app.services.flow_runtime import resume_for_inbound
-                            if await resume_for_inbound(lead_id, tenant_id, body, db):
-                                try:
-                                    from app.services.scoring_engine import compute_score as _bot_score
-                                    await _bot_score(message=body, lead_id=str(lead_id), db=db, tenant_id=tenant_id)
-                                except Exception as _se:
-                                    logger.warning(f"Bot-flow scoring failed for lead {lead_id}: {_se}")
-                                continue
-
-                        # Booking state machine: takes priority over bot triggers + AI.
-                        # If a booking is in progress OR booking intent is detected,
-                        # the state machine owns this message.
-                        if body:
-                            from app.services.booking_flow import route_booking_intent
-                            if await route_booking_intent(lead_id, tenant_id, phone, body, db):
-                                try:
-                                    from app.services.scoring_engine import compute_score as _bk_score
-                                    await _bk_score(message=body, lead_id=str(lead_id), db=db, tenant_id=tenant_id)
-                                except Exception as _bk_se:
-                                    logger.warning(f"Booking-flow scoring failed for lead {lead_id}: {_bk_se}")
-                                continue
-
-                        if body:
-                            fire_trigger(
-                                background_tasks, lead_id, tenant_id,
-                                "new_message_received", message=body,
-                                is_first_message=is_first_message, db=db,
-                            )
-
-                        # Update conversation state counters
-                        from app.services.booking_flow import get_or_create_state
-                        from datetime import datetime, timezone
-                        conv_state = get_or_create_state(lead_id, tenant_id, db)
-                        new_count = (conv_state.get("message_count") or 0) + 1
-
-                        db.table("lead_conversation_state").update({
-                            "message_count": new_count,
-                            "last_activity_at": datetime.now(timezone.utc).isoformat(),
-                        }).eq("lead_id", lead_id).eq("tenant_id", tenant_id).execute()
-
-                        # Check if compaction needed (threshold: 10)
-                        if new_count >= 10:
+                    # Booking state machine: takes priority over bot triggers + AI.
+                    # If a booking is in progress OR booking intent is detected,
+                    # the state machine owns this message.
+                    if body:
+                        from app.services.booking_flow import route_booking_intent
+                        if await route_booking_intent(lead_id, tenant_id, phone, body, db):
                             try:
-                                from app.services.conversation_compactor import compact_conversation
-                                await compact_conversation(lead_id, tenant_id, db, mode="rolling")
-                            except Exception as compact_err:
-                                logger.error(f"Compaction failed for lead {lead_id}: {compact_err}")
+                                from app.services.scoring_engine import compute_score as _bk_score
+                                await _bk_score(message=body, lead_id=str(lead_id), db=db, tenant_id=tenant_id)
+                            except Exception as _bk_se:
+                                logger.warning(f"Booking-flow scoring failed for lead {lead_id}: {_bk_se}")
+                            continue
 
-                        # Only trigger AI reply for text messages (not media)
-                        if msg_type in ("text", "button", "interactive") and body:
+                    if body:
+                        fire_trigger(
+                            background_tasks, lead_id, tenant_id,
+                            "new_message_received", message=body,
+                            is_first_message=is_first_message, db=db,
+                        )
+
+                    # Update conversation state counters
+                    from app.services.booking_flow import get_or_create_state
+                    from datetime import datetime, timezone
+                    conv_state = get_or_create_state(lead_id, tenant_id, db)
+                    new_count = (conv_state.get("message_count") or 0) + 1
+
+                    db.table("lead_conversation_state").update({
+                        "message_count": new_count,
+                        "last_activity_at": datetime.now(timezone.utc).isoformat(),
+                    }).eq("lead_id", lead_id).eq("tenant_id", tenant_id).execute()
+
+                    # Check if compaction needed (threshold: 10)
+                    if new_count >= 10:
+                        try:
+                            from app.services.conversation_compactor import compact_conversation
+                            await compact_conversation(lead_id, tenant_id, db, mode="rolling")
+                        except Exception as compact_err:
+                            logger.error(f"Compaction failed for lead {lead_id}: {compact_err}")
+
+                    # Only trigger AI reply for text messages (not media)
+                    if msg_type in ("text", "button", "interactive") and body:
+                        try:
+                            from app.services.context_builder import build_scorer_context
+                            context_block = build_scorer_context(lead_id, db)
+                            from app.services.ai_reply import generate_reply
+                            await generate_reply(lead_id=lead_id, message=body, phone=phone, context_block=context_block)
+                        except Exception as e:
+                            logger.error(f"Reply routing failed for lead {lead_id}: {e}")
+
+                # Handle message status updates (delivered, read, failed)
+                for status_update in value.get("statuses", []):
+                    message_id = status_update.get("id")
+                    status = status_update.get("status")
+
+                    if message_id and status in ("delivered", "read", "failed"):
+                        try:
+                            update_payload: dict = {"delivery_status": status}
+                            # Capture Meta error code + title on failed status — surfaced in failed CSV
+                            if status == "failed":
+                                errs = status_update.get("errors") or []
+                                if errs:
+                                    first = errs[0] or {}
+                                    err_code = first.get("code")
+                                    err_title = first.get("title") or first.get("message")
+                                    if err_code is not None:
+                                        update_payload["delivery_error_code"] = err_code
+                                    if err_title:
+                                        update_payload["delivery_error_title"] = err_title[:200]
+                                    logger.warning(
+                                        f"Meta delivery failure msg={message_id} code={err_code} title={err_title!r}"
+                                    )
                             try:
-                                from app.services.context_builder import build_scorer_context
-                                context_block = build_scorer_context(lead_id, db)
-                                from app.services.ai_reply import generate_reply
-                                await generate_reply(lead_id=lead_id, message=body, phone=phone, context_block=context_block)
-                            except Exception as e:
-                                logger.error(f"Reply routing failed for lead {lead_id}: {e}")
-
-                    # Handle message status updates (delivered, read, failed)
-                    for status_update in value.get("statuses", []):
-                        message_id = status_update.get("id")
-                        status = status_update.get("status")
-
-                        if message_id and status in ("delivered", "read", "failed"):
-                            try:
-                                update_payload: dict = {"delivery_status": status}
-                                # Capture Meta error code + title on failed status — surfaced in failed CSV
-                                if status == "failed":
-                                    errs = status_update.get("errors") or []
-                                    if errs:
-                                        first = errs[0] or {}
-                                        err_code = first.get("code")
-                                        err_title = first.get("title") or first.get("message")
-                                        if err_code is not None:
-                                            update_payload["delivery_error_code"] = err_code
-                                        if err_title:
-                                            update_payload["delivery_error_title"] = err_title[:200]
-                                        logger.warning(
-                                            f"Meta delivery failure msg={message_id} code={err_code} title={err_title!r}"
-                                        )
-                                try:
+                                updated = db.table("messages") \
+                                    .update(update_payload) \
+                                    .eq("meta_message_id", message_id) \
+                                    .eq("tenant_id", tenant_id) \
+                                    .execute()
+                            except Exception as col_err:
+                                # Migration 061 may not be applied yet — retry without error columns
+                                if "delivery_error_code" in str(col_err) or "delivery_error_title" in str(col_err):
+                                    logger.warning(f"Migration 061 not applied — saving status only: {col_err}")
                                     updated = db.table("messages") \
-                                        .update(update_payload) \
+                                        .update({"delivery_status": status}) \
                                         .eq("meta_message_id", message_id) \
                                         .eq("tenant_id", tenant_id) \
                                         .execute()
-                                except Exception as col_err:
-                                    # Migration 061 may not be applied yet — retry without error columns
-                                    if "delivery_error_code" in str(col_err) or "delivery_error_title" in str(col_err):
-                                        logger.warning(f"Migration 061 not applied — saving status only: {col_err}")
-                                        updated = db.table("messages") \
-                                            .update({"delivery_status": status}) \
+                                else:
+                                    raise
+                            logger.info(f"Message {message_id} status updated to {status}")
+                            # Mark lead as undeliverable so it's hidden from active views
+                            # Also flip broadcast_recipients row so failed leads are excluded
+                            # from Segment CSVs, scoring, and all dashboard analytics.
+                            if status == "failed" and updated.data:
+                                failed_lead_id = updated.data[0].get("lead_id")
+                                if failed_lead_id:
+                                    db.table("leads").update({"whatsapp_undeliverable": True}) \
+                                        .eq("id", failed_lead_id).eq("tenant_id", tenant_id).execute()
+                                    try:
+                                        db.table("broadcast_recipients") \
+                                            .update({"send_status": "delivery_failed"}) \
                                             .eq("meta_message_id", message_id) \
                                             .eq("tenant_id", tenant_id) \
                                             .execute()
-                                    else:
-                                        raise
-                                logger.info(f"Message {message_id} status updated to {status}")
-                                # Mark lead as undeliverable so it's hidden from active views
-                                # Also flip broadcast_recipients row so failed leads are excluded
-                                # from Segment CSVs, scoring, and all dashboard analytics.
-                                if status == "failed" and updated.data:
-                                    failed_lead_id = updated.data[0].get("lead_id")
-                                    if failed_lead_id:
-                                        db.table("leads").update({"whatsapp_undeliverable": True}) \
-                                            .eq("id", failed_lead_id).eq("tenant_id", tenant_id).execute()
-                                        try:
-                                            db.table("broadcast_recipients") \
-                                                .update({"send_status": "delivery_failed"}) \
-                                                .eq("meta_message_id", message_id) \
-                                                .eq("tenant_id", tenant_id) \
-                                                .execute()
-                                        except Exception as _br_err:
-                                            logger.warning(f"broadcast_recipients delivery_failed update failed: {_br_err}")
-                                # Bot Flow Builder per-node analytics: bump node delivered_count once
-                                if status == "delivered" and updated.data:
-                                    step_id = updated.data[0].get("automation_step_id")
-                                    if step_id:
-                                        try:
-                                            db.rpc("bump_automation_step_counter", {
-                                                "p_step_id": step_id,
-                                                "p_field": "delivered_count",
-                                                "p_delta": 1,
-                                            }).execute()
-                                        except Exception as e:
-                                            logger.warning(f"Failed to bump delivered_count for step {step_id}: {e}")
-                            except Exception as e:
-                                logger.error(f"Failed to update message {message_id} status to {status}: {e}")
+                                    except Exception as _br_err:
+                                        logger.warning(f"broadcast_recipients delivery_failed update failed: {_br_err}")
+                            # Bot Flow Builder per-node analytics: bump node delivered_count once
+                            if status == "delivered" and updated.data:
+                                step_id = updated.data[0].get("automation_step_id")
+                                if step_id:
+                                    try:
+                                        db.rpc("bump_automation_step_counter", {
+                                            "p_step_id": step_id,
+                                            "p_field": "delivered_count",
+                                            "p_delta": 1,
+                                        }).execute()
+                                    except Exception as e:
+                                        logger.warning(f"Failed to bump delivered_count for step {step_id}: {e}")
+                        except Exception as e:
+                            logger.error(f"Failed to update message {message_id} status to {status}: {e}")
 
-        return {"status": "ok"}
-
-    if not From or not Body or not MessageSid:
-        return Response(content='<?xml version="1.0" encoding="UTF-8"?><Response></Response>', media_type="text/xml")
-
-    phone = From.replace("whatsapp:", "").strip().replace(" ", "")
-    if phone and not phone.startswith("+"):
-        phone = "+" + phone
-    to_number = (To or "").replace("whatsapp:", "").strip()
-    db = get_supabase()
-    tenant_id = _get_tenant_id_for_twilio_number(to_number, db) if to_number else None
-    if not tenant_id:
-        logger.warning(f"No tenant for Twilio number={to_number}, using default")
-        tenant_id = "00000000-0000-0000-0000-000000000001"
-    logger.info(f"Inbound WhatsApp from {phone}: {Body!r}")
-
-    # Upsert lead
-    existing = db.table("leads").select("id,score,segment").eq("phone", phone).eq("tenant_id", tenant_id).is_("deleted_at", "null").limit(1).execute()
-    if existing.data:
-        lead_id = existing.data[0]["id"]
-    else:
-        new_lead = db.table("leads").insert({
-            "phone": phone,
-            "source": "whatsapp",
-            "score": 5,
-            "segment": "C",
-            "tenant_id": tenant_id,
-        }).execute()
-        lead_id = new_lead.data[0]["id"]
-        record_stage_event(
-            lead_id,
-            to_segment="C",
-            event_type="created",
-            metadata={"source": "whatsapp"},
-            tenant_id=tenant_id,
-            db=db,
-        )
-
-    # Check if this is the first inbound message
-    _is_first = (
-        db.table("messages")
-        .select("id")
-        .eq("lead_id", lead_id)
-        .eq("direction", "inbound")
-        .limit(1)
-        .execute()
-    )
-    is_first_message = not bool(_is_first.data)
-
-    # Context-dependent opt-out: hard opt-out only for first-time senders
-    if Body and _is_opt_out(Body):
-        if is_first_message:
-            # Hard opt-out for first-time senders
-            await _handle_opt_out(phone, tenant_id, db)
-            return Response(content='<?xml version="1.0" encoding="UTF-8"?><Response></Response>', media_type="text/xml")
-        # else: let it flow through normal pipeline for engaged users
-        # Scoring engine will handle it as rejection (segment D, low engagement)
-
-    # Store inbound message
-    db.table("messages").insert({
-        "lead_id": lead_id,
-        "direction": "inbound",
-        "channel": "whatsapp",
-        "content": Body,
-        "is_ai_generated": False,
-        "twilio_message_sid": MessageSid,
-        "tenant_id": tenant_id,
-    }).execute()
-
-    # Trigger AI reply (non-blocking, best-effort)
-    try:
-        from app.services.ai_reply import generate_reply
-        await generate_reply(lead_id=lead_id, message=Body, phone=phone)
-    except Exception as e:
-        logger.error(f"AI reply failed for lead {lead_id}: {e}")
-
-    # Return empty TwiML so Twilio doesn't retry
-    twiml = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
-    return Response(content=twiml, media_type="text/xml")
+    return {"status": "ok"}

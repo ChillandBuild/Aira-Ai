@@ -52,7 +52,6 @@ class MessageBase(BaseModel):
     direction: DirectionType
     channel: str = "whatsapp"
     is_ai_generated: bool = False
-    twilio_message_sid: Optional[str] = None
 
 class MessageCreate(MessageBase):
     lead_id: UUID
@@ -80,15 +79,6 @@ class Conversation(ConversationBase):
     closed_at: Optional[datetime] = None
     model_config = {"from_attributes": True}
 
-
-# --- Twilio Webhook payload ---
-class TwilioWebhookPayload(BaseModel):
-    From: str          # e.g. "whatsapp:+919876543210"
-    To: str            # e.g. "whatsapp:+14155238886"
-    Body: str          # Message text
-    MessageSid: str
-    NumMedia: str = "0"
-    model_config = {"extra": "allow"}  # Twilio sends many extra fields
 
 # --- API Response wrappers ---
 class SuccessResponse(BaseModel):
