@@ -53,6 +53,8 @@ async def _handle_opt_out(phone: str, tenant_id: str, db) -> bool:
 
 
 async def _record_per_broadcast_opt_out(lead_id: str, phone: str, tenant_id: str, db) -> None:
+    recipient_row: dict | None = None
+    tag_id: str | None = None
     try:
         recent = (
             db.table("broadcast_recipients")
@@ -65,16 +67,29 @@ async def _record_per_broadcast_opt_out(lead_id: str, phone: str, tenant_id: str
             .execute()
         )
         recipient_row = (recent.data or [None])[0] if recent.data else None
-        if recipient_row:
+        tag_id = recipient_row.get("tag_id") if recipient_row else None
+    except Exception as e:
+        logger.error(f"Per-broadcast opt-out: recipient lookup failed for {phone}: {e}")
+
+    if recipient_row:
+        try:
             db.table("broadcast_recipients").update({
                 "send_status": "opted_out_skip",
                 "opted_out_at": datetime.now(timezone.utc).isoformat(),
                 "fail_reason": "opted_out",
             }).eq("id", recipient_row["id"]).eq("tenant_id", tenant_id).execute()
-            tag_id = recipient_row.get("tag_id")
-        else:
-            tag_id = None
+        except Exception as e:
+            logger.warning(f"Per-broadcast opt-out: opted_out_at update failed (migration 085?): {e}")
+            try:
+                db.table("broadcast_recipients").update({
+                    "send_status": "opted_out_skip",
+                    "fail_reason": "opted_out",
+                }).eq("id", recipient_row["id"]).eq("tenant_id", tenant_id).execute()
+                logger.info(f"Per-broadcast opt-out: fell back to send_status-only update for {phone}")
+            except Exception as e2:
+                logger.error(f"Per-broadcast opt-out: send_status update also failed for {phone}: {e2}")
 
+    try:
         if tag_id:
             db.table("lead_tag_opt_outs").upsert({
                 "tenant_id": tenant_id,
@@ -103,13 +118,18 @@ async def _record_per_broadcast_opt_out(lead_id: str, phone: str, tenant_id: str
                 }).execute()
             except Exception:
                 pass
+    except Exception as e:
+        logger.warning(f"Per-broadcast opt-out: lead_tag_opt_outs insert failed (table missing?): {e}")
 
+    try:
         db.table("leads").update({
             "opted_out": True,
             "opted_out_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
     except Exception as e:
-        logger.error(f"Failed to record per-broadcast opt-out for {phone}: {e}")
+        logger.error(f"Per-broadcast opt-out: leads.opted_out update failed for {phone}: {e}")
+
+    logger.info(f"Per-broadcast opt-out recorded for {phone} (broadcast_recipient={recipient_row is not None}, tag_id={tag_id})")
 
 
 def _has_prior_inbound_in_broadcast(lead_id: str, broadcast_sent_at: str | None, tenant_id: str, db, exclude_msg_id: str) -> bool:

@@ -308,6 +308,7 @@ class BulkSendRequest(BaseModel):
 
 class RiskAuditRequest(BaseModel):
     leads: list[BulkLeadItem]
+    tag_id: Optional[str] = None
 
 
 @router.post("/parse")
@@ -1227,6 +1228,10 @@ def _classify_broadcast_outcomes(
                 "fail_reason": fail_reason or "",
                 "opted_out_at": opted_out_at or "",
             })
+
+    if failures:
+        sample = [{"reason": f["reason"], "fail_reason": f["fail_reason"]} for f in failures[:3]]
+        logger.info(f"Classifier for broadcast {broadcast_id}: {len(failures)} failures — sample: {sample}")
 
     return {
         "found": True,

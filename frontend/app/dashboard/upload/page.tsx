@@ -753,7 +753,7 @@ export default function UploadPage() {
       const res = await fetch(`${API_URL}/api/v1/upload/risk-audit`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...auth },
-        body: JSON.stringify({ leads }),
+        body: JSON.stringify({ leads, tag_id: selectedTag || undefined }),
       });
       if (res.ok) setRiskSummary(await res.json());
     } catch {
