@@ -430,7 +430,6 @@ export default function UploadPage() {
   const [riskLoading, setRiskLoading] = useState(false);
   const [excludeNegativeReplies, setExcludeNegativeReplies] = useState(false);
   const [includeOptedOut, setIncludeOptedOut] = useState(false);
-  const [unflagging, setUnflagging] = useState(false);
 
   // Tags management state
   const [tagsList, setTagsList] = useState<BroadcastTag[]>([]);
@@ -726,32 +725,6 @@ export default function UploadPage() {
       await loadTags();
     } catch { toast.error("Failed to delete tag"); } finally {
       setDeletingTagId(null);
-    }
-  }
-
-  async function handleUnflagAll() {
-    if (!parsedData || !csvFile) return;
-    setUnflagging(true);
-    try {
-      const text = await csvFile.text();
-      const lines = text.split(/\r?\n/).filter(Boolean);
-      const headers = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
-      const mapping = parsedData.suggested_mapping;
-      const phoneIdx = mapping.phone ? headers.indexOf(mapping.phone) : -1;
-      const leads = lines.slice(1).map((line) => {
-        const cols = line.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
-        return { phone: phoneIdx >= 0 ? cols[phoneIdx] ?? "" : "", opt_in_source: optInSource, extra_cols: {} };
-      }).filter((l) => l.phone);
-      const auth = await getAuthHeaders();
-      await fetch(`${API_URL}/api/v1/upload/clear-negative-reply`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...auth },
-        body: JSON.stringify({ leads }),
-      });
-      toast.success("Leads un-flagged — they'll be included in future broadcasts");
-      await fetchRiskAudit();
-    } catch { toast.error("Failed to un-flag leads"); } finally {
-      setUnflagging(false);
     }
   }
 
@@ -1419,35 +1392,47 @@ export default function UploadPage() {
                     </div>
                   )}
                   {!riskLoading && riskSummary && (riskSummary.negative_reply_count > 0 || riskSummary.high_no_reply_count > 0 || riskSummary.opted_out_count > 0 || riskSummary.tag_opted_out_count > 0) && (
-                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
-                      <div className="flex items-center gap-2">
-                        <AlertTriangle size={15} className="text-amber-600 shrink-0" />
-                        <p className="font-label text-sm font-semibold text-amber-800">Audience Risk Summary</p>
+                    <div className="rounded-2xl border border-amber-300/80 bg-gradient-to-br from-amber-50 via-orange-50 to-white p-4 shadow-sm space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-2.5">
+                          <div className="w-7 h-7 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center shrink-0 mt-0.5">
+                            <AlertTriangle size={14} className="text-amber-700" />
+                          </div>
+                          <div>
+                            <p className="font-label text-sm font-semibold text-amber-900">Audience Risk Summary</p>
+                            <p className="font-body text-xs text-amber-700/90 mt-0.5">Review risky contacts before dispatching this broadcast.</p>
+                          </div>
+                        </div>
+                        <span className="px-2.5 py-1 rounded-full bg-white/80 border border-amber-200 text-[10px] font-label font-semibold uppercase tracking-wide text-amber-700">
+                          Pre-send Check
+                        </span>
                       </div>
-                      <div className="grid grid-cols-5 gap-2 text-center">
-                        <div className="p-2.5 bg-white rounded-lg border border-amber-100">
+
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-center">
+                        <div className="p-2.5 bg-white/95 rounded-xl border border-red-100">
                           <p className="font-display text-xl font-bold text-red-600">{riskSummary.negative_reply_count}</p>
                           <p className="font-label text-[9px] text-on-surface-muted uppercase font-bold mt-0.5">Said No</p>
                         </div>
-                        <div className="p-2.5 bg-white rounded-lg border border-amber-100">
+                        <div className="p-2.5 bg-white/95 rounded-xl border border-amber-100">
                           <p className="font-display text-xl font-bold text-amber-600">{riskSummary.high_no_reply_count}</p>
                           <p className="font-label text-[9px] text-on-surface-muted uppercase font-bold mt-0.5">Silent 2+</p>
                         </div>
-                        <div className="p-2.5 bg-white rounded-lg border border-amber-100">
-                          <p className="font-display text-xl font-bold text-gray-600">{riskSummary.opted_out_count}</p>
+                        <div className="p-2.5 bg-white/95 rounded-xl border border-slate-200">
+                          <p className="font-display text-xl font-bold text-slate-600">{riskSummary.opted_out_count}</p>
                           <p className="font-label text-[9px] text-on-surface-muted uppercase font-bold mt-0.5">Opted Out</p>
                         </div>
-                        <div className="p-2.5 bg-white rounded-lg border border-amber-100">
-                          <p className="font-display text-xl font-bold text-gray-600">{riskSummary.tag_opted_out_count}</p>
+                        <div className="p-2.5 bg-white/95 rounded-xl border border-slate-200">
+                          <p className="font-display text-xl font-bold text-slate-600">{riskSummary.tag_opted_out_count}</p>
                           <p className="font-label text-[9px] text-on-surface-muted uppercase font-bold mt-0.5">Tag Opt-Out</p>
                         </div>
-                        <div className="p-2.5 bg-white rounded-lg border border-amber-100">
+                        <div className="p-2.5 bg-white/95 rounded-xl border border-green-100">
                           <p className="font-display text-xl font-bold text-green-600">{riskSummary.safe_count}</p>
                           <p className="font-label text-[9px] text-on-surface-muted uppercase font-bold mt-0.5">Safe</p>
                         </div>
                       </div>
+
                       {riskSummary.negative_reply_count > 0 && (
-                        <div className="space-y-2">
+                        <div className="rounded-xl border border-amber-200 bg-white/80 p-3">
                           <label className="flex items-center gap-2.5 cursor-pointer select-none">
                             <input
                               type="checkbox"
@@ -1455,22 +1440,16 @@ export default function UploadPage() {
                               onChange={(e) => setExcludeNegativeReplies(e.target.checked)}
                               className="w-4 h-4 rounded border-amber-300 text-amber-600 accent-amber-600"
                             />
-                            <span className="font-body text-sm text-amber-800">
+                            <span className="font-body text-sm text-amber-900">
                               Exclude {riskSummary.negative_reply_count} lead{riskSummary.negative_reply_count !== 1 ? "s" : ""} who previously said no
                             </span>
                           </label>
-                          <button
-                            onClick={handleUnflagAll}
-                            disabled={unflagging}
-                            className="text-xs px-3 py-1.5 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50 font-label font-semibold"
-                          >
-                            {unflagging ? "Un-flagging…" : "Un-flag all — give them another chance"}
-                          </button>
                         </div>
                       )}
+
                       {(riskSummary.total_opted_out_count ?? riskSummary.tag_opted_out_count ?? 0) > 0 && (
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 text-amber-800 font-body text-sm">
+                        <div className="rounded-xl border border-orange-200 bg-orange-50/70 p-3 space-y-2">
+                          <div className="flex items-center gap-2 text-orange-900 font-body text-sm">
                             <AlertTriangle size={14} className="shrink-0" />
                             {(() => {
                               const n = riskSummary.total_opted_out_count ?? riskSummary.tag_opted_out_count ?? 0;
@@ -1485,9 +1464,9 @@ export default function UploadPage() {
                               type="checkbox"
                               checked={includeOptedOut}
                               onChange={(e) => setIncludeOptedOut(e.target.checked)}
-                              className="w-4 h-4 rounded border-amber-300 text-amber-600 accent-amber-600"
+                              className="w-4 h-4 rounded border-orange-300 text-orange-600 accent-orange-600"
                             />
-                            <span className="font-body text-sm text-amber-800">
+                            <span className="font-body text-sm text-orange-900">
                               {(() => {
                                 const n = riskSummary.total_opted_out_count ?? riskSummary.tag_opted_out_count ?? 0;
                                 return `Send to opted-out contact${n !== 1 ? "s" : ""} anyway`;

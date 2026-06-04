@@ -764,7 +764,6 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
 
         if phone in all_opted_out_phones and not body.include_opted_out:
             opted_out_skipped += 1
-            failed += 1
             row = {
                 "tenant_id": tenant_id,
                 "broadcast_id": broadcast_id,
@@ -1218,9 +1217,14 @@ def _classify_broadcast_outcomes(
             fail_reason = r.get("fail_reason") or "opted_out"
             opted_out_at = r.get("opted_out_at")
         elif send_status == "opted_out_skip":
-            reason = "not_interested"
-            fail_reason = r.get("fail_reason") or "opted_out"
-            opted_out_at = opted_out_map.get(lead_id)
+            row_fail_reason = r.get("fail_reason") or "opted_out"
+            if row_fail_reason == "negative_reply_excluded":
+                reason = "failed"
+                fail_reason = row_fail_reason
+            else:
+                reason = "not_interested"
+                fail_reason = row_fail_reason
+                opted_out_at = opted_out_map.get(lead_id)
         elif lead_id and lead_id in opted_out_map and r.get("created_at") and opted_out_map[lead_id]:
             # Rule 8 (fallback): lead opted out AFTER this broadcast was sent, but the
             # webhook's broadcast_recipients update didn't persist (e.g., the migration-085
@@ -1241,7 +1245,7 @@ def _classify_broadcast_outcomes(
         # (Rule 2) and send-time skip (Rule 3) cover all opt-out cases; reading the
         # global leads.opted_out flag here caused cross-broadcast contamination when
         # a prior broadcast's opt-out leaked into a later broadcast's CSV.
-        else:
+        if reason is None:
             delivery = msg_status_by_lead.get(lead_id) if lead_id else None
             if delivery == "failed":
                 reason = "failed"
@@ -1289,7 +1293,7 @@ def _classify_broadcast_outcomes(
 
     if failures:
         sample = [{"reason": f["reason"], "fail_reason": f["fail_reason"]} for f in failures[:3]]
-        logger.info(f"Classifier for broadcast {broadcast_id}: {len(failures)} failures — sample: {sample}")
+        logger.info(f"Classifier for broadcast {broadcast_id}: {len(failures)} non-sent outcomes — sample: {sample}")
 
     return {
         "found": True,
@@ -1303,7 +1307,7 @@ async def get_failed_csv(
     broadcast_id: str = Query(..., description="Broadcast UUID to generate failed CSV for"),
     tenant_id: str = Depends(get_tenant_id),
 ):
-    """Generate a CSV of all failed/unreached/opted-out contacts for a broadcast."""
+    """Generate a CSV of failed contacts for a broadcast."""
     db = get_supabase()
 
     # Look up broadcast timestamp from history for time-window queries / fallback
@@ -1362,30 +1366,33 @@ async def get_failed_csv(
                     lead_ids_fb = [r["lead_id"] for r in failed_msgs.data if r.get("lead_id")]
                     leads_fb = db.table("leads").select("id,phone,name").in_("id", lead_ids_fb).eq("tenant_id", tenant_id).execute()
                     output = io.StringIO()
-                    writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "fail_reason", "opted_out_at", "broadcast_id", "broadcast_timestamp"])
+                    writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "fail_reason", "broadcast_id", "broadcast_timestamp"])
                     writer.writeheader()
                     for lead in (leads_fb.data or []):
-                        writer.writerow({"phone": lead.get("phone", ""), "name": lead.get("name", ""), "reason": "failed", "fail_reason": "delivery_failed", "opted_out_at": "", "broadcast_id": broadcast_id, "broadcast_timestamp": broadcast_ts})
+                        writer.writerow({"phone": lead.get("phone", ""), "name": lead.get("name", ""), "reason": "failed", "fail_reason": "delivery_failed", "broadcast_id": broadcast_id, "broadcast_timestamp": broadcast_ts})
                     return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=failed_{broadcast_id[:8]}.csv"})
         except Exception as e:
             logger.warning(f"Fallback failed-csv lookup failed: {e}")
         # Return empty CSV instead of 404 JSON
         output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "fail_reason", "opted_out_at", "broadcast_id", "broadcast_timestamp"])
+        writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "fail_reason", "broadcast_id", "broadcast_timestamp"])
         writer.writeheader()
         return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=failed_{broadcast_id[:8]}.csv"})
 
     output = io.StringIO()
     writer = csv.DictWriter(
         output,
-        fieldnames=["phone", "name", "reason", "fail_reason", "opted_out_at", "broadcast_id", "broadcast_timestamp"],
+        fieldnames=["phone", "name", "reason", "fail_reason", "broadcast_id", "broadcast_timestamp"],
     )
     writer.writeheader()
     for row in outcome["failures"]:
         if row.get("reason") == "not_interested":
             continue
         writer.writerow({
-            **row,
+            "phone": row.get("phone", ""),
+            "name": row.get("name", ""),
+            "reason": row.get("reason", "failed"),
+            "fail_reason": row.get("fail_reason", ""),
             "broadcast_id": broadcast_id,
             "broadcast_timestamp": broadcast_timestamp,
         })
@@ -2175,7 +2182,7 @@ async def download_broadcast_tag_csv(
     segment: str = Query("", description="Filter by segment: A=hot, B=warm, C=cold, D=disqualified, empty=all"),
     tenant_id: str = Depends(get_tenant_id),
 ):
-    """Per-broadcast interest CSV: every recipient with their broadcast segment as HOT/WARM/COLD."""
+    """Per-broadcast segment CSV. OPTED_OUT exports a dedicated opted-out sheet."""
     db = get_supabase()
 
     recipients_resp = (
@@ -2204,6 +2211,46 @@ async def download_broadcast_tag_csv(
             broadcast_sent_at = min(r["created_at"] for r in recipients if r.get("created_at"))
         except Exception:
             pass
+
+    seg_filter = segment.upper() if segment else ""
+
+    if seg_filter == "OPTED_OUT":
+        output = io.StringIO()
+        writer = csv.DictWriter(
+            output,
+            fieldnames=["Name", "Phone", "Template", "From Broadcast ID", "Reason", "Opted Out At"],
+        )
+        writer.writeheader()
+
+        classify_ts = broadcast_sent_at or datetime.now(timezone.utc).isoformat()
+        outcome = _classify_broadcast_outcomes(db, tenant_id, broadcast_id, classify_ts)
+        for row in (outcome.get("failures") or []):
+            if row.get("reason") != "not_interested":
+                continue
+            writer.writerow({
+                "Name": row.get("name", ""),
+                "Phone": row.get("phone", ""),
+                "Template": template_name,
+                "From Broadcast ID": broadcast_id,
+                "Reason": row.get("fail_reason") or "opted_out",
+                "Opted Out At": row.get("opted_out_at") or "",
+            })
+
+        tag_name = "untagged"
+        if tag_id:
+            try:
+                tag_row = db.table("broadcast_tags").select("name").eq("id", tag_id).eq("tenant_id", tenant_id).maybe_single().execute()
+                if tag_row and tag_row.data:
+                    tag_name = tag_row.data.get("name", "tag")
+            except Exception:
+                pass
+
+        safe_tag = tag_name.replace(" ", "_").lower()
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=broadcast_{broadcast_id[:8]}_{safe_tag}_opted_out.csv"},
+        )
 
     # Exclude leads whose broadcast message delivery failed (delivery webhook wrote status=failed)
     delivery_failed_ids: set[str] = set()
@@ -2241,19 +2288,8 @@ async def download_broadcast_tag_csv(
 
     lead_ids = list({r["lead_id"] for r in recipients if r.get("lead_id")})
 
-    seg_filter = segment.upper() if segment else ""
-
-    # For opted_out filter: look up which leads from this broadcast have opted out
-    opted_out_ids: set[str] = set()
-    if seg_filter == "OPTED_OUT" and lead_ids:
-        try:
-            oo_resp = db.table("leads").select("id").in_("id", lead_ids).eq("opted_out", True).eq("tenant_id", tenant_id).execute()
-            opted_out_ids = {r["id"] for r in (oo_resp.data or [])}
-        except Exception:
-            pass
-
     segment_map: dict[str, str] = {}
-    if lead_ids and seg_filter != "OPTED_OUT":
+    if lead_ids:
         bls_resp = (
             db.table("broadcast_lead_scores")
             .select("lead_id,segment")
@@ -2277,22 +2313,17 @@ async def download_broadcast_tag_csv(
         seen.add(lead_id)
         if lead_id in delivery_failed_ids:
             continue
-        if seg_filter == "OPTED_OUT":
-            if lead_id not in opted_out_ids:
+        seg = segment_map.get(lead_id, "C")
+        hot, warm, cold = _segment_to_flags(seg)
+        if seg_filter:
+            if seg_filter == "A" and hot != 1:
                 continue
-            hot, warm, cold = 0, 0, 0
-        else:
-            seg = segment_map.get(lead_id, "C")
-            hot, warm, cold = _segment_to_flags(seg)
-            if seg_filter:
-                if seg_filter == "A" and hot != 1:
-                    continue
-                if seg_filter == "B" and warm != 1:
-                    continue
-                if seg_filter == "C" and cold != 1:
-                    continue
-                if seg_filter == "D" and (hot != 0 or warm != 0 or cold != 0):
-                    continue
+            if seg_filter == "B" and warm != 1:
+                continue
+            if seg_filter == "C" and cold != 1:
+                continue
+            if seg_filter == "D" and (hot != 0 or warm != 0 or cold != 0):
+                continue
         writer.writerow({
             "Name": r.get("name") or "",
             "Phone": r.get("phone") or "",
