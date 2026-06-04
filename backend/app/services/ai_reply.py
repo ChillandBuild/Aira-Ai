@@ -12,6 +12,7 @@ from app.services.assignment import (
     auto_assign_lead,
     get_inbox_config,
     get_telecalling_config,
+    should_escalate_hot_lead,
     should_escalate_to_inbox,
     should_assign_to_telecalling,
 )
@@ -713,7 +714,6 @@ async def generate_reply(
                     logger.warning(f"Payment link failed for lead {lead_id}: {_pe}")
             elif _post_action == "notify_telecaller":
                 try:
-                    from app.services.assignment import get_inbox_config, should_escalate_hot_lead
                     _inbox = get_inbox_config(tenant_id)
                     if should_escalate_hot_lead(_inbox, new_segment, channel):
                         _trigger_chat_escalation(
@@ -811,7 +811,6 @@ async def generate_reply(
             # + hot_lead_alerts path. Single gate: inbox_cfg.enabled + segment match
             # + channel match. Fires once per segment transition, respecting the
             # tenant's per-segment scoring thresholds (A/B/C/D).
-            from app.services.assignment import should_escalate_hot_lead, should_assign_to_telecalling
             if should_escalate_hot_lead(inbox_cfg, new_segment, channel):
                 try:
                     _trigger_chat_escalation(
