@@ -287,6 +287,11 @@ async def whatsapp_webhook(
                         if body:
                             from app.services.booking_flow import route_booking_intent
                             if await route_booking_intent(lead_id, tenant_id, phone, body, db):
+                                try:
+                                    from app.services.scoring_engine import compute_score as _bk_score
+                                    await _bk_score(message=body, lead_id=str(lead_id), db=db, tenant_id=tenant_id)
+                                except Exception as _bk_se:
+                                    logger.warning(f"Booking-flow scoring failed for lead {lead_id}: {_bk_se}")
                                 continue
 
                         if body:

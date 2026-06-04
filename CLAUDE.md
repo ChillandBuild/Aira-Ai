@@ -67,6 +67,12 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Broadcast history + fail reason tracking | ✅ Built — migration 058_broadcast_fail_reason |
 | Carousel templates (2–10 cards via Meta API) | ✅ Built — migration 060, dashboard/templates/carousel/ |
 | WABA onboarding (self-service) | ✅ Built — WABA ID + Phone Number ID configurable in Settings UI |
+| Score Engine v2 (composite scoring) | ✅ Built — arc + intent_delta + engagement_delta, migration 070, services/scoring_engine.py |
+| Broadcast tags (colored, CSV export) | ✅ Built — migration 072_broadcast_tags, dashboard/tags/ |
+| Per-broadcast lead scoring | ✅ Built — broadcast_lead_scores table, migration 076, context-aware arc |
+| AI auto-reply toggle (per-bot) | ✅ Built — app_settings.ai_auto_reply, Settings UI |
+| Broadcast negative reply + sentiment | ✅ Built — migrations 077–078, negative_reply + sentiment columns |
+| Caller daily digest | ✅ Built — migration 065, call_evaluator digest job |
 
 ## Hard Invariants — Never Break
 1. Lead score always integer 1–10
@@ -125,7 +131,7 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 |---|---|
 | WhatsApp, Meta API, provider layer, phone_numbers | backend/app/routes/webhook.py + services/meta_cloud.py + services/outbound_router.py |
 | Telecalling, TeleCMI, call logs, notes, briefing modal | backend/app/routes/calls.py + services/telecmi_client.py + services/call_summarizer.py |
-| Leads, scoring, segments, opt-in | backend/app/routes/leads.py + services/lead_scorer.py |
+| Leads, scoring, segments, opt-in | backend/app/routes/leads.py + services/scoring_engine.py (v2) + services/lead_scorer.py (legacy, AI-disabled path) |
 | Number pool, failover, Numbers page, Incidents page | backend/app/routes/numbers.py + services/failover.py + routes/incidents.py |
 | CSV upload, bulk send, scheduled/drip broadcasts | backend/app/routes/upload.py + services/broadcast_executor.py |
 | Bookings, booking flow, Razorpay payments | backend/app/services/booking_flow.py + routes/bookings.py |
@@ -142,7 +148,7 @@ InboxConfigPanel: escalation on/off, auto-assign, per-trigger (A–F), per-segme
 TelecallingConfigPanel: module on/off, auto-assign, per-segment assignment (A/B/C/D), channels.
 
 ## Known Tech Debt
-- RLS DISABLED on 18 tables — app-layer tenant filter is only guard
+- RLS DISABLED on 43 tables — app-layer tenant filter is only guard (Supabase advisory flagged 43)
 
 ## Key File Locations
 | File | Purpose |
@@ -162,10 +168,10 @@ TelecallingConfigPanel: module on/off, auto-assign, per-segment assignment (A/B/
 | backend/app/services/lead_scorer.py | Groq scoring (1–10) |
 | backend/app/services/telecmi_client.py | TeleCMI click-to-call |
 | backend/app/db/supabase.py | Supabase client singleton |
-| backend/supabase/migrations/ | All schema migrations 001–058 |
+| backend/supabase/migrations/ | All schema migrations 001–083 |
 | frontend/app/dashboard/ | All dashboard pages |
 
-## Migration Index (latest = 064)
+## Migration Index (latest = 083)
 | Migration | What |
 |---|---|
 | 051 | Telegram support — tg_user_id on leads |
@@ -182,8 +188,26 @@ TelecallingConfigPanel: module on/off, auto-assign, per-segment assignment (A/B/
 | 061_number_health_engagement | phone_number_quality_history + outbound_no_reply_count + template variations |
 | 062 | conversation_last_message RPC |
 | 064 | leads.pinned_at |
+| 065 | caller_digests — daily call evaluation digest per caller |
+| 066 | whatsapp_insights_snapshots — WA analytics snapshot table |
+| 067 | fix_conversation_leads_rpc — RPC correctness fix |
+| 068 | toggle_lead_pin_rpc — RPC for pinning/unpinning leads |
+| 069 | optimize_schema_indexes — index tuning for hot query paths |
+| 070_drop_faqs_table | Drop legacy FAQs table |
+| 070_score_engine_v2 | Score Engine v2 schema — arc_score columns, segment lock state |
+| 071 | lead_stage_events: score_updated event type |
+| 072_ad_campaigns_whatsapp_platform | ad_campaigns.platform filter for WhatsApp |
+| 072_broadcast_tags | broadcast_tags table — colored tags on broadcasts/leads |
+| 072_leads_collected_data | leads.collected_data JSONB — [COLLECT_DONE] output storage |
 | 073 | Bot Flow Builder — extend automations in place (block types, node counters, flow_kind, messages↔node link, bump_automation_step_counter RPC) |
 | 074 | automation_flow_runs — resumable run-state (replaces broken wait-resume; powers pause-on-reply) |
+| 075 | bot_flow_phase2_steps — Phase 2 block types (http_api, random, interactive) |
+| 076_botbiz_blocks | BotBiz block schema extensions |
+| 076_broadcast_lead_scores | broadcast_lead_scores table — per-broadcast scoring context |
+| 077 | broadcast_negative_reply — negative_reply flag on broadcast_recipients |
+| 078 | broadcast_reply_sentiment — sentiment column on broadcast replies |
+| 079 | fix_conversation_leads_outbound — RPC fix for outbound conversation leads |
+| 080 | conversation_leads_filter_failed_broadcasts — exclude failed broadcast leads from conversation list |
 | 081 | Drop WATI provider — tighten phone_numbers.provider check to 'meta_cloud' only, drop unused api_key column |
 | 082 | Generic booking config — drop GPH hardcode, event_name + ref_prefix + amount_paise moved to per-tenant app_settings |
 | 083 | Drop hot_lead_alerts table — score-threshold escalation now goes through chat_handovers gated by inbox_cfg.segments |

@@ -1966,7 +1966,7 @@ async def download_broadcast_tag_csv(
 
     recipients_resp = (
         db.table("broadcast_recipients")
-        .select("lead_id, phone, name")
+        .select("lead_id, phone, name, created_at")
         .eq("tenant_id", tenant_id)
         .eq("broadcast_id", broadcast_id)
         .eq("send_status", "sent")
@@ -1975,12 +1975,44 @@ async def download_broadcast_tag_csv(
     recipients = recipients_resp.data or []
 
     template_name = broadcast_id[:8]
+    broadcast_sent_at: str | None = None
     try:
-        sb_resp = db.table("scheduled_broadcasts").select("template_name").eq("id", broadcast_id).maybe_single().execute()
+        sb_resp = db.table("scheduled_broadcasts").select("template_name,created_at").eq("id", broadcast_id).maybe_single().execute()
         if sb_resp and sb_resp.data:
             template_name = sb_resp.data.get("template_name") or broadcast_id[:8]
+            broadcast_sent_at = sb_resp.data.get("created_at")
     except Exception:
         pass
+
+    # Derive broadcast window for delivery-failure check — fall back to earliest recipient timestamp
+    if not broadcast_sent_at and recipients:
+        try:
+            broadcast_sent_at = min(r["created_at"] for r in recipients if r.get("created_at"))
+        except Exception:
+            pass
+
+    # Exclude leads whose broadcast message delivery failed (delivery webhook wrote status=failed)
+    delivery_failed_ids: set[str] = set()
+    if broadcast_sent_at:
+        try:
+            _bcast_dt = datetime.fromisoformat(broadcast_sent_at.replace("Z", "+00:00"))
+            _window_start = (_bcast_dt - timedelta(minutes=2)).isoformat()
+            _window_end = (_bcast_dt + timedelta(minutes=10)).isoformat()
+            _lead_ids_sent = [r["lead_id"] for r in recipients if r.get("lead_id")]
+            if _lead_ids_sent:
+                _failed_msgs = (
+                    db.table("messages")
+                    .select("lead_id")
+                    .in_("lead_id", _lead_ids_sent)
+                    .eq("direction", "outbound")
+                    .eq("delivery_status", "failed")
+                    .gte("created_at", _window_start)
+                    .lte("created_at", _window_end)
+                    .execute()
+                )
+                delivery_failed_ids = {r["lead_id"] for r in (_failed_msgs.data or []) if r.get("lead_id")}
+        except Exception:
+            pass
 
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "Template", "From Broadcast ID", "HOT", "WARM", "COLD"])
@@ -2018,6 +2050,8 @@ async def download_broadcast_tag_csv(
         if lead_id in seen:
             continue
         seen.add(lead_id)
+        if lead_id in delivery_failed_ids:
+            continue
         segment = segment_map.get(lead_id, "C")
         hot, warm, cold = _segment_to_flags(segment)
         writer.writerow({

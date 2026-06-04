@@ -166,7 +166,7 @@ async def execute_broadcast(row: dict) -> dict:
                         params = [{"type": "text", "text": lead_name or "Customer"}]
                     components = [{"type": "body", "parameters": params}]
 
-                await send_template_message(
+                _send_resp = await send_template_message(
                     to_number=phone,
                     template_name=chosen_name,
                     lang_code=chosen_lang,
@@ -186,6 +186,11 @@ async def execute_broadcast(row: dict) -> dict:
                 })
 
                 if lead_id:
+                    _meta_msg_id: str | None = None
+                    try:
+                        _meta_msg_id = ((_send_resp or {}).get("messages") or [{}])[0].get("id")
+                    except Exception:
+                        pass
                     try:
                         db.table("messages").insert({
                             "lead_id": lead_id,
@@ -194,6 +199,7 @@ async def execute_broadcast(row: dict) -> dict:
                             "channel": "whatsapp",
                             "content": f"[Template: {chosen_name}]",
                             "is_ai_generated": False,
+                            "meta_message_id": _meta_msg_id,
                         }).execute()
                     except Exception:
                         pass
