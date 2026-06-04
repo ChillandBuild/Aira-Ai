@@ -12,12 +12,6 @@ Composite score = clamp(arc + intent_delta + engagement_delta, 1, 10)
 
 Segment lock: upgrade always immediate. Small drop (1 segment) needs 2 consecutive
 confirmations. Big drop (2+ segments) or rejection phrase: immediate.
-
-broadcast_context (optional):
-  When provided, the arc window is restricted to messages AFTER broadcast_sent_at,
-  giving each campaign its own fresh scoring slate. Score is written to both
-  broadcast_lead_scores (campaign-specific) and leads (global relationship health).
-  The tag-level lead_tag_interest row is updated as a roll-up.
 """
 
 import logging
@@ -261,18 +255,9 @@ async def compute_score(
     lead_id: str,
     db,
     tenant_id: str | None = None,
-    broadcast_context: dict | None = None,
 ) -> dict:
     """
     Main entry point. Computes composite score, persists to DB, returns breakdown.
-
-    broadcast_context (optional):
-        broadcast_id      — UUID of the scheduled_broadcasts row
-        broadcast_sent_at — ISO datetime; arc only looks at messages after this
-        tag_id            — UUID of broadcast_tags row (nullable)
-
-    Always writes to leads (global relationship health).
-    When broadcast_context provided: also writes to broadcast_lead_scores + lead_tag_interest.
 
     Returns:
         score, segment, arc_score, intent_delta, engagement_delta,
@@ -298,40 +283,11 @@ async def compute_score(
     global_drop      = data.get("segment_drop_count") or 0
     global_arc_count = (data.get("arc_message_count") or 0) + 1
 
-    # ── 2. Load broadcast state when context present ───────────────────────────
-    bcast_arc       = 5
-    bcast_segment   = "C"
-    bcast_drop      = 0
-    bcast_arc_count = 1
-    bcast_last_inbound: datetime | None = None
-
-    if broadcast_context:
-        bid = broadcast_context["broadcast_id"]
-        try:
-            bls_row = (
-                db.table("broadcast_lead_scores")
-                .select("score,segment,arc_score,arc_message_count,last_inbound_at,segment_drop_count")
-                .eq("broadcast_id", bid)
-                .eq("lead_id", str(lead_id))
-                .limit(1)
-                .execute()
-            )
-            bls = (bls_row.data[0] if bls_row and bls_row.data else {})
-        except Exception as _bls_err:
-            logger.warning(f"broadcast_lead_scores load failed for lead {lead_id}: {_bls_err}")
-            bls = {}
-        bcast_arc       = bls.get("arc_score") or 5
-        bcast_segment   = bls.get("segment") or "C"
-        bcast_drop      = bls.get("segment_drop_count") or 0
-        bcast_arc_count = (bls.get("arc_message_count") or 0) + 1
-        bcast_last_inbound = _parse_dt(bls.get("last_inbound_at"))
-
-    # Use broadcast state for arc/engagement when context present; global otherwise
-    current_arc   = bcast_arc   if broadcast_context else global_arc
-    current_seg   = bcast_segment if broadcast_context else global_segment
-    current_drop  = bcast_drop  if broadcast_context else global_drop
-    arc_msg_count = bcast_arc_count if broadcast_context else global_arc_count
-    last_inbound_for_decay = bcast_last_inbound if broadcast_context else _parse_dt(data.get("last_inbound_at"))
+    current_arc   = global_arc
+    current_seg   = global_segment
+    current_drop  = global_drop
+    arc_msg_count = global_arc_count
+    last_inbound_for_decay = _parse_dt(data.get("last_inbound_at"))
 
     # ── 3. Flow state ──────────────────────────────────────────────────────────
     try:
@@ -361,17 +317,6 @@ async def compute_score(
         }
         db.table("leads").update(rejection_payload).eq("id", str(lead_id)).execute()
 
-        if broadcast_context:
-            bid = broadcast_context["broadcast_id"]
-            db.table("broadcast_lead_scores").update({
-                "score": 1, "arc_score": 1, "segment": "D",
-                "arc_message_count": 0, "segment_drop_count": 0,
-                "last_inbound_at": now_iso, "updated_at": now_iso,
-            }).eq("broadcast_id", bid).eq("lead_id", str(lead_id)).execute()
-
-            _update_recipient_sentiment(db, bid, lead_id, "negative")
-            _rollup_tag_interest(db, lead_id, broadcast_context, 1, "D", now_iso, tenant_id)
-
         logger.info(f"Lead {lead_id} rejection detected — immediate D")
         return {
             "score": 1, "segment": "D", "arc_score": 1,
@@ -394,10 +339,6 @@ async def compute_score(
                 .order("created_at", desc=True)
                 .limit(10)
             )
-            # Restrict arc window to messages after broadcast_sent_at
-            if broadcast_context and broadcast_context.get("broadcast_sent_at"):
-                msg_query = msg_query.gte("created_at", broadcast_context["broadcast_sent_at"])
-
             msgs = (msg_query.execute().data or [])
             lines = []
             for m in reversed(msgs):
@@ -411,7 +352,7 @@ async def compute_score(
 
         current_arc = await _score_arc(conversation, tenant_id, fallback=current_arc)
         arc_updated = True
-        arc_msg_count = 0
+        arc_msg_count = 1  # reset to 1 so next call gets count=2, not 1 (which would re-trigger immediately)
 
     # ── 8. Composite final score ───────────────────────────────────────────────
     final_score = max(1, min(10, current_arc + intent_delta + engagement_delta))
@@ -434,40 +375,16 @@ async def compute_score(
         "score_arc": current_arc,
         "score_intent_delta": intent_delta,
         "score_engagement_delta": engagement_delta,
-        "arc_message_count": global_arc_count if not arc_updated else 0,
+        "arc_message_count": global_arc_count if not arc_updated else 1,
         "segment": final_segment,
         "segment_drop_count": new_drop_count,
         "last_inbound_at": now_iso,
     }).eq("id", str(lead_id)).execute()
 
-    # ── 11. Persist broadcast + roll-up ───────────────────────────────────────
-    if broadcast_context:
-        bid = broadcast_context["broadcast_id"]
-        try:
-            db.table("broadcast_lead_scores").upsert({
-                "broadcast_id": bid,
-                "lead_id": str(lead_id),
-                "tenant_id": tenant_id or "",
-                "score": final_score,
-                "arc_score": current_arc,
-                "segment": final_segment,
-                "arc_message_count": arc_msg_count,
-                "segment_drop_count": new_drop_count,
-                "last_inbound_at": now_iso,
-                "updated_at": now_iso,
-            }, on_conflict="broadcast_id,lead_id").execute()
-        except Exception as _bls_upsert_err:
-            logger.warning(f"broadcast_lead_scores upsert failed for lead {lead_id}: {_bls_upsert_err}")
-
-        _sentiment = "positive" if intent_delta > 0 else ("negative" if intent_delta < 0 else "neutral")
-        _update_recipient_sentiment(db, bid, lead_id, _sentiment)
-        _rollup_tag_interest(db, lead_id, broadcast_context, final_score, final_segment, now_iso, tenant_id)
-
     logger.info(
         f"Lead {lead_id} scored: arc={current_arc} intent={intent_delta:+d} "
         f"eng={engagement_delta:+d} → {final_score} ({final_segment}) "
-        f"[arc_updated={arc_updated}, reason={intent_reason}, "
-        f"broadcast={'yes' if broadcast_context else 'no'}]"
+        f"[arc_updated={arc_updated}, reason={intent_reason}]"
     )
 
     return {
@@ -599,3 +516,156 @@ async def apply_engagement_decay_all(db, tenant_id: str | None = None) -> int:
 
     logger.info(f"Engagement decay applied to {updated} leads")
     return updated
+
+
+async def compute_broadcast_score(
+    message: str,
+    lead_id: str,
+    broadcast_id: str,
+    db,
+    tenant_id: str | None = None,
+) -> dict:
+    """
+    Per-broadcast scoring slate for campaign analytics.
+
+    Reads/writes broadcast_lead_scores only. Does NOT touch leads table.
+    Arc window restricted to messages after broadcast_sent_at so each
+    broadcast campaign is scored independently.
+
+    Returns empty dict if no seed row exists (lead not part of this broadcast).
+    """
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # ── 1. Load broadcast slate ────────────────────────────────────────────────
+    bls_row = (
+        db.table("broadcast_lead_scores")
+        .select("score,arc_score,arc_message_count,segment,segment_drop_count,"
+                "last_inbound_at,broadcast_sent_at,tag_id")
+        .eq("broadcast_id", broadcast_id)
+        .eq("lead_id", str(lead_id))
+        .limit(1)
+        .execute()
+    )
+    bls = bls_row.data[0] if bls_row.data else {}
+    if not bls:
+        return {}
+
+    current_arc       = bls.get("arc_score") or 5
+    current_seg       = bls.get("segment") or "C"
+    current_drop      = bls.get("segment_drop_count") or 0
+    arc_msg_count     = (bls.get("arc_message_count") or 0) + 1
+    broadcast_sent_at = bls.get("broadcast_sent_at")
+    last_inbound_at   = _parse_dt(bls.get("last_inbound_at"))
+    tag_id            = bls.get("tag_id")
+
+    # ── 2. Flow state ──────────────────────────────────────────────────────────
+    try:
+        state_row = (
+            db.table("lead_conversation_state")
+            .select("state")
+            .eq("lead_id", str(lead_id))
+            .limit(1)
+            .execute()
+        )
+        flow_state = state_row.data[0].get("state") if state_row.data else "idle"
+    except Exception:
+        flow_state = "idle"
+
+    # ── 3. Intent delta ────────────────────────────────────────────────────────
+    intent_delta, intent_reason = _compute_intent_delta(message, flow_state)
+    is_rejection = intent_delta == _REJECTION_SENTINEL
+
+    # ── 4. Rejection path ─────────────────────────────────────────────────────
+    if is_rejection:
+        db.table("broadcast_lead_scores").update({
+            "score": 1, "arc_score": 1, "arc_message_count": 0,
+            "segment": "D", "segment_drop_count": 0,
+            "last_inbound_at": now_iso,
+        }).eq("broadcast_id", broadcast_id).eq("lead_id", str(lead_id)).execute()
+        _update_recipient_sentiment(db, broadcast_id, lead_id, "negative")
+        logger.info(f"Lead {lead_id} broadcast {broadcast_id} rejection → D")
+        return {
+            "score": 1, "segment": "D", "arc_score": 1,
+            "intent_delta": -3, "engagement_delta": 0,
+            "intent_reason": "rejection", "arc_updated": True,
+        }
+
+    # ── 5. Engagement delta ────────────────────────────────────────────────────
+    engagement_delta = _compute_engagement_delta(last_inbound_at)
+
+    # ── 6. Arc score — restricted to messages after broadcast_sent_at ─────────
+    arc_updated = False
+    if _should_score_arc(arc_msg_count, intent_reason):
+        try:
+            msg_query = (
+                db.table("messages")
+                .select("direction,content,created_at")
+                .eq("lead_id", str(lead_id))
+                .order("created_at", desc=True)
+                .limit(10)
+            )
+            if broadcast_sent_at:
+                msg_query = msg_query.gte("created_at", broadcast_sent_at)
+            msgs = (msg_query.execute().data or [])
+            lines = []
+            for m in reversed(msgs):
+                role = "Bot" if m.get("direction") == "outbound" else "User"
+                content = (m.get("content") or "").strip()[:200]
+                if content:
+                    lines.append(f"{role}: {content}")
+            conversation = "\n".join(lines) if lines else f"User: {message}"
+        except Exception:
+            conversation = f"User: {message}"
+
+        current_arc = await _score_arc(conversation, tenant_id, fallback=current_arc)
+        arc_updated = True
+        arc_msg_count = 1
+
+    # ── 7. Composite score ─────────────────────────────────────────────────────
+    final_score = max(1, min(10, current_arc + intent_delta + engagement_delta))
+
+    # ── 8. Segment with lock ───────────────────────────────────────────────────
+    try:
+        from app.config_dynamic import get_setting as _gs
+        thresholds = parse_thresholds(_gs("scoring_segment_thresholds", tenant_id=tenant_id))
+    except Exception:
+        thresholds = None
+
+    proposed_segment = score_to_segment(final_score, thresholds=thresholds)
+    final_segment, new_drop_count = _apply_segment_lock(
+        proposed_segment, current_seg, current_drop, big_drop=False
+    )
+
+    # ── 9. Persist broadcast slate ─────────────────────────────────────────────
+    db.table("broadcast_lead_scores").update({
+        "score": final_score,
+        "arc_score": current_arc,
+        "arc_message_count": arc_msg_count,
+        "segment": final_segment,
+        "segment_drop_count": new_drop_count,
+        "last_inbound_at": now_iso,
+    }).eq("broadcast_id", broadcast_id).eq("lead_id", str(lead_id)).execute()
+
+    # ── 10. Sentiment + tag interest rollup ───────────────────────────────────
+    sentiment = "positive" if final_segment in ("A", "B") else "neutral"
+    _update_recipient_sentiment(db, broadcast_id, lead_id, sentiment)
+    if tag_id:
+        _rollup_tag_interest(
+            db, lead_id,
+            {"tag_id": tag_id, "broadcast_sent_at": broadcast_sent_at},
+            final_score, final_segment, now_iso, tenant_id,
+        )
+
+    logger.info(
+        f"Lead {lead_id} broadcast {broadcast_id} scored: arc={current_arc} "
+        f"intent={intent_delta:+d} eng={engagement_delta:+d} → {final_score} ({final_segment})"
+    )
+    return {
+        "score": final_score,
+        "segment": final_segment,
+        "arc_score": current_arc,
+        "intent_delta": intent_delta,
+        "engagement_delta": engagement_delta,
+        "intent_reason": intent_reason,
+        "arc_updated": arc_updated,
+    }

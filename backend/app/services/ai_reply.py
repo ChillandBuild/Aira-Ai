@@ -498,33 +498,10 @@ async def generate_reply(
         # Still rescore via Score Engine v2 so admin sees segment updates during manual handling
         try:
             from app.services.scoring_engine import compute_score as _compute_score
-            from datetime import timedelta
             _tid = lead_data.get("tenant_id")
-            _bcast_ctx: dict | None = None
-            try:
-                _ctx_cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
-                _br = (
-                    db.table("broadcast_recipients")
-                    .select("broadcast_id,tag_id,created_at")
-                    .eq("lead_id", str(lead_id))
-                    .not_.is_("broadcast_id", "null")
-                    .gte("created_at", _ctx_cutoff)
-                    .order("created_at", desc=True)
-                    .limit(1)
-                    .execute()
-                )
-                if _br.data:
-                    _b = _br.data[0]
-                    _bcast_ctx = {
-                        "broadcast_id": _b["broadcast_id"],
-                        "broadcast_sent_at": _b["created_at"],
-                        "tag_id": _b.get("tag_id"),
-                    }
-            except Exception:
-                pass
             _sr = await _compute_score(
                 message=message, lead_id=str(lead_id), db=db,
-                tenant_id=_tid, broadcast_context=_bcast_ctx,
+                tenant_id=_tid,
             )
             new_score = _sr["score"]
             new_segment = _sr["segment"]
@@ -564,6 +541,28 @@ async def generate_reply(
             )
         except Exception as e:
             logger.error(f"Scoring update failed (takeover mode) for lead {lead_id}: {e}")
+        # Per-broadcast scoring — analytics only, never blocks the reply path
+        try:
+            from app.services.scoring_engine import compute_broadcast_score as _compute_bcast
+            _recent_bcast = (
+                db.table("broadcast_recipients")
+                .select("broadcast_id")
+                .eq("lead_id", str(lead_id))
+                .eq("send_status", "sent")
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if _recent_bcast.data:
+                await _compute_bcast(
+                    message=message,
+                    lead_id=str(lead_id),
+                    broadcast_id=_recent_bcast.data[0]["broadcast_id"],
+                    db=db,
+                    tenant_id=lead_data.get("tenant_id"),
+                )
+        except Exception as _be:
+            logger.warning(f"Broadcast score update failed for lead {lead_id}: {_be}")
         return
 
     # Inject full knowledge base text if any documents are indexed
@@ -625,6 +624,19 @@ async def generate_reply(
         reply_text = _display_text if _display_text != _raw_reply else _raw_reply
         if not reply_text:
             reply_text = "Thank you — we've got all your details. We'll be in touch shortly."
+
+        # If the lead asked an off-topic question mid-booking, re-prompt the pending step
+        try:
+            from app.services.booking_flow import (
+                get_or_create_state as _get_bk_state,
+                get_pending_step_prompt as _get_pending_prompt,
+            )
+            _bk = _get_bk_state(str(lead_id), lead_data.get("tenant_id", tenant_id), db)
+            _pending = _get_pending_prompt(_bk)
+            if _pending:
+                reply_text = f"{reply_text}\n\n{_pending}"
+        except Exception:
+            pass
 
         # Trigger A: AI gave a generic fallback reply
         if _is_generic_fallback(reply_text):
@@ -734,39 +746,13 @@ async def generate_reply(
     new_score = lead_data.get("score", 5)
     try:
         from app.services.scoring_engine import compute_score
-        from datetime import datetime, timezone, timedelta
-
-        # Detect broadcast context: most recent tagged broadcast within 14 days
-        _broadcast_context: dict | None = None
-        try:
-            _ctx_cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
-            _recent_br = (
-                db.table("broadcast_recipients")
-                .select("broadcast_id,tag_id,created_at")
-                .eq("lead_id", str(lead_id))
-                .eq("send_status", "sent")      # exclude API-failed AND delivery-failed leads
-                .not_.is_("broadcast_id", "null")
-                .gte("created_at", _ctx_cutoff)
-                .order("created_at", desc=True)
-                .limit(1)
-                .execute()
-            )
-            if _recent_br.data:
-                _br = _recent_br.data[0]
-                _broadcast_context = {
-                    "broadcast_id": _br["broadcast_id"],
-                    "broadcast_sent_at": _br["created_at"],
-                    "tag_id": _br.get("tag_id"),
-                }
-        except Exception as _ctx_err:
-            logger.warning(f"Broadcast context lookup failed for lead {lead_id}: {_ctx_err}")
+        from datetime import datetime, timezone
 
         score_result = await compute_score(
             message=message,
             lead_id=str(lead_id),
             db=db,
             tenant_id=tenant_id,
-            broadcast_context=_broadcast_context,
         )
         new_score = score_result["score"]
         new_segment = score_result["segment"]
@@ -781,7 +767,7 @@ async def generate_reply(
             "arc_updated": score_result["arc_updated"],
             "message_snippet": message[:150],
             "channel": channel,
-            "broadcast_id": (_broadcast_context or {}).get("broadcast_id"),
+            "broadcast_id": None,
         }
         if new_segment != lead_data.get("segment") or new_score != lead_data.get("score", 5):
             record_stage_event(
@@ -826,6 +812,29 @@ async def generate_reply(
                     logger.error(f"Segment-transition escalation failed for lead {lead_id}: {esc_err}")
     except Exception as e:
         logger.error(f"Scoring update failed for lead {lead_id}: {e}")
+
+    # Per-broadcast scoring — analytics only, never blocks the reply path
+    try:
+        from app.services.scoring_engine import compute_broadcast_score as _compute_bcast
+        _recent_bcast = (
+            db.table("broadcast_recipients")
+            .select("broadcast_id")
+            .eq("lead_id", str(lead_id))
+            .eq("send_status", "sent")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if _recent_bcast.data:
+            await _compute_bcast(
+                message=message,
+                lead_id=str(lead_id),
+                broadcast_id=_recent_bcast.data[0]["broadcast_id"],
+                db=db,
+                tenant_id=tenant_id,
+            )
+    except Exception as _be:
+        logger.warning(f"Broadcast score update failed for lead {lead_id}: {_be}")
 
     sync_follow_up_jobs(
         lead_id,

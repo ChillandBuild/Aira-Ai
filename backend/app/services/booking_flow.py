@@ -67,6 +67,24 @@ async def detect_booking_intent(message: str) -> bool:
     return bool(tokens & _INTENT_KEYWORDS)
 
 
+_QUESTION_TOKENS = frozenset({
+    "what", "when", "where", "how", "why", "which", "who",
+    "is", "are", "can", "will", "do", "does", "should", "would", "could",
+    # Tamil question markers
+    "என்ன", "எப்போது", "எங்கே", "எப்படி", "ஏன்", "யார்",
+    # Hindi question markers
+    "क्या", "कब", "कहाँ", "कैसे", "क्यों", "कौन",
+})
+
+
+def _is_booking_question(message: str) -> bool:
+    text = message.strip()
+    if "?" in text or "？" in text:
+        return True
+    tokens = set(re.findall(r"[\w஀-௿ऀ-ॿ]+", text.lower()))
+    return bool(tokens & _QUESTION_TOKENS)
+
+
 async def route_booking_intent(
     lead_id: str,
     tenant_id: str,
@@ -92,6 +110,10 @@ async def route_booking_intent(
         conv_state = get_or_create_state(lead_id, tenant_id, db)
         current_state = conv_state.get("state", "idle")
         if current_state in _BOOKING_COLLECT_STATES:
+            if _is_booking_question(body):
+                # Off-topic question mid-flow: let AI answer it, don't consume the message.
+                # ai_reply will append the pending step prompt so the lead knows where they left off.
+                return False
             await advance_state(state=conv_state, message=body, phone=phone, db=db)
             return True
         if current_state == "idle" and await detect_booking_intent(body):
@@ -243,6 +265,16 @@ def _get_step_prompt(state_name: str) -> str:
         if s == state_name:
             return prompt
     return ""
+
+
+def get_pending_step_prompt(state: dict | None) -> str | None:
+    """Return the prompt for the current collection step, or None if not mid-flow."""
+    if not state:
+        return None
+    current = state.get("state", "idle")
+    if current not in _BOOKING_COLLECT_STATES:
+        return None
+    return _get_step_prompt(current) or None
 
 
 async def send_whatsapp_text(phone: str, text: str, tenant_id: str | None = None, lead_id: str | None = None) -> None:
