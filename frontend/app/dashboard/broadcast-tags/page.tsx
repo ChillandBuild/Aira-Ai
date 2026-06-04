@@ -20,6 +20,9 @@ type TagStats = {
   hot: number;
   warm: number;
   cold: number;
+  disqualified: number;
+  opted_out: number;
+  failed: number;
 };
 
 async function fetchTags(): Promise<BroadcastTag[]> {
@@ -73,10 +76,12 @@ function hexToLightTint(hex: string): string {
 }
 
 const SEGMENT_OPTIONS = [
+  { label: "All Leads", value: "", color: "text-violet-700 bg-violet-50 border-violet-200 hover:bg-violet-100" },
   { label: "Hot", value: "A", color: "text-green-700 bg-green-50 border-green-200 hover:bg-green-100" },
   { label: "Warm", value: "B", color: "text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100" },
   { label: "Cold", value: "C", color: "text-gray-700 bg-gray-50 border-gray-200 hover:bg-gray-100" },
   { label: "Disqualified", value: "D", color: "text-red-700 bg-red-50 border-red-200 hover:bg-red-100" },
+  { label: "Opted Out", value: "opted_out", color: "text-orange-700 bg-orange-50 border-orange-200 hover:bg-orange-100" },
 ];
 
 function SegmentDropdown({ tagId }: { tagId: string }) {
@@ -113,7 +118,7 @@ function SegmentDropdown({ tagId }: { tagId: string }) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `tag_leads_${segment.toLowerCase()}.csv`;
+      a.download = `tag_leads_${segment ? segment.toLowerCase() : "all"}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -298,25 +303,6 @@ export default function BroadcastTagsPage() {
     setDeleting(null);
   }
 
-  async function downloadTagCsv(tagId: string) {
-    try {
-      const auth = await getAuthHeaders();
-      const res = await fetch(`${API_URL}/api/v1/upload/tag-csv?tag_id=${tagId}`, { headers: auth });
-      if (!res.ok) throw new Error("failed");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "tag_leads.csv";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch {
-      toast.error("Download failed");
-    }
-  }
-
   return (
     <div>
       <div className="mb-7 flex items-start justify-between">
@@ -421,6 +407,9 @@ export default function BroadcastTagsPage() {
                   <th className="font-label text-xs font-semibold text-on-surface-muted text-center px-3 py-3">Hot</th>
                   <th className="font-label text-xs font-semibold text-on-surface-muted text-center px-3 py-3">Warm</th>
                   <th className="font-label text-xs font-semibold text-on-surface-muted text-center px-3 py-3">Cold</th>
+                  <th className="font-label text-xs font-semibold text-red-500 text-center px-3 py-3">DQ</th>
+                  <th className="font-label text-xs font-semibold text-orange-500 text-center px-3 py-3">Opted Out</th>
+                  <th className="font-label text-xs font-semibold text-on-surface-muted text-center px-3 py-3">Failed</th>
                   <th className="font-label text-xs font-semibold text-on-surface-muted text-right px-5 py-3">Actions</th>
                 </tr>
               </thead>
@@ -436,15 +425,11 @@ export default function BroadcastTagsPage() {
                       <td className="px-3 py-3 text-center font-label text-sm font-semibold text-green-600">{s?.hot ?? 0}</td>
                       <td className="px-3 py-3 text-center font-label text-sm font-semibold text-amber-600">{s?.warm ?? 0}</td>
                       <td className="px-3 py-3 text-center font-label text-sm text-on-surface-muted">{s?.cold ?? 0}</td>
+                      <td className="px-3 py-3 text-center font-label text-sm font-semibold text-red-500">{s?.disqualified ?? 0}</td>
+                      <td className="px-3 py-3 text-center font-label text-sm font-semibold text-orange-500">{s?.opted_out ?? 0}</td>
+                      <td className="px-3 py-3 text-center font-label text-sm text-on-surface-muted">{s?.failed ?? 0}</td>
                       <td className="px-5 py-3">
                         <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => downloadTagCsv(tag.id)}
-                            className="text-xs px-2.5 py-1.5 rounded-lg border border-surface-mid text-on-surface-muted hover:text-on-surface hover:border-violet-300 hover:bg-violet-50 transition-all flex items-center gap-1.5 font-medium"
-                            title="Download all leads for this tag"
-                          >
-                            <Download size={12} /> All Leads
-                          </button>
                           <SegmentDropdown tagId={tag.id} />
                           <button
                             onClick={() => handleDelete(tag)}

@@ -71,7 +71,7 @@ def delete_tag(tag_id: str, tenant_id: str = Depends(get_tenant_id)):
 
 @router.get("/stats")
 def get_tag_stats(tenant_id: str = Depends(get_tenant_id)):
-    """Return per-tag stats: total_sent, hot, warm, cold counts."""
+    """Return per-tag stats: total_sent, hot, warm, cold, disqualified, opted_out counts."""
     db = get_supabase()
 
     tags = db.table("broadcast_tags").select("id").eq("tenant_id", tenant_id).execute()
@@ -79,20 +79,25 @@ def get_tag_stats(tenant_id: str = Depends(get_tenant_id)):
     if not tag_ids:
         return {"data": []}
 
-    # Count recipients per tag
+    # Count sent + failed recipients per tag
     br_rows = (
         db.table("broadcast_recipients")
-        .select("tag_id")
+        .select("tag_id, send_status")
         .eq("tenant_id", tenant_id)
         .in_("tag_id", tag_ids)
-        .eq("send_status", "sent")
+        .in_("send_status", ["sent", "failed", "rejected"])
         .execute()
     )
     sent_counts: dict[str, int] = {}
+    failed_counts: dict[str, int] = {}
     for br in (br_rows.data or []):
         tid = br.get("tag_id")
-        if tid:
+        if not tid:
+            continue
+        if br.get("send_status") == "sent":
             sent_counts[tid] = sent_counts.get(tid, 0) + 1
+        else:
+            failed_counts[tid] = failed_counts.get(tid, 0) + 1
 
     # Count interest per tag
     interest_rows = (
@@ -116,6 +121,40 @@ def get_tag_stats(tenant_id: str = Depends(get_tenant_id)):
         if r.get("cold"):
             cold_counts[tid] = cold_counts.get(tid, 0) + 1
 
+    # Count disqualified (segment D) per tag
+    dq_rows = (
+        db.table("lead_tag_interest")
+        .select("tag_id")
+        .eq("tenant_id", tenant_id)
+        .in_("tag_id", tag_ids)
+        .eq("segment", "D")
+        .execute()
+    )
+    dq_counts: dict[str, int] = {}
+    for r in (dq_rows.data or []):
+        tid = r.get("tag_id")
+        if tid:
+            dq_counts[tid] = dq_counts.get(tid, 0) + 1
+
+    # Count opted-out leads per tag (distinct lead_id where opted_out_at IS NOT NULL)
+    oo_rows = (
+        db.table("broadcast_recipients")
+        .select("tag_id, lead_id")
+        .eq("tenant_id", tenant_id)
+        .in_("tag_id", tag_ids)
+        .filter("opted_out_at", "not.is", "null")
+        .execute()
+    )
+    oo_seen: dict[str, set] = {}
+    for r in (oo_rows.data or []):
+        tid = r.get("tag_id")
+        lid = r.get("lead_id")
+        if tid and lid:
+            if tid not in oo_seen:
+                oo_seen[tid] = set()
+            oo_seen[tid].add(lid)
+    oo_counts: dict[str, int] = {tid: len(lids) for tid, lids in oo_seen.items()}
+
     data = []
     for tid in tag_ids:
         data.append({
@@ -124,6 +163,9 @@ def get_tag_stats(tenant_id: str = Depends(get_tenant_id)):
             "hot": hot_counts.get(tid, 0),
             "warm": warm_counts.get(tid, 0),
             "cold": cold_counts.get(tid, 0),
+            "disqualified": dq_counts.get(tid, 0),
+            "opted_out": oo_counts.get(tid, 0),
+            "failed": failed_counts.get(tid, 0),
         })
 
     return {"data": data}

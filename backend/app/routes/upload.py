@@ -1196,7 +1196,7 @@ def _classify_broadcast_outcomes(
     except Exception as e:
         logger.warning(f"Classifier delivery-status lookup failed: {e}")
 
-    sent = delivered = opened = failed = 0
+    sent = delivered = opened = failed = opted_out = 0
     failures: list[dict] = []
     seen_phones: set[str] = set()
 
@@ -1273,7 +1273,10 @@ def _classify_broadcast_outcomes(
                 sent += 1
                 continue
 
-        failed += 1
+        if reason == "not_interested":
+            opted_out += 1
+        else:
+            failed += 1
         if phone and phone not in seen_phones:
             seen_phones.add(phone)
             failures.append({
@@ -1290,7 +1293,7 @@ def _classify_broadcast_outcomes(
 
     return {
         "found": True,
-        "counts": {"sent": sent, "delivered": delivered, "opened": opened, "failed": failed, "total": len(recipients)},
+        "counts": {"sent": sent, "delivered": delivered, "opened": opened, "failed": failed, "opted_out": opted_out, "total": len(recipients)},
         "failures": failures,
     }
 
@@ -1379,6 +1382,8 @@ async def get_failed_csv(
     )
     writer.writeheader()
     for row in outcome["failures"]:
+        if row.get("reason") == "not_interested":
+            continue
         writer.writerow({
             **row,
             "broadcast_id": broadcast_id,
@@ -1725,6 +1730,21 @@ async def download_tag_csv(
         writer.writeheader()
         return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=tag_no_data.csv"})
 
+    opted_out_lead_ids: set[str] = set()
+    if segment.upper() == "OPTED_OUT":
+        try:
+            oo_resp = (
+                db.table("broadcast_recipients")
+                .select("lead_id")
+                .eq("tenant_id", tenant_id)
+                .eq("tag_id", tag_id)
+                .filter("opted_out_at", "not.is", "null")
+                .execute()
+            )
+            opted_out_lead_ids = {r["lead_id"] for r in (oo_resp.data or []) if r.get("lead_id")}
+        except Exception:
+            pass
+
     broadcast_ids = [b["broadcast_id"] for b in ordered_broadcasts]
     template_map: dict[str, str] = {}
     try:
@@ -1790,13 +1810,16 @@ async def download_tag_csv(
 
             if segment:
                 seg_upper = segment.upper()
-                if seg_upper == "A" and hot != 1:
+                if seg_upper == "OPTED_OUT":
+                    if lead_id not in opted_out_lead_ids:
+                        continue
+                elif seg_upper == "A" and hot != 1:
                     continue
-                if seg_upper == "B" and warm != 1:
+                elif seg_upper == "B" and warm != 1:
                     continue
-                if seg_upper == "C" and cold != 1:
+                elif seg_upper == "C" and cold != 1:
                     continue
-                if seg_upper == "D" and (hot != 0 or warm != 0 or cold != 0):
+                elif seg_upper == "D" and (hot != 0 or warm != 0 or cold != 0):
                     continue
 
             writer.writerow({
@@ -1826,6 +1849,8 @@ async def download_tag_csv(
         seg_label = "warm"
     elif seg_label == "C":
         seg_label = "cold"
+    elif seg_label == "OPTED_OUT":
+        seg_label = "opted_out"
     safe_tag = tag_name.replace(" ", "_").lower()
     return Response(
         content=output.getvalue(),
@@ -2208,8 +2233,19 @@ async def download_broadcast_tag_csv(
 
     lead_ids = list({r["lead_id"] for r in recipients if r.get("lead_id")})
 
+    seg_filter = segment.upper() if segment else ""
+
+    # For opted_out filter: look up which leads from this broadcast have opted out
+    opted_out_ids: set[str] = set()
+    if seg_filter == "OPTED_OUT" and lead_ids:
+        try:
+            oo_resp = db.table("leads").select("id").in_("id", lead_ids).eq("opted_out", True).eq("tenant_id", tenant_id).execute()
+            opted_out_ids = {r["id"] for r in (oo_resp.data or [])}
+        except Exception:
+            pass
+
     segment_map: dict[str, str] = {}
-    if lead_ids:
+    if lead_ids and seg_filter != "OPTED_OUT":
         bls_resp = (
             db.table("broadcast_lead_scores")
             .select("lead_id,segment")
@@ -2219,13 +2255,12 @@ async def download_broadcast_tag_csv(
         )
         segment_map = {r["lead_id"]: r.get("segment") or "C" for r in (bls_resp.data or [])}
 
-    missing_ids = [lid for lid in lead_ids if lid not in segment_map]
-    if missing_ids:
-        leads_resp = db.table("leads").select("id,segment").in_("id", missing_ids).eq("tenant_id", tenant_id).execute()
-        for l in (leads_resp.data or []):
-            segment_map[l["id"]] = l.get("segment") or "C"
+        missing_ids = [lid for lid in lead_ids if lid not in segment_map]
+        if missing_ids:
+            leads_resp = db.table("leads").select("id,segment").in_("id", missing_ids).eq("tenant_id", tenant_id).execute()
+            for l in (leads_resp.data or []):
+                segment_map[l["id"]] = l.get("segment") or "C"
 
-    seg_filter = segment.upper() if segment else ""
     seen: set[str] = set()
     for r in recipients:
         lead_id = r.get("lead_id") or ""
@@ -2234,17 +2269,22 @@ async def download_broadcast_tag_csv(
         seen.add(lead_id)
         if lead_id in delivery_failed_ids:
             continue
-        seg = segment_map.get(lead_id, "C")
-        hot, warm, cold = _segment_to_flags(seg)
-        if seg_filter:
-            if seg_filter == "A" and hot != 1:
+        if seg_filter == "OPTED_OUT":
+            if lead_id not in opted_out_ids:
                 continue
-            if seg_filter == "B" and warm != 1:
-                continue
-            if seg_filter == "C" and cold != 1:
-                continue
-            if seg_filter == "D" and (hot != 0 or warm != 0 or cold != 0):
-                continue
+            hot, warm, cold = 0, 0, 0
+        else:
+            seg = segment_map.get(lead_id, "C")
+            hot, warm, cold = _segment_to_flags(seg)
+            if seg_filter:
+                if seg_filter == "A" and hot != 1:
+                    continue
+                if seg_filter == "B" and warm != 1:
+                    continue
+                if seg_filter == "C" and cold != 1:
+                    continue
+                if seg_filter == "D" and (hot != 0 or warm != 0 or cold != 0):
+                    continue
         writer.writerow({
             "Name": r.get("name") or "",
             "Phone": r.get("phone") or "",
