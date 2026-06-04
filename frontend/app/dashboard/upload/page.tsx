@@ -1246,7 +1246,7 @@ export default function UploadPage() {
                     )}
                     {!tagsLoading && tags.length === 0 && (
                       <p className="font-label text-xs text-on-surface-muted mt-2">
-                        No tags yet. <Link href="/dashboard/broadcast-tags" className="underline text-violet-600">Create one →</Link>
+                        No tags yet. <button onClick={() => setActiveTab("tags")} className="underline text-violet-600">Create one →</button>
                       </p>
                     )}
                   </div>
