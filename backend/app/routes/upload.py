@@ -2119,9 +2119,10 @@ def _segment_to_flags(segment: str | None) -> tuple[int, int, int]:
 async def download_broadcast_tag_csv(
     broadcast_id: str = Query(..., description="Broadcast UUID"),
     tag_id: str | None = Query(None, description="Tag UUID (optional, used for filename)"),
+    segment: str = Query("", description="Filter by segment: A=hot, B=warm, C=cold, D=disqualified, empty=all"),
     tenant_id: str = Depends(get_tenant_id),
 ):
-    """Per-broadcast interest CSV: every recipient with their current segment as HOT/WARM/COLD."""
+    """Per-broadcast interest CSV: every recipient with their broadcast segment as HOT/WARM/COLD."""
     db = get_supabase()
 
     recipients_resp = (
@@ -2204,6 +2205,7 @@ async def download_broadcast_tag_csv(
         for l in (leads_resp.data or []):
             segment_map[l["id"]] = l.get("segment") or "C"
 
+    seg_filter = segment.upper() if segment else ""
     seen: set[str] = set()
     for r in recipients:
         lead_id = r.get("lead_id") or ""
@@ -2212,8 +2214,17 @@ async def download_broadcast_tag_csv(
         seen.add(lead_id)
         if lead_id in delivery_failed_ids:
             continue
-        segment = segment_map.get(lead_id, "C")
-        hot, warm, cold = _segment_to_flags(segment)
+        seg = segment_map.get(lead_id, "C")
+        hot, warm, cold = _segment_to_flags(seg)
+        if seg_filter:
+            if seg_filter == "A" and hot != 1:
+                continue
+            if seg_filter == "B" and warm != 1:
+                continue
+            if seg_filter == "C" and cold != 1:
+                continue
+            if seg_filter == "D" and (hot != 0 or warm != 0 or cold != 0):
+                continue
         writer.writerow({
             "Name": r.get("name") or "",
             "Phone": r.get("phone") or "",

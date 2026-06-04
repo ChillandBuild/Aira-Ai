@@ -230,6 +230,69 @@ function SegmentDropdown({ tagId }: { tagId: string }) {
   );
 }
 
+// ─── Per-broadcast Segment Dropdown ──────────────────────────────────────────
+function BroadcastSegmentDropdown({ broadcastId, tagId, onDownload }: {
+  broadcastId: string;
+  tagId?: string;
+  onDownload: (broadcastId: string, tagId: string | undefined, segment: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [position, setPosition] = useState({ top: 0, right: 0 });
+
+  useEffect(() => {
+    if (!open || !btnRef.current) return;
+    const rect = btnRef.current.getBoundingClientRect();
+    setPosition({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (btnRef.current && !btnRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={() => setOpen(!open)}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 rounded-lg font-label text-[11px] font-semibold transition-colors border border-violet-200"
+      >
+        <Tag size={12} />
+        Segment Leads
+        <ChevronDown size={10} className={cn("transition-transform", open && "rotate-180")} />
+      </button>
+      {open && createPortal(
+        <div
+          className="fixed w-44 bg-white rounded-xl shadow-xl border border-surface-mid z-[9999] overflow-hidden"
+          style={{ top: position.top, right: position.right }}
+        >
+          <button
+            onClick={() => { onDownload(broadcastId, tagId, ""); setOpen(false); }}
+            className="w-full text-left text-xs px-3 py-2.5 font-label font-semibold transition-colors border-b border-surface-mid/30 text-violet-700 bg-violet-50 hover:bg-violet-100"
+          >
+            All Segments
+          </button>
+          {SEGMENT_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => { onDownload(broadcastId, tagId, opt.value); setOpen(false); }}
+              className={cn("w-full text-left text-xs px-3 py-2.5 font-label font-semibold transition-colors border-b border-surface-mid/30 last:border-0", opt.color)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
 // ─── Export All Dropdown ──────────────────────────────────────────────────────
 
 function ExportAllDropdown({ tagCount }: { tagCount: number }) {
@@ -448,11 +511,12 @@ export default function UploadPage() {
     }
   }
 
-  async function downloadBroadcastTagCsv(broadcastId: string, tagId?: string) {
+  async function downloadBroadcastTagCsv(broadcastId: string, tagId?: string, segment?: string) {
     try {
       const auth = await getAuthHeaders();
       const params = new URLSearchParams({ broadcast_id: broadcastId });
       if (tagId) params.set("tag_id", tagId);
+      if (segment) params.set("segment", segment);
       const res = await fetch(
         `${API_URL}/api/v1/upload/broadcast-tag-csv?${params.toString()}`,
         { headers: auth }
@@ -462,7 +526,8 @@ export default function UploadPage() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `broadcast_${broadcastId.slice(0, 8)}_interests.csv`;
+      const segLabel = segment ? `_${segment.toLowerCase()}` : "";
+      a.download = `broadcast_${broadcastId.slice(0, 8)}${segLabel}_leads.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -2045,13 +2110,11 @@ export default function UploadPage() {
 
                   {/* Interest CSV Download */}
                   {item.broadcast_id && (
-                    <button
-                      onClick={() => downloadBroadcastTagCsv(item.broadcast_id!, item.tag_id)}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 rounded-lg font-label text-[11px] font-semibold transition-colors border border-violet-200"
-                    >
-                      <Tag size={12} />
-                      Segment Leads
-                    </button>
+                    <BroadcastSegmentDropdown
+                      broadcastId={item.broadcast_id}
+                      tagId={item.tag_id}
+                      onDownload={downloadBroadcastTagCsv}
+                    />
                   )}
                 </div>
                 
