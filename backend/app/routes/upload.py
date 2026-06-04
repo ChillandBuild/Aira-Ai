@@ -389,6 +389,7 @@ async def risk_audit(body: RiskAuditRequest, tenant_id: str = Depends(get_tenant
     negative_reply_count = 0
     high_no_reply_count = 0
     opted_out_count = 0
+    tag_opted_out_count = 0
 
     if all_phones:
         neg_rows = (
@@ -422,14 +423,42 @@ async def risk_audit(body: RiskAuditRequest, tenant_id: str = Depends(get_tenant
         )
         opted_out_count = len(opt_rows.data or [])
 
+        tag_opted_out_phones: set[str] = set()
+        try:
+            if body.tag_id:
+                tag_rows = (
+                    db.table("lead_tag_opt_outs")
+                    .select("leads!inner(phone)")
+                    .eq("tenant_id", tenant_id)
+                    .eq("tag_id", body.tag_id)
+                    .in_("leads.phone", all_phones)
+                    .execute()
+                )
+                tag_opted_out_phones = {r["leads"]["phone"] for r in (tag_rows.data or []) if r.get("leads")}
+            glob_rows = (
+                db.table("lead_tag_opt_outs")
+                .select("leads!inner(phone)")
+                .eq("tenant_id", tenant_id)
+                .is_("tag_id", "null")
+                .in_("leads.phone", all_phones)
+                .execute()
+            )
+            for r in (glob_rows.data or []):
+                if r.get("leads"):
+                    tag_opted_out_phones.add(r["leads"]["phone"])
+        except Exception as e:
+            logger.warning(f"risk_audit per-tag opt-out lookup failed: {e}")
+        tag_opted_out_count = len(tag_opted_out_phones)
+
     total = len(all_phones)
-    safe_count = total - negative_reply_count - high_no_reply_count - opted_out_count
+    safe_count = total - negative_reply_count - high_no_reply_count - tag_opted_out_count
 
     return {
         "total": total,
         "negative_reply_count": negative_reply_count,
         "high_no_reply_count": high_no_reply_count,
         "opted_out_count": opted_out_count,
+        "tag_opted_out_count": tag_opted_out_count,
         "safe_count": max(0, safe_count),
     }
 
@@ -627,10 +656,36 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
     phone_to_lead_id = {r["phone"]: r["id"] for r in (lead_rows.data or [])}
     phone_to_lead_name = {r["phone"]: r.get("name") for r in (lead_rows.data or [])}
 
-    opted_out_phones: set[str] = set()
+    tag_opted_out_phones: set[str] = set()
+    if all_phones and body.tag_id:
+        try:
+            rows = (
+                db.table("lead_tag_opt_outs")
+                .select("leads!inner(phone)")
+                .eq("tenant_id", tenant_id)
+                .eq("tag_id", body.tag_id)
+                .in_("leads.phone", all_phones)
+                .execute()
+            )
+            tag_opted_out_phones = {r["leads"]["phone"] for r in (rows.data or []) if r.get("leads")}
+        except Exception as e:
+            logger.warning(f"Per-tag opt-out lookup failed: {e}")
+
     if all_phones:
-        rows = db.table("leads").select("phone").in_("phone", all_phones).eq("tenant_id", tenant_id).eq("opted_out", True).execute()
-        opted_out_phones = {r["phone"] for r in (rows.data or [])}
+        try:
+            rows = (
+                db.table("lead_tag_opt_outs")
+                .select("leads!inner(phone)")
+                .eq("tenant_id", tenant_id)
+                .is_("tag_id", "null")
+                .in_("leads.phone", all_phones)
+                .execute()
+            )
+            for r in (rows.data or []):
+                if r.get("leads"):
+                    tag_opted_out_phones.add(r["leads"]["phone"])
+        except Exception as e:
+            logger.warning(f"Global tag opt-out lookup failed: {e}")
 
     negative_reply_phones: set[str] = set()
     if all_phones and body.exclude_negative_replies:
@@ -683,7 +738,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         lead_id = phone_to_lead_id.get(phone)
         lead_name = phone_to_lead_name.get(phone)
 
-        if phone in opted_out_phones and not body.include_opted_out:
+        if phone in tag_opted_out_phones and not body.include_opted_out:
             opted_out_skipped += 1
             failed += 1
             row = {
@@ -696,9 +751,9 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 "tag_id": body.tag_id,
             }
             if _has_fail_reason:
-                row["fail_reason"] = "opted_out"
+                row["fail_reason"] = "tag_opted_out"
             recipient_rows.append(row)
-            logger.info(f"Bulk-send skipped opted-out lead {phone}")
+            logger.info(f"Bulk-send skipped tag-opted-out lead {phone} for tag {body.tag_id}")
             continue
 
         if phone in negative_reply_phones:
@@ -999,13 +1054,14 @@ def _classify_broadcast_outcomes(
         }
 
     Rules (top to bottom, first match wins):
-      1. send_status in {failed, rejected}            -> failed (send error)
-      2. send_status == opted_out_skip                 -> failed (opted out)
-      3. lead currently opted_out=True                 -> failed (opted out)
-      4. messages.delivery_status == failed in window  -> failed (delivery failure)
-      5. messages.delivery_status == read              -> opened (+delivered +sent)
-      6. messages.delivery_status == delivered         -> delivered (+sent)
-      7. everything else                               -> sent
+      1. send_status in {failed, rejected}             -> failed (send error)
+      2. broadcast_recipients.opted_out_at IS NOT NULL  -> failed (per-broadcast opt-out event)
+      3. send_status == opted_out_skip                  -> failed (opted out at send time)
+      4. lead currently opted_out=True                  -> failed (legacy fallback)
+      5. messages.delivery_status == failed in window   -> failed (delivery failure)
+      6. messages.delivery_status == read               -> opened (+delivered +sent)
+      7. messages.delivery_status == delivered          -> delivered (+sent)
+      8. everything else                                -> sent
     """
     # Check fail_reason column exists (migration 058 compat)
     has_fail_reason = True
@@ -1014,7 +1070,19 @@ def _classify_broadcast_outcomes(
     except Exception:
         has_fail_reason = False
 
-    select_cols = "lead_id, phone, name, send_status, fail_reason" if has_fail_reason else "lead_id, phone, name, send_status"
+    # Check opted_out_at column exists (migration 085 compat)
+    has_opted_out_at = True
+    try:
+        db.table("broadcast_recipients").select("opted_out_at").limit(1).execute()
+    except Exception:
+        has_opted_out_at = False
+
+    base_cols = "lead_id, phone, name, send_status"
+    select_cols = base_cols
+    if has_fail_reason:
+        select_cols += ", fail_reason"
+    if has_opted_out_at:
+        select_cols += ", opted_out_at"
     recipients_resp = db.table("broadcast_recipients") \
         .select(select_cols) \
         .eq("tenant_id", tenant_id) \
@@ -1105,6 +1173,10 @@ def _classify_broadcast_outcomes(
         if send_status in ("failed", "rejected"):
             reason = send_status
             fail_reason = r.get("fail_reason") or "api_error"
+        elif r.get("opted_out_at"):
+            reason = "not_interested"
+            fail_reason = r.get("fail_reason") or "opted_out"
+            opted_out_at = r.get("opted_out_at")
         elif send_status == "opted_out_skip":
             reason = "not_interested"
             fail_reason = r.get("fail_reason") or "opted_out"

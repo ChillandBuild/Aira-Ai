@@ -35,9 +35,8 @@ async def _handle_opt_out(phone: str, tenant_id: str, db) -> bool:
         if not lead or not lead.data:
             return False
         lead_id = lead.data["id"]
-        db.table("leads").update({"opted_out": True, "ai_enabled": False, "opted_out_at": datetime.now(timezone.utc).isoformat()}).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
-        logger.info(f"Lead {lead_id} opted out from {phone}")
-        # Send a polite acknowledgment — one-time, no further AI replies
+        await _record_per_broadcast_opt_out(lead_id, phone, tenant_id, db)
+        logger.info(f"Lead {lead_id} hard-opted out from {phone}")
         try:
             from app.services.meta_cloud import send_text_message
             await send_text_message(
@@ -50,6 +49,86 @@ async def _handle_opt_out(phone: str, tenant_id: str, db) -> bool:
         return True
     except Exception as e:
         logger.error(f"opt-out DB update failed for {phone}: {e}")
+        return False
+
+
+async def _record_per_broadcast_opt_out(lead_id: str, phone: str, tenant_id: str, db) -> None:
+    try:
+        recent = (
+            db.table("broadcast_recipients")
+            .select("id, broadcast_id, tag_id, created_at")
+            .eq("tenant_id", tenant_id)
+            .eq("lead_id", lead_id)
+            .eq("send_status", "sent")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        recipient_row = (recent.data or [None])[0] if recent.data else None
+        if recipient_row:
+            db.table("broadcast_recipients").update({
+                "send_status": "opted_out_skip",
+                "opted_out_at": datetime.now(timezone.utc).isoformat(),
+                "fail_reason": "opted_out",
+            }).eq("id", recipient_row["id"]).eq("tenant_id", tenant_id).execute()
+            tag_id = recipient_row.get("tag_id")
+        else:
+            tag_id = None
+
+        if tag_id:
+            db.table("lead_tag_opt_outs").upsert({
+                "tenant_id": tenant_id,
+                "lead_id": lead_id,
+                "tag_id": tag_id,
+                "opted_out_at": datetime.now(timezone.utc).isoformat(),
+                "source": "inbound",
+            }, on_conflict="tenant_id,lead_id,tag_id").execute()
+        else:
+            tags = db.table("broadcast_tags").select("id").eq("tenant_id", tenant_id).execute()
+            for t in (tags.data or []):
+                db.table("lead_tag_opt_outs").upsert({
+                    "tenant_id": tenant_id,
+                    "lead_id": lead_id,
+                    "tag_id": t["id"],
+                    "opted_out_at": datetime.now(timezone.utc).isoformat(),
+                    "source": "inbound",
+                }, on_conflict="tenant_id,lead_id,tag_id").execute()
+            try:
+                db.table("lead_tag_opt_outs").insert({
+                    "tenant_id": tenant_id,
+                    "lead_id": lead_id,
+                    "tag_id": None,
+                    "opted_out_at": datetime.now(timezone.utc).isoformat(),
+                    "source": "inbound",
+                }).execute()
+            except Exception:
+                pass
+
+        db.table("leads").update({
+            "opted_out": True,
+            "opted_out_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
+    except Exception as e:
+        logger.error(f"Failed to record per-broadcast opt-out for {phone}: {e}")
+
+
+def _has_prior_inbound_in_broadcast(lead_id: str, broadcast_sent_at: str | None, tenant_id: str, db, exclude_msg_id: str) -> bool:
+    if not broadcast_sent_at:
+        return False
+    try:
+        prior = (
+            db.table("messages")
+            .select("id")
+            .eq("lead_id", lead_id)
+            .eq("tenant_id", tenant_id)
+            .eq("direction", "inbound")
+            .gte("created_at", broadcast_sent_at)
+            .neq("meta_message_id", exclude_msg_id)
+            .limit(1)
+            .execute()
+        )
+        return bool(prior.data)
+    except Exception:
         return False
 
 
@@ -227,14 +306,25 @@ async def whatsapp_webhook(
                     )
                     is_first_message = not bool(_is_first.data)
 
-                    # Context-dependent opt-out: hard opt-out only for first-time senders
                     if body and _is_opt_out(body):
-                        if is_first_message:
-                            # Hard opt-out for first-time senders
+                        latest_br = (
+                            db.table("broadcast_recipients")
+                            .select("broadcast_id, created_at")
+                            .eq("tenant_id", tenant_id)
+                            .eq("lead_id", lead_id)
+                            .eq("send_status", "sent")
+                            .order("created_at", desc=True)
+                            .limit(1)
+                            .execute()
+                        )
+                        latest = (latest_br.data or [None])[0] if latest_br.data else None
+                        broadcast_sent_at = latest.get("created_at") if latest else None
+                        is_first_in_broadcast = not _has_prior_inbound_in_broadcast(
+                            lead_id, broadcast_sent_at, tenant_id, db, msg_id
+                        )
+                        if is_first_in_broadcast:
                             await _handle_opt_out(phone, tenant_id, db)
                             continue
-                        # else: let it flow through normal pipeline for engaged users
-                        # Scoring engine will handle it as rejection (segment D, low engagement)
 
                     insert_row: dict = {
                         "lead_id": lead_id,

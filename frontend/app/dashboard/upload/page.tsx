@@ -349,6 +349,7 @@ export default function UploadPage() {
     negative_reply_count: number;
     high_no_reply_count: number;
     opted_out_count: number;
+    tag_opted_out_count: number;
     safe_count: number;
   } | null>(null);
   const [riskLoading, setRiskLoading] = useState(false);
@@ -1340,13 +1341,13 @@ export default function UploadPage() {
                       Checking audience health…
                     </div>
                   )}
-                  {!riskLoading && riskSummary && (riskSummary.negative_reply_count > 0 || riskSummary.high_no_reply_count > 0 || riskSummary.opted_out_count > 0) && (
+                  {!riskLoading && riskSummary && (riskSummary.negative_reply_count > 0 || riskSummary.high_no_reply_count > 0 || riskSummary.opted_out_count > 0 || riskSummary.tag_opted_out_count > 0) && (
                     <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
                       <div className="flex items-center gap-2">
                         <AlertTriangle size={15} className="text-amber-600 shrink-0" />
                         <p className="font-label text-sm font-semibold text-amber-800">Audience Risk Summary</p>
                       </div>
-                      <div className="grid grid-cols-4 gap-2 text-center">
+                      <div className="grid grid-cols-5 gap-2 text-center">
                         <div className="p-2.5 bg-white rounded-lg border border-amber-100">
                           <p className="font-display text-xl font-bold text-red-600">{riskSummary.negative_reply_count}</p>
                           <p className="font-label text-[9px] text-on-surface-muted uppercase font-bold mt-0.5">Said No</p>
@@ -1358,6 +1359,10 @@ export default function UploadPage() {
                         <div className="p-2.5 bg-white rounded-lg border border-amber-100">
                           <p className="font-display text-xl font-bold text-gray-600">{riskSummary.opted_out_count}</p>
                           <p className="font-label text-[9px] text-on-surface-muted uppercase font-bold mt-0.5">Opted Out</p>
+                        </div>
+                        <div className="p-2.5 bg-white rounded-lg border border-amber-100">
+                          <p className="font-display text-xl font-bold text-gray-600">{riskSummary.tag_opted_out_count}</p>
+                          <p className="font-label text-[9px] text-on-surface-muted uppercase font-bold mt-0.5">Tag Opt-Out</p>
                         </div>
                         <div className="p-2.5 bg-white rounded-lg border border-amber-100">
                           <p className="font-display text-xl font-bold text-green-600">{riskSummary.safe_count}</p>
@@ -1386,18 +1391,24 @@ export default function UploadPage() {
                           </button>
                         </div>
                       )}
-                      {riskSummary.opted_out_count > 0 && (
-                        <label className="flex items-center gap-2.5 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={includeOptedOut}
-                            onChange={(e) => setIncludeOptedOut(e.target.checked)}
-                            className="w-4 h-4 rounded border-amber-300 text-amber-600 accent-amber-600"
-                          />
-                          <span className="font-body text-sm text-amber-800">
-                            Send to {riskSummary.opted_out_count} opted-out contact{riskSummary.opted_out_count !== 1 ? "s" : ""}
-                          </span>
-                        </label>
+                      {riskSummary.tag_opted_out_count > 0 && (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 text-amber-800 font-body text-sm">
+                            <AlertTriangle size={14} className="shrink-0" />
+                            {riskSummary.tag_opted_out_count} contact{riskSummary.tag_opted_out_count !== 1 ? "s" : ""} opted out of this tag.
+                          </div>
+                          <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={includeOptedOut}
+                              onChange={(e) => setIncludeOptedOut(e.target.checked)}
+                              className="w-4 h-4 rounded border-amber-300 text-amber-600 accent-amber-600"
+                            />
+                            <span className="font-body text-sm text-amber-800">
+                              Send to {riskSummary.tag_opted_out_count} tag-opted-out contact{riskSummary.tag_opted_out_count !== 1 ? "s" : ""} anyway
+                            </span>
+                          </label>
+                        </div>
                       )}
                     </div>
                   )}
