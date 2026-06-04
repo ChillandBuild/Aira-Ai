@@ -267,7 +267,7 @@ def should_escalate_hot_lead(config: dict, segment: str, channel: str) -> bool:
 
 def should_assign_to_telecalling(config: dict, segment: str, channel: str) -> bool:
     """Return True if this event should auto-assign to a telecaller."""
-    if not (config.get("enabled") or config.get("auto_assign_enabled")):
+    if not config.get("enabled"):
         return False
     if segment not in config.get("segments", ["A"]):
         return False
