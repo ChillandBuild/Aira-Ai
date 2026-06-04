@@ -541,28 +541,6 @@ async def generate_reply(
             )
         except Exception as e:
             logger.error(f"Scoring update failed (takeover mode) for lead {lead_id}: {e}")
-        # Per-broadcast scoring — analytics only, never blocks the reply path
-        try:
-            from app.services.scoring_engine import compute_broadcast_score as _compute_bcast
-            _recent_bcast = (
-                db.table("broadcast_recipients")
-                .select("broadcast_id")
-                .eq("lead_id", str(lead_id))
-                .eq("send_status", "sent")
-                .order("created_at", desc=True)
-                .limit(1)
-                .execute()
-            )
-            if _recent_bcast.data:
-                await _compute_bcast(
-                    message=message,
-                    lead_id=str(lead_id),
-                    broadcast_id=_recent_bcast.data[0]["broadcast_id"],
-                    db=db,
-                    tenant_id=lead_data.get("tenant_id"),
-                )
-        except Exception as _be:
-            logger.warning(f"Broadcast score update failed for lead {lead_id}: {_be}")
         return
 
     # Inject full knowledge base text if any documents are indexed
@@ -812,29 +790,6 @@ async def generate_reply(
                     logger.error(f"Segment-transition escalation failed for lead {lead_id}: {esc_err}")
     except Exception as e:
         logger.error(f"Scoring update failed for lead {lead_id}: {e}")
-
-    # Per-broadcast scoring — analytics only, never blocks the reply path
-    try:
-        from app.services.scoring_engine import compute_broadcast_score as _compute_bcast
-        _recent_bcast = (
-            db.table("broadcast_recipients")
-            .select("broadcast_id")
-            .eq("lead_id", str(lead_id))
-            .eq("send_status", "sent")
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        if _recent_bcast.data:
-            await _compute_bcast(
-                message=message,
-                lead_id=str(lead_id),
-                broadcast_id=_recent_bcast.data[0]["broadcast_id"],
-                db=db,
-                tenant_id=tenant_id,
-            )
-    except Exception as _be:
-        logger.warning(f"Broadcast score update failed for lead {lead_id}: {_be}")
 
     sync_follow_up_jobs(
         lead_id,

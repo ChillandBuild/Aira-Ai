@@ -230,17 +230,50 @@ async def execute_broadcast(row: dict) -> dict:
                 except Exception as br_err:
                     logger.error(f"broadcast_recipients insert failed: {br_err}")
 
-        # Seed a fresh broadcast_lead_scores row per successfully sent lead
+        # Freeze previous un-finalized broadcast_lead_scores rows (per-lead freeze)
+        # and seed new rows at current leads.score so the snapshot is accurate.
         sent_at = datetime.now(timezone.utc).isoformat()
+        sent_lead_ids_for_bls = [
+            r["lead_id"] for r in recipient_rows
+            if r.get("send_status") == "sent" and r.get("lead_id")
+        ]
+
+        # Fetch current global scores for all sent leads in one query
+        current_scores: dict[str, tuple[int, str]] = {}
+        if sent_lead_ids_for_bls:
+            try:
+                score_rows = (
+                    db.table("leads")
+                    .select("id,score,segment")
+                    .in_("id", sent_lead_ids_for_bls)
+                    .eq("tenant_id", tenant_id)
+                    .execute()
+                    .data or []
+                )
+                current_scores = {r["id"]: (r.get("score") or 5, r.get("segment") or "C") for r in score_rows}
+            except Exception as cs_err:
+                logger.warning(f"Could not fetch current scores for freeze: {cs_err}")
+
+        # Freeze previous un-finalized rows for these leads
+        if sent_lead_ids_for_bls:
+            try:
+                for i in range(0, len(sent_lead_ids_for_bls), 100):
+                    batch_ids = sent_lead_ids_for_bls[i:i+100]
+                    db.table("broadcast_lead_scores").update(
+                        {"finalized_at": sent_at}
+                    ).in_("lead_id", batch_ids).is_("finalized_at", "null").neq("broadcast_id", str(broadcast_id)).execute()
+            except Exception as frz_err:
+                logger.warning(f"broadcast_lead_scores freeze failed: {frz_err}")
+
         bls_rows = [
             {
                 "tenant_id": tenant_id,
                 "broadcast_id": broadcast_id,
                 "lead_id": r["lead_id"],
                 "tag_id": tag_id,
-                "score": 5,
-                "segment": "C",
-                "arc_score": 5,
+                "score": current_scores.get(r["lead_id"], (5, "C"))[0],
+                "segment": current_scores.get(r["lead_id"], (5, "C"))[1],
+                "arc_score": current_scores.get(r["lead_id"], (5, "C"))[0],
                 "arc_message_count": 0,
                 "broadcast_sent_at": sent_at,
             }
