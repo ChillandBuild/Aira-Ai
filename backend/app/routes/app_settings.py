@@ -55,7 +55,6 @@ class InboxConfigUpdate(BaseModel):
 
 class TelecallingConfigUpdate(BaseModel):
     enabled: bool | None = None
-    auto_assign_enabled: bool | None = None
     segments: list[str] | None = None
     channels: list[str] | None = None
 

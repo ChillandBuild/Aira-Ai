@@ -5,14 +5,12 @@ import { API_URL, getAuthHeaders } from "@/lib/api";
 
 type TelecallingConfig = {
   enabled: boolean;
-  auto_assign_enabled: boolean;
   segments: string[];
   channels: string[];
 };
 
 const DEFAULT: TelecallingConfig = {
   enabled: false,
-  auto_assign_enabled: false,
   segments: ["A"],
   channels: ["whatsapp"],
 };
@@ -100,7 +98,7 @@ export function TelecallingConfigPanel() {
             )}
           </div>
           <p className="font-body text-sm text-ink-muted mt-0.5">
-            Configure which leads get auto-assigned to telecallers when their score crosses the threshold.
+            Automatically assign leads to telecallers when they enter a qualifying segment.
           </p>
         </div>
         <ChevronDown size={18} className={`text-ink-muted transition-transform flex-shrink-0 ${collapsed ? "" : "rotate-180"}`} />
@@ -108,34 +106,19 @@ export function TelecallingConfigPanel() {
 
       {!collapsed && (
         <div className="mt-6 space-y-6">
-          {/* Master toggles */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <label className="flex items-start gap-3 p-4 rounded-2xl border border-border bg-surface-subtle cursor-pointer hover:border-amber-300 transition-colors">
-              <input
-                type="checkbox"
-                checked={draft.enabled}
-                onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
-                className="mt-0.5 accent-amber-600"
-              />
-              <div>
-                <div className="font-label text-sm font-semibold text-ink">Enable Telecalling Module</div>
-                <div className="font-body text-xs text-ink-muted mt-0.5">Master switch — enables telecaller assignment on segment changes</div>
-              </div>
-            </label>
-
-            <label className="flex items-start gap-3 p-4 rounded-2xl border border-border bg-surface-subtle cursor-pointer hover:border-amber-300 transition-colors">
-              <input
-                type="checkbox"
-                checked={draft.auto_assign_enabled}
-                onChange={(e) => setDraft({ ...draft, auto_assign_enabled: e.target.checked })}
-                className="mt-0.5 accent-amber-600"
-              />
-              <div>
-                <div className="font-label text-sm font-semibold text-ink">Auto-Assign (Round-Robin)</div>
-                <div className="font-body text-xs text-ink-muted mt-0.5">Automatically assign qualifying leads to the active telecaller with fewest leads</div>
-              </div>
-            </label>
-          </div>
+          {/* Master toggle */}
+          <label className="flex items-start gap-3 p-4 rounded-2xl border border-border bg-surface-subtle cursor-pointer hover:border-amber-300 transition-colors">
+            <input
+              type="checkbox"
+              checked={draft.enabled}
+              onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
+              className="mt-0.5 accent-amber-600"
+            />
+            <div>
+              <div className="font-label text-sm font-semibold text-ink">Enable Auto-Assign to Telecallers</div>
+              <div className="font-body text-xs text-ink-muted mt-0.5">Automatically assign qualifying leads to the active telecaller with fewest leads on segment change</div>
+            </div>
+          </label>
 
           {/* Segments */}
           <div>
