@@ -121,23 +121,30 @@ def get_tag_stats(tenant_id: str = Depends(get_tenant_id)):
             all_lead_ids.add(lid)
 
     lead_segment_map: dict[str, str] = {}
+    opted_out_set: set[str] = set()
     if all_lead_ids:
         leads_resp = (
             db.table("leads")
-            .select("id, segment")
+            .select("id, segment, opted_out")
             .eq("tenant_id", tenant_id)
             .in_("id", list(all_lead_ids))
             .execute()
         )
         for l in (leads_resp.data or []):
             lead_segment_map[l["id"]] = l.get("segment") or "C"
+            if l.get("opted_out"):
+                opted_out_set.add(l["id"])
 
     hot_counts: dict[str, int] = {}
     warm_counts: dict[str, int] = {}
     cold_counts: dict[str, int] = {}
     dq_counts: dict[str, int] = {}
+    oo_counts: dict[str, int] = {}
     for tid, lead_ids in tag_lead_ids.items():
         for lid in lead_ids:
+            if lid in opted_out_set:
+                oo_counts[tid] = oo_counts.get(tid, 0) + 1
+                continue
             seg = lead_segment_map.get(lid, "C")
             if seg == "A":
                 hot_counts[tid] = hot_counts.get(tid, 0) + 1
@@ -147,25 +154,6 @@ def get_tag_stats(tenant_id: str = Depends(get_tenant_id)):
                 cold_counts[tid] = cold_counts.get(tid, 0) + 1
             elif seg == "D":
                 dq_counts[tid] = dq_counts.get(tid, 0) + 1
-
-    # Count opted-out leads per tag (distinct lead_id where opted_out_at IS NOT NULL)
-    oo_rows = (
-        db.table("broadcast_recipients")
-        .select("tag_id, lead_id")
-        .eq("tenant_id", tenant_id)
-        .in_("tag_id", tag_ids)
-        .filter("opted_out_at", "not.is", "null")
-        .execute()
-    )
-    oo_seen: dict[str, set] = {}
-    for r in (oo_rows.data or []):
-        tid = r.get("tag_id")
-        lid = r.get("lead_id")
-        if tid and lid:
-            if tid not in oo_seen:
-                oo_seen[tid] = set()
-            oo_seen[tid].add(lid)
-    oo_counts: dict[str, int] = {tid: len(lids) for tid, lids in oo_seen.items()}
 
     data = []
     for tid in tag_ids:

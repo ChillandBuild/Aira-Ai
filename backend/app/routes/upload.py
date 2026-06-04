@@ -1730,20 +1730,30 @@ async def download_tag_csv(
         writer.writeheader()
         return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=tag_no_data.csv"})
 
+    # Fetch all opted-out lead_ids for this tag (used both for OPTED_OUT filter and exclusion)
     opted_out_lead_ids: set[str] = set()
-    if segment.upper() == "OPTED_OUT":
-        try:
-            oo_resp = (
-                db.table("broadcast_recipients")
-                .select("lead_id")
+    try:
+        all_tag_lead_resp = (
+            db.table("broadcast_recipients")
+            .select("lead_id")
+            .eq("tenant_id", tenant_id)
+            .eq("tag_id", tag_id)
+            .not_.is_("lead_id", "null")
+            .execute()
+        )
+        all_tag_lead_ids = list({r["lead_id"] for r in (all_tag_lead_resp.data or []) if r.get("lead_id")})
+        if all_tag_lead_ids:
+            oo_leads_resp = (
+                db.table("leads")
+                .select("id")
                 .eq("tenant_id", tenant_id)
-                .eq("tag_id", tag_id)
-                .filter("opted_out_at", "not.is", "null")
+                .in_("id", all_tag_lead_ids)
+                .eq("opted_out", True)
                 .execute()
             )
-            opted_out_lead_ids = {r["lead_id"] for r in (oo_resp.data or []) if r.get("lead_id")}
-        except Exception:
-            pass
+            opted_out_lead_ids = {r["id"] for r in (oo_leads_resp.data or []) if r.get("id")}
+    except Exception:
+        pass
 
     broadcast_ids = [b["broadcast_id"] for b in ordered_broadcasts]
     template_map: dict[str, str] = {}
@@ -1818,17 +1828,22 @@ async def download_tag_csv(
             if segment:
                 seg_upper = segment.upper()
                 cur_seg = current_segment_map.get(lead_id, "C")
+                is_opted_out = lead_id in opted_out_lead_ids
                 if seg_upper == "OPTED_OUT":
-                    if lead_id not in opted_out_lead_ids:
+                    if not is_opted_out:
                         continue
-                elif seg_upper == "A" and cur_seg != "A":
-                    continue
-                elif seg_upper == "B" and cur_seg != "B":
-                    continue
-                elif seg_upper == "C" and cur_seg != "C":
-                    continue
-                elif seg_upper == "D" and cur_seg != "D":
-                    continue
+                elif seg_upper == "A":
+                    if is_opted_out or cur_seg != "A":
+                        continue
+                elif seg_upper == "B":
+                    if is_opted_out or cur_seg != "B":
+                        continue
+                elif seg_upper == "C":
+                    if is_opted_out or cur_seg != "C":
+                        continue
+                elif seg_upper == "D":
+                    if is_opted_out or cur_seg != "D":
+                        continue
 
             writer.writerow({
                 "Name": r.get("name") or "",
