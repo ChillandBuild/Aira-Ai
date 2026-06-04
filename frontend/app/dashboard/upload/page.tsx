@@ -238,6 +238,7 @@ function BroadcastSegmentDropdown({ broadcastId, tagId, onDownload }: {
 }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ top: 0, right: 0 });
 
   useEffect(() => {
@@ -249,7 +250,11 @@ function BroadcastSegmentDropdown({ broadcastId, tagId, onDownload }: {
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (btnRef.current && !btnRef.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (
+        btnRef.current && !btnRef.current.contains(t) &&
+        dropdownRef.current && !dropdownRef.current.contains(t)
+      ) setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -262,12 +267,13 @@ function BroadcastSegmentDropdown({ broadcastId, tagId, onDownload }: {
         onClick={() => setOpen(!open)}
         className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 rounded-lg font-label text-[11px] font-semibold transition-colors border border-violet-200"
       >
-        <Tag size={12} />
+        <Download size={12} />
         Segment Leads
         <ChevronDown size={10} className={cn("transition-transform", open && "rotate-180")} />
       </button>
       {open && createPortal(
         <div
+          ref={dropdownRef}
           className="fixed w-44 bg-white rounded-xl shadow-xl border border-surface-mid z-[9999] overflow-hidden"
           style={{ top: position.top, right: position.right }}
         >
