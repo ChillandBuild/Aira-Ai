@@ -835,6 +835,54 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             except Exception as br_err:
                 logger.error(f"broadcast_recipients insert failed: {br_err}")
 
+        # ── Shell scheduled_broadcasts row + broadcast_lead_scores seeding for immediate sends ──
+        if sent > 0:
+            opt_in_src = _clean_text(eligible[0].opt_in_source) if eligible else "unknown"
+            try:
+                db.table("scheduled_broadcasts").insert({
+                    "id": broadcast_id,
+                    "tenant_id": tenant_id,
+                    "template_name": body.template_name,
+                    "schedule_type": "scheduled",
+                    "fire_at": broadcast_timestamp.isoformat(),
+                    "status": "done",
+                    "leads_json": [],
+                    "variable_mapping": body.variable_mapping,
+                    "opt_in_source": opt_in_src or "unknown",
+                    "csv_file_url": body.csv_file_url,
+                    "csv_file_name": body.csv_file_name,
+                    "tag_id": body.tag_id,
+                    "executed_at": broadcast_timestamp.isoformat(),
+                }).execute()
+                logger.info(f"Shell scheduled_broadcasts record inserted for immediate broadcast_id: {broadcast_id}")
+            except Exception as sb_err:
+                logger.error(f"scheduled_broadcasts shell insert failed: {sb_err}")
+
+            bls_rows = [
+                {
+                    "tenant_id": tenant_id,
+                    "broadcast_id": broadcast_id,
+                    "lead_id": r["lead_id"],
+                    "tag_id": body.tag_id,
+                    "score": 5,
+                    "segment": "C",
+                    "arc_score": 5,
+                    "arc_message_count": 0,
+                    "broadcast_sent_at": broadcast_timestamp.isoformat(),
+                }
+                for r in recipient_rows
+                if r.get("send_status") == "sent" and r.get("lead_id")
+            ]
+            if bls_rows:
+                for i in range(0, len(bls_rows), 100):
+                    try:
+                        db.table("broadcast_lead_scores").upsert(
+                            bls_rows[i:i+100],
+                            on_conflict="broadcast_id,lead_id",
+                        ).execute()
+                    except Exception as bls_err:
+                        logger.error(f"broadcast_lead_scores seed failed: {bls_err}")
+
     if sent > 0:
         await increment_send_count(best_number["id"], delta=sent)
 

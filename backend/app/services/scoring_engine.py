@@ -288,10 +288,10 @@ async def compute_score(
             "arc_message_count,segment,segment_drop_count,last_inbound_at"
         )
         .eq("id", str(lead_id))
-        .maybe_single()
+        .limit(1)
         .execute()
     )
-    data = lead_row.data or {}
+    data = lead_row.data[0] if lead_row.data else {}
 
     global_arc       = data.get("score_arc") or 5
     global_segment   = data.get("segment") or "C"
@@ -312,10 +312,10 @@ async def compute_score(
             .select("score,segment,arc_score,arc_message_count,last_inbound_at,segment_drop_count")
             .eq("broadcast_id", bid)
             .eq("lead_id", str(lead_id))
-            .maybe_single()
+            .limit(1)
             .execute()
         )
-        bls = bls_row.data or {}
+        bls = bls_row.data[0] if bls_row.data else {}
         bcast_arc       = bls.get("arc_score") or 5
         bcast_segment   = bls.get("segment") or "C"
         bcast_drop      = bls.get("segment_drop_count") or 0
@@ -335,10 +335,10 @@ async def compute_score(
             db.table("lead_conversation_state")
             .select("state")
             .eq("lead_id", str(lead_id))
-            .maybe_single()
+            .limit(1)
             .execute()
         )
-        flow_state = (state_row.data or {}).get("state") or "idle"
+        flow_state = state_row.data[0].get("state") if state_row.data else "idle"
     except Exception:
         flow_state = "idle"
 
@@ -510,10 +510,10 @@ def _rollup_tag_interest(
             .eq("tenant_id", tenant_id)
             .eq("lead_id", str(lead_id))
             .eq("tag_id", tag_id)
-            .maybe_single()
+            .limit(1)
             .execute()
         )
-        count = ((existing.data or {}).get("broadcast_count") or 0)
+        count = (existing.data[0].get("broadcast_count") or 0) if existing.data else 0
         db.table("lead_tag_interest").upsert({
             "tenant_id": tenant_id,
             "lead_id": str(lead_id),
