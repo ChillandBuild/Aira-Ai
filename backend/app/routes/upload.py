@@ -1798,6 +1798,13 @@ async def download_tag_csv(
             for l in (leads_resp.data or []):
                 segment_map[l["id"]] = l.get("segment") or "C"
 
+        # current_segment_map: always from leads table for accurate segment filtering
+        current_segment_map: dict[str, str] = {}
+        if lead_ids:
+            cur_resp = db.table("leads").select("id,segment").in_("id", lead_ids).eq("tenant_id", tenant_id).execute()
+            for l in (cur_resp.data or []):
+                current_segment_map[l["id"]] = l.get("segment") or "C"
+
         seen_leads: set[str] = set()
         for r in recipients:
             lead_id = r.get("lead_id") or ""
@@ -1810,16 +1817,17 @@ async def download_tag_csv(
 
             if segment:
                 seg_upper = segment.upper()
+                cur_seg = current_segment_map.get(lead_id, "C")
                 if seg_upper == "OPTED_OUT":
                     if lead_id not in opted_out_lead_ids:
                         continue
-                elif seg_upper == "A" and hot != 1:
+                elif seg_upper == "A" and cur_seg != "A":
                     continue
-                elif seg_upper == "B" and warm != 1:
+                elif seg_upper == "B" and cur_seg != "B":
                     continue
-                elif seg_upper == "C" and cold != 1:
+                elif seg_upper == "C" and cur_seg != "C":
                     continue
-                elif seg_upper == "D" and (hot != 0 or warm != 0 or cold != 0):
+                elif seg_upper == "D" and cur_seg != "D":
                     continue
 
             writer.writerow({

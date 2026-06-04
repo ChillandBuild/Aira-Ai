@@ -99,42 +99,54 @@ def get_tag_stats(tenant_id: str = Depends(get_tenant_id)):
         else:
             failed_counts[tid] = failed_counts.get(tid, 0) + 1
 
-    # Count interest per tag
-    interest_rows = (
-        db.table("lead_tag_interest")
-        .select("tag_id, hot, warm, cold")
+    # Get distinct sent lead_ids per tag, then join current leads.segment
+    sent_lead_rows = (
+        db.table("broadcast_recipients")
+        .select("tag_id, lead_id")
         .eq("tenant_id", tenant_id)
         .in_("tag_id", tag_ids)
+        .eq("send_status", "sent")
+        .not_.is_("lead_id", "null")
         .execute()
     )
+    tag_lead_ids: dict[str, set] = {}
+    all_lead_ids: set[str] = set()
+    for row in (sent_lead_rows.data or []):
+        tid = row.get("tag_id")
+        lid = row.get("lead_id")
+        if tid and lid:
+            if tid not in tag_lead_ids:
+                tag_lead_ids[tid] = set()
+            tag_lead_ids[tid].add(lid)
+            all_lead_ids.add(lid)
+
+    lead_segment_map: dict[str, str] = {}
+    if all_lead_ids:
+        leads_resp = (
+            db.table("leads")
+            .select("id, segment")
+            .eq("tenant_id", tenant_id)
+            .in_("id", list(all_lead_ids))
+            .execute()
+        )
+        for l in (leads_resp.data or []):
+            lead_segment_map[l["id"]] = l.get("segment") or "C"
+
     hot_counts: dict[str, int] = {}
     warm_counts: dict[str, int] = {}
     cold_counts: dict[str, int] = {}
-    for r in (interest_rows.data or []):
-        tid = r.get("tag_id")
-        if not tid:
-            continue
-        if r.get("hot"):
-            hot_counts[tid] = hot_counts.get(tid, 0) + 1
-        if r.get("warm"):
-            warm_counts[tid] = warm_counts.get(tid, 0) + 1
-        if r.get("cold"):
-            cold_counts[tid] = cold_counts.get(tid, 0) + 1
-
-    # Count disqualified (segment D) per tag
-    dq_rows = (
-        db.table("lead_tag_interest")
-        .select("tag_id")
-        .eq("tenant_id", tenant_id)
-        .in_("tag_id", tag_ids)
-        .eq("segment", "D")
-        .execute()
-    )
     dq_counts: dict[str, int] = {}
-    for r in (dq_rows.data or []):
-        tid = r.get("tag_id")
-        if tid:
-            dq_counts[tid] = dq_counts.get(tid, 0) + 1
+    for tid, lead_ids in tag_lead_ids.items():
+        for lid in lead_ids:
+            seg = lead_segment_map.get(lid, "C")
+            if seg == "A":
+                hot_counts[tid] = hot_counts.get(tid, 0) + 1
+            elif seg == "B":
+                warm_counts[tid] = warm_counts.get(tid, 0) + 1
+            elif seg == "C":
+                cold_counts[tid] = cold_counts.get(tid, 0) + 1
+            elif seg == "D":
+                dq_counts[tid] = dq_counts.get(tid, 0) + 1
 
     # Count opted-out leads per tag (distinct lead_id where opted_out_at IS NOT NULL)
     oo_rows = (
