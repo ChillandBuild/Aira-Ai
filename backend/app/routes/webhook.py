@@ -125,6 +125,8 @@ async def _record_per_broadcast_opt_out(lead_id: str, phone: str, tenant_id: str
         db.table("leads").update({
             "opted_out": True,
             "opted_out_at": datetime.now(timezone.utc).isoformat(),
+            "segment": "D",
+            "score": 1,
         }).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
     except Exception as e:
         logger.error(f"Per-broadcast opt-out: leads.opted_out update failed for {phone}: {e}")
