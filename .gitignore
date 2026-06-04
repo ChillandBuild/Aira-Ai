@@ -1,3 +1,6 @@
+# Graphify knowledge graph (generated)
+graphify-out/
+
 # Environment variables
 .env
 .env.local

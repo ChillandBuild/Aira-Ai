@@ -84,7 +84,6 @@ async def whatsapp_analytics(tenant_id: str = Depends(get_tenant_id)):
         "messages_received_today": messages_received_today,
         "ai_reply_count_today": ai_reply_count_today,
         "avg_reply_time_seconds": None,
-        "top_faqs": [],
     }
 
 

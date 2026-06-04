@@ -236,12 +236,14 @@ def _record_outbound(db, step, lead_data, source, content, sid, automation_id) -
 
 async def _score_after_drive(db, run, lead_id: str, tenant_id: str, message: str) -> None:
     """Bot-path scoring. Runs ONCE per drive (wait, wait_reply, finish) so a
-    multi-send flow doesn't re-score per step. Segment-driven escalation: if score
-    crosses 7 AND the lead's new segment is in inbox_cfg.segments AND the channel
-    matches, creates a chat_handover (auto-assigned if inbox_cfg.auto_assign_enabled)."""
+    multi-send flow doesn't re-score per step. Segment-transition escalation:
+    if the lead's segment changed AND the new segment is in inbox_cfg.segments
+    AND the channel matches, creates a chat_handover (auto-assigned if
+    inbox_cfg.auto_assign_enabled). Respects the tenant's per-segment scoring
+    thresholds (A/B/C/D) — no hardcoded score."""
     try:
         from app.services.scoring_engine import compute_score
-        from app.services.assignment import get_inbox_config, get_telecalling_config, should_escalate_hot_lead
+        from app.services.assignment import get_inbox_config, should_escalate_hot_lead
         from app.services.ai_reply import _trigger_chat_escalation
 
         result = await compute_score(
@@ -254,15 +256,14 @@ async def _score_after_drive(db, run, lead_id: str, tenant_id: str, message: str
         if new_score is None:
             return
         try:
-            old_row = db.table("leads").select("score,segment,source").eq("id", lead_id).maybe_single().execute()
-            old_score = (old_row.data or {}).get("score") or 5
-            new_segment = (old_row.data or {}).get("segment") or "C"
-            source = (old_row.data or {}).get("source") or "whatsapp"
+            lead_row = db.table("leads").select("segment,source").eq("id", lead_id).maybe_single().execute()
+            old_segment = (lead_row.data or {}).get("segment") or "C"
+            new_segment = (result or {}).get("segment") or old_segment
+            source = (lead_row.data or {}).get("source") or "whatsapp"
         except Exception:
             return
 
-        if new_score >= 7 and old_score < 7:
-            inbox_cfg = get_inbox_config(tenant_id)
+        if new_segment != old_segment and new_segment in (inbox_cfg := get_inbox_config(tenant_id)).get("segments", []):
             if should_escalate_hot_lead(inbox_cfg, new_segment, source):
                 try:
                     lead = db.table("leads").select("assigned_to").eq("id", lead_id).maybe_single().execute()
@@ -275,7 +276,7 @@ async def _score_after_drive(db, run, lead_id: str, tenant_id: str, message: str
                         auto_assign=inbox_cfg.get("auto_assign_enabled", False),
                     )
                 except Exception as esc_err:
-                    logger.error(f"Hot lead escalation failed for {lead_id}: {esc_err}")
+                    logger.error(f"Segment-transition escalation failed for {lead_id}: {esc_err}")
     except Exception as e:
         logger.error(f"Bot-path scoring failed for lead {lead_id}: {e}")
 

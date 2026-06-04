@@ -806,10 +806,11 @@ async def generate_reply(
             if assigned_caller:
                 lead_data["assigned_to"] = assigned_caller
 
-        if new_score >= 7 and (lead_data.get("score") or 5) < 7:
-            # Segment-driven hot lead escalation. Replaces the old Trigger E +
-            # hot_lead_alerts path. Single gate: inbox_cfg.enabled + segment match
-            # + channel match. Caller is auto-assigned only if auto_assign_enabled.
+        if new_segment != old_segment and new_segment in inbox_cfg.get("segments", []):
+            # Segment-transition escalation. Replaces the old hardcoded "score >= 7"
+            # + hot_lead_alerts path. Single gate: inbox_cfg.enabled + segment match
+            # + channel match. Fires once per segment transition, respecting the
+            # tenant's per-segment scoring thresholds (A/B/C/D).
             from app.services.assignment import should_escalate_hot_lead, should_assign_to_telecalling
             if should_escalate_hot_lead(inbox_cfg, new_segment, channel):
                 try:
@@ -823,7 +824,7 @@ async def generate_reply(
                     )
                     trigger_escalated = True
                 except Exception as esc_err:
-                    logger.error(f"Hot lead escalation failed for lead {lead_id}: {esc_err}")
+                    logger.error(f"Segment-transition escalation failed for lead {lead_id}: {esc_err}")
     except Exception as e:
         logger.error(f"Scoring update failed for lead {lead_id}: {e}")
 
