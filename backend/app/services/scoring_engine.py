@@ -307,15 +307,19 @@ async def compute_score(
 
     if broadcast_context:
         bid = broadcast_context["broadcast_id"]
-        bls_row = (
-            db.table("broadcast_lead_scores")
-            .select("score,segment,arc_score,arc_message_count,last_inbound_at,segment_drop_count")
-            .eq("broadcast_id", bid)
-            .eq("lead_id", str(lead_id))
-            .limit(1)
-            .execute()
-        )
-        bls = bls_row.data[0] if bls_row.data else {}
+        try:
+            bls_row = (
+                db.table("broadcast_lead_scores")
+                .select("score,segment,arc_score,arc_message_count,last_inbound_at,segment_drop_count")
+                .eq("broadcast_id", bid)
+                .eq("lead_id", str(lead_id))
+                .limit(1)
+                .execute()
+            )
+            bls = (bls_row.data[0] if bls_row and bls_row.data else {})
+        except Exception as _bls_err:
+            logger.warning(f"broadcast_lead_scores load failed for lead {lead_id}: {_bls_err}")
+            bls = {}
         bcast_arc       = bls.get("arc_score") or 5
         bcast_segment   = bls.get("segment") or "C"
         bcast_drop      = bls.get("segment_drop_count") or 0
@@ -439,18 +443,21 @@ async def compute_score(
     # ── 11. Persist broadcast + roll-up ───────────────────────────────────────
     if broadcast_context:
         bid = broadcast_context["broadcast_id"]
-        db.table("broadcast_lead_scores").upsert({
-            "broadcast_id": bid,
-            "lead_id": str(lead_id),
-            "tenant_id": tenant_id or "",
-            "score": final_score,
-            "arc_score": current_arc,
-            "segment": final_segment,
-            "arc_message_count": arc_msg_count,
-            "segment_drop_count": new_drop_count,
-            "last_inbound_at": now_iso,
-            "updated_at": now_iso,
-        }, on_conflict="broadcast_id,lead_id").execute()
+        try:
+            db.table("broadcast_lead_scores").upsert({
+                "broadcast_id": bid,
+                "lead_id": str(lead_id),
+                "tenant_id": tenant_id or "",
+                "score": final_score,
+                "arc_score": current_arc,
+                "segment": final_segment,
+                "arc_message_count": arc_msg_count,
+                "segment_drop_count": new_drop_count,
+                "last_inbound_at": now_iso,
+                "updated_at": now_iso,
+            }, on_conflict="broadcast_id,lead_id").execute()
+        except Exception as _bls_upsert_err:
+            logger.warning(f"broadcast_lead_scores upsert failed for lead {lead_id}: {_bls_upsert_err}")
 
         _sentiment = "positive" if intent_delta > 0 else ("negative" if intent_delta < 0 else "neutral")
         _update_recipient_sentiment(db, bid, lead_id, _sentiment)
