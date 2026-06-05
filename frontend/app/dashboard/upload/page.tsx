@@ -49,6 +49,7 @@ type BroadcastHistoryItem = {
   csv_file_url?: string;
   csv_file_name?: string;
   tag_id?: string;
+  tag_name?: string;
   hot?: number;
   warm?: number;
   cold?: number;
@@ -2053,6 +2054,11 @@ export default function UploadPage() {
                   <span className="px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 font-label text-xs font-semibold border border-emerald-100">
                     {item.template_name}
                   </span>
+                  {item.tag_name && (
+                    <span className="px-3 py-1.5 rounded-full bg-violet-50 text-violet-700 font-label text-xs font-semibold border border-violet-100">
+                      {item.tag_name}
+                    </span>
+                  )}
                   
                   {/* Spacer */}
                   <div className="flex-1" />

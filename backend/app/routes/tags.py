@@ -89,16 +89,23 @@ def get_tag_stats(tenant_id: str = Depends(get_tenant_id)):
     if not tag_ids:
         return {"data": []}
 
-    # opted_out_at on broadcast_recipients (migration 085 compat)
+    # Optional broadcast_recipients columns (migration compatibility)
     has_br_opted_out_at = True
     try:
         db.table("broadcast_recipients").select("opted_out_at").limit(1).execute()
     except Exception:
         has_br_opted_out_at = False
+    has_fail_reason = True
+    try:
+        db.table("broadcast_recipients").select("fail_reason").limit(1).execute()
+    except Exception:
+        has_fail_reason = False
 
     select_cols = "tag_id, lead_id, send_status, created_at"
     if has_br_opted_out_at:
         select_cols += ", opted_out_at"
+    if has_fail_reason:
+        select_cols += ", fail_reason"
     recipients = (
         db.table("broadcast_recipients")
         .select(select_cols)
@@ -113,8 +120,7 @@ def get_tag_stats(tenant_id: str = Depends(get_tenant_id)):
 
     # Current lead state: segment + opt-out (with timestamp for per-send scoping)
     lead_segment: dict[str, str] = {}
-    lead_opted_out: dict[str, bool] = {}
-    lead_opted_out_at: dict[str, datetime | None] = {}
+    lead_opted_out_at: dict[str, datetime] = {}
     for i in range(0, len(lead_ids), 200):
         chunk = lead_ids[i:i + 200]
         resp = (
@@ -126,8 +132,31 @@ def get_tag_stats(tenant_id: str = Depends(get_tenant_id)):
         )
         for l in (resp.data or []):
             lead_segment[l["id"]] = l.get("segment") or "C"
-            lead_opted_out[l["id"]] = bool(l.get("opted_out"))
-            lead_opted_out_at[l["id"]] = _parse_ts(l.get("opted_out_at"))
+            opted_at = _parse_ts(l.get("opted_out_at"))
+            if l.get("opted_out") and opted_at:
+                lead_opted_out_at[l["id"]] = opted_at
+
+    # If the per-broadcast opt-out stamp was missed, attribute the global
+    # fallback only to the single latest send at/before the opt-out.
+    owning_send_at: dict[str, datetime] = {}
+    oo_lead_ids = list(lead_opted_out_at.keys())
+    for i in range(0, len(oo_lead_ids), 200):
+        chunk = oo_lead_ids[i:i + 200]
+        resp = (
+            db.table("broadcast_recipients")
+            .select("lead_id, created_at")
+            .eq("tenant_id", tenant_id)
+            .in_("lead_id", chunk)
+            .execute()
+        )
+        for row in (resp.data or []):
+            lid = row.get("lead_id")
+            sent_at = _parse_ts(row.get("created_at"))
+            opted_at = lead_opted_out_at.get(lid)
+            if not lid or not sent_at or not opted_at or sent_at > opted_at:
+                continue
+            if lid not in owning_send_at or sent_at > owning_send_at[lid]:
+                owning_send_at[lid] = sent_at
 
     # Outbound delivery statuses per lead, for per-send window matching
     msgs_by_lead: dict[str, list[tuple[datetime, str]]] = {}
@@ -184,9 +213,10 @@ def get_tag_stats(tenant_id: str = Depends(get_tenant_id)):
         opted = False
         if r.get("opted_out_at"):
             opted = True
-        elif lid and lead_opted_out.get(lid):
-            oo_at = lead_opted_out_at.get(lid)
-            opted = (not sent_at) or (oo_at is None) or (oo_at >= sent_at)
+        elif (r.get("send_status") or "") == "opted_out_skip":
+            opted = (r.get("fail_reason") or "opted_out") != "negative_reply_excluded"
+        elif lid and sent_at and owning_send_at.get(lid) == sent_at:
+            opted = True
         if opted:
             oo_c[tid] += 1
             continue
