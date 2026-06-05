@@ -221,59 +221,75 @@ export default function DashboardPage() {
         <>
           {/* Row 1: Overview & Snapshot */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 flex flex-col">
-              {/* Massive rounded Overview Card */}
-              <div className="card rounded-[32px] p-8 flex-1 flex flex-col justify-between">
-                <div>
-                  <h2 className="font-display font-bold text-zinc-900 mb-6 text-[18px]">
-                    Overview
-                  </h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 divide-y md:divide-y-0 md:divide-x divide-zinc-100">
-                    {/* Column 1: Total Leads */}
-                    <div className="flex flex-col justify-between h-full pb-6 md:pb-0">
-                      <div>
-                        <div className="w-11 h-11 rounded-full bg-zinc-100 flex items-center justify-center mb-4">
-                          <MessageSquare className="text-zinc-500" size={18} />
-                        </div>
-                        <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Total Leads</div>
-                        <div className="flex items-center gap-6 mt-2">
-                          <div className="font-display font-bold text-[36px] text-zinc-900 tracking-tight leading-none">
-                            {total}
-                          </div>
-                          {/* Sparkline */}
-                          <svg className="w-24 h-10 text-emerald-500" viewBox="0 0 100 40" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <path d="M 0 30 Q 20 20 40 25 T 80 5 T 100 15" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        </div>
+            <div className="lg:col-span-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
+                {/* Total Leads Card */}
+                <div className="group relative overflow-hidden card rounded-[32px] p-8 flex flex-col justify-between hover:-translate-y-1 hover:shadow-md transition-all duration-300">
+                  <div className="absolute top-0 right-0 -mt-4 -mr-4 w-32 h-32 rounded-full bg-emerald-500/5 blur-2xl group-hover:bg-emerald-500/10 transition-all duration-300" />
+                  <div>
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-400 text-white flex items-center justify-center shadow-md shadow-emerald-500/20">
+                        <MessageSquare size={18} />
                       </div>
-                      <div className="mt-6 flex items-center">
-                        <span className="badge badge-green">↑ 12.4%</span>
-                        <span className="text-xs text-zinc-400 ml-2 font-medium">vs last week</span>
-                      </div>
+                      {/* Sparkline */}
+                      <svg className="w-24 h-10 overflow-visible" viewBox="0 0 100 40">
+                        <defs>
+                          <linearGradient id="totalLeadsGrad" x1="0" y1="0" x2="1" y2="0">
+                            <stop offset="0%" stopColor="#10b981" />
+                            <stop offset="100%" stopColor="#06b6d4" />
+                          </linearGradient>
+                          <linearGradient id="totalLeadsArea" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#10b981" stopOpacity="0.25" />
+                            <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
+                          </linearGradient>
+                        </defs>
+                        <path d="M 4 30 Q 20 20 40 25 T 80 8 T 96 18 L 96 40 L 4 40 Z" fill="url(#totalLeadsArea)" />
+                        <path d="M 4 30 Q 20 20 40 25 T 80 8 T 96 18" fill="none" stroke="url(#totalLeadsGrad)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
                     </div>
+                    <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Total Leads</div>
+                    <div className="font-display font-bold text-[40px] text-zinc-900 tracking-tight leading-none mt-2">
+                      {total}
+                    </div>
+                  </div>
+                  <div className="mt-8 flex items-center">
+                    <span className="badge badge-green font-semibold">↑ 12.4%</span>
+                    <span className="text-xs text-zinc-400 ml-2 font-medium">vs last week</span>
+                  </div>
+                </div>
 
-                    {/* Column 2: Hot Leads */}
-                    <div className="flex flex-col justify-between h-full pt-6 md:pt-0 md:pl-8">
-                      <div>
-                        <div className="w-11 h-11 rounded-full bg-zinc-100 flex items-center justify-center mb-4">
-                          <TrendingUp className="text-zinc-500" size={18} />
-                        </div>
-                        <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Hot Leads</div>
-                        <div className="flex items-center gap-6 mt-2">
-                          <div className="font-display font-bold text-[36px] text-zinc-900 tracking-tight leading-none">
-                            {segA}
-                          </div>
-                          {/* Sparkline */}
-                          <svg className="w-24 h-10 text-amber-500" viewBox="0 0 100 40" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <path d="M 0 25 Q 15 35 35 20 T 70 10 T 100 5" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        </div>
+                {/* Hot Leads Card */}
+                <div className="group relative overflow-hidden card rounded-[32px] p-8 flex flex-col justify-between hover:-translate-y-1 hover:shadow-md transition-all duration-300">
+                  <div className="absolute top-0 right-0 -mt-4 -mr-4 w-32 h-32 rounded-full bg-amber-500/5 blur-2xl group-hover:bg-amber-500/10 transition-all duration-300" />
+                  <div>
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-amber-500 to-orange-500 text-white flex items-center justify-center shadow-md shadow-amber-500/20">
+                        <TrendingUp size={18} />
                       </div>
-                      <div className="mt-6 flex items-center">
-                        <span className="badge badge-green">↑ 36.8%</span>
-                        <span className="text-xs text-zinc-400 ml-2 font-medium">high intent</span>
-                      </div>
+                      {/* Sparkline */}
+                      <svg className="w-24 h-10 overflow-visible" viewBox="0 0 100 40">
+                        <defs>
+                          <linearGradient id="hotLeadsGrad" x1="0" y1="0" x2="1" y2="0">
+                            <stop offset="0%" stopColor="#f59e0b" />
+                            <stop offset="100%" stopColor="#f97316" />
+                          </linearGradient>
+                          <linearGradient id="hotLeadsArea" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.25" />
+                            <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
+                          </linearGradient>
+                        </defs>
+                        <path d="M 4 25 Q 15 35 35 20 T 70 12 T 96 8 L 96 40 L 4 40 Z" fill="url(#hotLeadsArea)" />
+                        <path d="M 4 25 Q 15 35 35 20 T 70 12 T 96 8" fill="none" stroke="url(#hotLeadsGrad)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
                     </div>
+                    <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Hot Leads</div>
+                    <div className="font-display font-bold text-[40px] text-zinc-900 tracking-tight leading-none mt-2">
+                      {segA}
+                    </div>
+                  </div>
+                  <div className="mt-8 flex items-center">
+                    <span className="badge badge-green font-semibold">↑ 36.8%</span>
+                    <span className="text-xs text-zinc-400 ml-2 font-medium">high intent</span>
                   </div>
                 </div>
               </div>
