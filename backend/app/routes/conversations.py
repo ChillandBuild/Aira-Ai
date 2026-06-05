@@ -33,12 +33,15 @@ async def list_conversations(
     if not lead_ids:
         return {"leads": [], "total": 0}
 
+    # Opted-out leads who actually reply must stay visible — the RPC only returns
+    # leads with real conversation activity (an inbound reply or a non-template
+    # outbound), so we keep them here and let the UI badge them as opted-out.
+    # Excluding them silently dropped re-engaged opt-outs from the inbox.
     lead_query = (
         db.table("leads")
         .select("*")
         .in_("id", lead_ids)
         .eq("tenant_id", tenant_id)
-        .neq("opted_out", True)
         .is_("deleted_at", "null")
     )
 
