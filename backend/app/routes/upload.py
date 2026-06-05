@@ -1314,6 +1314,7 @@ def _classify_broadcast_outcomes(
         if phone and phone not in seen_phones:
             seen_phones.add(phone)
             failures.append({
+                "lead_id": lead_id or "",
                 "phone": phone,
                 "name": name,
                 "reason": reason,
@@ -1736,12 +1737,15 @@ async def download_tag_csv(
     segment: str = Query("", description="Filter by segment: A=hot, B=warm, C=cold, D=disqualified, empty=all"),
     tenant_id: str = Depends(get_tenant_id),
 ):
-    """Per-tag CSV grouped by broadcast: name, phone, template, broadcast_id, HOT, WARM, COLD.
+    """Per-tag CSV grouped by broadcast.
 
-    Rows are ordered chronologically by broadcast. Each broadcast section shows
-    all recipients with their frozen segment from broadcast_lead_scores.
+    Normal segment exports include only successful sends from each broadcast under
+    the tag. Segment filters use the lead's current segment so the tag section is
+    live, while per-broadcast exports remain frozen to that broadcast.
+    OPTED_OUT uses the same dedicated sheet format as broadcast-tag-csv.
     """
     db = get_supabase()
+    seg_filter = segment.upper() if segment else ""
 
     br_broadcasts = (
         db.table("broadcast_recipients")
@@ -1767,130 +1771,113 @@ async def download_tag_csv(
         writer.writeheader()
         return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=tag_no_data.csv"})
 
-    # Fetch all opted-out lead_ids for this tag (used both for OPTED_OUT filter and exclusion)
-    opted_out_lead_ids: set[str] = set()
-    try:
-        all_tag_lead_resp = (
-            db.table("broadcast_recipients")
-            .select("lead_id")
-            .eq("tenant_id", tenant_id)
-            .eq("tag_id", tag_id)
-            .not_.is_("lead_id", "null")
-            .execute()
-        )
-        all_tag_lead_ids = list({r["lead_id"] for r in (all_tag_lead_resp.data or []) if r.get("lead_id")})
-        if all_tag_lead_ids:
-            oo_leads_resp = (
-                db.table("leads")
-                .select("id")
-                .eq("tenant_id", tenant_id)
-                .in_("id", all_tag_lead_ids)
-                .eq("opted_out", True)
-                .execute()
-            )
-            opted_out_lead_ids = {r["id"] for r in (oo_leads_resp.data or []) if r.get("id")}
-    except Exception:
-        pass
-
     broadcast_ids = [b["broadcast_id"] for b in ordered_broadcasts]
     template_map: dict[str, str] = {}
+    broadcast_created_at: dict[str, str] = {}
     try:
         sb_rows = (
             db.table("scheduled_broadcasts")
-            .select("id, template_name")
+            .select("id, template_name, created_at")
             .in_("id", broadcast_ids)
             .execute()
         )
         for sb in (sb_rows.data or []):
             template_map[sb["id"]] = sb.get("template_name", sb["id"][:8])
+            if sb.get("created_at"):
+                broadcast_created_at[sb["id"]] = sb["created_at"]
     except Exception:
         pass
 
     output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "Template", "Broadcast ID", "HOT", "WARM", "COLD"])
-    writer.writeheader()
 
-    for broadcast in ordered_broadcasts:
-        bid = broadcast["broadcast_id"]
-        template_name = template_map.get(bid, bid[:8])
-
-        recipients_resp = (
-            db.table("broadcast_recipients")
-            .select("lead_id, phone, name")
-            .eq("tenant_id", tenant_id)
-            .eq("broadcast_id", bid)
-            .eq("send_status", "sent")
-            .execute()
+    if seg_filter == "OPTED_OUT":
+        writer = csv.DictWriter(
+            output,
+            fieldnames=["Name", "Phone", "Template", "From Broadcast ID", "Reason", "Opted Out At"],
         )
-        recipients = recipients_resp.data or []
-        if not recipients:
-            continue
+        writer.writeheader()
 
-        lead_ids = list({r["lead_id"] for r in recipients if r.get("lead_id")})
+        for broadcast in ordered_broadcasts:
+            bid = broadcast["broadcast_id"]
+            template_name = template_map.get(bid, bid[:8])
+            classify_ts = broadcast_created_at.get(bid) or broadcast.get("created_at") or datetime.now(timezone.utc).isoformat()
+            outcome = _classify_broadcast_outcomes(db, tenant_id, bid, classify_ts)
+            for row in (outcome.get("failures") or []):
+                if row.get("reason") != "not_interested":
+                    continue
+                writer.writerow({
+                    "Name": row.get("name", ""),
+                    "Phone": row.get("phone", ""),
+                    "Template": template_name,
+                    "From Broadcast ID": bid,
+                    "Reason": row.get("fail_reason") or "opted_out",
+                    "Opted Out At": row.get("opted_out_at") or "",
+                })
+    else:
+        writer = csv.DictWriter(output, fieldnames=["Name", "Phone", "Template", "Broadcast ID", "HOT", "WARM", "COLD"])
+        writer.writeheader()
 
-        segment_map: dict[str, str] = {}
-        if lead_ids:
-            bls_resp = (
-                db.table("broadcast_lead_scores")
-                .select("lead_id,segment")
+        for broadcast in ordered_broadcasts:
+            bid = broadcast["broadcast_id"]
+            template_name = template_map.get(bid, bid[:8])
+            classify_ts = broadcast_created_at.get(bid) or broadcast.get("created_at") or datetime.now(timezone.utc).isoformat()
+            outcome = _classify_broadcast_outcomes(db, tenant_id, bid, classify_ts)
+            failed_lead_ids = {r.get("lead_id") for r in (outcome.get("failures") or []) if r.get("lead_id")}
+            failed_phones = {r.get("phone") for r in (outcome.get("failures") or []) if r.get("phone")}
+
+            recipients_resp = (
+                db.table("broadcast_recipients")
+                .select("lead_id, phone, name")
+                .eq("tenant_id", tenant_id)
+                .eq("tag_id", tag_id)
                 .eq("broadcast_id", bid)
-                .in_("lead_id", lead_ids)
+                .eq("send_status", "sent")
                 .execute()
             )
-            segment_map = {r["lead_id"]: r.get("segment") or "C" for r in (bls_resp.data or [])}
-
-        missing_ids = [lid for lid in lead_ids if lid not in segment_map]
-        if missing_ids:
-            leads_resp = db.table("leads").select("id,segment").in_("id", missing_ids).eq("tenant_id", tenant_id).execute()
-            for l in (leads_resp.data or []):
-                segment_map[l["id"]] = l.get("segment") or "C"
-
-        # current_segment_map: always from leads table for accurate segment filtering
-        current_segment_map: dict[str, str] = {}
-        if lead_ids:
-            cur_resp = db.table("leads").select("id,segment").in_("id", lead_ids).eq("tenant_id", tenant_id).execute()
-            for l in (cur_resp.data or []):
-                current_segment_map[l["id"]] = l.get("segment") or "C"
-
-        seen_leads: set[str] = set()
-        for r in recipients:
-            lead_id = r.get("lead_id") or ""
-            if lead_id in seen_leads:
+            recipients = recipients_resp.data or []
+            if not recipients:
                 continue
-            seen_leads.add(lead_id)
 
-            seg = segment_map.get(lead_id, "C")
-            hot, warm, cold = _segment_to_flags(seg)
+            lead_ids = list({r["lead_id"] for r in recipients if r.get("lead_id")})
 
-            if segment:
-                seg_upper = segment.upper()
+            current_segment_map: dict[str, str] = {}
+            if lead_ids:
+                cur_resp = db.table("leads").select("id,segment").in_("id", lead_ids).eq("tenant_id", tenant_id).execute()
+                for lead in (cur_resp.data or []):
+                    current_segment_map[lead["id"]] = lead.get("segment") or "C"
+
+            seen_leads: set[str] = set()
+            seen_phones: set[str] = set()
+            for r in recipients:
+                lead_id = r.get("lead_id") or ""
+                phone = r.get("phone") or ""
+                if lead_id and lead_id in seen_leads:
+                    continue
+                if not lead_id and phone and phone in seen_phones:
+                    continue
+                if lead_id:
+                    seen_leads.add(lead_id)
+                if phone:
+                    seen_phones.add(phone)
+
+                if (lead_id and lead_id in failed_lead_ids) or (phone and phone in failed_phones):
+                    continue
+
                 cur_seg = current_segment_map.get(lead_id, "C")
-                is_opted_out = lead_id in opted_out_lead_ids
-                if seg_upper == "OPTED_OUT":
-                    if not is_opted_out:
-                        continue
-                elif seg_upper == "A":
-                    if is_opted_out or cur_seg != "A":
-                        continue
-                elif seg_upper == "B":
-                    if is_opted_out or cur_seg != "B":
-                        continue
-                elif seg_upper == "C":
-                    if is_opted_out or cur_seg != "C":
-                        continue
-                elif seg_upper == "D":
-                    if is_opted_out or cur_seg != "D":
+                if seg_filter:
+                    if seg_filter in {"A", "B", "C", "D"} and cur_seg != seg_filter:
                         continue
 
-            writer.writerow({
-                "Name": r.get("name") or "",
-                "Phone": r.get("phone") or "",
-                "Template": template_name,
-                "Broadcast ID": bid,
-                "HOT": hot,
-                "WARM": warm,
-                "COLD": cold,
-            })
+                hot, warm, cold = _segment_to_flags(cur_seg)
+                writer.writerow({
+                    "Name": r.get("name") or "",
+                    "Phone": phone,
+                    "Template": template_name,
+                    "Broadcast ID": bid,
+                    "HOT": hot,
+                    "WARM": warm,
+                    "COLD": cold,
+                })
 
     tag_name = "tag"
     try:
