@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id
 from app.services.ai_reply import send_whatsapp
+from app.services.delivery_status import nearest_record, nearest_status, parse_ts
 from app.services.growth import get_or_create_campaign, record_stage_event, sync_follow_up_jobs
 from app.services.meta_cloud import send_template_message
 from app.services.outbound_router import get_best_number, increment_send_count
@@ -1064,8 +1065,6 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
 # Both the dashboard counter (/history/refresh) and the failed-CSV download
 # (/failed-csv) classify recipients here, so the numbers can never drift.
 
-_DELIVERY_PRIORITY = {"failed": 0, "sent": 1, "delivered": 2, "read": 3}
-
 
 def _classify_broadcast_outcomes(
     db,
@@ -1182,8 +1181,10 @@ def _classify_broadcast_outcomes(
         except Exception as e:
             logger.warning(f"Classifier owning-broadcast lookup failed: {e}")
 
-    # Delivery status per lead, scoped to the broadcast time window
-    # Window: -2 min to +10 min absorbs clock skew and webhook lag
+    # Delivery status per lead, attributed to THIS broadcast by the outbound
+    # message NEAREST in time to the send. Picking by highest priority let an
+    # adjacent broadcast's "sent" mask this broadcast's "failed". See
+    # services/delivery_status.nearest_record.
     msg_status_by_lead: dict[str, str] = {}
     msg_error_by_lead: dict[str, tuple[int | None, str | None]] = {}
     try:
@@ -1192,7 +1193,7 @@ def _classify_broadcast_outcomes(
         window_end = (ts_dt + timedelta(minutes=10)).isoformat()
         if lead_ids:
             # Try to fetch error columns (migration 061); fall back if not yet applied
-            select_cols = "lead_id, delivery_status, delivery_error_code, delivery_error_title"
+            select_cols = "lead_id, delivery_status, created_at, delivery_error_code, delivery_error_title"
             try:
                 msg_rows = db.table("messages") \
                     .select(select_cols) \
@@ -1203,24 +1204,30 @@ def _classify_broadcast_outcomes(
                     .execute()
             except Exception:
                 msg_rows = db.table("messages") \
-                    .select("lead_id, delivery_status") \
+                    .select("lead_id, delivery_status, created_at") \
                     .in_("lead_id", lead_ids) \
                     .eq("direction", "outbound") \
                     .gte("created_at", window_start) \
                     .lte("created_at", window_end) \
                     .execute()
+            # Group all in-window outbound messages per lead, then pick the nearest.
+            recs_by_lead: dict[str, list[tuple]] = {}
             for msg in (msg_rows.data or []):
                 lid = msg.get("lead_id")
                 status = msg.get("delivery_status")
-                if not lid or not status:
+                mts = parse_ts(msg.get("created_at"))
+                if not lid or not status or mts is None:
                     continue
-                if lid not in msg_status_by_lead:
-                    msg_status_by_lead[lid] = status
-                elif _DELIVERY_PRIORITY.get(status, -1) > _DELIVERY_PRIORITY.get(msg_status_by_lead[lid], -1):
-                    msg_status_by_lead[lid] = status
-                if status == "failed":
-                    code = msg.get("delivery_error_code")
-                    title = msg.get("delivery_error_title")
+                recs_by_lead.setdefault(lid, []).append(
+                    (mts, status, msg.get("delivery_error_code"), msg.get("delivery_error_title"))
+                )
+            for lid, recs in recs_by_lead.items():
+                nearest = nearest_record(recs, ts_dt)
+                if not nearest:
+                    continue
+                msg_status_by_lead[lid] = nearest[1]
+                if nearest[1] == "failed":
+                    code, title = nearest[2], nearest[3]
                     if code is not None or title:
                         msg_error_by_lead[lid] = (code, title)
     except Exception as e:
@@ -2297,7 +2304,9 @@ async def download_broadcast_tag_csv(
             headers={"Content-Disposition": f"attachment; filename=broadcast_{broadcast_id[:8]}_{safe_tag}_opted_out.csv"},
         )
 
-    # Exclude leads whose broadcast message delivery failed (delivery webhook wrote status=failed)
+    # Exclude leads whose THIS-broadcast message failed delivery. Attribute by the
+    # message nearest the send (not "any failed in window"), so a failure in an
+    # adjacent broadcast doesn't wrongly exclude this one. See services/delivery_status.
     delivery_failed_ids: set[str] = set()
     if broadcast_sent_at:
         try:
@@ -2306,17 +2315,26 @@ async def download_broadcast_tag_csv(
             _window_end = (_bcast_dt + timedelta(minutes=10)).isoformat()
             _lead_ids_sent = [r["lead_id"] for r in recipients if r.get("lead_id")]
             if _lead_ids_sent:
-                _failed_msgs = (
+                _msgs = (
                     db.table("messages")
-                    .select("lead_id")
+                    .select("lead_id, delivery_status, created_at")
                     .in_("lead_id", _lead_ids_sent)
                     .eq("direction", "outbound")
-                    .eq("delivery_status", "failed")
                     .gte("created_at", _window_start)
                     .lte("created_at", _window_end)
                     .execute()
                 )
-                delivery_failed_ids = {r["lead_id"] for r in (_failed_msgs.data or []) if r.get("lead_id")}
+                _recs_by_lead: dict[str, list[tuple]] = {}
+                for _m in (_msgs.data or []):
+                    _lid = _m.get("lead_id")
+                    _st = _m.get("delivery_status")
+                    _mts = parse_ts(_m.get("created_at"))
+                    if _lid and _st and _mts is not None:
+                        _recs_by_lead.setdefault(_lid, []).append((_mts, _st))
+                delivery_failed_ids = {
+                    lid for lid, recs in _recs_by_lead.items()
+                    if nearest_status(recs, _bcast_dt) == "failed"
+                }
         except Exception:
             pass
 

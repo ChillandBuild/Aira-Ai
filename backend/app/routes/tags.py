@@ -1,24 +1,13 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id
+from app.services.delivery_status import nearest_status, parse_ts as _parse_ts
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-# Higher wins when a lead has multiple delivery statuses in one send window.
-_DELIVERY_PRIORITY = {"failed": 0, "sent": 1, "delivered": 2, "read": 3}
-
-
-def _parse_ts(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except (ValueError, AttributeError):
-        return None
 
 
 class TagCreate(BaseModel):
@@ -160,18 +149,11 @@ def get_tag_stats(tenant_id: str = Depends(get_tenant_id)):
                 msgs_by_lead.setdefault(lid, []).append((ts, status))
 
     def delivery_failed(lead_id: str, sent_at: datetime | None) -> bool:
-        """True if the send at `sent_at` bounced, per its own delivery window."""
-        msgs = msgs_by_lead.get(lead_id)
-        if not msgs or not sent_at:
+        """True if THIS send bounced — attributed by the message nearest the send,
+        so an adjacent broadcast's status can't mask it (services/delivery_status)."""
+        if not sent_at:
             return False
-        window_start = sent_at - timedelta(minutes=2)
-        window_end = sent_at + timedelta(minutes=10)
-        best: str | None = None
-        for ts, status in msgs:
-            if window_start <= ts <= window_end:
-                if best is None or _DELIVERY_PRIORITY.get(status, -1) > _DELIVERY_PRIORITY.get(best, -1):
-                    best = status
-        return best == "failed"
+        return nearest_status(msgs_by_lead.get(lead_id, []), sent_at) == "failed"
 
     def new_counter() -> dict[str, int]:
         return {tid: 0 for tid in tag_ids}
