@@ -1151,6 +1151,37 @@ def _classify_broadcast_outcomes(
         except Exception as e:
             logger.warning(f"Classifier opt-out lookup failed: {e}")
 
+    # For opted-out leads, find the SINGLE broadcast that owns the opt-out: the most
+    # recent send at/before the opt-out time (across ALL the lead's broadcasts, any
+    # send_status — the owning row may already be opted_out_skip). Scopes the Rule 8
+    # fallback so a later opt-out never contaminates an earlier broadcast's CSV.
+    owning_send_at: dict[str, datetime] = {}
+    oo_lead_ids = [lid for lid, oo in opted_out_map.items() if oo]
+    if oo_lead_ids:
+        try:
+            all_oo_rows = (
+                db.table("broadcast_recipients")
+                .select("lead_id, created_at")
+                .eq("tenant_id", tenant_id)
+                .in_("lead_id", oo_lead_ids)
+                .execute()
+            )
+            for row in (all_oo_rows.data or []):
+                lid = row.get("lead_id")
+                cat = row.get("created_at")
+                oo_at = opted_out_map.get(lid)
+                if not lid or not cat or not oo_at:
+                    continue
+                try:
+                    cat_dt = datetime.fromisoformat(cat.replace("Z", "+00:00"))
+                    oo_dt = datetime.fromisoformat(oo_at.replace("Z", "+00:00"))
+                except (ValueError, TypeError):
+                    continue
+                if cat_dt <= oo_dt and (lid not in owning_send_at or cat_dt > owning_send_at[lid]):
+                    owning_send_at[lid] = cat_dt
+        except Exception as e:
+            logger.warning(f"Classifier owning-broadcast lookup failed: {e}")
+
     # Delivery status per lead, scoped to the broadcast time window
     # Window: -2 min to +10 min absorbs clock skew and webhook lag
     msg_status_by_lead: dict[str, str] = {}
@@ -1226,21 +1257,20 @@ def _classify_broadcast_outcomes(
                 fail_reason = row_fail_reason
                 opted_out_at = opted_out_map.get(lead_id)
         elif lead_id and lead_id in opted_out_map and r.get("created_at") and opted_out_map[lead_id]:
-            # Rule 8 (fallback): lead opted out AFTER this broadcast was sent, but the
-            # webhook's broadcast_recipients update didn't persist (e.g., the migration-085
-            # column was missing or the update silently failed). Scope-check via
-            # leads.opted_out_at >= broadcast_recipient.created_at so a later opt-out
-            # never contaminates an earlier broadcast.
-            leads_at = opted_out_map[lead_id]
-            br_at = r["created_at"]
+            # Rule 8 (scoped fallback): the per-broadcast row wasn't stamped (Rules 2/3
+            # didn't fire) but leads.opted_out is set. Attribute the opt-out to ONLY the
+            # single owning broadcast (most recent send at/before the opt-out). Every
+            # broadcast is an independent block — a later opt-out must not rewrite an
+            # earlier broadcast, so an earlier send stays in its own segment CSV.
+            own = owning_send_at.get(lead_id)
             try:
-                if datetime.fromisoformat(leads_at.replace("Z", "+00:00")) >= \
-                   datetime.fromisoformat(br_at.replace("Z", "+00:00")):
-                    reason = "not_interested"
-                    fail_reason = "opted_out"
-                    opted_out_at = leads_at
+                br_dt = datetime.fromisoformat(r["created_at"].replace("Z", "+00:00"))
             except (ValueError, TypeError):
-                pass
+                br_dt = None
+            if own is not None and br_dt is not None and br_dt == own:
+                reason = "not_interested"
+                fail_reason = "opted_out"
+                opted_out_at = opted_out_map[lead_id]
         # Rule 4 (legacy leads.opted_out fallback) removed: per-broadcast opted_out_at
         # (Rule 2) and send-time skip (Rule 3) cover all opt-out cases; reading the
         # global leads.opted_out flag here caused cross-broadcast contamination when
