@@ -156,7 +156,7 @@ function StepIndicator({ current }: { current: number }) {
 // ─── Segment Dropdown ─────────────────────────────────────────────────────────
 
 const SEGMENT_OPTIONS = [
-  { label: "All Leads", value: "", color: "text-violet-700 bg-violet-50 border-violet-200 hover:bg-violet-100" },
+  { label: "All Segments", value: "", color: "text-violet-700 bg-violet-50 border-violet-200 hover:bg-violet-100" },
   { label: "Hot", value: "A", color: "text-green-700 bg-green-50 border-green-200 hover:bg-green-100" },
   { label: "Warm", value: "B", color: "text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100" },
   { label: "Cold", value: "C", color: "text-gray-700 bg-gray-50 border-gray-200 hover:bg-gray-100" },
@@ -288,7 +288,7 @@ function BroadcastSegmentDropdown({ broadcastId, tagId, onDownload }: {
           >
             All Segments
           </button>
-          {SEGMENT_OPTIONS.map(opt => (
+          {SEGMENT_OPTIONS.filter(opt => opt.value !== "").map(opt => (
             <button
               key={opt.value}
               onClick={() => { onDownload(broadcastId, tagId, opt.value); setOpen(false); }}

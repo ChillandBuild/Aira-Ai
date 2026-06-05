@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
@@ -6,6 +7,18 @@ from app.dependencies.tenant import get_tenant_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Higher wins when a lead has multiple delivery statuses in one send window.
+_DELIVERY_PRIORITY = {"failed": 0, "sent": 1, "delivered": 2, "read": 3}
+
+
+def _parse_ts(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
 
 
 class TagCreate(BaseModel):
@@ -71,7 +84,15 @@ def delete_tag(tag_id: str, tenant_id: str = Depends(get_tenant_id)):
 
 @router.get("/stats")
 def get_tag_stats(tenant_id: str = Depends(get_tenant_id)):
-    """Return per-tag stats: total_sent, hot, warm, cold, disqualified, opted_out counts."""
+    """Per-tag stats: total_sent, hot, warm, cold, disqualified, opted_out, failed.
+
+    Each recipient row is one send EVENT and is classified independently. Delivery
+    success/failure is attributed PER BROADCAST from messages.delivery_status within
+    the send's time window — not from a sticky per-lead flag — so a number that fails
+    one campaign and succeeds in a later one is counted correctly in each. This is the
+    same authoritative signal Broadcast History uses. Outcomes partition total_sent
+    exactly: hot + warm + cold + disqualified + opted_out + failed == total_sent.
+    """
     db = get_supabase()
 
     tags = db.table("broadcast_tags").select("id").eq("tenant_id", tenant_id).execute()
@@ -79,93 +100,142 @@ def get_tag_stats(tenant_id: str = Depends(get_tenant_id)):
     if not tag_ids:
         return {"data": []}
 
-    # Count sent + failed recipients per tag
-    br_rows = (
+    # opted_out_at on broadcast_recipients (migration 085 compat)
+    has_br_opted_out_at = True
+    try:
+        db.table("broadcast_recipients").select("opted_out_at").limit(1).execute()
+    except Exception:
+        has_br_opted_out_at = False
+
+    select_cols = "tag_id, lead_id, send_status, created_at"
+    if has_br_opted_out_at:
+        select_cols += ", opted_out_at"
+    recipients = (
         db.table("broadcast_recipients")
-        .select("tag_id, send_status")
+        .select(select_cols)
         .eq("tenant_id", tenant_id)
         .in_("tag_id", tag_ids)
-        .in_("send_status", ["sent", "failed", "rejected"])
         .execute()
+        .data
+        or []
     )
-    sent_counts: dict[str, int] = {}
-    failed_counts: dict[str, int] = {}
-    for br in (br_rows.data or []):
-        tid = br.get("tag_id")
-        if not tid:
-            continue
-        if br.get("send_status") == "sent":
-            sent_counts[tid] = sent_counts.get(tid, 0) + 1
-        else:
-            failed_counts[tid] = failed_counts.get(tid, 0) + 1
 
-    # Get distinct sent lead_ids per tag, then join current leads.segment
-    sent_lead_rows = (
-        db.table("broadcast_recipients")
-        .select("tag_id, lead_id")
-        .eq("tenant_id", tenant_id)
-        .in_("tag_id", tag_ids)
-        .eq("send_status", "sent")
-        .not_.is_("lead_id", "null")
-        .execute()
-    )
-    tag_lead_ids: dict[str, set] = {}
-    all_lead_ids: set[str] = set()
-    for row in (sent_lead_rows.data or []):
-        tid = row.get("tag_id")
-        lid = row.get("lead_id")
-        if tid and lid:
-            if tid not in tag_lead_ids:
-                tag_lead_ids[tid] = set()
-            tag_lead_ids[tid].add(lid)
-            all_lead_ids.add(lid)
+    lead_ids = list({r["lead_id"] for r in recipients if r.get("lead_id")})
 
-    lead_segment_map: dict[str, str] = {}
-    opted_out_set: set[str] = set()
-    if all_lead_ids:
-        leads_resp = (
+    # Current lead state: segment + opt-out (with timestamp for per-send scoping)
+    lead_segment: dict[str, str] = {}
+    lead_opted_out: dict[str, bool] = {}
+    lead_opted_out_at: dict[str, datetime | None] = {}
+    for i in range(0, len(lead_ids), 200):
+        chunk = lead_ids[i:i + 200]
+        resp = (
             db.table("leads")
-            .select("id, segment, opted_out")
+            .select("id, segment, opted_out, opted_out_at")
             .eq("tenant_id", tenant_id)
-            .in_("id", list(all_lead_ids))
+            .in_("id", chunk)
             .execute()
         )
-        for l in (leads_resp.data or []):
-            lead_segment_map[l["id"]] = l.get("segment") or "C"
-            if l.get("opted_out"):
-                opted_out_set.add(l["id"])
+        for l in (resp.data or []):
+            lead_segment[l["id"]] = l.get("segment") or "C"
+            lead_opted_out[l["id"]] = bool(l.get("opted_out"))
+            lead_opted_out_at[l["id"]] = _parse_ts(l.get("opted_out_at"))
 
-    hot_counts: dict[str, int] = {}
-    warm_counts: dict[str, int] = {}
-    cold_counts: dict[str, int] = {}
-    dq_counts: dict[str, int] = {}
-    oo_counts: dict[str, int] = {}
-    for tid, lead_ids in tag_lead_ids.items():
-        for lid in lead_ids:
-            if lid in opted_out_set:
-                oo_counts[tid] = oo_counts.get(tid, 0) + 1
-                continue
-            seg = lead_segment_map.get(lid, "C")
-            if seg == "A":
-                hot_counts[tid] = hot_counts.get(tid, 0) + 1
-            elif seg == "B":
-                warm_counts[tid] = warm_counts.get(tid, 0) + 1
-            elif seg == "C":
-                cold_counts[tid] = cold_counts.get(tid, 0) + 1
-            elif seg == "D":
-                dq_counts[tid] = dq_counts.get(tid, 0) + 1
+    # Outbound delivery statuses per lead, for per-send window matching
+    msgs_by_lead: dict[str, list[tuple[datetime, str]]] = {}
+    for i in range(0, len(lead_ids), 200):
+        chunk = lead_ids[i:i + 200]
+        resp = (
+            db.table("messages")
+            .select("lead_id, delivery_status, created_at")
+            .eq("tenant_id", tenant_id)
+            .eq("direction", "outbound")
+            .in_("lead_id", chunk)
+            .execute()
+        )
+        for m in (resp.data or []):
+            lid = m.get("lead_id")
+            status = m.get("delivery_status")
+            ts = _parse_ts(m.get("created_at"))
+            if lid and status and ts:
+                msgs_by_lead.setdefault(lid, []).append((ts, status))
 
-    data = []
-    for tid in tag_ids:
-        data.append({
+    def delivery_failed(lead_id: str, sent_at: datetime | None) -> bool:
+        """True if the send at `sent_at` bounced, per its own delivery window."""
+        msgs = msgs_by_lead.get(lead_id)
+        if not msgs or not sent_at:
+            return False
+        window_start = sent_at - timedelta(minutes=2)
+        window_end = sent_at + timedelta(minutes=10)
+        best: str | None = None
+        for ts, status in msgs:
+            if window_start <= ts <= window_end:
+                if best is None or _DELIVERY_PRIORITY.get(status, -1) > _DELIVERY_PRIORITY.get(best, -1):
+                    best = status
+        return best == "failed"
+
+    def new_counter() -> dict[str, int]:
+        return {tid: 0 for tid in tag_ids}
+
+    sent_c = new_counter()
+    hot_c = new_counter()
+    warm_c = new_counter()
+    cold_c = new_counter()
+    dq_c = new_counter()
+    oo_c = new_counter()
+    failed_c = new_counter()
+
+    for r in recipients:
+        tid = r.get("tag_id")
+        if not tid:
+            continue
+        sent_c[tid] += 1  # every attempt is one "sent" (the denominator)
+
+        lid = r.get("lead_id")
+        sent_at = _parse_ts(r.get("created_at"))
+
+        # 1. Send-time (API) failure — message never left
+        if (r.get("send_status") or "") in ("failed", "rejected", "delivery_failed"):
+            failed_c[tid] += 1
+            continue
+
+        # 2. Opted out — per-broadcast flag, or lead opt-out scoped to sends at/before it
+        opted = False
+        if r.get("opted_out_at"):
+            opted = True
+        elif lid and lead_opted_out.get(lid):
+            oo_at = lead_opted_out_at.get(lid)
+            opted = (not sent_at) or (oo_at is None) or (oo_at >= sent_at)
+        if opted:
+            oo_c[tid] += 1
+            continue
+
+        # 3. Delivery failure for THIS send (per-broadcast, not sticky)
+        if lid and delivery_failed(lid, sent_at):
+            failed_c[tid] += 1
+            continue
+
+        # 4. Delivered — bucket by the lead's current segment
+        seg = lead_segment.get(lid, "C") if lid else "C"
+        if seg == "A":
+            hot_c[tid] += 1
+        elif seg == "B":
+            warm_c[tid] += 1
+        elif seg == "D":
+            dq_c[tid] += 1
+        else:
+            cold_c[tid] += 1
+
+    data = [
+        {
             "tag_id": tid,
-            "total_sent": sent_counts.get(tid, 0),
-            "hot": hot_counts.get(tid, 0),
-            "warm": warm_counts.get(tid, 0),
-            "cold": cold_counts.get(tid, 0),
-            "disqualified": dq_counts.get(tid, 0),
-            "opted_out": oo_counts.get(tid, 0),
-            "failed": failed_counts.get(tid, 0),
-        })
-
+            "total_sent": sent_c[tid],
+            "hot": hot_c[tid],
+            "warm": warm_c[tid],
+            "cold": cold_c[tid],
+            "disqualified": dq_c[tid],
+            "opted_out": oo_c[tid],
+            "failed": failed_c[tid],
+        }
+        for tid in tag_ids
+    ]
     return {"data": data}
