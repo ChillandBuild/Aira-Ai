@@ -28,10 +28,11 @@ import {
   MessagingAnalytics,
   TelecallingAnalyticsExtended,
   FunnelAnalyticsExtended,
+  TemplatePerformanceRow,
 } from "@/lib/api";
 
 type DateRange = "today" | "7d" | "30d";
-type Tab = "overview" | "channels" | "telecalling" | "pipeline";
+type Tab = "overview" | "channels" | "telecalling" | "templates" | "pipeline";
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
 
@@ -858,10 +859,93 @@ function PipelineTab() {
 
 // ─── Page shell ───────────────────────────────────────────────────────────────
 
+function pct(part: number, whole: number): string {
+  if (!whole) return "—";
+  return `${Math.round((part / whole) * 100)}%`;
+}
+
+function TemplatesTab() {
+  const [rows, setRows] = useState<TemplatePerformanceRow[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.analytics
+      .templatePerformance()
+      .then(setRows)
+      .catch((e: unknown) => setErr(e instanceof Error ? e.message : "Failed to load"));
+  }, []);
+
+  if (err) return <ErrorBox message={err} />;
+  if (!rows) return <SkeletonGrid cols={4} />;
+
+  const totals = rows.reduce(
+    (acc, r) => ({
+      sent: acc.sent + r.sent,
+      read: acc.read + r.read,
+      replied: acc.replied + r.replied,
+      hot: acc.hot + r.hot_leads,
+    }),
+    { sent: 0, read: 0, replied: 0, hot: 0 },
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-4 gap-4">
+        <KpiCard label="Total Sent" value={totals.sent.toLocaleString()} />
+        <KpiCard label="Read Rate" value={pct(totals.read, totals.sent)} sub={`${totals.read.toLocaleString()} read`} />
+        <KpiCard label="Reply Rate" value={pct(totals.replied, totals.sent)} sub={`${totals.replied.toLocaleString()} replied`} />
+        <KpiCard label="Hot Leads" value={totals.hot.toLocaleString()} />
+      </div>
+
+      <SectionCard title="Template Performance">
+        {rows.length === 0 ? (
+          <p className="font-label text-sm text-on-surface-muted">
+            No broadcasts sent yet. Performance appears here once templates go out.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-surface-mid">
+                  {["Template", "Broadcasts", "Sent", "Read", "Replied", "Hot Leads", "Last Sent"].map((h) => (
+                    <th key={h} className="pb-3 pr-4 font-label text-xs font-semibold text-on-surface-muted uppercase tracking-wider">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.template_name} className="border-b border-surface-mid/50 hover:bg-surface-low transition-colors">
+                    <td className="py-3 pr-4 font-body text-sm font-semibold text-on-surface">{r.template_name}</td>
+                    <td className="py-3 pr-4 font-label text-sm text-on-surface">{r.broadcasts}</td>
+                    <td className="py-3 pr-4 font-label text-sm text-on-surface">{r.sent.toLocaleString()}</td>
+                    <td className="py-3 pr-4 font-label text-sm text-on-surface">
+                      {r.read.toLocaleString()} <span className="text-on-surface-muted">({pct(r.read, r.sent)})</span>
+                    </td>
+                    <td className="py-3 pr-4 font-label text-sm text-on-surface">
+                      {r.replied.toLocaleString()} <span className="text-on-surface-muted">({pct(r.replied, r.sent)})</span>
+                    </td>
+                    <td className="py-3 pr-4 font-label text-sm font-bold text-emerald-600">{r.hot_leads.toLocaleString()}</td>
+                    <td className="py-3 font-label text-sm text-on-surface-muted">
+                      {r.last_sent ? new Date(r.last_sent).toLocaleDateString() : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionCard>
+    </div>
+  );
+}
+
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "channels", label: "Channels" },
   { id: "telecalling", label: "Telecalling" },
+  { id: "templates", label: "Templates" },
   { id: "pipeline", label: "Leads Pipeline" },
 ];
 
@@ -924,6 +1008,7 @@ export default function AnalyticsPage() {
       {activeTab === "overview" && <OverviewTab range={range} />}
       {activeTab === "channels" && <ChannelsTab range={range} />}
       {activeTab === "telecalling" && <TelecallingTab />}
+      {activeTab === "templates" && <TemplatesTab />}
       {activeTab === "pipeline" && <PipelineTab />}
     </div>
   );

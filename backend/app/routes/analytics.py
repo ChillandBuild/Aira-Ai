@@ -87,6 +87,18 @@ async def whatsapp_analytics(tenant_id: str = Depends(get_tenant_id)):
     }
 
 
+@router.get("/template-performance")
+async def template_performance(tenant_id: str = Depends(get_tenant_id)):
+    """Per-template broadcast performance: Sent / Read / Replied / Hot leads."""
+    db = get_supabase()
+    try:
+        res = db.rpc("template_performance", {"p_tenant_id": tenant_id}).execute()
+        return {"data": res.data or []}
+    except Exception as e:
+        logger.error(f"template_performance failed for tenant {tenant_id}: {e}")
+        return {"data": []}
+
+
 @router.get("/telecalling")
 async def telecalling_analytics(tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()

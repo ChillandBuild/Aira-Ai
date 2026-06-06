@@ -86,6 +86,7 @@ export function CallbackNotifier() {
         leadId: res.lead_id ?? cb.lead_id,
         name: res.lead_name ?? cb.lead.name,
         phone: cb.lead.phone,
+        callLogId: res.call_log_id ?? null,
       });
 
       toast.success(`Calling ${cb.lead.name || "Lead"}...`);
