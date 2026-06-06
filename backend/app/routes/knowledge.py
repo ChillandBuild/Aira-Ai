@@ -1,6 +1,7 @@
 import logging
+from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id
 from app.services.knowledge_service import process_document, reindex_tenant
@@ -20,25 +21,30 @@ async def list_documents(tenant_id: str = Depends(get_tenant_id)):
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    campaign_tag_id: Optional[str] = Form(None),
     tenant_id: str = Depends(get_tenant_id)
 ):
     content = await file.read()
     db = get_supabase()
-    
+
+    # Empty-string from a multipart form means "All campaigns" → store as NULL.
+    campaign_tag_id = campaign_tag_id or None
+
     # 1. Create document record
     doc_data = {
         "tenant_id": tenant_id,
         "name": file.filename,
         "file_type": file.content_type or "application/octet-stream",
         "size_bytes": len(content),
-        "status": "processing"
+        "status": "processing",
+        "campaign_tag_id": campaign_tag_id,
     }
     res = db.table("knowledge_documents").insert(doc_data).execute()
     if not res.data:
         raise HTTPException(status_code=500, detail="Failed to create document record")
-    
+
     doc_id = res.data[0]["id"]
-    
+
     # 2. Process in background
     background_tasks.add_task(
         process_document,
@@ -46,7 +52,8 @@ async def upload_document(
         tenant_id=tenant_id,
         file_content=content,
         filename=file.filename,
-        mime_type=file.content_type
+        mime_type=file.content_type,
+        campaign_tag_id=campaign_tag_id,
     )
     
     return res.data[0]

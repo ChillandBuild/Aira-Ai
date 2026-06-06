@@ -47,6 +47,40 @@ async def _groq_chat(messages: list[dict], max_tokens: int = 300) -> str:
     return response.choices[0].message.content.strip()
 
 
+def _resolve_campaign(db, lead_id: str) -> tuple[str | None, str | None]:
+    """Resolve the campaign this lead most recently belongs to, from lead_tag_interest
+    (the populated lead↔tag table written on every tagged broadcast send). Returns
+    (tag_id, tag_name) or (None, None) for cold/inbound-first leads. Fail-safe: any
+    error → no campaign, which makes retrieval fall back to the full (unscoped) KB."""
+    try:
+        row = (
+            db.table("lead_tag_interest")
+            .select("tag_id")
+            .eq("lead_id", str(lead_id))
+            .order("last_seen", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if not row.data:
+            return None, None
+        tag_id = row.data[0]["tag_id"]
+        tag = (
+            db.table("broadcast_tags")
+            .select("name")
+            .eq("id", tag_id)
+            .limit(1)
+            .execute()
+        )
+        if not tag.data:
+            # Tag was deleted — treat as no campaign so retrieval stays unscoped
+            # rather than collapsing to global-only chunks.
+            return None, None
+        return tag_id, tag.data[0]["name"]
+    except Exception as e:
+        logger.warning(f"Campaign resolve failed for lead {lead_id}: {e}")
+        return None, None
+
+
 def _fetch_conversation_summary(db, lead_id: str) -> str | None:
     """Fetch the compacted conversation_summary from lead_conversation_state.
     Returns None if no summary exists or on error."""
@@ -65,23 +99,15 @@ def _fetch_conversation_summary(db, lead_id: str) -> str | None:
         logger.warning(f"Conversation summary fetch failed for lead {lead_id}: {e}")
     return None
 
-FALLBACK_PROMPT = """You are a helpful AI assistant. Answer customer queries warmly and accurately.
+FALLBACK_PROMPT = """You are a helpful AI assistant for a business. Answer customer queries warmly and accurately.
 Keep replies concise (2-3 sentences max).
-Always guide the customer toward the next step: booking, payment, or speaking with our team.
+Always guide the customer toward the next step: getting more information, making a purchase, or speaking with the team.
 If you don't know a specific detail, say: "Let me connect you with our team who can help you right away."
-
-When a customer expresses booking intent (says "Book", "register", "I want to book"):
-1. Ask for their full name
-2. Ask for their Rasi (zodiac sign — e.g. Mesham, Rishabam, Mithunam)
-3. Ask for their Nakshatram (birth star — e.g. Ashwini, Bharani, Karthigai)
-4. Ask for their Gotram (lineage — if unknown, "Not known" is fine)
-5. Ask for full delivery address (street, city, state, PIN code)
-If the customer asks to speak in a regional language, switch to that language and re-ask the current question in that language.
-When all 5 fields are confirmed, reply ONLY: [COLLECT_DONE] {"devotee_name": "...", "rasi": "...", "nakshatram": "...", "gotram": "...", "delivery_address": "..."}
+If the customer asks to speak in a regional language, respond in that language.
 """
-# NOTE: Tenants with a custom system prompt stored in ai_prompts (configurable via AI Tune)
-# will never see FALLBACK_PROMPT. Those tenants must add the [COLLECT_DONE] collection
-# instructions directly to their whatsapp_reply prompt in the AI Tune settings page.
+# NOTE: This is the generic fallback. Every tenant should configure their own prompt
+# via the AI Tune page (Knowledge → AI Tune tab). The fallback is only used when no
+# custom prompt exists for a given channel.
 
 REENGAGEMENT_FALLBACKS = {
     "1d": "Hi! Just checking in — happy to help if you still have questions. Reply here and I can point you in the right direction today.",
@@ -543,11 +569,16 @@ async def generate_reply(
             logger.error(f"Scoring update failed (takeover mode) for lead {lead_id}: {e}")
         return
 
+    # Campaign scoping: which campaign did this lead come from? Drives both the
+    # KB filter and the prompt focus. None = cold lead → unscoped (full KB) as before.
+    campaign_tag_id, campaign_name = _resolve_campaign(db, lead_id)
+
     # RAG: retrieve the most relevant knowledge-base chunks for THIS message
     try:
         context_text = await get_knowledge_context(
             lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001",
             query=message,
+            campaign_tag_id=campaign_tag_id,
         )
     except Exception as e:
         logger.warning(f"Knowledge context fetch failed for lead {lead_id}: {e}")
@@ -556,6 +587,12 @@ async def generate_reply(
     _raw_reply = ""  # holds unstripped Groq output for [COLLECT_DONE] parser below
     try:
         system_prompt = _get_prompt(f"{channel}_reply", tenant_id=lead_data.get("tenant_id"))
+        if campaign_name:
+            system_prompt += (
+                f'\n\nCAMPAIGN CONTEXT:\nThis lead came from the "{campaign_name}" campaign. '
+                "Assume their questions relate to that unless they clearly ask about something else. "
+                "If they ask about something outside it, offer to connect them with the team."
+            )
         if context_text:
             system_prompt += "\n\nKNOWLEDGE BASE:\nUse the following excerpts to answer the user's question accurately. If the answer is not in the excerpts, say you will connect them with a team member.\n\n" + context_text
 

@@ -50,7 +50,9 @@ def _chunk_text(text: str) -> list[str]:
     return chunks
 
 
-async def _index_chunks(document_id: UUID, tenant_id: str, text: str, db) -> int:
+async def _index_chunks(
+    document_id: UUID, tenant_id: str, text: str, db, campaign_tag_id: str | None = None
+) -> int:
     """Chunk → embed → replace this document's chunks. Returns chunk count."""
     from app.services.embeddings import embed_texts, to_pgvector
 
@@ -71,6 +73,7 @@ async def _index_chunks(document_id: UUID, tenant_id: str, text: str, db) -> int
                 "p_chunk_index": idx,
                 "p_content": chunk,
                 "p_embedding": to_pgvector(emb),
+                "p_campaign_tag_id": campaign_tag_id,
             },
         ).execute()
     return len(chunks)
@@ -140,7 +143,14 @@ def extract_text_from_file(file_content: bytes, filename: str, mime_type: str) -
     return text.strip()
 
 
-async def process_document(document_id: UUID, tenant_id: str, file_content: bytes, filename: str, mime_type: str):
+async def process_document(
+    document_id: UUID,
+    tenant_id: str,
+    file_content: bytes,
+    filename: str,
+    mime_type: str,
+    campaign_tag_id: str | None = None,
+):
     db = get_supabase()
     try:
         text = await asyncio.to_thread(extract_text_from_file, file_content, filename, mime_type)
@@ -154,7 +164,9 @@ async def process_document(document_id: UUID, tenant_id: str, file_content: byte
         }).eq("id", str(document_id)).execute()
 
         try:
-            chunk_count = await _index_chunks(document_id, tenant_id, text[:_MAX_TEXT_CHARS], db)
+            chunk_count = await _index_chunks(
+                document_id, tenant_id, text[:_MAX_TEXT_CHARS], db, campaign_tag_id=campaign_tag_id
+            )
             logger.info(f"Document {document_id} indexed — {len(text)} chars, {chunk_count} chunks embedded")
         except Exception as embed_err:
             # Indexing succeeded for full-text fallback; embeddings failed. Don't fail the
@@ -169,15 +181,19 @@ async def process_document(document_id: UUID, tenant_id: str, file_content: byte
         }).eq("id", str(document_id)).execute()
 
 
-def _full_text_context(tenant_id: str, db) -> str:
-    """Legacy full-text injection — used as the embedding-failure fallback."""
-    res = (
+def _full_text_context(tenant_id: str, db, campaign_tag_id: str | None = None) -> str:
+    """Legacy full-text injection — used as the embedding-failure fallback.
+    Campaign-scoped to match RPC semantics: when campaign_tag_id is set, only that
+    campaign's docs + global (untagged) docs; when None, all docs (unchanged)."""
+    q = (
         db.table("knowledge_documents")
         .select("name,full_text")
         .eq("tenant_id", tenant_id)
         .eq("status", "indexed")
-        .execute()
     )
+    if campaign_tag_id:
+        q = q.or_(f"campaign_tag_id.eq.{campaign_tag_id},campaign_tag_id.is.null")
+    res = q.execute()
     parts = [
         f"=== {doc['name']} ===\n{doc['full_text']}"
         for doc in (res.data or [])
@@ -190,23 +206,37 @@ def _format_excerpts(rows: list[dict]) -> str:
     return "\n\n".join(f"=== excerpt {i + 1} ===\n{r['content']}" for i, r in enumerate(rows))
 
 
-async def _semantic_search(db, tenant_id: str, query: str) -> list[dict]:
+async def _semantic_search(
+    db, tenant_id: str, query: str, campaign_tag_id: str | None = None
+) -> list[dict]:
     """Vector similarity via Jina embeddings + match_knowledge_chunks RPC."""
     from app.services.embeddings import embed_query, to_pgvector
 
     q_emb = await embed_query(query)
     res = db.rpc(
         "match_knowledge_chunks",
-        {"query_embedding": to_pgvector(q_emb), "p_tenant_id": tenant_id, "match_count": _MATCH_COUNT},
+        {
+            "query_embedding": to_pgvector(q_emb),
+            "p_tenant_id": tenant_id,
+            "match_count": _MATCH_COUNT,
+            "p_campaign_tag_id": campaign_tag_id,
+        },
     ).execute()
     return res.data or []
 
 
-def _keyword_search(db, tenant_id: str, query: str) -> list[dict]:
+def _keyword_search(
+    db, tenant_id: str, query: str, campaign_tag_id: str | None = None
+) -> list[dict]:
     """Postgres full-text + trigram match — no external API, language-agnostic tokens."""
     res = db.rpc(
         "keyword_match_chunks",
-        {"p_query": query, "p_tenant_id": tenant_id, "match_count": _MATCH_COUNT},
+        {
+            "p_query": query,
+            "p_tenant_id": tenant_id,
+            "match_count": _MATCH_COUNT,
+            "p_campaign_tag_id": campaign_tag_id,
+        },
     ).execute()
     return res.data or []
 
@@ -226,7 +256,9 @@ def _rrf_merge(lists: list[list[dict]], top_n: int, k: int = 60) -> list[dict]:
     return [keep[c] for c in ordered]
 
 
-async def get_knowledge_context(tenant_id: str, query: str | None = None) -> str:
+async def get_knowledge_context(
+    tenant_id: str, query: str | None = None, campaign_tag_id: str | None = None
+) -> str:
     """
     Retrieve the most relevant knowledge-base excerpts for this tenant's message.
 
@@ -241,7 +273,7 @@ async def get_knowledge_context(tenant_id: str, query: str | None = None) -> str
     db = get_supabase()
     if not query or not query.strip():
         try:
-            return _full_text_context(tenant_id, db)
+            return _full_text_context(tenant_id, db, campaign_tag_id)
         except Exception as e:
             logger.error(f"Knowledge full-text fetch failed: {e}")
             return ""
@@ -253,21 +285,21 @@ async def get_knowledge_context(tenant_id: str, query: str | None = None) -> str
     rows: list[dict] = []
     try:
         if mode == "keyword":
-            rows = _keyword_search(db, tenant_id, query)
+            rows = _keyword_search(db, tenant_id, query, campaign_tag_id)
         elif mode == "hybrid":
             sem: list[dict] = []
             kw: list[dict] = []
             try:
-                sem = await _semantic_search(db, tenant_id, query)
+                sem = await _semantic_search(db, tenant_id, query, campaign_tag_id)
             except Exception as e:
                 logger.warning(f"Hybrid: semantic leg failed for tenant {tenant_id}: {e}")
             try:
-                kw = _keyword_search(db, tenant_id, query)
+                kw = _keyword_search(db, tenant_id, query, campaign_tag_id)
             except Exception as e:
                 logger.warning(f"Hybrid: keyword leg failed for tenant {tenant_id}: {e}")
             rows = _rrf_merge([sem, kw], _MATCH_COUNT)
         else:
-            rows = await _semantic_search(db, tenant_id, query)
+            rows = await _semantic_search(db, tenant_id, query, campaign_tag_id)
     except Exception as e:
         logger.warning(f"KB retrieval ({mode}) failed for tenant {tenant_id}: {e}. Falling back to full-text.")
 
@@ -276,7 +308,7 @@ async def get_knowledge_context(tenant_id: str, query: str | None = None) -> str
     logger.info(f"No chunks matched ({mode}) for tenant {tenant_id} — falling back to full-text injection")
 
     try:
-        return _full_text_context(tenant_id, db)
+        return _full_text_context(tenant_id, db, campaign_tag_id)
     except Exception as e:
         logger.error(f"Knowledge full-text fallback failed: {e}")
         return ""
@@ -287,7 +319,7 @@ async def reindex_tenant(tenant_id: str) -> dict:
     db = get_supabase()
     res = (
         db.table("knowledge_documents")
-        .select("id,full_text")
+        .select("id,full_text,campaign_tag_id")
         .eq("tenant_id", tenant_id)
         .eq("status", "indexed")
         .execute()
@@ -300,7 +332,9 @@ async def reindex_tenant(tenant_id: str) -> dict:
         if not text:
             continue
         try:
-            total_chunks += await _index_chunks(UUID(doc["id"]), tenant_id, text, db)
+            total_chunks += await _index_chunks(
+                UUID(doc["id"]), tenant_id, text, db, campaign_tag_id=doc.get("campaign_tag_id")
+            )
             reindexed += 1
         except Exception as e:
             logger.error(f"Reindex failed for document {doc['id']}: {e}")
