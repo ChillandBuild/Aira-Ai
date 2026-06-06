@@ -1,5 +1,7 @@
 import json
 import logging
+import re
+import unicodedata
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -11,9 +13,68 @@ from app.config_dynamic import get_setting
 logger = logging.getLogger(__name__)
 
 
+_EMOJI_RANGES = (
+    (0x1F000, 0x1FAFF),
+    (0x1F100, 0x1F1FF),
+    (0x1F300, 0x1F5FF),
+    (0x1F900, 0x1F9FF),
+    (0x1FA70, 0x1FAFF),
+    (0x2600, 0x27BF),
+    (0x2300, 0x23FF),
+    (0x2700, 0x27BF),
+    (0x1F1E6, 0x1F1FF),
+    (0xFE0F, 0xFE0F),
+    (0x200D, 0x200D),
+)
+
+
+def _strip_emojis(text: str) -> str:
+    """Drop emoji code points (and ZWJ / variation selectors) from a string."""
+    out = []
+    for ch in text:
+        cp = ord(ch)
+        if cp < 0x80:
+            out.append(ch)
+            continue
+        cat = unicodedata.category(ch)
+        if cat in ("So", "Sk") and any(s <= cp <= e for s, e in _EMOJI_RANGES):
+            continue
+        if any(s <= cp <= e for s, e in _EMOJI_RANGES):
+            continue
+        if cp in (0xFE0F, 0x200D):
+            continue
+        out.append(ch)
+    return "".join(out)
+
+
+def _sanitize_header_or_footer(text: str) -> str:
+    """Meta rejects newlines, formatting characters, and emojis in HEADER/FOOTER
+    template components. Returns the cleaned text, truncated to 60 chars.
+
+    Logs a warning when characters are stripped so the operator can see what
+    was sanitized and adjust the source copy.
+    """
+    if not text:
+        return ""
+    original = text
+    text = re.sub(r"[\r\n\t\v\f]+", " ", text)
+    text = re.sub(r"[*_~`]+", "", text)
+    text = _strip_emojis(text)
+    text = re.sub(r"\s+", " ", text).strip()
+    cleaned = text[:60]
+    if cleaned != original.strip()[:60]:
+        logger.warning(
+            "Template header/footer sanitized: %r -> %r",
+            original[:60],
+            cleaned,
+        )
+    return cleaned
+
+
 class TemplateContentExistsError(HTTPException):
     """Raised when Meta rejects template creation because name+language already exists."""
     pass
+
 
 _GRAPH_BASE = "https://graph.facebook.com/v21.0"
 
@@ -503,13 +564,13 @@ async def submit_template(
         components.append({
             "type": "HEADER",
             "format": "TEXT",
-            "text": header_text.strip()[:60]
+            "text": _sanitize_header_or_footer(header_text)
         })
-        
+
     if footer_text and footer_text.strip():
         components.append({
             "type": "FOOTER",
-            "text": footer_text.strip()[:60]
+            "text": _sanitize_header_or_footer(footer_text)
         })
 
     if buttons:
@@ -535,7 +596,7 @@ async def submit_template(
             c_body = (card.get("body_text") or "").strip()
             if c_body:
                 card_components.append({"type": "BODY", "text": c_body})
-            c_buttons = card.get("buttons") or []
+            c_buttons = [b for b in (card.get("buttons") or []) if b.get("type") in ("URL", "QUICK_REPLY")]
             if c_buttons:
                 card_btn_components = _build_button_components(c_buttons, 2)
                 if card_btn_components:
