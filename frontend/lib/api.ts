@@ -646,6 +646,16 @@ export const api = {
       const res = await apiFetch<{ data: TemplatePerformanceRow[] }>(`/api/v1/analytics/template-performance`);
       return res.data || [];
     },
+    inbound: (range: string) =>
+      apiFetch<{
+        kpis: {
+          today: { total: number; organic: number; ad: number };
+          range: { total: number; organic: number; ad: number };
+        };
+        daily: { day: string; organic: number; ad: number }[];
+        by_segment: { A: number; B: number; C: number; D: number };
+        by_channel: { whatsapp: number; instagram: number; facebook: number; telegram: number };
+      }>(`/api/v1/analytics/inbound?range=${range}`),
   },
   insights: {
     whatsapp: (params?: { range?: string; since?: string; until?: string; source?: string }) => {

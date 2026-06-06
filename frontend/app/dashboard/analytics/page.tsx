@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis,
   Tooltip,
+  Legend,
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
@@ -32,7 +33,7 @@ import {
 } from "@/lib/api";
 
 type DateRange = "today" | "7d" | "30d";
-type Tab = "overview" | "channels" | "telecalling" | "templates" | "pipeline";
+type Tab = "overview" | "channels" | "telecalling" | "templates" | "pipeline" | "inbound";
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
 
@@ -941,9 +942,80 @@ function TemplatesTab() {
   );
 }
 
+// ─── Inbound Tab ─────────────────────────────────────────────────────────────
+
+function InboundTab({ range }: { range: DateRange }) {
+  const [data, setData] = useState<Awaited<ReturnType<typeof api.analytics.inbound>> | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    setData(null);
+    setErr(null);
+    api.analytics.inbound(range)
+      .then(setData)
+      .catch((e) => setErr(e instanceof Error ? e.message : "Failed to load"));
+  }, [range]);
+
+  if (err) return <div className="p-8 text-center text-red-600">{err}</div>;
+  if (!data) return <div className="p-8 text-center text-on-surface-muted">Loading…</div>;
+
+  const segMax = Math.max(data.by_segment.A, data.by_segment.B, data.by_segment.C, data.by_segment.D, 1);
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <KpiCard label="New Leads Today" value={data.kpis.today.total.toLocaleString()} sub={`Organic ${data.kpis.today.organic} · Ad ${data.kpis.today.ad}`} />
+        <KpiCard label="New Leads (range)" value={data.kpis.range.total.toLocaleString()} sub={`Organic ${data.kpis.range.organic} · Ad ${data.kpis.range.ad}`} />
+        <KpiCard label="Ad Share" value={`${data.kpis.range.total ? Math.round((data.kpis.range.ad / data.kpis.range.total) * 100) : 0}%`} sub="of inbound in range" />
+      </div>
+
+      <SectionCard title="Daily Inbound — Organic vs Ad">
+        <ResponsiveContainer width="100%" height={260}>
+          <BarChart data={data.daily}>
+            <XAxis dataKey="day" tick={{ fontSize: 11 }} />
+            <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="organic" stackId="a" fill="#10b981" name="Organic" />
+            <Bar dataKey="ad" stackId="a" fill="#6366f1" name="Ad" />
+          </BarChart>
+        </ResponsiveContainer>
+      </SectionCard>
+
+      <div className="grid md:grid-cols-2 gap-6">
+        <SectionCard title="By Segment (inbound only)">
+          <div className="space-y-3">
+            {([["A", "Hot"], ["B", "Warm"], ["C", "Cold"], ["D", "Disqualified"]] as const).map(([k, label]) => (
+              <div key={k} className="flex items-center gap-3">
+                <span className="font-label text-xs text-on-surface-muted w-24 shrink-0">{label}</span>
+                <div className="flex-1 bg-surface-mid rounded-full h-4 overflow-hidden">
+                  <div className="h-4 rounded-full bg-indigo-500" style={{ width: `${Math.round((data.by_segment[k] / segMax) * 100)}%` }} />
+                </div>
+                <span className="font-label text-xs w-8 text-right shrink-0">{data.by_segment[k]}</span>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+
+        <SectionCard title="By Channel">
+          <div className="space-y-2">
+            {([["whatsapp", "WhatsApp"], ["instagram", "Instagram"], ["facebook", "Facebook"], ["telegram", "Telegram"]] as const).map(([k, label]) => (
+              <div key={k} className="flex justify-between text-sm">
+                <span className="text-on-surface-muted">{label}</span>
+                <span className="font-medium">{data.by_channel[k]}</span>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      </div>
+    </div>
+  );
+}
+
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "channels", label: "Channels" },
+  { id: "inbound", label: "Inbound" },
   { id: "telecalling", label: "Telecalling" },
   { id: "templates", label: "Templates" },
   { id: "pipeline", label: "Leads Pipeline" },
@@ -1007,6 +1079,7 @@ export default function AnalyticsPage() {
       {/* Tab content */}
       {activeTab === "overview" && <OverviewTab range={range} />}
       {activeTab === "channels" && <ChannelsTab range={range} />}
+      {activeTab === "inbound" && <InboundTab range={range} />}
       {activeTab === "telecalling" && <TelecallingTab />}
       {activeTab === "templates" && <TemplatesTab />}
       {activeTab === "pipeline" && <PipelineTab />}
