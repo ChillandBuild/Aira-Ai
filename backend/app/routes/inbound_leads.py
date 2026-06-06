@@ -1,17 +1,15 @@
 """
-Meta Ad Leads — Inbound leads from Meta Ad click-to-message campaigns.
+Inbound Leads — all leads that arrived through a messaging channel.
 
-Covers all Meta Ad CTA channels:
-  - Click-to-WhatsApp (CTWA)       → source = "whatsapp"
-  - Click-to-Instagram DM          → source = "instagram"
-  - Click-to-Facebook Messenger    → source = "facebook"
+Inbound universe:  source IN ('whatsapp','instagram','facebook','telegram')
+  (upload / manual leads are NOT inbound and never appear here)
 
-Segregation rule (single source of truth):
-  ad_campaign_id IS NOT NULL  →  arrived via a Meta Ad
-  ad_campaign_id IS NULL      →  organic / direct inbound (excluded here)
+Origin (independent of channel):
+  ad_campaign_id IS NOT NULL  →  origin = "ad"      (clicked a Meta Ad CTA)
+  ad_campaign_id IS NULL      →  origin = "organic" (messaged directly)
 
-The "keyword" is the first inbound message the lead sent — this is the
-pre-filled CTA text set by the ad (e.g. "I'm interested in your batch").
+The "keyword" is the first inbound message the lead sent — for ad leads this is
+the pre-filled CTA text; for organic leads it is just their opening message.
 """
 
 import csv
@@ -22,14 +20,16 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id
+from app.services.inbound_leads_logic import INBOUND_SOURCES
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 CHANNEL_LABELS = {
-    "whatsapp": "WhatsApp (Click-to-Ad)",
-    "instagram": "Instagram DM Ad",
-    "facebook": "Facebook Messenger Ad",
+    "whatsapp": "WhatsApp",
+    "instagram": "Instagram",
+    "facebook": "Facebook",
+    "telegram": "Telegram",
 }
 
 SEGMENT_LABELS = {
@@ -50,10 +50,12 @@ def _fmt_ist(iso: str) -> str:
         return iso
 
 
-def _fetch_ad_leads(
+def _fetch_inbound_leads(
     db,
     tenant_id: str,
     *,
+    origin: str = "all",
+    segment: str | None = None,
     ad_campaign_id: str | None = None,
     source: str | None = None,
     date_from: str | None = None,
@@ -62,47 +64,45 @@ def _fetch_ad_leads(
     offset: int = 0,
 ) -> tuple[list[dict], int]:
     """
-    Fetch leads where ad_campaign_id IS NOT NULL (came via a Meta Ad).
-    Returns (rows, total_count).
-    Uses two separate, simple queries — no JOIN — for maximum reliability.
+    Fetch inbound leads (source in INBOUND_SOURCES). Returns (rows, total_count).
+    origin: "all" | "organic" | "ad". Two simple queries, no JOIN.
     """
-    # --- Main data query ---
-    query = (
-        db.table("leads")
-        .select("id,phone,name,source,score,segment,created_at,ad_campaign_id")
-        .eq("tenant_id", tenant_id)
-        .not_.is_("ad_campaign_id", "null")
-        .is_("deleted_at", "null")
-    )
-    if ad_campaign_id:
-        query = query.eq("ad_campaign_id", ad_campaign_id)
-    if source:
-        query = query.eq("source", source)
-    if date_from:
-        query = query.gte("created_at", date_from)
-    if date_to:
-        query = query.lte("created_at", date_to)
+    def _apply_common(q):
+        q = (
+            q.eq("tenant_id", tenant_id)
+            .in_("source", list(INBOUND_SOURCES))
+            .is_("deleted_at", "null")
+        )
+        if origin == "ad":
+            q = q.not_.is_("ad_campaign_id", "null")
+        elif origin == "organic":
+            q = q.is_("ad_campaign_id", "null")
+        if segment:
+            q = q.eq("segment", segment)
+        if ad_campaign_id:
+            q = q.eq("ad_campaign_id", ad_campaign_id)
+        if source:
+            q = q.eq("source", source)
+        if date_from:
+            q = q.gte("created_at", date_from)
+        if date_to:
+            q = q.lte("created_at", date_to)
+        return q
 
-    data_result = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+    data_q = _apply_common(
+        db.table("leads").select(
+            "id,phone,name,source,score,segment,created_at,ad_campaign_id"
+        )
+    )
+    data_result = (
+        data_q.order("created_at", desc=True)
+        .range(offset, offset + limit - 1)
+        .execute()
+    )
     rows = data_result.data or []
 
-    # --- Count query (same filters, no range) ---
-    count_query = (
-        db.table("leads")
-        .select("id", count="exact")
-        .eq("tenant_id", tenant_id)
-        .not_.is_("ad_campaign_id", "null")
-        .is_("deleted_at", "null")
-    )
-    if ad_campaign_id:
-        count_query = count_query.eq("ad_campaign_id", ad_campaign_id)
-    if source:
-        count_query = count_query.eq("source", source)
-    if date_from:
-        count_query = count_query.gte("created_at", date_from)
-    if date_to:
-        count_query = count_query.lte("created_at", date_to)
-    count_result = count_query.execute()
+    count_q = _apply_common(db.table("leads").select("id", count="exact"))
+    count_result = count_q.execute()
     total = count_result.count or len(rows)
 
     return rows, total
@@ -129,6 +129,8 @@ def _fetch_first_keywords(db, tenant_id: str, lead_ids: list[str]) -> dict[str, 
     """
     if not lead_ids:
         return {}
+    # Explicit high limit: PostgREST caps at 1000 rows by default, which would
+    # silently drop keywords for leads beyond that window on large exports.
     result = (
         db.table("messages")
         .select("lead_id,content,created_at")
@@ -136,6 +138,7 @@ def _fetch_first_keywords(db, tenant_id: str, lead_ids: list[str]) -> dict[str, 
         .eq("tenant_id", tenant_id)
         .eq("direction", "inbound")
         .order("created_at", desc=False)
+        .limit(50000)
         .execute()
     )
     keyword_map: dict[str, str] = {}
@@ -151,7 +154,7 @@ def _enrich(
     campaign_map: dict[str, str],
     keyword_map: dict[str, str],
 ) -> list[dict]:
-    """Attach campaign name and keyword to each lead row."""
+    """Attach campaign name, keyword, and origin to each lead row."""
     enriched = []
     for lead in leads:
         cid = lead.get("ad_campaign_id") or ""
@@ -162,6 +165,7 @@ def _enrich(
             "name": lead.get("name") or "—",
             "source": src,
             "channel_label": CHANNEL_LABELS.get(src, src.title()),
+            "origin": "ad" if lead.get("ad_campaign_id") else "organic",
             "score": lead.get("score", 5),
             "segment": lead.get("segment", "C"),
             "segment_label": SEGMENT_LABELS.get(lead.get("segment", "C"), "—"),
@@ -191,12 +195,14 @@ async def list_campaigns(tenant_id: str = Depends(get_tenant_id)):
         )
         return {"data": result.data or []}
     except Exception as e:
-        logger.error(f"meta-ad-leads campaigns fetch error: {e}")
+        logger.error(f"inbound-leads campaigns fetch error: {e}")
         return {"data": []}
 
 
 @router.get("/")
-async def list_meta_ad_leads(
+async def list_inbound_leads(
+    origin: str = Query("all", pattern="^(all|organic|ad)$"),
+    segment: str | None = Query(None, pattern="^[ABCD]$"),
     ad_campaign_id: str | None = Query(None),
     source: str | None = Query(None),
     date_from: str | None = Query(None),
@@ -205,73 +211,62 @@ async def list_meta_ad_leads(
     limit: int = Query(100, ge=1, le=500),
     tenant_id: str = Depends(get_tenant_id),
 ):
-    """
-    List all inbound leads that arrived via a Meta Ad (ad_campaign_id IS NOT NULL).
-    Each row includes: channel, first-message keyword, campaign name, segment, score, date.
-    Organic inbound leads (no ad attribution) are NOT included here.
-    """
+    """List inbound leads (organic + ad) with optional origin/segment/channel filters."""
     db = get_supabase()
     offset = (page - 1) * limit
-
     try:
-        leads, total = _fetch_ad_leads(
+        leads, total = _fetch_inbound_leads(
             db, tenant_id,
-            ad_campaign_id=ad_campaign_id,
-            source=source,
-            date_from=date_from,
-            date_to=date_to,
-            limit=limit,
-            offset=offset,
+            origin=origin, segment=segment,
+            ad_campaign_id=ad_campaign_id, source=source,
+            date_from=date_from, date_to=date_to,
+            limit=limit, offset=offset,
         )
     except Exception as e:
-        logger.error(f"meta-ad-leads list error: {e}")
+        logger.error(f"inbound-leads list error: {e}")
         return {"data": [], "total": 0, "page": page, "limit": limit}
 
     if not leads:
         return {"data": [], "total": total, "page": page, "limit": limit}
 
-    lead_ids = [l["id"] for l in leads]
-    campaign_ids = list({l["ad_campaign_id"] for l in leads if l.get("ad_campaign_id")})
-
-    campaign_map = _fetch_campaign_names(db, tenant_id, campaign_ids)
-    keyword_map = _fetch_first_keywords(db, tenant_id, lead_ids)
-    enriched = _enrich(leads, campaign_map, keyword_map)
-
+    try:
+        lead_ids = [l["id"] for l in leads]
+        campaign_ids = list({l["ad_campaign_id"] for l in leads if l.get("ad_campaign_id")})
+        campaign_map = _fetch_campaign_names(db, tenant_id, campaign_ids)
+        keyword_map = _fetch_first_keywords(db, tenant_id, lead_ids)
+        enriched = _enrich(leads, campaign_map, keyword_map)
+    except Exception as e:
+        logger.error(f"inbound-leads enrich error: {e}")
+        return {"data": [], "total": total, "page": page, "limit": limit}
     return {"data": enriched, "total": total, "page": page, "limit": limit}
 
 
 @router.get("/export")
-async def export_meta_ad_leads(
+async def export_inbound_leads(
+    origin: str = Query("all", pattern="^(all|organic|ad)$"),
+    segment: str | None = Query(None, pattern="^[ABCD]$"),
     ad_campaign_id: str | None = Query(None),
     source: str | None = Query(None),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
     tenant_id: str = Depends(get_tenant_id),
 ):
-    """
-    CSV export for Meta Ad leads.
-    Columns: Phone | Name | Channel | Keyword (First Message) |
-             Ad Campaign | Date Joined (IST) | Segment | Score
-    Uses UTF-8 BOM so Excel opens it correctly without encoding issues.
-    """
+    """CSV export for inbound leads. Respects origin/segment/channel/campaign/date filters."""
     db = get_supabase()
-
     try:
-        leads, _ = _fetch_ad_leads(
+        leads, _ = _fetch_inbound_leads(
             db, tenant_id,
-            ad_campaign_id=ad_campaign_id,
-            source=source,
-            date_from=date_from,
-            date_to=date_to,
-            limit=5000,
-            offset=0,
+            origin=origin, segment=segment,
+            ad_campaign_id=ad_campaign_id, source=source,
+            date_from=date_from, date_to=date_to,
+            limit=5000, offset=0,
         )
     except Exception as e:
-        logger.error(f"meta-ad-leads export error: {e}")
+        logger.error(f"inbound-leads export error: {e}")
         leads = []
 
     FIELDNAMES = [
-        "phone", "name", "channel", "keyword",
+        "phone", "name", "origin", "channel", "keyword",
         "ad_campaign", "date_joined_ist", "segment", "score",
     ]
     output = io.StringIO()
@@ -279,16 +274,20 @@ async def export_meta_ad_leads(
     writer.writeheader()
 
     if leads:
-        lead_ids = [l["id"] for l in leads]
-        campaign_ids = list({l["ad_campaign_id"] for l in leads if l.get("ad_campaign_id")})
-        campaign_map = _fetch_campaign_names(db, tenant_id, campaign_ids)
-        keyword_map = _fetch_first_keywords(db, tenant_id, lead_ids)
-        enriched = _enrich(leads, campaign_map, keyword_map)
-
+        try:
+            lead_ids = [l["id"] for l in leads]
+            campaign_ids = list({l["ad_campaign_id"] for l in leads if l.get("ad_campaign_id")})
+            campaign_map = _fetch_campaign_names(db, tenant_id, campaign_ids)
+            keyword_map = _fetch_first_keywords(db, tenant_id, lead_ids)
+            enriched = _enrich(leads, campaign_map, keyword_map)
+        except Exception as e:
+            logger.error(f"inbound-leads export enrich error: {e}")
+            enriched = []
         for lead in enriched:
             writer.writerow({
                 "phone": lead["phone"],
                 "name": lead["name"],
+                "origin": lead["origin"],
                 "channel": lead["channel_label"],
                 "keyword": lead["keyword"],
                 "ad_campaign": lead["campaign_name"],
@@ -297,9 +296,8 @@ async def export_meta_ad_leads(
                 "score": lead["score"],
             })
 
-    filename = "meta_ad_leads.csv"
     return StreamingResponse(
         io.BytesIO(output.getvalue().encode("utf-8-sig")),
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": "attachment; filename=inbound_leads.csv"},
     )

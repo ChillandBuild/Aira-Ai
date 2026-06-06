@@ -78,6 +78,9 @@ export function Sidebar() {
   }, []);
 
   const waEnabled = enabledFeatures.includes("whatsapp");
+  const anyInboundEnabled = ["whatsapp", "instagram", "facebook", "telegram"].some(
+    (c) => enabledFeatures.includes(c)
+  );
   useEffect(() => {
     if (!waEnabled) return;
     fetchCount();
@@ -227,19 +230,19 @@ export function Sidebar() {
           </Link>
         )}
 
-        {/* TOP LEVEL: Meta Ad Leads */}
-        {role === "owner" && waEnabled && (
+        {/* TOP LEVEL: Inbound Leads */}
+        {role === "owner" && anyInboundEnabled && (
           <Link
-            href="/dashboard/ctwa-leads"
+            href="/dashboard/inbound-leads"
             className={cn(
               "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-150 group",
-              pathname.startsWith("/dashboard/ctwa-leads")
+              pathname.startsWith("/dashboard/inbound-leads")
                 ? "bg-zinc-200/70 text-zinc-950"
                 : "text-zinc-700 hover:bg-zinc-200/40 hover:text-zinc-950"
             )}
           >
-            <RadioTower size={16} className={pathname.startsWith("/dashboard/ctwa-leads") ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
-            <span>Meta Ad Leads</span>
+            <RadioTower size={16} className={pathname.startsWith("/dashboard/inbound-leads") ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
+            <span>Inbound Leads</span>
           </Link>
         )}
 

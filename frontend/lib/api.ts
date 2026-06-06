@@ -646,6 +646,16 @@ export const api = {
       const res = await apiFetch<{ data: TemplatePerformanceRow[] }>(`/api/v1/analytics/template-performance`);
       return res.data || [];
     },
+    inbound: (range: string) =>
+      apiFetch<{
+        kpis: {
+          today: { total: number; organic: number; ad: number };
+          range: { total: number; organic: number; ad: number };
+        };
+        daily: { day: string; organic: number; ad: number }[];
+        by_segment: { A: number; B: number; C: number; D: number };
+        by_channel: { whatsapp: number; instagram: number; facebook: number; telegram: number };
+      }>(`/api/v1/analytics/inbound?range=${range}`),
   },
   insights: {
     whatsapp: (params?: { range?: string; since?: string; until?: string; source?: string }) => {
@@ -756,12 +766,14 @@ export const api = {
         body: JSON.stringify(data),
       }),
   },
-  ctwaLeads: {
+  inboundLeads: {
     campaigns: async () => {
-      const res = await apiFetch<{ data: { id: string; campaign_name: string; platform: string }[] }>(`/api/v1/ctwa-leads/campaigns`);
+      const res = await apiFetch<{ data: { id: string; campaign_name: string; platform: string }[] }>(`/api/v1/inbound-leads/campaigns`);
       return res.data || [];
     },
     list: async (params?: {
+      origin?: string;
+      segment?: string;
       ad_campaign_id?: string;
       source?: string;
       date_from?: string;
@@ -770,33 +782,39 @@ export const api = {
       limit?: number;
     }) => {
       const qs = new URLSearchParams();
+      if (params?.origin) qs.set("origin", params.origin);
+      if (params?.segment) qs.set("segment", params.segment);
       if (params?.ad_campaign_id) qs.set("ad_campaign_id", params.ad_campaign_id);
       if (params?.source) qs.set("source", params.source);
       if (params?.date_from) qs.set("date_from", params.date_from);
       if (params?.date_to) qs.set("date_to", params.date_to);
       if (params?.page) qs.set("page", String(params.page));
       if (params?.limit) qs.set("limit", String(params.limit));
-      return apiFetch<{ data: CtwaLead[]; total: number; page: number; limit: number }>(`/api/v1/ctwa-leads/?${qs}`);
+      return apiFetch<{ data: InboundLead[]; total: number; page: number; limit: number }>(`/api/v1/inbound-leads/?${qs}`);
     },
     exportCsv: async (params?: {
+      origin?: string;
+      segment?: string;
       ad_campaign_id?: string;
       source?: string;
       date_from?: string;
       date_to?: string;
     }) => {
       const qs = new URLSearchParams();
+      if (params?.origin) qs.set("origin", params.origin);
+      if (params?.segment) qs.set("segment", params.segment);
       if (params?.ad_campaign_id) qs.set("ad_campaign_id", params.ad_campaign_id);
       if (params?.source) qs.set("source", params.source);
       if (params?.date_from) qs.set("date_from", params.date_from);
       if (params?.date_to) qs.set("date_to", params.date_to);
       const headers = await getAuthHeaders();
-      const res = await fetch(`${API_URL}/api/v1/ctwa-leads/export?${qs}`, { headers });
+      const res = await fetch(`${API_URL}/api/v1/inbound-leads/export?${qs}`, { headers });
       if (!res.ok) throw new Error(`Export failed: ${res.status}`);
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "ctwa_leads_ad_traffic.csv";
+      a.download = "inbound_leads.csv";
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -814,11 +832,12 @@ export interface Todo {
   updated_at: string;
 }
 
-export interface CtwaLead {
+export interface InboundLead {
   id: string;
   phone: string;
   name: string;
   source: string;
+  origin: string;
   channel_label: string;
   score: number;
   segment: string;

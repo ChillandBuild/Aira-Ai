@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id
+from app.services.inbound_leads_logic import INBOUND_SOURCES, aggregate_inbound
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -572,3 +573,30 @@ async def ad_performance_summary(tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
     from app.services.growth import build_ad_performance
     return build_ad_performance(tenant_id=tenant_id, db=db)
+
+
+@router.get("/inbound")
+async def inbound_analytics(
+    range: str = Query("7d"),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    """New inbound leads acquired, split organic vs ad. Range: today|7d|30d."""
+    db = get_supabase()
+    start_dt, days_iso = _range_params(range)
+    today_iso = datetime.now(timezone.utc).date().isoformat()
+
+    try:
+        rows = (
+            db.table("leads")
+            .select("id,source,ad_campaign_id,segment,created_at")
+            .eq("tenant_id", tenant_id)
+            .in_("source", list(INBOUND_SOURCES))
+            .is_("deleted_at", "null")
+            .gte("created_at", start_dt.isoformat())
+            .execute()
+        )
+        leads = rows.data or []
+    except Exception as e:
+        logger.error(f"inbound analytics error: {e}")
+        leads = []
+    return aggregate_inbound(leads, days_iso, today_iso)
