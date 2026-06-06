@@ -213,8 +213,8 @@ export default function CarouselTemplateBuilderPage() {
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs text-ink-muted">Buttons (max 2)</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs text-ink-muted">Buttons <span className="text-amber-600 font-medium">(max 2 · URL &amp; Quick Reply only)</span></label>
                   {card.buttons.length < 2 && (
                     <div className="flex gap-1">
                       <button
@@ -228,6 +228,7 @@ export default function CarouselTemplateBuilderPage() {
                     </div>
                   )}
                 </div>
+                <p className="font-body text-xs text-amber-600 mb-2">Phone, Copy Code, and WhatsApp Call buttons are not supported in carousels by Meta.</p>
                 <div className="space-y-2">
                   {card.buttons.map((btn, bi) => (
                     <div key={bi} className="flex items-center gap-2 p-2 rounded-xl bg-surface-subtle">

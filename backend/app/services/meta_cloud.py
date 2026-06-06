@@ -596,7 +596,7 @@ async def submit_template(
             c_body = (card.get("body_text") or "").strip()
             if c_body:
                 card_components.append({"type": "BODY", "text": c_body})
-            c_buttons = card.get("buttons") or []
+            c_buttons = [b for b in (card.get("buttons") or []) if b.get("type") in ("URL", "QUICK_REPLY")]
             if c_buttons:
                 card_btn_components = _build_button_components(c_buttons, 2)
                 if card_btn_components:

@@ -70,11 +70,11 @@ const LANGUAGE_OPTIONS = [
 ];
 
 const BUTTON_TYPE_OPTIONS = [
-  { type: "QUICK_REPLY" as const, label: "Quick Reply" },
-  { type: "URL" as const, label: "Visit Website" },
-  { type: "WHATSAPP_CALL" as const, label: "Call on WhatsApp" },
-  { type: "PHONE_NUMBER" as const, label: "Call Phone Number" },
-  { type: "COPY_CODE" as const, label: "Copy Offer Code" },
+  { type: "QUICK_REPLY" as const, label: "Quick Reply",        desc: "Tap-to-reply chip. Cannot mix with URL or Phone buttons." },
+  { type: "URL" as const,         label: "Visit Website",      desc: "Opens a URL. Cannot mix with Quick Reply buttons." },
+  { type: "WHATSAPP_CALL" as const, label: "Call on WhatsApp", desc: "Starts a WhatsApp call. Cannot mix with Quick Reply buttons." },
+  { type: "PHONE_NUMBER" as const, label: "Call Phone Number", desc: "Dials a number. Cannot mix with Quick Reply buttons." },
+  { type: "COPY_CODE" as const,   label: "Copy Offer Code",    desc: "Copies a promo code. One per template, no mixing." },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -880,6 +880,16 @@ export default function TemplatesPage() {
                     {/* Button type picker dropdown */}
                     {showButtonTypePicker && buttons.length < (headerMediaType !== "NONE" ? 1 : 3) && (
                       <div className="mb-3 p-3 rounded-xl bg-surface-subtle border border-border-subtle">
+                        {/* Meta button rules summary */}
+                        <div className="mb-3 p-2.5 rounded-lg bg-amber-50 border border-amber-100">
+                          <p className="font-body text-xs font-semibold text-amber-700 mb-1">Meta button rules</p>
+                          <ul className="font-body text-xs text-amber-600 space-y-0.5">
+                            <li>• Max 3 buttons (max 1 if the template has a media header)</li>
+                            <li>• Quick Reply cannot be mixed with URL / Phone / Copy Code buttons</li>
+                            <li>• Button label max 25 characters</li>
+                            <li>• Only one Copy Code button per template</li>
+                          </ul>
+                        </div>
                         <p className="font-body text-xs text-ink-muted mb-2">Select button type:</p>
                         <div className="grid grid-cols-1 gap-1">
                           {BUTTON_TYPE_OPTIONS.map(opt => (
@@ -887,10 +897,11 @@ export default function TemplatesPage() {
                               key={opt.type}
                               type="button"
                               onClick={() => addButton(opt.type)}
-                              className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-white hover:shadow-sm transition-all text-left"
+                              className="flex items-start gap-3 p-2.5 rounded-lg hover:bg-white hover:shadow-sm transition-all text-left"
                             >
                               <div>
                                 <p className="font-body text-sm font-medium text-ink">{opt.label}</p>
+                                <p className="font-body text-xs text-ink-muted">{opt.desc}</p>
                               </div>
                             </button>
                           ))}
