@@ -198,7 +198,7 @@ async def run_agent(step: dict, lead_data: dict, message: str, db, context: dict
         if config.get("use_knowledge", True):
             try:
                 from app.services.knowledge_service import get_knowledge_context
-                kb_context = await get_knowledge_context(tenant_id) or ""
+                kb_context = await get_knowledge_context(tenant_id, query=message) or ""
             except Exception as e:
                 logger.warning(f"agent KB load failed: {e}")
         history = [{"role": "system", "content": _build_system(config, lead_data, kb_context)}]

@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     supabase_url: str
     supabase_service_key: str
     groq_api_key: str | None = None
+    jina_api_key: str | None = None
     telecmi_user_id: str | None = None
     telecmi_secret: str | None = None
     telecmi_callerid: str | None = None

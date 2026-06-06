@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id
-from app.services.knowledge_service import process_document
+from app.services.knowledge_service import process_document, reindex_tenant
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -51,6 +51,13 @@ async def upload_document(
     
     return res.data[0]
 
+
+
+@router.post("/reindex")
+async def reindex_documents(tenant_id: str = Depends(get_tenant_id)):
+    """Backfill RAG embeddings for all indexed documents (run once after enabling RAG)."""
+    result = await reindex_tenant(tenant_id)
+    return {"success": True, **result}
 
 
 @router.delete("/documents/{doc_id}")

@@ -543,9 +543,12 @@ async def generate_reply(
             logger.error(f"Scoring update failed (takeover mode) for lead {lead_id}: {e}")
         return
 
-    # Inject full knowledge base text if any documents are indexed
+    # RAG: retrieve the most relevant knowledge-base chunks for THIS message
     try:
-        context_text = await get_knowledge_context(lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001")
+        context_text = await get_knowledge_context(
+            lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001",
+            query=message,
+        )
     except Exception as e:
         logger.warning(f"Knowledge context fetch failed for lead {lead_id}: {e}")
         context_text = ""
@@ -554,7 +557,7 @@ async def generate_reply(
     try:
         system_prompt = _get_prompt(f"{channel}_reply", tenant_id=lead_data.get("tenant_id"))
         if context_text:
-            system_prompt += "\n\nKNOWLEDGE BASE:\nUse the following documents to answer the user's question accurately. If the answer is not in the documents, say you will connect them with a team member.\n\n" + context_text
+            system_prompt += "\n\nKNOWLEDGE BASE:\nUse the following excerpts to answer the user's question accurately. If the answer is not in the excerpts, say you will connect them with a team member.\n\n" + context_text
 
         lead_name = (lead_data.get("name") or "").strip()
         lead_segment = lead_data.get("segment") or "C"

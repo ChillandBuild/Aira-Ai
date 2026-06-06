@@ -44,7 +44,7 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Template approval webhook | ✅ Built — POST /api/v1/templates/webhook-status |
 | Manual template sync | ✅ Built — POST /api/v1/templates/{id}/sync |
 | Template Quick Reply buttons | ✅ Built — up to 3 buttons |
-| Knowledge base (full-text injection, no embeddings) | ✅ Built — services/knowledge_service.py |
+| Knowledge base (pgvector RAG, Jina v3 embeddings @512-dim) | ✅ Built — services/knowledge_service.py + services/embeddings.py, migration 087, full-text fallback retained |
 | Reply source badge (Knowledge Base / AI / Automation) | ✅ Built — messages.reply_source |
 | Callback scheduler & reminders | ✅ Built — follow_up_jobs cadence=callback, in-app due reminders + 60s polling |
 | Telecaller multi-tenancy + role-based access | ✅ Built — migration 025 |
@@ -171,7 +171,7 @@ TelecallingConfigPanel: module on/off, auto-assign, per-segment assignment (A/B/
 | backend/supabase/migrations/ | All schema migrations 001–083 |
 | frontend/app/dashboard/ | All dashboard pages |
 
-## Migration Index (latest = 083)
+## Migration Index (latest = 086)
 | Migration | What |
 |---|---|
 | 051 | Telegram support — tg_user_id on leads |
@@ -211,6 +211,11 @@ TelecallingConfigPanel: module on/off, auto-assign, per-segment assignment (A/B/
 | 081 | Drop WATI provider — tighten phone_numbers.provider check to 'meta_cloud' only, drop unused api_key column |
 | 082 | Generic booking config — drop GPH hardcode, event_name + ref_prefix + amount_paise moved to per-tenant app_settings |
 | 083 | Drop hot_lead_alerts table — score-threshold escalation now goes through chat_handovers gated by inbox_cfg.segments |
+| 084 | Drop messages.twilio_message_sid (legacy Twilio column removal) |
+| 085_opt_out_per_broadcast_and_tag | lead_tag_opt_outs table + broadcast_recipients.opted_out_at — per-broadcast & per-tag opt-out (NULL tag_id = all-tags sentinel) |
+| 086_broadcast_lead_scores_finalized | broadcast_lead_scores.finalized_at — freeze a lead's per-broadcast score slate when the next broadcast sends |
+| 086_lead_tag_opt_outs_lead_fk | lead_tag_opt_outs.lead_id FK → leads + orphan cleanup |
+| 087_knowledge_rag | knowledge_chunks + vector(512) + HNSW; match/insert RPCs — pgvector RAG (Jina v3 embeddings @512-dim) replaces full-text KB injection |
 
 ## Bot Flow Builder (replaces Automations UI)
 Visual WhatsApp flow builder at /dashboard/automations (sidebar "Bot Flows"). Backend
@@ -220,12 +225,25 @@ extends the automations engine IN PLACE (no renames); "Bot Flow" is a UI name on
   stale-running reaper). `{{var}}` interpolation reads the run's variable bag.
 - Pause-on-reply: `services/flow_runtime.resume_for_inbound` — intercepts inbound in all
   4 channels (webhook/telegram/instagram/facebook) BEFORE trigger fan-out + generate_reply;
-  user_input/interactive nodes pause as `waiting_reply`. CAS-guarded against double-drive.
-- Blocks: send_message/image/video/file/location, cta_url, template, wait, condition,
-  user_input, interactive (N-way button branch = button id), http_api (SSRF-guarded),
-  random. Per-node analytics (sent/delivered/error) on automation_steps.
-- Specs: docs/superpowers/specs/2026-05-31-bot-flow-builder-design.md (Phase 1) +
-  -phase2-design.md (run-state, pause-on-reply, power blocks, residual risks).
+  user_input/interactive/ai_agent nodes pause as `waiting_reply`. CAS-guarded against double-drive.
+- Blocks: send_message/image/video/audio/file/location, cta_url, template, send_list,
+  send_catalog, add_label, wait, condition, user_input, interactive (N-way button branch
+  = button id), http_api (SSRF-guarded), random, ai_agent. Per-node analytics
+  (sent/delivered/error) on automation_steps.
+- ai_agent block: `services/agent_runtime.py` — a *contained* Groq (llama-3.3-70b, Invariant 10)
+  agent that drives a multi-turn conversation toward declared outcomes; each turn returns
+  STRICT validated JSON (LLM never gets free control), outcomes map to flow branch labels,
+  agent state lives in the run's variable bag (survives pause/resume), hard tool-call caps.
+- Frontend (`frontend/app/dashboard/automations/[id]/flow/`): the **node-graph map canvas
+  (`Canvas.tsx` + `mapLayout.ts`) is the primary and only editor** — pan/zoom, click node →
+  `BlockConfigDrawer`, hover toolbar (edit/delete), inline `+` insert on every edge, trigger
+  node → right-side `TriggerCard` drawer. Left palette sidebar groups blocks Send/Logic/Tools.
+  The old vertical stacked-card renderer (`FlowCanvas.tsx` + `BranchGroup.tsx`) is legacy/
+  orphaned — still on disk, no longer wired into `FlowEditor`.
+- Specs (historical brainstorming records — CLAUDE.md is the living source of truth):
+  docs/superpowers/specs/2026-05-31-bot-flow-builder-design.md (Phase 1; its "vertical stack
+  primary / map view later" UX is now INVERTED — map canvas is primary), -phase2-design.md
+  (run-state, pause-on-reply, power blocks, residual risks), -agent-block-design.md (ai_agent).
 
 ## Response Style
 - One sentence per progress update while working
