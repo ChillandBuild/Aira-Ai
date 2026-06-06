@@ -26,9 +26,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 CHANNEL_LABELS = {
-    "whatsapp": "WhatsApp (Click-to-Ad)",
-    "instagram": "Instagram DM Ad",
-    "facebook": "Facebook Messenger Ad",
+    "whatsapp": "WhatsApp",
+    "instagram": "Instagram",
+    "facebook": "Facebook",
     "telegram": "Telegram",
 }
 
