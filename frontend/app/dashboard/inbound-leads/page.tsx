@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
-import { api, CtwaLead } from "@/lib/api";
+import { api, InboundLead } from "@/lib/api";
 import {
   Download, Megaphone, Filter, X,
   Smartphone, MessageSquare, Users, RefreshCw, ChevronDown, RadioTower,
@@ -118,7 +118,7 @@ function EmptyState() {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function MetaAdLeadsPage() {
-  const [leads, setLeads] = useState<CtwaLead[]>([]);
+  const [leads, setLeads] = useState<InboundLead[]>([]);
   const [campaigns, setCampaigns] = useState<{ id: string; campaign_name: string; platform: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -139,7 +139,7 @@ export default function MetaAdLeadsPage() {
   const fetchLeads = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.ctwaLeads.list({
+      const res = await api.inboundLeads.list({
         ad_campaign_id: selectedCampaign || undefined,
         source: selectedSource || undefined,
         date_from: dateFrom || undefined,
@@ -156,7 +156,7 @@ export default function MetaAdLeadsPage() {
   }, [selectedCampaign, selectedSource, dateFrom, dateTo]);
 
   useEffect(() => {
-    api.ctwaLeads.campaigns()
+    api.inboundLeads.campaigns()
       .then(setCampaigns)
       .catch(() => {}); // non-critical — dropdown just stays empty
   }, []);
@@ -168,7 +168,7 @@ export default function MetaAdLeadsPage() {
   async function handleExport() {
     setExporting(true);
     try {
-      await api.ctwaLeads.exportCsv({
+      await api.inboundLeads.exportCsv({
         ad_campaign_id: selectedCampaign || undefined,
         source: selectedSource || undefined,
         date_from: dateFrom || undefined,
