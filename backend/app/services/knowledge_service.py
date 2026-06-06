@@ -186,13 +186,57 @@ def _full_text_context(tenant_id: str, db) -> str:
     return "\n\n".join(parts)
 
 
+def _format_excerpts(rows: list[dict]) -> str:
+    return "\n\n".join(f"=== excerpt {i + 1} ===\n{r['content']}" for i, r in enumerate(rows))
+
+
+async def _semantic_search(db, tenant_id: str, query: str) -> list[dict]:
+    """Vector similarity via Jina embeddings + match_knowledge_chunks RPC."""
+    from app.services.embeddings import embed_query, to_pgvector
+
+    q_emb = await embed_query(query)
+    res = db.rpc(
+        "match_knowledge_chunks",
+        {"query_embedding": to_pgvector(q_emb), "p_tenant_id": tenant_id, "match_count": _MATCH_COUNT},
+    ).execute()
+    return res.data or []
+
+
+def _keyword_search(db, tenant_id: str, query: str) -> list[dict]:
+    """Postgres full-text + trigram match — no external API, language-agnostic tokens."""
+    res = db.rpc(
+        "keyword_match_chunks",
+        {"p_query": query, "p_tenant_id": tenant_id, "match_count": _MATCH_COUNT},
+    ).execute()
+    return res.data or []
+
+
+def _rrf_merge(lists: list[list[dict]], top_n: int, k: int = 60) -> list[dict]:
+    """Reciprocal Rank Fusion: blend ranked result lists by content, best-first."""
+    scores: dict[str, float] = {}
+    keep: dict[str, dict] = {}
+    for lst in lists:
+        for rank, row in enumerate(lst):
+            key = row.get("content") or ""
+            if not key:
+                continue
+            scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank + 1)
+            keep[key] = row
+    ordered = sorted(scores, key=lambda c: scores[c], reverse=True)[:top_n]
+    return [keep[c] for c in ordered]
+
+
 async def get_knowledge_context(tenant_id: str, query: str | None = None) -> str:
     """
-    RAG retrieval: embed the query, return the top-k most relevant chunks for this tenant.
+    Retrieve the most relevant knowledge-base excerpts for this tenant's message.
 
-    Falls back to full-text injection when the query is empty, embeddings are unavailable,
-    or no chunks exist yet (e.g. documents indexed before RAG / mid-backfill) — preserving
-    the North Star: a provider hiccup must never blank the knowledge base.
+    Retrieval mode is per-tenant via the `kb_retrieval_mode` setting:
+      - "semantic" (default): Jina vector search — meaning-based, multilingual.
+      - "keyword": Postgres full-text/trigram — exact tokens, no embedding API.
+      - "hybrid": both, fused with Reciprocal Rank Fusion.
+
+    Always falls back to full-text injection when the query is empty, retrieval errors,
+    or nothing matches — North Star: a provider hiccup must never blank the knowledge base.
     """
     db = get_supabase()
     if not query or not query.strip():
@@ -202,24 +246,34 @@ async def get_knowledge_context(tenant_id: str, query: str | None = None) -> str
             logger.error(f"Knowledge full-text fetch failed: {e}")
             return ""
 
-    try:
-        from app.services.embeddings import embed_query, to_pgvector
+    from app.config_dynamic import get_setting
 
-        q_emb = await embed_query(query)
-        res = db.rpc(
-            "match_knowledge_chunks",
-            {
-                "query_embedding": to_pgvector(q_emb),
-                "p_tenant_id": tenant_id,
-                "match_count": _MATCH_COUNT,
-            },
-        ).execute()
-        rows = res.data or []
-        if rows:
-            return "\n\n".join(f"=== excerpt {i + 1} ===\n{r['content']}" for i, r in enumerate(rows))
-        logger.info(f"No chunks matched for tenant {tenant_id} — falling back to full-text injection")
+    mode = (get_setting("kb_retrieval_mode", fallback="semantic", tenant_id=tenant_id) or "semantic").lower()
+
+    rows: list[dict] = []
+    try:
+        if mode == "keyword":
+            rows = _keyword_search(db, tenant_id, query)
+        elif mode == "hybrid":
+            sem: list[dict] = []
+            kw: list[dict] = []
+            try:
+                sem = await _semantic_search(db, tenant_id, query)
+            except Exception as e:
+                logger.warning(f"Hybrid: semantic leg failed for tenant {tenant_id}: {e}")
+            try:
+                kw = _keyword_search(db, tenant_id, query)
+            except Exception as e:
+                logger.warning(f"Hybrid: keyword leg failed for tenant {tenant_id}: {e}")
+            rows = _rrf_merge([sem, kw], _MATCH_COUNT)
+        else:
+            rows = await _semantic_search(db, tenant_id, query)
     except Exception as e:
-        logger.warning(f"RAG retrieval failed for tenant {tenant_id}: {e}. Falling back to full-text.")
+        logger.warning(f"KB retrieval ({mode}) failed for tenant {tenant_id}: {e}. Falling back to full-text.")
+
+    if rows:
+        return _format_excerpts(rows)
+    logger.info(f"No chunks matched ({mode}) for tenant {tenant_id} — falling back to full-text injection")
 
     try:
         return _full_text_context(tenant_id, db)
