@@ -125,7 +125,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     setDialing(leadId);
     try {
       const res = await api.calls.initiate({ leadId }, myCaller.id);
-      setActiveCallCtx({ leadId: res.lead_id ?? leadId, name: res.lead_name ?? lead.name, phone: lead.phone });
+      setActiveCallCtx({ leadId: res.lead_id ?? leadId, name: res.lead_name ?? lead.name, phone: lead.phone, callLogId: res.call_log_id ?? null });
 
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Call failed");
@@ -149,7 +149,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     setManualDialing(true);
     try {
       const res = await api.calls.initiate({ phone: manualPhone.trim() }, myCaller.id);
-      setActiveCallCtx({ leadId: res.lead_id ?? null, name: res.lead_name ?? null, phone: manualPhone.trim() });
+      setActiveCallCtx({ leadId: res.lead_id ?? null, name: res.lead_name ?? null, phone: manualPhone.trim(), callLogId: res.call_log_id ?? null });
       setManualPhone("");
 
     } catch (err) {

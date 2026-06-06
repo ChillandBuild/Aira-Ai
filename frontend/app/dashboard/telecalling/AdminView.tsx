@@ -83,7 +83,7 @@ export default function AdminView() {
     setManualDialing(true);
     try {
       const res = await api.calls.initiate({ phone: manualPhone.trim() }, selectedCallerId ?? undefined);
-      setActiveCallCtx({ leadId: res.lead_id ?? null, name: res.lead_name ?? null, phone: manualPhone.trim() });
+      setActiveCallCtx({ leadId: res.lead_id ?? null, name: res.lead_name ?? null, phone: manualPhone.trim(), callLogId: res.call_log_id ?? null });
       setManualPhone("");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Call failed");
@@ -94,7 +94,7 @@ export default function AdminView() {
     setDialingLeadId(lead.id);
     try {
       const res = await api.calls.initiate({ leadId: lead.id }, selectedCallerId ?? undefined);
-      setActiveCallCtx({ leadId: res.lead_id ?? lead.id, name: res.lead_name ?? lead.name ?? null, phone: lead.phone ?? "" });
+      setActiveCallCtx({ leadId: res.lead_id ?? lead.id, name: res.lead_name ?? lead.name ?? null, phone: lead.phone ?? "", callLogId: res.call_log_id ?? null });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Call failed");
     } finally { setDialingLeadId(null); }

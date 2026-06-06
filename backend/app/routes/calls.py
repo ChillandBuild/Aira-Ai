@@ -24,6 +24,18 @@ router = APIRouter()
 public_router = APIRouter()  # No auth — TeleCMI calls these directly
 
 Outcome = Literal["converted", "callback", "not_interested", "no_answer"]
+Disposition = Literal["answered", "no_answer", "busy", "switched_off", "followup_required"]
+
+# Map a connection-state disposition to the business outcome that drives scoring/segments.
+# "answered" alone implies no business result (caller may set outcome separately), so it
+# maps to None — disposition + notes are still recorded, but scoring stays untouched.
+_DISPOSITION_TO_OUTCOME: dict[str, str | None] = {
+    "answered": None,
+    "no_answer": "no_answer",
+    "busy": "no_answer",
+    "switched_off": "no_answer",
+    "followup_required": "callback",
+}
 
 
 class InitiateCall(BaseModel):
@@ -33,7 +45,9 @@ class InitiateCall(BaseModel):
 
 
 class OutcomeUpdate(BaseModel):
-    outcome: Outcome
+    outcome: Outcome | None = None
+    disposition: Disposition | None = None
+    notes: str | None = None
     callback_time: datetime | None = None
 
 
@@ -442,18 +456,31 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depe
     if not log.data:
         raise HTTPException(status_code=404, detail="Call log not found")
 
-    score = score_from_outcome(payload.outcome, log.data.get("duration_seconds"))
-    db.table("call_logs").update({
-        "outcome": payload.outcome,
-        "score": score,
-    }).eq("id", call_log_id).eq("tenant_id", ctx["tenant_id"]).execute()
+    if not payload.outcome and not payload.disposition:
+        raise HTTPException(status_code=400, detail="Provide an outcome or a disposition")
+
+    # A disposition implies a business outcome for scoring; an explicit outcome wins.
+    effective_outcome = payload.outcome or _DISPOSITION_TO_OUTCOME.get(payload.disposition or "")
+
+    log_updates: dict = {}
+    if payload.disposition is not None:
+        log_updates["disposition"] = payload.disposition
+    if payload.notes is not None and payload.notes.strip():
+        log_updates["notes"] = payload.notes.strip()
+    score = None
+    if effective_outcome is not None:
+        score = score_from_outcome(effective_outcome, log.data.get("duration_seconds"))
+        log_updates["outcome"] = effective_outcome
+        log_updates["score"] = score
+    if log_updates:
+        db.table("call_logs").update(log_updates).eq("id", call_log_id).eq("tenant_id", ctx["tenant_id"]).execute()
 
     new_caller_score = None
-    if log.data.get("caller_id"):
+    if effective_outcome is not None and log.data.get("caller_id"):
         new_caller_score = recompute_caller_score(log.data["caller_id"], db)
 
     lead_id = log.data.get("lead_id")
-    if lead_id:
+    if lead_id and effective_outcome is not None:
         lead = (
             db.table("leads")
             .select("segment,phone,ai_enabled,converted_at,tenant_id")
@@ -466,16 +493,16 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depe
             lead_updates: dict[str, str | None] = {}
             target_segment = lead_data.get("segment")
             event_type = "call_outcome"
-            if payload.outcome == "converted":
+            if effective_outcome == "converted":
                 target_segment = "A"
                 lead_updates["segment"] = "A"
                 lead_updates["converted_at"] = datetime.now(timezone.utc).isoformat()
                 event_type = "converted"
-            elif payload.outcome == "callback":
+            elif effective_outcome == "callback":
                 if (lead_data.get("segment") or "D") not in {"A", "B"}:
                     target_segment = "B"
                     lead_updates["segment"] = "B"
-            elif payload.outcome == "not_interested":
+            elif effective_outcome == "not_interested":
                 target_segment = "D"
                 lead_updates["segment"] = "D"
 
@@ -489,7 +516,7 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depe
                     from_segment=lead.data.get("segment"),
                     to_segment=target_segment,
                     event_type=event_type,
-                    metadata={"outcome": payload.outcome},
+                    metadata={"outcome": effective_outcome, "disposition": payload.disposition},
                     tenant_id=lead_data.get("tenant_id"),
                     db=db,
                 )
@@ -499,11 +526,11 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depe
                 phone=lead_data.get("phone"),
                 converted_at=lead_data.get("converted_at"),
                 ai_enabled=lead_data.get("ai_enabled", True),
-                reason=f"call_{payload.outcome}",
+                reason=f"call_{effective_outcome}",
                 tenant_id=lead_data.get("tenant_id"),
                 db=db,
             )
-            if payload.outcome == "callback" and payload.callback_time:
+            if effective_outcome == "callback" and payload.callback_time:
                 job = (
                     db.table("follow_up_jobs")
                     .select("id")
@@ -520,7 +547,8 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depe
 
     return {
         "call_log_id": call_log_id,
-        "outcome": payload.outcome,
+        "outcome": effective_outcome,
+        "disposition": payload.disposition,
         "score": score,
         "caller_overall_score": new_caller_score,
     }

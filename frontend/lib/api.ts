@@ -70,6 +70,8 @@ export interface CallerStats {
   caller_id: string;
 }
 
+export type Disposition = "answered" | "no_answer" | "busy" | "switched_off" | "followup_required";
+
 export interface CallLog {
   id: string;
   lead_id: string | null;
@@ -500,6 +502,25 @@ export const api = {
       }>(`/api/v1/calls/${callLogId}/outcome`, {
         method: "PATCH",
         body: JSON.stringify({ outcome, callback_time: callbackTime ?? null }),
+      }),
+    setDisposition: (
+      callLogId: string,
+      disposition: Disposition,
+      opts?: { notes?: string; callbackTime?: string },
+    ) =>
+      apiFetch<{
+        call_log_id: string;
+        outcome: string | null;
+        disposition: string | null;
+        score: number | null;
+        caller_overall_score: number | null;
+      }>(`/api/v1/calls/${callLogId}/outcome`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          disposition,
+          notes: opts?.notes ?? null,
+          callback_time: opts?.callbackTime ?? null,
+        }),
       }),
     statsToday: () =>
       apiFetch<{ calls_today: number; conversions_today: number }>(`/api/v1/calls/stats-today`),

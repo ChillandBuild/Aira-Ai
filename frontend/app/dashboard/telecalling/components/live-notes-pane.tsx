@@ -4,6 +4,15 @@ import { useState, useRef, useEffect } from "react";
 import { X, FileText, CalendarClock } from "lucide-react";
 import type { ActiveCallCtx } from "../types";
 import { createCallback, saveNote } from "../lib/notes-api";
+import { api, type Disposition } from "@/lib/api";
+
+const DISPOSITIONS: { value: Disposition; label: string }[] = [
+  { value: "answered", label: "Answered" },
+  { value: "no_answer", label: "No Answer" },
+  { value: "busy", label: "Busy" },
+  { value: "switched_off", label: "Switched Off" },
+  { value: "followup_required", label: "Follow-up Required" },
+];
 
 const LIVE_NOTE_TAGS = [
   "Meeting scheduled",
@@ -25,6 +34,7 @@ const CALLBACK_TAGS = new Set(["Call back later", "Meeting scheduled"]);
 
 export default function LiveNotesPane({ ctx, onClose }: Props) {
   const [content, setContent] = useState("");
+  const [disposition, setDisposition] = useState<Disposition | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [pinned, setPinned] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -40,7 +50,9 @@ export default function LiveNotesPane({ ctx, onClose }: Props) {
     };
   }, []);
 
-  const canSave = !!ctx.leadId && (content.trim().length > 0 || selectedTags.length > 0);
+  const hasNote = content.trim().length > 0 || selectedTags.length > 0;
+  const canSave =
+    (!!ctx.callLogId && !!disposition) || (!!ctx.leadId && hasNote);
 
   function toggleTag(tag: string) {
     const isSelected = selectedTags.includes(tag);
@@ -54,14 +66,22 @@ export default function LiveNotesPane({ ctx, onClose }: Props) {
   }
 
   async function handleSave() {
-    if (!ctx.leadId || (!content.trim() && selectedTags.length === 0)) return;
+    if (!canSave) return;
     setSaving(true);
     try {
-      await saveNote(ctx.leadId, content.trim(), pinned, selectedTags);
-      if (callbackAt) {
+      if (ctx.callLogId && disposition) {
+        await api.calls.setDisposition(ctx.callLogId, disposition, {
+          notes: content.trim() || undefined,
+        });
+      }
+      if (ctx.leadId && hasNote) {
+        await saveNote(ctx.leadId, content.trim(), pinned, selectedTags);
+      }
+      if (callbackAt && ctx.leadId) {
         await createCallback(ctx.leadId, new Date(callbackAt).toISOString(), content.trim());
       }
       setContent("");
+      setDisposition(null);
       setSelectedTags([]);
       setPinned(false);
       setCallbackAt("");
@@ -105,6 +125,38 @@ export default function LiveNotesPane({ ctx, onClose }: Props) {
         {!ctx.leadId && (
           <p className="font-label text-sm text-amber-600 mt-1">
             Unlinked call — notes won&apos;t be saved
+          </p>
+        )}
+      </div>
+
+      {/* call disposition */}
+      <div className="mb-4">
+        <p className="font-label text-xs font-semibold text-on-surface-muted uppercase tracking-wider mb-2">
+          Call result
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {DISPOSITIONS.map((d) => (
+            <button
+              key={d.value}
+              onClick={() => {
+                const next = disposition === d.value ? null : d.value;
+                setDisposition(next);
+                if (next === "followup_required") setShowCallbackPicker(true);
+              }}
+              disabled={!ctx.callLogId}
+              className={`px-3 py-1.5 rounded-lg font-label text-sm font-semibold transition-colors disabled:opacity-40 ${
+                disposition === d.value
+                  ? "bg-secondary text-white"
+                  : "bg-surface-low hover:bg-surface-mid text-on-surface"
+              }`}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+        {!ctx.callLogId && (
+          <p className="font-label text-xs text-amber-600 mt-1">
+            Disposition saves once a call is initiated.
           </p>
         )}
       </div>

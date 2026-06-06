@@ -25,6 +25,7 @@ export type ActiveCallCtx = {
   leadId: string | null;
   name: string | null;
   phone: string | null;
+  callLogId: string | null;
 };
 
 export interface CallbackJob {
