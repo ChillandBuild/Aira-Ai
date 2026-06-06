@@ -541,10 +541,11 @@ export const api = {
       const res = await apiFetch<{ data: Array<{id:string;name:string;size_bytes:number;file_type:string;status:string;created_at:string;chunk_count?:number}> }>(`/api/v1/knowledge/documents`);
       return res.data || [];
     },
-    uploadDocument: async (file: File) => {
+    uploadDocument: async (file: File, campaignTagId?: string | null) => {
       const authHeaders = await getAuthHeaders();
       const fd = new FormData();
       fd.append("file", file);
+      if (campaignTagId) fd.append("campaign_tag_id", campaignTagId);
       const res = await fetch(`${API_URL}/api/v1/knowledge/upload-document`, {
         method: "POST",
         body: fd,
@@ -557,6 +558,10 @@ export const api = {
       apiFetch<{ success: boolean }>(`/api/v1/knowledge/documents/${id}`, {
         method: "DELETE",
       }),
+    listCampaignTags: async () => {
+      const res = await apiFetch<{ data: Array<{ id: string; name: string; color?: string }> }>(`/api/v1/broadcast-tags/`);
+      return res.data || [];
+    },
   },
   aiTune: {
     prompts: async () => {

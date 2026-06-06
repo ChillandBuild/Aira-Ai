@@ -72,6 +72,8 @@ export default function KnowledgePage() {
   // Document Upload
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [campaignTags, setCampaignTags] = useState<Array<{ id: string; name: string; color?: string }>>([]);
+  const [selectedCampaignTag, setSelectedCampaignTag] = useState<string>("");
 
   // AI Tune
   const [prompts, setPrompts] = useState<AIPrompt[]>([]);
@@ -91,6 +93,7 @@ export default function KnowledgePage() {
   useEffect(() => {
     loadData();
     loadRetrievalMode();
+    api.knowledge.listCampaignTags().then(setCampaignTags).catch(() => {});
   }, []);
 
   const hasProcessing = useMemo(
@@ -255,7 +258,7 @@ export default function KnowledgePage() {
     setUploading(true);
     setUploadError(null);
     try {
-      await api.knowledge.uploadDocument(file);
+      await api.knowledge.uploadDocument(file, selectedCampaignTag || null);
       loadDocuments();
     } catch {
       setUploadError("Upload failed. Please try again.");
@@ -399,6 +402,27 @@ export default function KnowledgePage() {
                 Supports PDF, DOCX, PPTX, XLSX, CSV, TXT, and Images. AI will extract and index the content.
               </p>
             </div>
+            {campaignTags.length > 0 && (
+              <div className="max-w-xs mx-auto text-left">
+                <label className="block font-label text-xs font-semibold text-on-surface-muted mb-1">
+                  Applies to campaign
+                </label>
+                <select
+                  value={selectedCampaignTag}
+                  onChange={(e) => setSelectedCampaignTag(e.target.value)}
+                  disabled={uploading}
+                  className="w-full px-3 py-2 rounded-xl border border-tertiary/20 bg-surface font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary/30"
+                >
+                  <option value="">All campaigns (shared)</option>
+                  {campaignTags.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                <p className="font-body text-[11px] text-on-surface-muted mt-1">
+                  Scopes this document so the AI only uses it for leads from that campaign.
+                </p>
+              </div>
+            )}
             <label className="inline-flex items-center gap-2 px-6 py-3 bg-tertiary text-white rounded-xl font-label font-semibold shadow-card hover:bg-tertiary/90 transition-all cursor-pointer disabled:opacity-50">
               {uploading ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
               {uploading ? "Uploading & Indexing..." : "Choose File"}
