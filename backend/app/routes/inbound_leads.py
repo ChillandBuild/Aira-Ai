@@ -129,6 +129,8 @@ def _fetch_first_keywords(db, tenant_id: str, lead_ids: list[str]) -> dict[str, 
     """
     if not lead_ids:
         return {}
+    # Explicit high limit: PostgREST caps at 1000 rows by default, which would
+    # silently drop keywords for leads beyond that window on large exports.
     result = (
         db.table("messages")
         .select("lead_id,content,created_at")
@@ -136,6 +138,7 @@ def _fetch_first_keywords(db, tenant_id: str, lead_ids: list[str]) -> dict[str, 
         .eq("tenant_id", tenant_id)
         .eq("direction", "inbound")
         .order("created_at", desc=False)
+        .limit(50000)
         .execute()
     )
     keyword_map: dict[str, str] = {}
@@ -226,11 +229,15 @@ async def list_inbound_leads(
     if not leads:
         return {"data": [], "total": total, "page": page, "limit": limit}
 
-    lead_ids = [l["id"] for l in leads]
-    campaign_ids = list({l["ad_campaign_id"] for l in leads if l.get("ad_campaign_id")})
-    campaign_map = _fetch_campaign_names(db, tenant_id, campaign_ids)
-    keyword_map = _fetch_first_keywords(db, tenant_id, lead_ids)
-    enriched = _enrich(leads, campaign_map, keyword_map)
+    try:
+        lead_ids = [l["id"] for l in leads]
+        campaign_ids = list({l["ad_campaign_id"] for l in leads if l.get("ad_campaign_id")})
+        campaign_map = _fetch_campaign_names(db, tenant_id, campaign_ids)
+        keyword_map = _fetch_first_keywords(db, tenant_id, lead_ids)
+        enriched = _enrich(leads, campaign_map, keyword_map)
+    except Exception as e:
+        logger.error(f"inbound-leads enrich error: {e}")
+        return {"data": [], "total": total, "page": page, "limit": limit}
     return {"data": enriched, "total": total, "page": page, "limit": limit}
 
 
@@ -267,11 +274,15 @@ async def export_inbound_leads(
     writer.writeheader()
 
     if leads:
-        lead_ids = [l["id"] for l in leads]
-        campaign_ids = list({l["ad_campaign_id"] for l in leads if l.get("ad_campaign_id")})
-        campaign_map = _fetch_campaign_names(db, tenant_id, campaign_ids)
-        keyword_map = _fetch_first_keywords(db, tenant_id, lead_ids)
-        enriched = _enrich(leads, campaign_map, keyword_map)
+        try:
+            lead_ids = [l["id"] for l in leads]
+            campaign_ids = list({l["ad_campaign_id"] for l in leads if l.get("ad_campaign_id")})
+            campaign_map = _fetch_campaign_names(db, tenant_id, campaign_ids)
+            keyword_map = _fetch_first_keywords(db, tenant_id, lead_ids)
+            enriched = _enrich(leads, campaign_map, keyword_map)
+        except Exception as e:
+            logger.error(f"inbound-leads export enrich error: {e}")
+            enriched = []
         for lead in enriched:
             writer.writerow({
                 "phone": lead["phone"],

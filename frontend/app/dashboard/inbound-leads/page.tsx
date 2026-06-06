@@ -13,30 +13,37 @@ import { toast } from "sonner";
 
 const CHANNEL_CONFIG: Record<string, { label: string; color: string; bg: string; dot: string }> = {
   whatsapp: {
-    label: "WhatsApp (Click-to-Ad)",
+    label: "WhatsApp",
     color: "text-emerald-700",
     bg: "bg-emerald-50 border-emerald-200",
     dot: "bg-emerald-500",
   },
   instagram: {
-    label: "Instagram DM Ad",
+    label: "Instagram",
     color: "text-pink-700",
     bg: "bg-pink-50 border-pink-200",
     dot: "bg-pink-500",
   },
   facebook: {
-    label: "Facebook Messenger Ad",
+    label: "Facebook",
     color: "text-blue-700",
     bg: "bg-blue-50 border-blue-200",
     dot: "bg-blue-500",
+  },
+  telegram: {
+    label: "Telegram",
+    color: "text-sky-700",
+    bg: "bg-sky-50 border-sky-200",
+    dot: "bg-sky-500",
   },
 };
 
 const SOURCE_OPTIONS = [
   { value: "", label: "All Channels" },
-  { value: "whatsapp", label: "WhatsApp (Click-to-Ad)" },
-  { value: "instagram", label: "Instagram DM" },
-  { value: "facebook", label: "Facebook Messenger" },
+  { value: "whatsapp", label: "WhatsApp" },
+  { value: "instagram", label: "Instagram" },
+  { value: "facebook", label: "Facebook" },
+  { value: "telegram", label: "Telegram" },
 ];
 
 const ORIGIN_OPTIONS = [

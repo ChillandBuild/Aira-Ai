@@ -577,7 +577,7 @@ async def ad_performance_summary(tenant_id: str = Depends(get_tenant_id)):
 
 @router.get("/inbound")
 async def inbound_analytics(
-    range: str = "7d",
+    range: str = Query("7d"),
     tenant_id: str = Depends(get_tenant_id),
 ):
     """New inbound leads acquired, split organic vs ad. Range: today|7d|30d."""
@@ -585,14 +585,18 @@ async def inbound_analytics(
     start_dt, days_iso = _range_params(range)
     today_iso = datetime.now(timezone.utc).date().isoformat()
 
-    rows = (
-        db.table("leads")
-        .select("id,source,ad_campaign_id,segment,created_at")
-        .eq("tenant_id", tenant_id)
-        .in_("source", list(INBOUND_SOURCES))
-        .is_("deleted_at", "null")
-        .gte("created_at", start_dt.isoformat())
-        .execute()
-    )
-    leads = rows.data or []
+    try:
+        rows = (
+            db.table("leads")
+            .select("id,source,ad_campaign_id,segment,created_at")
+            .eq("tenant_id", tenant_id)
+            .in_("source", list(INBOUND_SOURCES))
+            .is_("deleted_at", "null")
+            .gte("created_at", start_dt.isoformat())
+            .execute()
+        )
+        leads = rows.data or []
+    except Exception as e:
+        logger.error(f"inbound analytics error: {e}")
+        leads = []
     return aggregate_inbound(leads, days_iso, today_iso)

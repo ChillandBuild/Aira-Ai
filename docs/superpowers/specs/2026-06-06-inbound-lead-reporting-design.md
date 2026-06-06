@@ -40,7 +40,7 @@ Two **independent** dimensions exist on every lead and must not be conflated:
 | Inbound lead | `source IN ('whatsapp','instagram','facebook','telegram')` — **excludes** `upload` and `manual` |
 | Origin = Ad | inbound lead AND `ad_campaign_id IS NOT NULL` |
 | Origin = Organic | inbound lead AND `ad_campaign_id IS NULL` |
-| Acquisition day | `leads.created_at` (first contact), bucketed in **IST** |
+| Acquisition day | `leads.created_at` (first contact), bucketed by **UTC** day (`created_at[:10]`), consistent with existing analytics tabs |
 | Segment | `leads.segment` (A=Hot, B=Warm, C=Cold, D=Disqualified) — already maintained |
 
 **Confirmed consequences:**
@@ -121,7 +121,7 @@ Respects the existing global date-range selector.
 └─────────────────────────────┴───────────────────────┘
 ```
 
-- All counts use the Section 2 rules (inbound universe, IST day buckets).
+- All counts use the Section 2 rules (inbound universe, UTC day buckets).
 - "By segment" is **inbound-only** and will not match the Pipeline tab (which counts
   all leads including upload/manual). Label it clearly to avoid confusion.
 
@@ -191,7 +191,7 @@ All required columns (`source`, `ad_campaign_id`, `segment`, `created_at`,
 
 - Backend: param-matrix tests for `ctwa_leads` list + export (origin × segment ×
   channel), asserting upload/manual excluded and organic = `ad_campaign_id IS NULL`.
-- Backend: `analytics/inbound` aggregation correctness (organic/ad split, IST day
+- Backend: `analytics/inbound` aggregation correctness (organic/ad split, UTC day
   bucketing, segment/channel totals).
 - Frontend: Inbound Leads page filter wiring (origin toggle disables campaign for
   organic; export passes active filters). Analytics Inbound tab renders KPIs + chart.
