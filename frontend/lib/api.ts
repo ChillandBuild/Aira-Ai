@@ -72,6 +72,16 @@ export interface CallerStats {
 
 export type Disposition = "answered" | "no_answer" | "busy" | "switched_off" | "followup_required";
 
+export interface TemplatePerformanceRow {
+  template_name: string;
+  broadcasts: number;
+  sent: number;
+  read: number;
+  replied: number;
+  hot_leads: number;
+  last_sent: string | null;
+}
+
 export interface CallLog {
   id: string;
   lead_id: string | null;
@@ -632,6 +642,10 @@ export const api = {
       apiFetch<TelecallingAnalyticsExtended>(`/api/v1/analytics/telecalling`),
     funnelExtended: () =>
       apiFetch<FunnelAnalyticsExtended>(`/api/v1/analytics/funnel`),
+    templatePerformance: async () => {
+      const res = await apiFetch<{ data: TemplatePerformanceRow[] }>(`/api/v1/analytics/template-performance`);
+      return res.data || [];
+    },
   },
   insights: {
     whatsapp: (params?: { range?: string; since?: string; until?: string; source?: string }) => {
