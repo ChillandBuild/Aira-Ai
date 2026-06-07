@@ -21,13 +21,7 @@ type NavItem = {
   badgeType?: "inbox" | "scheduled" | "drafts";
 };
 
-// Sub-menu groupings for Omnichannel platforms under a single Channels hub
-const CHANNELS_ITEMS: NavItem[] = [
-  { href: "/dashboard/channels", icon: Settings, label: "Connect Channels" },
-  { href: "/dashboard/upload", icon: Upload, label: "Upload", feature: "whatsapp" },
-  { href: "/dashboard/templates", icon: FileCheck, label: "Templates", feature: "whatsapp" },
-  { href: "/dashboard/numbers", icon: Layers, label: "Numbers Pool", feature: "whatsapp" },
-];
+
 
 const TELECALLING_ITEMS: NavItem[] = [
   { href: "/dashboard/telecalling", icon: Phone, label: "Dialer" },
@@ -61,7 +55,6 @@ export function Sidebar() {
   
   // Track open/collapsed state of nested groups
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
-    Channels: true,
     Telecalling: true,
   });
 
@@ -116,14 +109,11 @@ export function Sidebar() {
   const filterEnabled = (items: NavItem[]) => 
     items.filter(item => !item.feature || enabledFeatures.includes(item.feature));
 
-  const channelsGroupItems = filterEnabled(CHANNELS_ITEMS);
   const tcGroupItems = filterEnabled(TELECALLING_ITEMS);
 
-  const isChannelsActive = channelsGroupItems.some(item => pathname.startsWith(item.href));
   const isTcActive = tcGroupItems.some(item => pathname.startsWith(item.href));
 
   // Auto-expand active groups
-  const showChannels = expandedGroups.Channels || isChannelsActive;
   const showTc = expandedGroups.Telecalling || isTcActive;
 
   return (
@@ -246,6 +236,54 @@ export function Sidebar() {
           </Link>
         )}
 
+        {/* TOP LEVEL: Outbound Leads */}
+        {role === "owner" && waEnabled && (
+          <Link
+            href="/dashboard/outbound-leads"
+            className={cn(
+              "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-150 group",
+              pathname.startsWith("/dashboard/outbound-leads")
+                ? "bg-zinc-200/70 text-zinc-950"
+                : "text-zinc-700 hover:bg-zinc-200/40 hover:text-zinc-950"
+            )}
+          >
+            <Upload size={16} className={pathname.startsWith("/dashboard/outbound-leads") ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
+            <span>Outbound Leads</span>
+          </Link>
+        )}
+
+        {/* TOP LEVEL: Templates */}
+        {role === "owner" && waEnabled && (
+          <Link
+            href="/dashboard/templates"
+            className={cn(
+              "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-150 group",
+              pathname.startsWith("/dashboard/templates")
+                ? "bg-zinc-200/70 text-zinc-950"
+                : "text-zinc-700 hover:bg-zinc-200/40 hover:text-zinc-950"
+            )}
+          >
+            <FileCheck size={16} className={pathname.startsWith("/dashboard/templates") ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
+            <span>Templates</span>
+          </Link>
+        )}
+
+        {/* TOP LEVEL: Numbers Pool */}
+        {role === "owner" && waEnabled && (
+          <Link
+            href="/dashboard/numbers"
+            className={cn(
+              "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-150 group",
+              pathname.startsWith("/dashboard/numbers")
+                ? "bg-zinc-200/70 text-zinc-950"
+                : "text-zinc-700 hover:bg-zinc-200/40 hover:text-zinc-950"
+            )}
+          >
+            <Layers size={16} className={pathname.startsWith("/dashboard/numbers") ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
+            <span>Numbers Pool</span>
+          </Link>
+        )}
+
         {/* TOP LEVEL: Knowledge Base (Common for all platforms) */}
         {role === "owner" && (
           <Link
@@ -312,56 +350,20 @@ export function Sidebar() {
 
         <div className="mx-2 my-3 h-px bg-zinc-200" />
 
-        {/* GROUP: Channels messaging */}
-        {role === "owner" && channelsGroupItems.length > 0 && (
-          <div className="space-y-0.5">
-            <button
-              onClick={() => toggleGroup("Channels")}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2 w-full rounded-xl text-sm font-semibold text-left transition-all group",
-                isChannelsActive ? "text-zinc-950" : "text-zinc-700 hover:bg-zinc-200/40"
-              )}
-            >
-              <MessageSquare size={16} className={isChannelsActive ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
-              <span className="flex-1">Channels</span>
-              {showChannels ? <ChevronDown size={14} className="text-zinc-500" /> : <ChevronRight size={14} className="text-zinc-500" />}
-            </button>
-
-            {/* Tree items */}
-            {showChannels && (
-              <div className="space-y-0.5">
-                {channelsGroupItems.map((item, idx) => {
-                  const active = pathname === item.href || pathname.startsWith(item.href + "/");
-                  const isLast = idx === channelsGroupItems.length - 1;
-
-                  return (
-                    <div key={item.href} className="relative pl-6 flex items-center h-9">
-                      {/* Curved branch lines */}
-                      <div
-                        className={cn(
-                          "absolute left-3 w-px bg-zinc-300/80",
-                          isLast ? "top-0 h-4.5" : "-top-1 bottom-0"
-                        )}
-                      />
-                      <div className="absolute left-3 top-1/2 -translate-y-1 w-3.5 h-3.5 border-l border-b border-zinc-300/80 rounded-bl-lg" />
-
-                      <Link
-                        href={item.href}
-                        className={cn(
-                          "flex items-center gap-2.5 ml-3.5 px-3 py-1.5 w-[145px] rounded-xl text-[13px] transition-all duration-150 group",
-                          active
-                            ? "bg-white shadow-md border border-zinc-200/80 text-zinc-950 font-bold"
-                            : "text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200/40"
-                        )}
-                      >
-                        <span className="truncate flex-1">{item.label}</span>
-                      </Link>
-                    </div>
-                  );
-                })}
-              </div>
+        {/* TOP LEVEL: Channels */}
+        {role === "owner" && (
+          <Link
+            href="/dashboard/channels"
+            className={cn(
+              "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-150 group",
+              pathname.startsWith("/dashboard/channels")
+                ? "bg-zinc-200/70 text-zinc-950"
+                : "text-zinc-700 hover:bg-zinc-200/40 hover:text-zinc-950"
             )}
-          </div>
+          >
+            <MessageSquare size={16} className={pathname.startsWith("/dashboard/channels") ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
+            <span>Channels</span>
+          </Link>
         )}
 
         {/* GROUP: Telecalling */}

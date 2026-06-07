@@ -313,7 +313,7 @@ export default function TemplateDetailsPage() {
           {/* Send Broadcast (only if approved) */}
           {template.status === "APPROVED" && (
             <Link
-              href={`/dashboard/upload?template=${encodeURIComponent(template.name)}`}
+              href={`/dashboard/outbound-leads?template=${encodeURIComponent(template.name)}`}
               className="btn-primary flex items-center gap-1 px-4 py-1.5 text-xs"
             >
               <Send size={12} />

@@ -166,11 +166,11 @@ test.describe("Templates page", () => {
   });
 });
 
-// ── Integration: Upload page pre-population ───────────────────────────────────
+// ── Integration: Outbound Leads page pre-population ───────────────────────────────────
 
-test.describe("Upload page template pre-population", () => {
+test.describe("Outbound Leads page template pre-population", () => {
   test("pre-populates template name from ?template= URL param", async ({ page }) => {
-    await page.goto("/dashboard/upload?template=guru_peyarchi_homam_invite");
+    await page.goto("/dashboard/outbound-leads?template=guru_peyarchi_homam_invite");
     await page.waitForLoadState("networkidle");
 
     // The template name input should be pre-filled
@@ -179,11 +179,11 @@ test.describe("Upload page template pre-population", () => {
   });
 
   test("empty template param leaves field blank", async ({ page }) => {
-    await page.goto("/dashboard/upload");
+    await page.goto("/dashboard/outbound-leads");
     await page.waitForLoadState("networkidle");
 
     // Find template name input — it should exist but be empty
-    // The upload page has a specific label for this field
+    // The outbound leads page has a specific label for this field
     const inputs = await page.locator("input[placeholder]").all();
     const values = await Promise.all(inputs.map(i => i.inputValue()));
     const templateValues = values.filter(v => v.includes("template") || v === "");

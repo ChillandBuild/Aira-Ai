@@ -401,7 +401,7 @@ function ExportAllDropdown({ tagCount }: { tagCount: number }) {
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
-export default function UploadPage() {
+export default function OutboundLeadsPage() {
   const { role, loading: roleLoading } = useAuthRole();
   const [currentStep, setCurrentStep] = useState(1);
 
@@ -974,7 +974,7 @@ export default function UploadPage() {
   return (
     <div className="max-w-7xl">
       <div className="mb-8">
-        <h1 className="font-display text-4xl font-bold text-on-surface">Bulk Contact Upload</h1>
+        <h1 className="font-display text-4xl font-bold text-on-surface">Outbound Leads</h1>
         <p className="font-body text-base text-on-surface-muted mt-2">Import a CSV and broadcast a WhatsApp campaign to all eligible leads.</p>
       </div>
 
