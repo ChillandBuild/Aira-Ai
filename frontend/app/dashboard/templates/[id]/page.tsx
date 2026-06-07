@@ -22,6 +22,11 @@ import WhatsAppPreview from "../components/whatsapp-preview";
 import ButtonBuilder from "../components/button-builder";
 import VariableInserter from "../components/variable-inserter";
 
+function hasEmoji(str: string): boolean {
+  const emojiRegex = /[\u2600-\u27BF]|[\uD83C-\uD83E][\uDC00-\uDFFF]/;
+  return emojiRegex.test(str);
+}
+
 export default function TemplateDetailsPage() {
   const params = useParams();
   const router = useRouter();
@@ -169,6 +174,15 @@ export default function TemplateDetailsPage() {
   async function handleSave() {
     if (!bodyText.trim()) {
       setError("Body text cannot be empty.");
+      return;
+    }
+    if (headerType === "TEXT" && hasEmoji(headerText)) {
+      setError("Emojis are not allowed in the header text.");
+      return;
+    }
+    const trimmedTexts = buttons.map((b) => b.text.trim().toLowerCase()).filter(Boolean);
+    if (new Set(trimmedTexts).size < trimmedTexts.length) {
+      setError("You can't enter the same text for multiple buttons.");
       return;
     }
     setSaving(true);

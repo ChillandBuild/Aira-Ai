@@ -18,6 +18,7 @@ from app.services.meta_cloud import (
     _sanitize_header_or_footer,
     _extract_variable_examples,
     _build_button_components,
+    _strip_emojis,
 )
 from app.config_dynamic import get_setting
 from app.services.meta_webhook_verify import verify_meta_signature
@@ -74,8 +75,15 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
     if category not in ("MARKETING", "UTILITY", "AUTHENTICATION"):
         raise HTTPException(status_code=400, detail="Invalid category")
 
-    # Validate buttons: Quick Reply and CTA types can be mixed (up to 10 total)
-    pass
+    # Validate header text emoji presence
+    if payload.header_text and _strip_emojis(payload.header_text) != payload.header_text:
+        raise HTTPException(status_code=400, detail="Emojis are not allowed in the header text.")
+
+    # Validate duplicate button texts
+    if payload.buttons:
+        btn_texts = [b.text.strip().lower() for b in payload.buttons if b.text]
+        if len(btn_texts) != len(set(btn_texts)):
+            raise HTTPException(status_code=400, detail="You can't enter the same text for multiple buttons.")
 
     waba_id = get_setting("meta_waba_id", tenant_id=tenant_id)
 
@@ -410,6 +418,14 @@ async def update_template(template_id: str, payload: UpdateTemplate, tenant_id: 
             status_code=400,
             detail=f"Only REJECTED or PAUSED templates can be edited. Current status: {template.get('status')}",
         )
+
+    if payload.header_text is not None and _strip_emojis(payload.header_text) != payload.header_text:
+        raise HTTPException(status_code=400, detail="Emojis are not allowed in the header text.")
+
+    if payload.buttons is not None:
+        btn_texts = [b.text.strip().lower() for b in payload.buttons if b.text]
+        if len(btn_texts) != len(set(btn_texts)):
+            raise HTTPException(status_code=400, detail="You can't enter the same text for multiple buttons.")
 
     # Build DB updates from payload
     updates: dict = {"status": "PENDING"}

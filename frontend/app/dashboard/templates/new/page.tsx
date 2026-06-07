@@ -21,6 +21,11 @@ import ButtonBuilder from "../components/button-builder";
 import VariableInserter from "../components/variable-inserter";
 import WhatsAppPreview from "../components/whatsapp-preview";
 
+function hasEmoji(str: string): boolean {
+  const emojiRegex = /[\u2600-\u27BF]|[\uD83C-\uD83E][\uDC00-\uDFFF]/;
+  return emojiRegex.test(str);
+}
+
 export default function NewTemplatePage() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
@@ -110,8 +115,19 @@ export default function NewTemplatePage() {
         setError("Please enter header text.");
         return;
       }
+      if (headerType === "TEXT" && hasEmoji(headerText)) {
+        setError("Emojis are not allowed in the header text.");
+        return;
+      }
       if (headerType !== "NONE" && headerType !== "TEXT" && !headerMediaUrl) {
         setError("Please upload a media file or provide a handle.");
+        return;
+      }
+    } else if (currentStep === 3) {
+      const trimmedTexts = buttons.map((b) => b.text.trim().toLowerCase()).filter(Boolean);
+      const uniqueTexts = new Set(trimmedTexts);
+      if (uniqueTexts.size < trimmedTexts.length) {
+        setError("You can't enter the same text for multiple buttons.");
         return;
       }
     }
@@ -128,6 +144,13 @@ export default function NewTemplatePage() {
     setLoading(true);
     setError(null);
     try {
+      if (headerType === "TEXT" && hasEmoji(headerText)) {
+        throw new Error("Emojis are not allowed in the header text.");
+      }
+      const trimmedTexts = buttons.map((b) => b.text.trim().toLowerCase()).filter(Boolean);
+      if (new Set(trimmedTexts).size < trimmedTexts.length) {
+        throw new Error("You can't enter the same text for multiple buttons.");
+      }
       const authHeaders = await getAuthHeaders();
       const payload = {
         name: generatedName,

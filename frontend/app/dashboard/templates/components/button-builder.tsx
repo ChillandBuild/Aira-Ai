@@ -172,6 +172,22 @@ export default function ButtonBuilder({
     onChange(buttons.filter((_, i) => i !== index));
   }
 
+  const urlCount = buttons.filter((b) => b.type === "URL").length;
+  const phoneCount = buttons.filter((b) => b.type === "PHONE_NUMBER").length;
+  const waCallCount = buttons.filter((b) => b.type === "WHATSAPP_CALL").length;
+  const copyCodeCount = buttons.filter((b) => b.type === "COPY_CODE").length;
+
+  const isTypeDisabled = (type: string) => {
+    if (type === "URL" && urlCount >= 2) return true;
+    if (type === "PHONE_NUMBER" && phoneCount >= 1) return true;
+    if (type === "WHATSAPP_CALL" && waCallCount >= 1) return true;
+    if (type === "COPY_CODE" && copyCodeCount >= 1) return true;
+    return false;
+  };
+
+  const trimmedTexts = buttons.map((b) => b.text.trim().toLowerCase()).filter(Boolean);
+  const hasDuplicates = new Set(trimmedTexts).size < trimmedTexts.length;
+
   const mixed = hasMixedTypes(buttons);
 
   return (
@@ -211,6 +227,16 @@ export default function ButtonBuilder({
         </div>
       )}
 
+      {/* Duplicate warning */}
+      {hasDuplicates && (
+        <div className="mb-3 flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-200">
+          <AlertTriangle size={15} className="text-red-600 shrink-0 mt-0.5" />
+          <p className="font-body text-xs text-red-800 leading-relaxed">
+            You can't enter the same text for multiple buttons. Meta will reject this template.
+          </p>
+        </div>
+      )}
+
       {/* Add-button picker dropdown */}
       {showPicker && buttons.length < maxButtons && (
         <div className="mb-3 p-3 rounded-xl bg-surface-subtle border border-border-subtle animate-slide-up">
@@ -220,21 +246,34 @@ export default function ButtonBuilder({
           <div className="grid grid-cols-1 gap-0.5">
             {availableTypes.map((opt) => {
               const Icon = opt.icon;
+              const disabled = isTypeDisabled(opt.type);
               return (
                 <button
                   key={opt.type}
                   type="button"
+                  disabled={disabled}
                   onClick={() => addButton(opt.type)}
-                  className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-white hover:shadow-sm transition-all text-left"
+                  className={`flex items-center gap-3 p-2.5 rounded-lg transition-all text-left w-full ${
+                    disabled
+                      ? "opacity-40 cursor-not-allowed bg-gray-50/50"
+                      : "hover:bg-white hover:shadow-sm"
+                  }`}
                 >
                   <div className="w-8 h-8 rounded-lg bg-white border border-border-subtle flex items-center justify-center shrink-0">
-                    <Icon size={14} className="text-ink-secondary" />
+                    <Icon size={14} className={disabled ? "text-gray-400" : "text-ink-secondary"} />
                   </div>
-                  <div className="min-w-0">
-                    <p className="font-body text-sm font-medium text-ink">
-                      {opt.label}
-                    </p>
-                    <p className="font-body text-[11px] text-ink-muted truncate">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between">
+                      <p className={`font-body text-sm font-medium ${disabled ? "text-gray-400" : "text-ink"}`}>
+                        {opt.label}
+                      </p>
+                      {disabled && (
+                        <span className="text-[10px] text-red-500 font-normal bg-red-50 px-1.5 py-0.5 rounded-md border border-red-100">
+                          Limit reached
+                        </span>
+                      )}
+                    </div>
+                    <p className={`font-body text-[11px] truncate ${disabled ? "text-gray-400/80" : "text-ink-muted"}`}>
                       {opt.desc}
                     </p>
                   </div>
