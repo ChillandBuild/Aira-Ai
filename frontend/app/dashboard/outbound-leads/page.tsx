@@ -103,10 +103,12 @@ function getTagStyle(hex: string): { background: string; colorClass: string } {
     "#84CC16": { bg: "linear-gradient(135deg, #A3E635, #65A30D)", text: "text-white" },
   };
 
-  if (styles[hexUpper]) return styles[hexUpper];
+  if (styles[hexUpper]) {
+    return { background: styles[hexUpper].bg, colorClass: styles[hexUpper].text };
+  }
 
   if (!hex || hex.length < 7) {
-    return { bg: "linear-gradient(135deg, #f8f9fa, #e9ecef)", text: "text-gray-800" };
+    return { background: "linear-gradient(135deg, #f8f9fa, #e9ecef)", colorClass: "text-gray-800" };
   }
 
   const r = parseInt(hex.slice(1, 3), 16);
