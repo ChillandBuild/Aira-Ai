@@ -267,20 +267,21 @@ export default function TemplatesPage() {
       )}
 
       {/* Filter and View Controls Bar */}
-      <div className="flex flex-col sm:flex-row gap-3 items-center justify-between p-4 bg-white border border-border-subtle rounded-2xl shadow-sm">
+      <div className="flex flex-row items-center justify-between gap-3 p-4 bg-white border border-border-subtle rounded-2xl shadow-sm overflow-x-auto whitespace-nowrap">
         {/* Search input */}
-        <div className="relative w-full sm:max-w-xs">
-          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-muted" />
+        <div className="relative shrink-0 w-64">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search templates..."
-            className="input pl-10 text-xs py-2"
+            style={{ paddingLeft: "2.25rem" }}
+            className="input text-xs py-2 w-full"
           />
         </div>
 
         {/* Dropdowns & Toggle */}
-        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto justify-end">
+        <div className="flex items-center gap-2.5 shrink-0">
           <div className="flex items-center gap-1">
             <Filter size={13} className="text-ink-muted hidden md:inline" />
             <select

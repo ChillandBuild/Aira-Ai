@@ -464,7 +464,7 @@ export default function TemplateDetailsPage() {
                 <ButtonBuilder
                   buttons={buttons}
                   onChange={setButtons}
-                  maxButtons={template.category === "AUTHENTICATION" ? 1 : headerType !== "NONE" ? 1 : 3}
+                  maxButtons={template.category === "AUTHENTICATION" ? 1 : 10}
                   disableCTA={false}
                 />
               </div>
@@ -570,9 +570,7 @@ export default function TemplateDetailsPage() {
 
         {/* Right: Sticky Live Preview */}
         <div className="lg:col-span-5 lg:sticky lg:top-6 space-y-4">
-          <label className="font-body text-sm font-bold text-ink uppercase tracking-wider block">
-            WhatsApp Live Preview
-          </label>
+          {/* Removed WhatsApp Live Preview label */}
           <WhatsAppPreview
             headerType={
               editMode

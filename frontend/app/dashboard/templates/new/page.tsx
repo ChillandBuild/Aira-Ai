@@ -494,7 +494,7 @@ export default function NewTemplatePage() {
                 <ButtonBuilder
                   buttons={buttons}
                   onChange={setButtons}
-                  maxButtons={headerType !== "NONE" ? 1 : 3}
+                  maxButtons={category === "AUTHENTICATION" ? 1 : 10}
                   disableCTA={false}
                 />
               )}
@@ -588,9 +588,7 @@ export default function NewTemplatePage() {
 
         {/* Right Column: Sticky Live Preview */}
         <div className="lg:col-span-5 lg:sticky lg:top-6 space-y-4">
-          <label className="font-body text-sm font-bold text-ink uppercase tracking-wider block">
-            Live WhatsApp Preview
-          </label>
+          {/* Removed Live WhatsApp Preview label */}
           <WhatsAppPreview
             headerType={headerType === "NONE" || headerType === "TEXT" ? undefined : headerType}
             headerText={headerType === "TEXT" ? headerText : undefined}

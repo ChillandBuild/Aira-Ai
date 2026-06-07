@@ -130,7 +130,7 @@ export default function TemplateCard({
 
       {/* ── Hover overlay with actions ────────────── */}
       <div
-        className={`absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center gap-2 transition-opacity duration-200 ${
+        className={`absolute inset-0 z-20 bg-black/40 backdrop-blur-[2px] flex items-center justify-center flex-wrap gap-2 p-2 transition-opacity duration-200 ${
           hovered ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >

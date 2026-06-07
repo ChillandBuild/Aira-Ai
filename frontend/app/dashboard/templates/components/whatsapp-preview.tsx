@@ -66,7 +66,11 @@ export default function WhatsAppPreview({
   const carouselRef = useRef<HTMLDivElement>(null);
 
   const hasMedia = headerType !== "NONE" && headerType !== "TEXT";
-  const visibleButtons = buttons?.filter((b) => b.text.trim()) ?? [];
+  const visibleButtons = [...(buttons?.filter((b) => b.text.trim()) ?? [])].sort((a, b) => {
+    if (a.type === "QUICK_REPLY" && b.type !== "QUICK_REPLY") return -1;
+    if (a.type !== "QUICK_REPLY" && b.type === "QUICK_REPLY") return 1;
+    return 0;
+  });
 
   return (
     <div className="flex flex-col items-center">
