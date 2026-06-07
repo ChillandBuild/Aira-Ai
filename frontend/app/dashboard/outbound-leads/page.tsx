@@ -86,11 +86,41 @@ const PRESET_COLORS = [
   "#6366F1", "#84CC16",
 ];
 
-function hexToLightTint(hex: string): string {
+function getTagStyle(hex: string): { background: string; colorClass: string } {
+  const hexUpper = (hex || "").toUpperCase();
+  const styles: Record<string, { bg: string, text: string }> = {
+    "#FFFFFF": { bg: "linear-gradient(135deg, #f8f9fa, #e9ecef)", text: "text-gray-800" },
+    "#FBBF24": { bg: "linear-gradient(135deg, #FDE68A, #F59E0B)", text: "text-yellow-900" },
+    "#22C55E": { bg: "linear-gradient(135deg, #4ADE80, #16A34A)", text: "text-white" },
+    "#EF4444": { bg: "linear-gradient(135deg, #F87171, #DC2626)", text: "text-white" },
+    "#3B82F6": { bg: "linear-gradient(135deg, #60A5FA, #2563EB)", text: "text-white" },
+    "#F97316": { bg: "linear-gradient(135deg, #FDBA74, #EA580C)", text: "text-white" },
+    "#8B5CF6": { bg: "linear-gradient(135deg, #A78BFA, #7C3AED)", text: "text-white" },
+    "#1F2937": { bg: "linear-gradient(135deg, #4B5563, #111827)", text: "text-white" },
+    "#EC4899": { bg: "linear-gradient(135deg, #F472B6, #DB2777)", text: "text-white" },
+    "#14B8A6": { bg: "linear-gradient(135deg, #2DD4BF, #0D9488)", text: "text-white" },
+    "#6366F1": { bg: "linear-gradient(135deg, #818CF8, #4F46E5)", text: "text-white" },
+    "#84CC16": { bg: "linear-gradient(135deg, #A3E635, #65A30D)", text: "text-white" },
+  };
+
+  if (styles[hexUpper]) return styles[hexUpper];
+
+  if (!hex || hex.length < 7) {
+    return { bg: "linear-gradient(135deg, #f8f9fa, #e9ecef)", text: "text-gray-800" };
+  }
+
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, 0.45)`;
+  const r2 = Math.max(0, r - 40);
+  const g2 = Math.max(0, g - 40);
+  const b2 = Math.max(0, b - 40);
+  
+  const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return {
+    background: `linear-gradient(135deg, ${hex}, rgb(${r2}, ${g2}, ${b2}))`,
+    colorClass: luma > 180 ? "text-gray-900" : "text-white"
+  };
 }
 
 type ScheduleType = "now" | "scheduled" | "drip";
@@ -169,7 +199,7 @@ const SEGMENT_OPTIONS = [
   { label: "Opted Out", value: "opted_out", color: "text-orange-700 bg-orange-50 border-orange-200 hover:bg-orange-100" },
 ];
 
-function SegmentDropdown({ tagId }: { tagId: string }) {
+function SegmentDropdown({ tagId, dark }: { tagId: string, dark?: boolean }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -219,7 +249,9 @@ function SegmentDropdown({ tagId }: { tagId: string }) {
       <button
         ref={btnRef}
         onClick={() => setOpen(!open)}
-        className="text-xs px-2.5 py-1.5 rounded-lg border border-violet-200 text-violet-700 hover:bg-violet-50 transition-colors flex items-center gap-1 font-medium"
+        className={cn("text-xs px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-medium",
+          dark ? "border border-white/40 text-white hover:bg-white/20" : "border border-violet-200 text-violet-700 hover:bg-violet-50"
+        )}
       >
         <Download size={12} /> Segment Leads
         <ChevronDown size={12} className={cn("transition-transform", open && "rotate-180")} />
@@ -1979,23 +2011,24 @@ export default function OutboundLeadsPage() {
                 <tbody className="divide-y divide-surface-mid/50">
                   {filteredTagsList.map((tag) => {
                     const s = tagStats[tag.id];
+                    const style = getTagStyle(tag.color);
                     return (
-                      <tr key={tag.id} className="hover:brightness-95 transition-all" style={{ backgroundColor: hexToLightTint(tag.color) }}>
+                      <tr key={tag.id} className="hover:brightness-110 transition-all border-b border-surface-mid/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]" style={{ background: style.background }}>
                         <td className="px-5 py-3">
-                          <span className="font-label text-sm font-semibold text-gray-900">{tag.name}</span>
+                          <span className={cn("font-label text-sm font-semibold drop-shadow-sm", style.colorClass)}>{tag.name}</span>
                         </td>
-                        <td className="px-3 py-3 text-center font-label text-sm font-medium text-gray-900">{s?.total_sent ?? 0}</td>
-                        <td className="px-3 py-3 text-center font-label text-sm font-bold text-gray-900">{s?.hot ?? 0}</td>
-                        <td className="px-3 py-3 text-center font-label text-sm font-bold text-gray-900">{s?.warm ?? 0}</td>
-                        <td className="px-3 py-3 text-center font-label text-sm font-medium text-gray-900">{s?.cold ?? 0}</td>
-                        <td className="px-3 py-3 text-center font-label text-sm font-bold text-gray-900">{s?.disqualified ?? 0}</td>
-                        <td className="px-3 py-3 text-center font-label text-sm font-bold text-gray-900">{s?.opted_out ?? 0}</td>
-                        <td className="px-3 py-3 text-center font-label text-sm font-medium text-gray-900">{s?.failed ?? 0}</td>
+                        <td className={cn("px-3 py-3 text-center font-label text-sm font-medium drop-shadow-sm", style.colorClass)}>{s?.total_sent ?? 0}</td>
+                        <td className={cn("px-3 py-3 text-center font-label text-sm font-bold drop-shadow-sm", style.colorClass)}>{s?.hot ?? 0}</td>
+                        <td className={cn("px-3 py-3 text-center font-label text-sm font-bold drop-shadow-sm", style.colorClass)}>{s?.warm ?? 0}</td>
+                        <td className={cn("px-3 py-3 text-center font-label text-sm font-medium drop-shadow-sm", style.colorClass)}>{s?.cold ?? 0}</td>
+                        <td className={cn("px-3 py-3 text-center font-label text-sm font-bold drop-shadow-sm", style.colorClass)}>{s?.disqualified ?? 0}</td>
+                        <td className={cn("px-3 py-3 text-center font-label text-sm font-bold drop-shadow-sm", style.colorClass)}>{s?.opted_out ?? 0}</td>
+                        <td className={cn("px-3 py-3 text-center font-label text-sm font-medium drop-shadow-sm", style.colorClass)}>{s?.failed ?? 0}</td>
                         <td className="px-5 py-3">
                           <div className="flex items-center justify-end gap-2">
-                            <SegmentDropdown tagId={tag.id} />
-                            <button onClick={() => handleDeleteTag(tag)} disabled={deletingTagId === tag.id} className="p-1.5 rounded-lg text-on-surface-muted/50 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40">
-                              {deletingTagId === tag.id ? <div className="w-3.5 h-3.5 border-2 border-red-500 border-t-transparent rounded-full animate-spin" /> : <Trash2 size={14} />}
+                            <SegmentDropdown tagId={tag.id} dark={style.colorClass === "text-white"} />
+                            <button onClick={() => handleDeleteTag(tag)} disabled={deletingTagId === tag.id} className={cn("p-1.5 rounded-lg transition-colors disabled:opacity-40", style.colorClass === "text-white" ? "text-white/70 hover:text-white hover:bg-white/20" : "text-gray-500 hover:text-red-600 hover:bg-red-50")}>
+                              {deletingTagId === tag.id ? <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Trash2 size={14} />}
                             </button>
                           </div>
                         </td>
