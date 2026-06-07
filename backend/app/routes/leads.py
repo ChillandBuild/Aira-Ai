@@ -309,6 +309,97 @@ async def export_leads(
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
+@router.get("/export-assigned")
+async def export_assigned_leads(
+    ctx: dict = Depends(get_tenant_and_role),
+):
+    db = get_supabase()
+    tenant_id = ctx["tenant_id"]
+    caller_id = ctx.get("caller_id")
+    
+    if not caller_id:
+        raise HTTPException(status_code=400, detail="Caller profile not found")
+        
+    # Query leads assigned to caller
+    leads_res = db.table("leads").select("*").eq("tenant_id", tenant_id).eq("assigned_to", caller_id).is_("deleted_at", "null").order("score", desc=True).execute()
+    leads = leads_res.data or []
+    
+    # Collect lead IDs for batch fetching
+    lead_ids = [l["id"] for l in leads]
+    
+    # Fetch latest broadcast recipients for all these leads
+    br_map = {}
+    if lead_ids:
+        br_recs = db.table("broadcast_recipients").select("lead_id, broadcast_id, tag_id").in_("lead_id", lead_ids).eq("tenant_id", tenant_id).order("created_at").execute()
+        # Group by lead_id, keeping the latest (since ordered by created_at ascending, the last one is the latest)
+        for rec in (br_recs.data or []):
+            br_map[rec["lead_id"]] = rec
+            
+    # Collect all unique broadcast_ids, tag_ids, ad_campaign_ids
+    broadcast_ids = list({str(rec["broadcast_id"]) for rec in br_map.values() if rec.get("broadcast_id")})
+    tag_ids = list({str(rec["tag_id"]) for rec in br_map.values() if rec.get("tag_id")})
+    ad_campaign_ids = list({str(l["ad_campaign_id"]) for l in leads if l.get("ad_campaign_id")})
+    
+    # Fetch scheduled_broadcasts templates
+    sb_map = {}
+    if broadcast_ids:
+        sb_recs = db.table("scheduled_broadcasts").select("id, template_name").in_("id", broadcast_ids).eq("tenant_id", tenant_id).execute()
+        sb_map = {str(r["id"]): r["template_name"] for r in (sb_recs.data or [])}
+        
+    # Fetch tag names
+    tag_map = {}
+    if tag_ids:
+        tag_recs = db.table("broadcast_tags").select("id, name").in_("id", tag_ids).eq("tenant_id", tenant_id).execute()
+        tag_map = {str(r["id"]): r["name"] for r in (tag_recs.data or [])}
+        
+    # Fetch ad campaigns
+    campaign_map = {}
+    if ad_campaign_ids:
+        campaign_recs = db.table("ad_campaigns").select("id, campaign_name, platform").in_("id", ad_campaign_ids).eq("tenant_id", tenant_id).execute()
+        campaign_map = {str(r["id"]): r for r in (campaign_recs.data or [])}
+        
+    # Generate rows
+    rows = []
+    for l in leads:
+        lead_id = l["id"]
+        br_rec = br_map.get(lead_id)
+        
+        broadcast_id = str(br_rec["broadcast_id"]) if br_rec else ""
+        template_name = sb_map.get(broadcast_id, "") if broadcast_id else ""
+        tag_name = tag_map.get(str(br_rec["tag_id"]), "") if br_rec and br_rec.get("tag_id") else ""
+        
+        ad_campaign_id = str(l.get("ad_campaign_id")) if l.get("ad_campaign_id") else ""
+        ad_campaign_name = campaign_map.get(ad_campaign_id, {}).get("campaign_name", "") if ad_campaign_id else ""
+        channel = campaign_map.get(ad_campaign_id, {}).get("platform", l.get("source", "")) if ad_campaign_id else l.get("source", "")
+        
+        lead_type = "inbound" if l.get("source") in ('whatsapp', 'instagram', 'facebook', 'telegram') and not broadcast_id else "outbound"
+        
+        rows.append({
+            "name": l.get("name") or "",
+            "phone": l.get("phone") or "",
+            "type": lead_type,
+            "broadcast_id": broadcast_id,
+            "template_name": template_name,
+            "ad_campaign": ad_campaign_name,
+            "channel": channel,
+            "tag": tag_name,
+            "score": l.get("score", 5),
+            "segment": l.get("segment", "C"),
+            "assigned_at": l.get("assigned_at") or ""
+        })
+        
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=["name", "phone", "type", "broadcast_id", "template_name", "ad_campaign", "channel", "tag", "score", "segment", "assigned_at"])
+    writer.writeheader()
+    writer.writerows(rows)
+    
+    filename = f"assigned_leads_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode()),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
 @router.get("/{lead_id}/messages", response_model=list[Message])
 async def get_lead_messages(lead_id: UUID, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
@@ -324,6 +415,38 @@ async def get_lead(lead_id: UUID, tenant_id: str = Depends(get_tenant_id)):
     msgs_result = db.table("messages").select("*").eq("lead_id", str(lead_id)).eq("tenant_id", tenant_id).order("created_at").execute()
     lead = lead_result.data
     lead["messages"] = msgs_result.data or []
+    
+    # Enrichment
+    lead["broadcast_id"] = None
+    lead["template_name"] = None
+    lead["tag_name"] = None
+    lead["ad_campaign_name"] = None
+    lead["channel"] = lead.get("source")
+    
+    # 1. Fetch latest broadcast recipient entry
+    br_rec = db.table("broadcast_recipients").select("broadcast_id, tag_id").eq("lead_id", str(lead_id)).eq("tenant_id", tenant_id).order("created_at", desc=True).limit(1).execute()
+    if br_rec.data:
+        rec = br_rec.data[0]
+        lead["broadcast_id"] = str(rec["broadcast_id"])
+        
+        # Look up template name
+        sb_rec = db.table("scheduled_broadcasts").select("template_name").eq("id", rec["broadcast_id"]).eq("tenant_id", tenant_id).maybe_single().execute()
+        if sb_rec.data:
+            lead["template_name"] = sb_rec.data["template_name"]
+            
+        # Look up tag name
+        if rec.get("tag_id"):
+            tag_rec = db.table("broadcast_tags").select("name").eq("id", rec["tag_id"]).eq("tenant_id", tenant_id).maybe_single().execute()
+            if tag_rec.data:
+                lead["tag_name"] = tag_rec.data["name"]
+                
+    # 2. Check for ad campaign
+    if lead.get("ad_campaign_id"):
+        campaign = db.table("ad_campaigns").select("campaign_name, platform").eq("id", lead["ad_campaign_id"]).eq("tenant_id", tenant_id).maybe_single().execute()
+        if campaign.data:
+            lead["ad_campaign_name"] = campaign.data["campaign_name"]
+            lead["channel"] = campaign.data["platform"]
+            
     return lead
 
 @router.patch("/{lead_id}", response_model=Lead)

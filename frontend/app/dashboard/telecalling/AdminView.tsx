@@ -3,13 +3,14 @@ import { toast } from "sonner";
 import { useEffect, useState, useCallback } from "react";
 import {
   Phone, ToggleLeft, ToggleRight, RefreshCw, TrendingUp,
-  Users, Coffee, ChevronDown, Settings,
+  Users, Coffee, ChevronDown, Settings, Eye, X, Calendar, Copy
 } from "lucide-react";
 import { api, Caller, Lead, API_URL, getAuthHeaders } from "@/lib/api";
-import { formatPhone } from "@/lib/utils";
+import { formatPhone, timeAgo } from "@/lib/utils";
 import LiveNotesPane from "./components/live-notes-pane";
 import { useActiveCall } from "../contexts/ActiveCallContext";
 import { TelecallingConfigPanel } from "../settings/TelecallingConfigPanel";
+import { fetchNotes } from "./lib/notes-api";
 
 function ScoreBar({ score }: { score: number }) {
   const pct = Math.round((score / 10) * 100);
@@ -40,6 +41,38 @@ export default function AdminView() {
 
   const [manualPhone, setManualPhone] = useState("");
   const [manualDialing, setManualDialing] = useState(false);
+
+  // Profile modal state
+  const [viewingLeadId, setViewingLeadId] = useState<string | null>(null);
+  const [viewingLead, setViewingLead] = useState<Lead | null>(null);
+  const [viewingLeadNotes, setViewingLeadNotes] = useState<any>(null);
+  const [viewingLeadLoading, setViewingLeadLoading] = useState(false);
+
+  // Fetch full details for the viewing lead
+  useEffect(() => {
+    if (!viewingLeadId) {
+      setViewingLead(null);
+      setViewingLeadNotes(null);
+      return;
+    }
+    setViewingLeadLoading(true);
+    
+    Promise.all([
+      api.leads.get(viewingLeadId),
+      fetchNotes(viewingLeadId).catch(() => ({ pinned: [], notes: [] }))
+    ])
+      .then(([leadData, notesData]) => {
+        setViewingLead(leadData);
+        setViewingLeadNotes(notesData);
+      })
+      .catch((err) => {
+        toast.error("Failed to load lead profile");
+        console.error(err);
+      })
+      .finally(() => {
+        setViewingLeadLoading(false);
+      });
+  }, [viewingLeadId]);
 
   const loadData = useCallback(async () => {
     try {
@@ -215,11 +248,20 @@ export default function AdminView() {
                     <span className="font-label text-xs text-on-surface-muted hidden sm:block shrink-0">
                       {assignedCaller ? assignedCaller.name : <span className="text-amber-500">Unassigned</span>}
                     </span>
-                    <button onClick={() => callLead(lead)} disabled={isDialing}
-                      className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 rounded-lg font-label text-xs font-semibold transition-colors">
-                      {isDialing ? <RefreshCw size={11} className="animate-spin" /> : <Phone size={11} />}
-                      {isDialing ? "Dialing…" : "Call"}
-                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => setViewingLeadId(lead.id)}
+                        className="p-1.5 rounded-lg hover:bg-surface-mid transition-colors text-on-surface-muted border border-transparent hover:border-surface-mid"
+                        title="View Profile Details"
+                      >
+                        <Eye size={13} />
+                      </button>
+                      <button onClick={() => callLead(lead)} disabled={isDialing}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 rounded-lg font-label text-xs font-semibold transition-colors">
+                        {isDialing ? <RefreshCw size={11} className="animate-spin" /> : <Phone size={11} />}
+                        {isDialing ? "Dialing…" : "Call"}
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -268,6 +310,130 @@ export default function AdminView() {
             onClick={(e) => e.stopPropagation()}
           >
             <TelecallingConfigPanel />
+          </div>
+        </div>
+      )}
+
+      {/* Profile Detail Modal */}
+      {viewingLeadId && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/45 backdrop-blur-sm cursor-pointer"
+          onClick={() => setViewingLeadId(null)}
+        >
+          <div 
+            className="w-full max-w-md bg-white rounded-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto cursor-default border border-surface-mid/40 flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-surface-mid pb-3">
+              <h3 className="font-display text-base font-bold text-tertiary">Lead Attribution Profile</h3>
+              <button onClick={() => setViewingLeadId(null)} className="p-1.5 text-on-surface-muted hover:text-tertiary rounded-lg hover:bg-surface-low transition-colors">
+                <X size={15} />
+              </button>
+            </div>
+            
+            {viewingLeadLoading ? (
+              <div className="py-8 flex flex-col items-center justify-center">
+                <RefreshCw size={24} className="animate-spin text-primary mb-2" />
+                <p className="text-xs text-on-surface-muted">Loading profile...</p>
+              </div>
+            ) : viewingLead ? (
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-body text-base font-bold text-on-surface">{viewingLead.name || "Unnamed Lead"}</p>
+                    <span className={`px-1.5 py-0.5 rounded font-label text-[9px] font-semibold ${
+                      viewingLead.segment === "A" ? "bg-emerald-100 text-emerald-700" :
+                      viewingLead.segment === "B" ? "bg-blue-100 text-blue-700" :
+                      viewingLead.segment === "C" ? "bg-amber-100 text-amber-700" :
+                      "bg-gray-100 text-gray-700"
+                    }`}>
+                      Seg {viewingLead.segment}
+                    </span>
+                  </div>
+                  <p className="font-label text-xs text-on-surface-muted mt-1 select-all">
+                    {formatPhone(viewingLead.phone)} · Score {viewingLead.score}
+                  </p>
+                </div>
+
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 flex items-center gap-2.5">
+                  <Calendar size={14} className="text-primary shrink-0" />
+                  <div>
+                    <p className="font-label text-[9px] text-on-surface-muted uppercase">Telecaller Assignment</p>
+                    <p className="font-body text-xs text-slate-800 font-semibold mt-0.5">
+                      {viewingLead.assigned_at 
+                        ? new Date(viewingLead.assigned_at).toLocaleString()
+                        : "Unknown / Pre-assigned"}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="font-label text-[10px] text-on-surface-muted uppercase mb-2">attribution info</p>
+                  {viewingLead.broadcast_id || viewingLead.template_name ? (
+                    <div className="space-y-2">
+                      <div className="bg-white border border-surface-mid rounded-lg p-2.5 text-xs flex justify-between items-center">
+                        <div>
+                          <span className="font-label text-[9px] text-on-surface-muted uppercase block">Broadcast ID</span>
+                          <p className="font-mono text-slate-800 font-semibold truncate mt-0.5">{viewingLead.broadcast_id}</p>
+                        </div>
+                        <button 
+                          onClick={() => { navigator.clipboard.writeText(viewingLead.broadcast_id || ""); toast.success("Copied Broadcast ID"); }}
+                          className="p-1 text-on-surface-muted hover:text-tertiary hover:bg-slate-50 rounded transition-colors"
+                        >
+                          <Copy size={11} />
+                        </button>
+                      </div>
+                      <div className="bg-white border border-surface-mid rounded-lg p-2.5 text-xs">
+                        <span className="font-label text-[9px] text-on-surface-muted uppercase block">Template Name</span>
+                        <p className="font-body text-slate-800 font-semibold truncate mt-0.5">{viewingLead.template_name || "N/A"}</p>
+                      </div>
+                      {viewingLead.tag_name && (
+                        <div className="bg-white border border-surface-mid rounded-lg p-2.5 text-xs">
+                          <span className="font-label text-[9px] text-on-surface-muted uppercase block">Campaign Tag</span>
+                          <span className="inline-block mt-1 font-body font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md">{viewingLead.tag_name}</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-white border border-surface-mid rounded-lg p-2.5 text-xs">
+                        <span className="font-label text-[9px] text-on-surface-muted uppercase block">Ad Campaign</span>
+                        <p className="font-body text-slate-800 font-semibold truncate mt-0.5">{viewingLead.ad_campaign_name || "Organic"}</p>
+                      </div>
+                      <div className="bg-white border border-surface-mid rounded-lg p-2.5 text-xs">
+                        <span className="font-label text-[9px] text-on-surface-muted uppercase block">Channel</span>
+                        <p className="font-body text-slate-800 font-semibold capitalize mt-0.5">{viewingLead.channel || viewingLead.source}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t border-surface-mid pt-3">
+                  <p className="font-label text-[10px] text-on-surface-muted uppercase mb-1.5">recent notes</p>
+                  {viewingLeadNotes?.pinned?.length > 0 && (
+                    <div className="mb-2 space-y-1">
+                      {viewingLeadNotes.pinned.map((n: any) => (
+                        <div key={n.id} className="p-2 bg-purple-50 border border-purple-100 rounded-lg text-xs text-slate-700">
+                          {n.content}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {viewingLeadNotes?.notes?.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {viewingLeadNotes.notes.slice(0, 2).map((n: any) => (
+                        <div key={n.id} className="p-2 bg-slate-50 border border-slate-100 rounded-lg text-xs text-slate-600">
+                          <p className="text-[9px] text-on-surface-muted mb-0.5">{timeAgo(n.created_at)}</p>
+                          <p>{n.content}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-on-surface-muted text-center py-3 bg-slate-50 border border-slate-100 rounded-lg">No notes recorded.</p>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       )}

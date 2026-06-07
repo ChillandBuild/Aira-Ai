@@ -31,6 +31,12 @@ export interface Lead {
   pinned_at?: string | null;
   last_inbound_at?: string | null;
   broadcast_sent_at?: string | null;
+  assigned_at?: string | null;
+  broadcast_id?: string | null;
+  template_name?: string | null;
+  tag_name?: string | null;
+  ad_campaign_name?: string | null;
+  channel?: string | null;
 }
 
 export interface Message {
@@ -516,6 +522,20 @@ export const api = {
       const a = document.createElement("a");
       a.href = url;
       a.download = `leads_${segment || "all"}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    },
+    exportAssigned: async () => {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/leads/export-assigned`, { headers });
+      if (!res.ok) throw new Error(`Export failed: ${res.status} ${res.statusText}`);
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `my_assigned_leads.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();

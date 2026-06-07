@@ -44,6 +44,12 @@ class Lead(LeadBase):
     created_at: datetime
     updated_at: datetime
     pinned_at: Optional[datetime] = None
+    assigned_at: Optional[datetime] = None
+    broadcast_id: Optional[str] = None
+    template_name: Optional[str] = None
+    tag_name: Optional[str] = None
+    ad_campaign_name: Optional[str] = None
+    channel: Optional[str] = None
     model_config = {"from_attributes": True}
 
 # --- Message Models ---
