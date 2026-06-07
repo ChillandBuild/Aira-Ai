@@ -88,6 +88,15 @@ _INFO_PROVIDED_PATTERNS = [
     r"\brashi\b",
     r"\baddress\b",
     r"\bpincode\b",
+    # Tamil equivalents
+    r"பெயர்",
+    r"பேர்",
+    r"முகவரி",
+    r"அட்ரஸ்",
+    r"கோத்திரம்",
+    r"நட்சத்திரம்",
+    r"ராசி",
+    r"பின்கோடு",
 ]
 
 _ACTIVE_BOOKING_STATES = {
@@ -160,9 +169,9 @@ def _compute_engagement_delta(last_inbound_at: datetime | None) -> int:
 _ARC_RUBRIC_DEFAULT = """
 9-10: High intent — explicitly asked for pricing/booking/payment, completed booking steps, confirmed participation
 7-8:  Warm — asking detailed questions, comparing options, providing requested info, multiple engaged follow-ups
-5-6:  Neutral — general inquiry, first contact, short acknowledgments with some context
+5-6:  Neutral — general inquiry, first contact, initial greetings/salutations (e.g. "Hi", "Hello", "Vanakkam", "Namaste"), short acknowledgments with some context
 3-4:  Lukewarm — vague replies, no follow-up to questions, low engagement
-1-2:  Low intent — unresponsive, dismissive, irrelevant, or repeated single-word replies with no context
+1-2:  Low intent — unresponsive, dismissive, irrelevant, or repeated single-word replies with no context (excluding greetings)
 """
 
 
@@ -181,7 +190,8 @@ async def _score_arc(conversation: str, tenant_id: str | None, fallback: int = 5
         f"You score sales conversations for purchase intent (1-10).\n\n"
         f"Rubric:\n{rubric}\n\n"
         f"Conversation:\n{conversation}\n\n"
-        f"LANGUAGE RULES:\n"
+        f"LANGUAGE & GREETING RULES:\n"
+        f"- Initial greetings, salutations, or first contact messages (e.g., \"Hi\", \"Hello\", \"Namaste\", \"Vanakkam\", \"Hi sir\") must be scored as 5 or 6 (Neutral), NOT penalized as low-intent or single-word replies.\n"
         f"- A message requesting communication in a regional language (Tamil, Hindi, Telugu, etc.) is an engagement signal — never score below 5 for it.\n"
         f"- Single-word answers in regional languages (e.g. \"சிம்மம்\", \"பூரம்\", \"ஆமா\") must be evaluated for their semantic intent, not penalised for brevity or language.\n"
         f"- Non-English intent = same weight as English equivalent.\n\n"
@@ -317,6 +327,10 @@ async def compute_score(
             "broadcast_negative_reply_at": now_iso,
         }
         db.table("leads").update(rejection_payload).eq("id", str(lead_id)).execute()
+        try:
+            db.table("lead_conversation_state").update({"state": "idle"}).eq("lead_id", str(lead_id)).execute()
+        except Exception as _ce:
+            logger.warning(f"Failed to reset conversation state on rejection for lead {lead_id}: {_ce}")
 
         logger.info(f"Lead {lead_id} rejection detected — immediate D")
         return {

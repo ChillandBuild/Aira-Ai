@@ -84,6 +84,60 @@ def _is_booking_question(message: str) -> bool:
     tokens = set(re.findall(r"[\w஀-௿ऀ-ॿ]+", text.lower()))
     return bool(tokens & _QUESTION_TOKENS)
 
+_client = None
+
+def _get_groq_client():
+    global _client
+    if _client is None:
+        try:
+            from groq import AsyncGroq
+            from app.config import settings
+            _client = AsyncGroq(api_key=settings.groq_api_key) if settings.groq_api_key else None
+        except Exception as e:
+            logger.warning(f"Failed to initialize Groq client in booking_flow: {e}")
+            _client = None
+    return _client
+
+
+async def _validate_collect_input(current_state: str, message: str) -> bool:
+    client = _get_groq_client()
+    if not client:
+        return True
+
+    step_descriptions = {
+        "collecting_name": "providing their name or devotee's name for booking registration",
+        "collecting_rasi": "providing their Rasi (zodiac sign, e.g., Mesham, Rishabam, Mithunam, Simha, Leo)",
+        "collecting_nakshatram": "providing their Nakshatram (birth star, e.g., Ashwini, Bharani, Karthigai, Rohini)",
+        "collecting_gotram": "providing their Gotram (clan/lineage, or 'unknown', 'not known', 'dont know')",
+        "collecting_address": "providing their full delivery address for prasadam delivery"
+    }
+
+    desc = step_descriptions.get(current_state, "providing the requested details")
+
+    prompt = (
+        "You are a validation assistant. A user is currently in a booking flow step where they are asked to provide specific information.\n\n"
+        f"Expected Information: {desc}\n"
+        f"User Message: \"{message}\"\n\n"
+        "Determine if the User Message is actually attempting to provide the expected information (or saying 'not known' / 'unknown' for Gotram/Rasi/Nakshatram/Address).\n"
+        "If the user is asking a question, saying they don't know (except for Gotram/Rasi/Nakshatram where 'unknown' is acceptable), expressing hesitation, saying 'no', rejecting the offer, or talking about something completely unrelated, they are NOT providing the information.\n\n"
+        "Reply with ONLY \"YES\" if they are providing the expected information.\n"
+        "Reply with ONLY \"NO\" if they are NOT providing the expected information (e.g., asking questions, rejecting, or off-topic).\n"
+        "Do not include any explanation or extra text."
+    )
+
+    try:
+        resp = await client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+            max_tokens=4,
+        )
+        val = resp.choices[0].message.content.strip().upper()
+        return "YES" in val
+    except Exception as e:
+        logger.error(f"Booking input validation failed: {e}")
+        return True
+
 
 async def route_booking_intent(
     lead_id: str,
@@ -114,6 +168,22 @@ async def route_booking_intent(
                 # Off-topic question mid-flow: let AI answer it, don't consume the message.
                 # ai_reply will append the pending step prompt so the lead knows where they left off.
                 return False
+            # Check rejection patterns
+            try:
+                from app.services.scoring_engine import _REJECTION_PATTERNS
+                for pat in _REJECTION_PATTERNS:
+                    if re.search(pat, body, re.IGNORECASE):
+                        logger.info(f"Rejection pattern matched in booking flow for lead {lead_id}: {body}")
+                        return False
+            except Exception as re_err:
+                logger.warning(f"Rejection patterns check failed: {re_err}")
+
+            # Validate input using LLM
+            is_valid = await _validate_collect_input(current_state, body)
+            if not is_valid:
+                logger.info(f"Booking flow input validation failed for state {current_state}, message: {body}")
+                return False
+
             await advance_state(state=conv_state, message=body, phone=phone, db=db)
             return True
         if current_state == "idle" and await detect_booking_intent(body):

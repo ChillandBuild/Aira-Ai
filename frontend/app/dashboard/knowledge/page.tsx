@@ -202,11 +202,15 @@ export default function KnowledgePage() {
       const res = await fetch(`${API_URL}/api/v1/settings`, { headers: auth });
       if (!res.ok) return;
       const data = await res.json();
-      const settings: { key: string; value: string }[] = data.settings ?? [];
+      const settings: { key: string; display_value: string }[] = data.settings ?? [];
       const rubric = settings.find((s) => s.key === "scoring_rubric");
       const action = settings.find((s) => s.key === "collect_post_action");
-      if (rubric) setScoringRubric(rubric.value ?? "");
-      if (action) setPostAction(action.value ?? "");
+      if (rubric) {
+        setScoringRubric(rubric.display_value === "Not set" ? "" : rubric.display_value);
+      }
+      if (action) {
+        setPostAction(action.display_value === "Not set" ? "" : action.display_value);
+      }
     } catch {}
   }
 

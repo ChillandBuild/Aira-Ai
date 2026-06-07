@@ -135,3 +135,66 @@ async def test_advance_state_address_triggers_payment():
         mock_send.assert_called_once()
         sent_text = mock_send.call_args[1]["text"]
         assert "rzp.io" in sent_text or "payment" in sent_text.lower()
+
+
+# --- route_booking_intent validation and routing tests ---
+
+@pytest.mark.asyncio
+async def test_route_booking_intent_question_returns_false():
+    from app.services.booking_flow import route_booking_intent
+    state = {
+        "id": "state-1", "lead_id": "lead-1", "state": "collecting_rasi",
+        "draft_data": {}, "booking_id": "booking-1", "tenant_id": "tenant-1",
+    }
+    db = _make_db(state_row=state)
+    # Question: contains "?" -> should return False
+    res = await route_booking_intent("lead-1", "tenant-1", "+919876543210", "What is Simha Rasi?", db)
+    assert res is False
+
+
+@pytest.mark.asyncio
+async def test_route_booking_intent_rejection_returns_false():
+    from app.services.booking_flow import route_booking_intent
+    state = {
+        "id": "state-1", "lead_id": "lead-1", "state": "collecting_rasi",
+        "draft_data": {}, "booking_id": "booking-1", "tenant_id": "tenant-1",
+    }
+    db = _make_db(state_row=state)
+    # Rejection: "வேண்டாம்" (no/not interested) -> should return False
+    res = await route_booking_intent("lead-1", "tenant-1", "+919876543210", "வேண்டாம்", db)
+    assert res is False
+
+
+@pytest.mark.asyncio
+async def test_route_booking_intent_invalid_input_llm_returns_false():
+    from app.services.booking_flow import route_booking_intent
+    state = {
+        "id": "state-1", "lead_id": "lead-1", "state": "collecting_rasi",
+        "draft_data": {}, "booking_id": "booking-1", "tenant_id": "tenant-1",
+    }
+    db = _make_db(state_row=state)
+
+    with patch("app.services.booking_flow._validate_collect_input", new_callable=AsyncMock) as mock_val:
+        mock_val.return_value = False
+        res = await route_booking_intent("lead-1", "tenant-1", "+919876543210", "I am busy today", db)
+        assert res is False
+        mock_val.assert_called_once_with("collecting_rasi", "I am busy today")
+
+
+@pytest.mark.asyncio
+async def test_route_booking_intent_valid_input_llm_returns_true():
+    from app.services.booking_flow import route_booking_intent
+    state = {
+        "id": "state-1", "lead_id": "lead-1", "state": "collecting_rasi",
+        "draft_data": {}, "booking_id": "booking-1", "tenant_id": "tenant-1",
+    }
+    db = _make_db(state_row=state)
+
+    with patch("app.services.booking_flow._validate_collect_input", new_callable=AsyncMock) as mock_val, \
+         patch("app.services.booking_flow.advance_state", new_callable=AsyncMock) as mock_advance:
+        mock_val.return_value = True
+        res = await route_booking_intent("lead-1", "tenant-1", "+919876543210", "Mesham", db)
+        assert res is True
+        mock_val.assert_called_once_with("collecting_rasi", "Mesham")
+        mock_advance.assert_called_once()
+
