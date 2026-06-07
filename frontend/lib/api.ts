@@ -144,6 +144,20 @@ export interface BroadcastResult {
   skipped_window: number;
 }
 
+export interface ReengagementStep {
+  id: string;
+  tenant_id: string;
+  type: "broadcast" | "inbound";
+  broadcast_id?: string | null;
+  delay_hours: number;
+  target_segments: string[];
+  message_type: "freeform" | "template";
+  message_content?: string | null;
+  template_name?: string | null;
+  template_variables?: string[] | null;
+  created_at: string;
+}
+
 export interface AIPrompt {
   id: string;
   name: string;
@@ -623,6 +637,33 @@ export const api = {
       const res = await apiFetch<{ data: BroadcastHistoryItem[] }>("/api/v1/upload/history");
       return res.data || [];
     },
+  },
+  reengagement: {
+    listSteps: async (params?: { type?: string; broadcast_id?: string }) => {
+      const qs = new URLSearchParams();
+      if (params?.type) qs.set("type", params.type);
+      if (params?.broadcast_id) qs.set("broadcast_id", params.broadcast_id);
+      const res = await apiFetch<{ data: ReengagementStep[] }>(`/api/v1/reengagement/steps?${qs}`);
+      return res.data || [];
+    },
+    createStep: (data: {
+      type: "broadcast" | "inbound";
+      broadcast_id?: string | null;
+      delay_hours: number;
+      target_segments: string[];
+      message_type: "freeform" | "template";
+      message_content?: string | null;
+      template_name?: string | null;
+      template_variables?: string[] | null;
+    }) =>
+      apiFetch<ReengagementStep>(`/api/v1/reengagement/steps`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    deleteStep: (stepId: string) =>
+      apiFetch<{ success: boolean }>(`/api/v1/reengagement/steps/${stepId}`, {
+        method: "DELETE",
+      }),
   },
   knowledge: {
     listDocuments: async () => {

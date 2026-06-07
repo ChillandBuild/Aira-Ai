@@ -1,12 +1,19 @@
 "use client";
 import { toast } from "sonner";
-import { useEffect, useState } from "react";
-import { api, Lead, Caller, SegmentTemplate, BroadcastResult, BroadcastHistoryItem } from "@/lib/api";
-import { Download, Send, Save, Pencil, Plus, X, Loader2 } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { api, Lead, Caller, SegmentTemplate, BroadcastResult, BroadcastHistoryItem, ReengagementStep, getAuthHeaders, API_URL } from "@/lib/api";
+import { Download, Send, Save, Pencil, Plus, X, Loader2, Clock, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { timeAgo, formatPhone } from "@/lib/utils";
-import Link from "next/link";
 import { useAuthRole } from "../contexts/AuthRoleContext";
 import { AssignButton } from "./AssignButton";
+
+interface WabaTemplate {
+  id: string;
+  name: string;
+  category: string;
+  status: string;
+}
 
 function NameCell({ lead, onUpdate }: { lead: Lead; onUpdate: (l: Lead) => void }) {
   const [editing, setEditing] = useState(false);
@@ -199,10 +206,34 @@ export default function LeadsPage() {
   const [campaigns, setCampaigns] = useState<{ id: string; campaign_name: string; platform: string }[]>([]);
   const [broadcastHistory, setBroadcastHistory] = useState<BroadcastHistoryItem[]>([]);
 
+  // Re-engagement states
+  const [reengagementSteps, setReengagementSteps] = useState<ReengagementStep[]>([]);
+  const [wabaTemplates, setWabaTemplates] = useState<WabaTemplate[]>([]);
+  const [loadingSteps, setLoadingSteps] = useState(false);
+  const [showAddStep, setShowAddStep] = useState(false);
+
+  // Form states
+  const [stepDelayHours, setStepDelayHours] = useState<number>(6);
+  const [stepTargetSegments, setStepTargetSegments] = useState<string[]>(["C"]);
+  const [stepMessageType, setStepMessageType] = useState<"freeform" | "template">("freeform");
+  const [stepMessageContent, setStepMessageContent] = useState("");
+  const [stepTemplateName, setStepTemplateName] = useState("");
+  const [stepTemplateVariables, setStepTemplateVariables] = useState<string[]>([]);
+
   useEffect(() => {
     api.callers.list().then((data: Caller[]) => setCallers(data.filter((c) => c.active))).catch(() => {});
     api.inboundLeads.campaigns().then(setCampaigns).catch(() => {});
     api.broadcasts.history().then(setBroadcastHistory).catch(() => {});
+
+    // Fetch WABA templates
+    getAuthHeaders().then(auth => {
+      fetch(`${API_URL}/api/v1/templates`, { headers: auth })
+        .then(r => r.json())
+        .then((res: { data: WabaTemplate[] }) => {
+          setWabaTemplates((res.data || []).filter((t: WabaTemplate) => t.status === "APPROVED"));
+        })
+        .catch(() => {});
+    });
   }, []);
 
   useEffect(() => {
@@ -219,6 +250,92 @@ export default function LeadsPage() {
     api.leads.list(params).then(setLeads).finally(() => setLoading(false));
     setLastResult(null);
   }, [tab, sourceFilter, selectedCampaignId, selectedBroadcastId]);
+
+  // Re-engagement side effects
+  const fetchReengagementSteps = useCallback(async () => {
+    if (sourceFilter === "BROADCAST" && selectedBroadcastId) {
+      setLoadingSteps(true);
+      try {
+        const steps = await api.reengagement.listSteps({ type: "broadcast", broadcast_id: selectedBroadcastId });
+        setReengagementSteps(steps);
+      } catch {
+        toast.error("Failed to load re-engagement steps");
+      } finally {
+        setLoadingSteps(false);
+      }
+    } else if (sourceFilter === "INBOUND") {
+      setLoadingSteps(true);
+      try {
+        const steps = await api.reengagement.listSteps({ type: "inbound" });
+        setReengagementSteps(steps);
+      } catch {
+        toast.error("Failed to load re-engagement steps");
+      } finally {
+        setLoadingSteps(false);
+      }
+    } else {
+      setReengagementSteps([]);
+    }
+  }, [sourceFilter, selectedBroadcastId]);
+
+  useEffect(() => {
+    fetchReengagementSteps();
+  }, [fetchReengagementSteps]);
+
+  async function handleAddStep() {
+    if (stepTargetSegments.length === 0) {
+      toast.error("Select at least one target segment");
+      return;
+    }
+    if (stepMessageType === "freeform" && !stepMessageContent.trim()) {
+      toast.error("Message content is required for freeform messages");
+      return;
+    }
+    if (stepMessageType === "template" && !stepTemplateName) {
+      toast.error("Select a template");
+      return;
+    }
+
+    try {
+      const payload: Parameters<typeof api.reengagement.createStep>[0] = {
+        type: sourceFilter === "INBOUND" ? "inbound" : "broadcast",
+        delay_hours: stepDelayHours,
+        target_segments: stepTargetSegments,
+        message_type: stepMessageType,
+        message_content: stepMessageType === "freeform" ? stepMessageContent : null,
+        template_name: stepMessageType === "template" ? stepTemplateName : null,
+        template_variables: stepMessageType === "template" ? stepTemplateVariables.filter(Boolean) : null,
+        broadcast_id: sourceFilter === "BROADCAST" ? selectedBroadcastId : null,
+      };
+
+      await api.reengagement.createStep(payload);
+      toast.success("Re-engagement step added");
+      setShowAddStep(false);
+      
+      // Reset form
+      setStepDelayHours(6);
+      setStepTargetSegments(["C"]);
+      setStepMessageType("freeform");
+      setStepMessageContent("");
+      setStepTemplateName("");
+      setStepTemplateVariables([]);
+
+      fetchReengagementSteps();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create re-engagement step");
+    }
+  }
+
+  async function handleDeleteStep(stepId: string) {
+    if (!confirm("Are you sure you want to delete this re-engagement step?")) return;
+    try {
+      await api.reengagement.deleteStep(stepId);
+      toast.success("Re-engagement step deleted");
+      fetchReengagementSteps();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete step");
+    }
+  }
 
   useEffect(() => {
     api.segments.templates().then((rows) => {
@@ -305,21 +422,31 @@ export default function LeadsPage() {
     );
   }
 
+  function getBroadcastWindowText(timestamp: string): string {
+    const lastBroadcast = new Date(timestamp).getTime();
+    const now = new Date().getTime();
+    const diffMs = now - lastBroadcast;
+    const hoursLeft = 24 - diffMs / (1000 * 60 * 60);
+
+    if (hoursLeft <= 0) {
+      return "Expired";
+    }
+
+    const h = Math.floor(hoursLeft);
+    const m = Math.floor((hoursLeft - h) * 60);
+    if (h === 0) {
+      return `${m}m left`;
+    }
+    return `${h}h ${m}m left`;
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="font-display text-3xl font-bold text-tertiary">Leads</h1>
+            <h1 className="font-display text-3xl font-bold text-tertiary">Segments</h1>
           </div>
-          <p className="font-body text-on-surface-muted mt-1">Hot · Warm · Cold · Disqualified</p>
-          <p className="font-body text-xs text-on-surface-muted/70 mt-1">
-            Scoring rubric in{" "}
-            <Link href="/dashboard/knowledge" className="text-violet-600 hover:underline">AI Tune</Link>
-            {" · "}
-            Segment thresholds in{" "}
-            <Link href="/dashboard/settings" className="text-violet-600 hover:underline">Settings</Link>
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -422,23 +549,296 @@ export default function LeadsPage() {
 
           {/* Conditional Broadcast Dropdown */}
           {sourceFilter === "BROADCAST" && broadcastHistory.length > 0 && (
-            <div className="flex items-center gap-2 bg-surface p-2.5 rounded-xl border border-surface-mid/80 shadow-sm animate-slide-up">
-              <span className="font-label text-xs text-on-surface-muted font-bold uppercase tracking-wider">Broadcast:</span>
-              <select
-                value={selectedBroadcastId}
-                onChange={(e) => setSelectedBroadcastId(e.target.value)}
-                className="bg-transparent font-body text-xs font-semibold text-tertiary focus:outline-none max-w-[220px] cursor-pointer"
-              >
-                <option value="">Select Broadcast</option>
-                {broadcastHistory.map((h) => (
-                  <option key={h.broadcast_id} value={h.broadcast_id}>
-                    {h.template_name} ({new Date(h.timestamp).toLocaleDateString()})
-                  </option>
-                ))}
-              </select>
+            <div className="flex flex-wrap items-center gap-3 animate-slide-up">
+              <div className="flex items-center gap-2 bg-surface p-2.5 rounded-xl border border-surface-mid/80 shadow-sm">
+                <span className="font-label text-xs text-on-surface-muted font-bold uppercase tracking-wider">Broadcast:</span>
+                <select
+                  value={selectedBroadcastId}
+                  onChange={(e) => setSelectedBroadcastId(e.target.value)}
+                  className="bg-transparent font-body text-xs font-semibold text-tertiary focus:outline-none max-w-[220px] cursor-pointer"
+                >
+                  <option value="">Select Broadcast</option>
+                  {broadcastHistory.map((h) => (
+                    <option key={h.broadcast_id} value={h.broadcast_id}>
+                      {h.template_name} ({new Date(h.timestamp).toLocaleDateString()} · {getBroadcastWindowText(h.timestamp)})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Selected Broadcast 24h Window Badge */}
+              {(() => {
+                const selectedBroadcast = broadcastHistory.find(h => h.broadcast_id === selectedBroadcastId);
+                if (!selectedBroadcast) return null;
+                const windowText = getBroadcastWindowText(selectedBroadcast.timestamp);
+                return (
+                  <div className={cn(
+                    "flex items-center gap-1.5 px-3 py-2 rounded-xl border font-label text-xs font-bold shadow-sm",
+                    windowText === "Expired"
+                      ? "bg-red-50 text-red-600 border-red-100"
+                      : "bg-emerald-50 text-emerald-600 border-emerald-100"
+                  )}>
+                    <Clock size={12} />
+                    <span>Broadcast Window: {windowText}</span>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>
+
+        {/* Re-engagement Panel */}
+        {(sourceFilter === "INBOUND" || (sourceFilter === "BROADCAST" && selectedBroadcastId)) && (
+          <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15 mb-6">
+            <div className="flex items-center justify-between mb-4 border-b border-surface-mid pb-3">
+              <div>
+                <h2 className="font-display text-base font-bold text-tertiary">
+                  {sourceFilter === "INBOUND" ? "Inbound Automated Re-engagement" : "Broadcast Re-engagement Workflow"}
+                </h2>
+                <p className="font-body text-xs text-on-surface-muted mt-0.5">
+                  {sourceFilter === "INBOUND"
+                    ? "Trigger automatic messages after a lead's last inbound reply"
+                    : "Trigger automatic follow-ups at custom intervals relative to the broadcast send time"}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowAddStep(!showAddStep)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 transition-colors shadow-sm"
+              >
+                {showAddStep ? <X size={13} /> : <Plus size={13} />}
+                {showAddStep ? "Cancel" : "Add Step"}
+              </button>
+            </div>
+
+            {showAddStep && (
+              <div className="bg-surface-low border border-surface-mid/85 rounded-xl p-5 mb-5 space-y-4 animate-slide-up">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Delay Hours */}
+                  <div>
+                    <label className="block font-label text-xs font-bold text-on-surface-muted uppercase tracking-wider mb-2">
+                      Trigger Delay (Hours)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={720}
+                      value={stepDelayHours}
+                      onChange={(e) => setStepDelayHours(parseInt(e.target.value) || 1)}
+                      className="w-full px-4 py-2 bg-surface rounded-xl font-body text-sm text-on-surface border border-surface-mid focus:ring-2 focus:ring-tertiary outline-none"
+                    />
+                  </div>
+
+                  {/* Target Segments */}
+                  <div>
+                    <label className="block font-label text-xs font-bold text-on-surface-muted uppercase tracking-wider mb-2">
+                      Target Segments
+                    </label>
+                    <div className="flex flex-wrap gap-2.5 mt-1">
+                      {["A", "B", "C", "D"].map((seg) => (
+                        <label
+                          key={seg}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer font-label text-xs font-semibold select-none transition-colors ${
+                            stepTargetSegments.includes(seg)
+                              ? "bg-tertiary/10 border-tertiary text-tertiary"
+                              : "bg-surface border-surface-mid text-on-surface-muted hover:border-tertiary/50"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={stepTargetSegments.includes(seg)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setStepTargetSegments([...stepTargetSegments, seg]);
+                              } else {
+                                setStepTargetSegments(stepTargetSegments.filter((s) => s !== seg));
+                              }
+                            }}
+                            className="hidden"
+                          />
+                          {SEGMENT_LABELS[seg]}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Message Type */}
+                <div>
+                  <label className="block font-label text-xs font-bold text-on-surface-muted uppercase tracking-wider mb-2">
+                    Message Type
+                  </label>
+                  <div className="flex gap-2">
+                    {(["freeform", "template"] as const).map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setStepMessageType(type)}
+                        className={`px-4 py-2 rounded-lg font-label text-xs font-semibold capitalize transition-all border ${
+                          stepMessageType === type
+                            ? "bg-secondary border-secondary text-white"
+                            : "bg-surface border-surface-mid text-on-surface-muted hover:border-surface-mid/80"
+                        }`}
+                      >
+                        {type === "freeform" ? "Freeform Text (Window only)" : "Approved Template (Always sent)"}
+                      </button>
+                    ))}
+                  </div>
+                  {stepMessageType === "freeform" && (
+                    <p className="font-body text-[10px] text-amber-600 mt-1.5 font-semibold">
+                      ⚠ Note: Freeform messages will be automatically skipped if the lead&apos;s 24-hour window has expired.
+                    </p>
+                  )}
+                </div>
+
+                {/* Conditional Fields based on Message Type */}
+                {stepMessageType === "freeform" ? (
+                  <div>
+                    <label className="block font-label text-xs font-bold text-on-surface-muted uppercase tracking-wider mb-2">
+                      Message Content
+                    </label>
+                    <textarea
+                      value={stepMessageContent}
+                      onChange={(e) => setStepMessageContent(e.target.value)}
+                      rows={3}
+                      placeholder="Hi! We noticed you haven't booked a time yet. Let us know if you have questions!"
+                      className="w-full px-4 py-3 bg-surface rounded-xl font-body text-sm text-on-surface border border-surface-mid focus:ring-2 focus:ring-tertiary outline-none resize-none"
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block font-label text-xs font-bold text-on-surface-muted uppercase tracking-wider mb-2">
+                        WhatsApp Template
+                      </label>
+                      <select
+                        value={stepTemplateName}
+                        onChange={(e) => {
+                          setStepTemplateName(e.target.value);
+                          setStepTemplateVariables([]);
+                        }}
+                        className="w-full px-4 py-2 bg-surface rounded-xl font-body text-sm text-on-surface border border-surface-mid focus:ring-2 focus:ring-tertiary outline-none cursor-pointer"
+                      >
+                        <option value="">Select an approved template...</option>
+                        {wabaTemplates.map((t) => (
+                          <option key={t.id} value={t.name}>
+                            {t.name} ({t.category.toLowerCase()})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {stepTemplateName && (
+                      <div className="bg-surface border border-surface-mid rounded-xl p-4 space-y-3">
+                        <p className="font-label text-xs font-bold text-on-surface uppercase tracking-wider">
+                          Variable Mapping
+                        </p>
+                        <p className="font-body text-xs text-on-surface-muted">
+                          Define custom column keys or variables for the template parameters (e.g. `name`).
+                        </p>
+                        <div className="space-y-2">
+                          {stepTemplateVariables.map((val, idx) => (
+                            <div key={idx} className="flex items-center gap-2 bg-surface-low p-2 rounded-lg border border-surface-mid/60">
+                              <span className="font-mono text-xs text-on-surface-muted w-10 shrink-0 font-bold">{`{{${idx + 1}}}`}</span>
+                              <select
+                                value={val}
+                                onChange={(e) => {
+                                  const next = [...stepTemplateVariables];
+                                  next[idx] = e.target.value;
+                                  setStepTemplateVariables(next);
+                                }}
+                                className="flex-1 bg-surface rounded-lg px-2.5 py-1.5 font-body text-xs text-on-surface border border-surface-mid focus:outline-none focus:ring-1 focus:ring-tertiary"
+                              >
+                                <option value="">— pick a field —</option>
+                                <option value="name">Lead Name</option>
+                                <option value="phone">Lead Phone</option>
+                                <option value="course">Course</option>
+                                <option value="city">City</option>
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => setStepTemplateVariables(stepTemplateVariables.filter((_, i) => i !== idx))}
+                                className="text-xs text-red-500 hover:text-red-700 px-2 py-1.5 rounded hover:bg-red-50 transition-colors font-semibold"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => setStepTemplateVariables([...stepTemplateVariables, ""])}
+                            className="text-xs font-bold text-tertiary hover:underline flex items-center gap-1 mt-1 pl-1"
+                          >
+                            + Add variable mapping
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    onClick={() => setShowAddStep(false)}
+                    className="px-4 py-2 bg-surface text-on-surface-muted rounded-xl font-label text-xs font-semibold border border-surface-mid hover:bg-surface-low transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleAddStep}
+                    className="flex items-center gap-2 px-4 py-2 bg-tertiary text-white rounded-xl font-label text-xs font-semibold hover:bg-tertiary/90 transition-colors"
+                  >
+                    Save Step
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* List of current steps */}
+            {loadingSteps ? (
+              <div className="text-center py-4 font-body text-xs text-on-surface-muted">Loading steps...</div>
+            ) : reengagementSteps.length === 0 ? (
+              <div className="text-center py-6 border border-dashed border-surface-mid rounded-xl bg-surface-low/30 font-body text-xs text-on-surface-muted">
+                No automatic re-engagement steps configured yet. Click &quot;Add Step&quot; above to create one.
+              </div>
+            ) : (
+              <div className="relative border-l-2 border-surface-mid ml-3 pl-6 space-y-5 py-2">
+                {reengagementSteps.map((step) => {
+                  const segLabels = (step.target_segments || []).map(s => SEGMENT_LABELS[s] || s).join(", ");
+                  return (
+                    <div key={step.id} className="relative group">
+                      {/* Timeline dot */}
+                      <div className="absolute -left-[31px] top-1.5 w-2.5 h-2.5 rounded-full bg-tertiary ring-4 ring-white" />
+                      
+                      <div className="bg-surface-low border border-surface-mid/60 rounded-xl p-4 flex items-center justify-between hover:shadow-sm transition-all">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-display text-sm font-bold text-tertiary">{step.delay_hours} Hours Delay</span>
+                            <span className="px-2 py-0.5 rounded-md bg-surface border border-surface-mid font-label text-[10px] font-bold text-on-surface-muted">
+                              Targets: {segLabels}
+                            </span>
+                          </div>
+                          <p className="font-body text-xs text-on-surface mt-1">
+                            {step.message_type === "freeform" ? (
+                              <span className="italic">Freeform: &quot;{step.message_content}&quot;</span>
+                            ) : (
+                              <span>Template: <strong className="font-semibold text-zinc-900">{step.template_name}</strong></span>
+                            )}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteStep(step.id)}
+                          className="p-1.5 text-on-surface-muted hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15 mb-6">
           <div className="flex items-center justify-between mb-3">

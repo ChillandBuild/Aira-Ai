@@ -216,7 +216,7 @@ export function Sidebar() {
             )}
           >
             <Users size={16} className={pathname.startsWith("/dashboard/leads") ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
-            <span>Leads</span>
+            <span>Segments</span>
           </Link>
         )}
 

@@ -8,7 +8,7 @@ from app.dependencies.auth import get_current_user
 
 import os
 from app.config import settings
-from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team, media, todos, bookings, conversations, operator, chat_handovers, telegram, instagram, facebook, automations, tags, inbound_leads
+from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team, media, todos, bookings, conversations, operator, chat_handovers, telegram, instagram, facebook, automations, tags, inbound_leads, reengagement
 from app.routes.calls import public_router as calls_public_router
 
 # Configure logging
@@ -183,6 +183,17 @@ def _create_token_incident(db, tenant_id: str, channel: str, error_msg: str) -> 
         logger.error(f"Failed to create token incident: {e}")
 
 
+async def _process_reengagement_rules() -> None:
+    """APScheduler job: process due automated re-engagement steps."""
+    try:
+        from app.services.reengagement_service import process_due_reengagements
+        count = await process_due_reengagements()
+        if count:
+            logger.info(f"Re-engagement scheduler: processed {count} re-engagement message(s)")
+    except Exception as e:
+        logger.error(f"Re-engagement scheduler error: {e}")
+
+
 _scheduler = AsyncIOScheduler()
 
 
@@ -221,8 +232,15 @@ async def lifespan(app: FastAPI):
         id="engagement-decay",
         replace_existing=True,
     )
+    _scheduler.add_job(
+        _process_reengagement_rules,
+        trigger="interval",
+        minutes=1,
+        id="reengagement-rules",
+        replace_existing=True,
+    )
     _scheduler.start()
-    logger.info("Schedulers started: automation(5m) + broadcasts(1m) + token-health(24h) + engagement-decay(6h)")
+    logger.info("Schedulers started: automation(5m) + broadcasts(1m) + token-health(24h) + engagement-decay(6h) + reengagement(1m)")
 
     yield
 
@@ -365,4 +383,6 @@ app.include_router(chat_handovers.router, prefix="/api/v1/chat-handovers", tags=
 app.include_router(automations.router, prefix="/api/v1/automations", tags=["automations"], dependencies=_auth)
 app.include_router(tags.router, prefix="/api/v1/broadcast-tags", tags=["broadcast-tags"], dependencies=_auth)
 app.include_router(inbound_leads.router, prefix="/api/v1/inbound-leads", tags=["inbound-leads"], dependencies=_auth)
+app.include_router(reengagement.router, prefix="/api/v1/reengagement", tags=["reengagement"], dependencies=_auth)
+
 
