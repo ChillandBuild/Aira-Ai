@@ -482,7 +482,6 @@ async def send_template_message(
 
 def _extract_variable_examples(body_text: str) -> list[str]:
     """Return placeholder example values for every {{N}} variable in the body."""
-    import re
     indices = sorted(set(int(m) for m in re.findall(r"\{\{(\d+)\}\}", body_text)))
     examples = ["Sample text"] * len(indices)
     # Use a descriptive placeholder for {{1}} which is almost always the customer name
@@ -491,9 +490,8 @@ def _extract_variable_examples(body_text: str) -> list[str]:
     return examples
 
 
-def _build_button_components(buttons: list[dict], max_btn: int) -> list[dict]:
+def _build_button_components(buttons: list[dict], max_btn: int, category: Optional[str] = None) -> list[dict]:
     """Shared button-component builder used by main template + carousel cards."""
-    import re
     _emoji_pattern = re.compile(
         "["
         "\U0001F600-\U0001F64F"
@@ -507,6 +505,7 @@ def _build_button_components(buttons: list[dict], max_btn: int) -> list[dict]:
     def _strip_emojis(text: str) -> str:
         return _emoji_pattern.sub("", text).strip()
 
+    is_auth = (category == "AUTHENTICATION")
     out: list[dict] = []
     for btn in buttons[:max_btn]:
         btn_type = btn.get("type", "QUICK_REPLY")
@@ -519,10 +518,28 @@ def _build_button_components(buttons: list[dict], max_btn: int) -> list[dict]:
         elif btn_type in ("PHONE_NUMBER", "WHATSAPP_CALL"):
             phone = btn.get("phone", "")
             country = btn.get("country", "+1")
-            out.append({"type": "PHONE_NUMBER", "text": btn_text, "phone_number": f"{country} {phone}"})
+            btn_obj: dict = {"type": "PHONE_NUMBER", "text": btn_text, "phone_number": f"{country} {phone}"}
+            if btn_type == "WHATSAPP_CALL" and btn.get("active_for_days"):
+                btn_obj["active_for_days"] = btn["active_for_days"]
+            out.append(btn_obj)
         elif btn_type == "COPY_CODE":
-            offer_code = btn.get("offer_code", "")
-            out.append({"type": "COPY_CODE", "text": "Copy offer code", "example": [offer_code]})
+            if is_auth:
+                out.append({"type": "OTP", "otp_type": "COPY_CODE", "text": btn_text or "Copy Code"})
+            else:
+                offer_code = btn.get("offer_code", "")
+                out.append({"type": "COPY_CODE", "text": "Copy offer code", "example": [offer_code]})
+        elif btn_type == "ONE_TAP":
+            if is_auth:
+                out.append({
+                    "type": "OTP",
+                    "otp_type": "ONE_TAP",
+                    "text": btn_text or "Autofill",
+                    "autofill_text": btn.get("autofill_text") or "Autofill",
+                    "package_name": btn.get("package_name") or "",
+                    "signature_hash": btn.get("signature_hash") or ""
+                })
+            else:
+                out.append({"type": "QUICK_REPLY", "text": btn_text or "Autofill"})
     return out
 
 
@@ -577,7 +594,7 @@ async def submit_template(
         max_btn = 1 if (header_media_type and header_media_type != "NONE") else 3
         if len(buttons) > max_btn:
             logger.warning("Trimming %d buttons to %d (media header limits Meta to 1)", len(buttons), max_btn)
-        button_components = _build_button_components(buttons, max_btn)
+        button_components = _build_button_components(buttons, max_btn, category)
         if button_components:
             components.append({"type": "BUTTONS", "buttons": button_components})
 
@@ -684,12 +701,13 @@ async def get_template_status(
 async def list_all_templates(
     waba_id: str,
     access_token: Optional[str] = None,
+    tenant_id: Optional[str] = None,
 ) -> list[dict]:
     """
     Fetch all templates from Meta for a WABA, handling pagination.
     Returns list of template dicts with name, status, category, language, components, rejected_reason.
     """
-    _, tok = _creds("placeholder", access_token)
+    _, tok = _creds("placeholder", access_token, tenant_id)
     url = f"{_GRAPH_BASE}/{waba_id}/message_templates"
     params = {
         "fields": "name,status,category,language,components,rejected_reason",
@@ -712,5 +730,105 @@ async def list_all_templates(
     return templates
 
 
+async def delete_template_from_meta(
+    template_name: str,
+    waba_id: str,
+    access_token: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+) -> dict:
+    """
+    Delete a template from Meta by name.
+    Calls DELETE https://graph.facebook.com/v21.0/{waba_id}/message_templates?name={template_name}
+    """
+    _, tok = _creds("placeholder", access_token, tenant_id)
+    url = f"{_GRAPH_BASE}/{waba_id}/message_templates"
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.delete(
+            url,
+            params={"name": template_name},
+            headers={"Authorization": f"Bearer {tok}"},
+        )
+    if not resp.is_success:
+        logger.error("delete_template_from_meta failed: %s %s", resp.status_code, resp.text)
+        raise HTTPException(status_code=resp.status_code, detail=f"Meta template delete failed: {resp.text}")
+    logger.info("Deleted template '%s' from Meta (WABA %s)", template_name, waba_id)
+    return resp.json()
 
 
+async def update_template_on_meta(
+    meta_template_id: str,
+    components: list[dict],
+    access_token: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+) -> dict:
+    """
+    Update a rejected/paused template on Meta.
+    Calls POST https://graph.facebook.com/v21.0/{template_id} with updated components.
+    """
+    _, tok = _creds("placeholder", access_token, tenant_id)
+    url = f"{_GRAPH_BASE}/{meta_template_id}"
+    payload = {"components": components}
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(url, json=payload, headers={"Authorization": f"Bearer {tok}"})
+    if not resp.is_success:
+        logger.error("update_template_on_meta failed: %s %s", resp.status_code, resp.text)
+        raise HTTPException(status_code=resp.status_code, detail=f"Meta template update failed: {resp.text}")
+    logger.info("Updated template %s on Meta", meta_template_id)
+    return resp.json()
+
+
+async def upload_media_for_template(
+    file_bytes: bytes,
+    file_type: str,
+    file_length: int,
+    app_id: str,
+    access_token: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+) -> str:
+    """
+    Upload media for template headers using Meta's Resumable Upload API.
+
+    Step 1: Create an upload session → get session ID.
+    Step 2: Upload the file bytes to the session → get the `h` handle.
+    Returns the handle string for use in template header_handle.
+    """
+    _, tok = _creds("placeholder", access_token, tenant_id)
+
+    # Step 1: Create upload session
+    session_url = f"{_GRAPH_BASE}/{app_id}/uploads"
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        session_resp = await client.post(
+            session_url,
+            params={
+                "file_length": file_length,
+                "file_type": file_type,
+                "access_token": tok,
+            },
+        )
+    if not session_resp.is_success:
+        logger.error("upload_media_for_template session failed: %s %s", session_resp.status_code, session_resp.text)
+        raise HTTPException(status_code=session_resp.status_code, detail=f"Upload session creation failed: {session_resp.text}")
+    upload_session_id = session_resp.json().get("id")
+    if not upload_session_id:
+        raise HTTPException(status_code=500, detail="No upload session ID returned from Meta")
+
+    # Step 2: Upload file bytes
+    upload_url = f"{_GRAPH_BASE}/{upload_session_id}"
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        upload_resp = await client.post(
+            upload_url,
+            content=file_bytes,
+            headers={
+                "Authorization": f"OAuth {tok}",
+                "file_offset": "0",
+                "Content-Type": file_type,
+            },
+        )
+    if not upload_resp.is_success:
+        logger.error("upload_media_for_template upload failed: %s %s", upload_resp.status_code, upload_resp.text)
+        raise HTTPException(status_code=upload_resp.status_code, detail=f"File upload failed: {upload_resp.text}")
+    handle = upload_resp.json().get("h")
+    if not handle:
+        raise HTTPException(status_code=500, detail="No media handle returned from Meta upload")
+    logger.info("Media uploaded for template, handle=%s", handle)
+    return handle

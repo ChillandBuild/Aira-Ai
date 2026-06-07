@@ -1,0 +1,216 @@
+"use client";
+
+import { useState } from "react";
+import {
+  Pencil,
+  Trash2,
+  Copy,
+  Send,
+  RefreshCw,
+  MoreHorizontal,
+} from "lucide-react";
+import type { Template } from "../types";
+import { STATUS_COLORS, CATEGORY_COLORS, LANGUAGES } from "../types";
+
+type TemplateCardProps = {
+  template: Template;
+  onEdit?: (t: Template) => void;
+  onDelete?: (t: Template) => void;
+  onDuplicate?: (t: Template) => void;
+  onSend?: (t: Template) => void;
+  onSync?: (t: Template) => void;
+};
+
+/* ── helpers ─────────────────────────────────────────────────── */
+
+function renderMiniPreview(text: string): string {
+  return text.replace(/\{\{(\d+)\}\}/g, "[$1]");
+}
+
+function formatDate(dateStr?: string): string {
+  if (!dateStr) return "—";
+  return new Date(dateStr).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function langLabel(code: string): string {
+  return LANGUAGES.find((l) => l.code === code)?.label ?? code.toUpperCase();
+}
+
+/* ── component ───────────────────────────────────────────────── */
+
+export default function TemplateCard({
+  template: t,
+  onEdit,
+  onDelete,
+  onDuplicate,
+  onSend,
+  onSync,
+}: TemplateCardProps) {
+  const [hovered, setHovered] = useState(false);
+
+  const statusStyle = STATUS_COLORS[t.status] ?? STATUS_COLORS.PENDING;
+  const catStyle = CATEGORY_COLORS[t.category] ?? {
+    bg: "bg-gray-50",
+    text: "text-gray-600",
+  };
+
+  return (
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className="card card-hover rounded-2xl relative overflow-hidden flex flex-col transition-all duration-200 group cursor-pointer"
+      style={{ padding: 0 }}
+    >
+      {/* ── Mini WhatsApp preview ─────────────────── */}
+      <div
+        className="px-4 pt-4 pb-3 relative"
+        style={{ background: "#ECE5DD" }}
+      >
+        {/* Subtle pattern */}
+        <div
+          className="absolute inset-0 opacity-[0.035] pointer-events-none"
+          style={{
+            backgroundImage:
+              "url('https://static.whatsapp.net/rsrc.php/v3/yl/r/r_Q1kFPEKdt.png')",
+            backgroundSize: "350px",
+          }}
+        />
+
+        <div className="relative z-10 bg-white rounded-lg rounded-tl-[3px] px-3 py-2 shadow-sm max-w-[95%]">
+          <p className="font-body text-xs text-[#111B21] line-clamp-3 leading-relaxed whitespace-pre-wrap break-words">
+            {renderMiniPreview(t.body_text)}
+          </p>
+          <div className="flex justify-end mt-0.5">
+            <span className="text-[9px]" style={{ color: "#8696A0" }}>
+              12:00 PM ✓✓
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Info section ──────────────────────────── */}
+      <div className="px-4 py-3 flex-1 flex flex-col gap-2">
+        {/* Name */}
+        <p className="font-label font-semibold text-ink text-sm leading-tight truncate">
+          {t.name}
+        </p>
+
+        {/* Category + language badges */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span
+            className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold ${catStyle.bg} ${catStyle.text}`}
+          >
+            {t.category}
+          </span>
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium bg-gray-100 text-gray-600">
+            {langLabel(t.language)}
+          </span>
+        </div>
+      </div>
+
+      {/* ── Bottom: status + date ─────────────────── */}
+      <div className="px-4 pb-3 flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <span
+            className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`}
+          />
+          <span
+            className={`text-[11px] font-medium ${statusStyle.text}`}
+          >
+            {t.status}
+          </span>
+        </div>
+        <span className="font-body text-[10px] text-ink-muted">
+          {formatDate(t.submitted_at)}
+        </span>
+      </div>
+
+      {/* ── Hover overlay with actions ────────────── */}
+      <div
+        className={`absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center gap-2 transition-opacity duration-200 ${
+          hovered ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
+      >
+        {onEdit && (
+          <ActionBtn
+            icon={Pencil}
+            label="Edit"
+            onClick={() => onEdit(t)}
+          />
+        )}
+        {onDuplicate && (
+          <ActionBtn
+            icon={Copy}
+            label="Duplicate"
+            onClick={() => onDuplicate(t)}
+          />
+        )}
+        {onSend && t.status === "APPROVED" && (
+          <ActionBtn
+            icon={Send}
+            label="Send"
+            onClick={() => onSend(t)}
+            accent
+          />
+        )}
+        {onSync && t.status !== "APPROVED" && (
+          <ActionBtn
+            icon={RefreshCw}
+            label="Sync"
+            onClick={() => onSync(t)}
+          />
+        )}
+        {onDelete && (
+          <ActionBtn
+            icon={Trash2}
+            label="Delete"
+            onClick={() => onDelete(t)}
+            destructive
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── sub-component: action button ────────────────────────────── */
+
+function ActionBtn({
+  icon: Icon,
+  label,
+  onClick,
+  accent = false,
+  destructive = false,
+}: {
+  icon: React.ComponentType<any>;
+  label: string;
+  onClick: () => void;
+  accent?: boolean;
+  destructive?: boolean;
+}) {
+  const bg = destructive
+    ? "bg-red-500 hover:bg-red-600"
+    : accent
+      ? "bg-emerald-500 hover:bg-emerald-600"
+      : "bg-white/90 hover:bg-white";
+  const text = destructive || accent ? "text-white" : "text-ink";
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl ${bg} ${text} shadow-md transition-all hover:scale-105`}
+      title={label}
+    >
+      <Icon size={16} />
+      <span className="text-[9px] font-medium leading-none">{label}</span>
+    </button>
+  );
+}
