@@ -494,7 +494,7 @@ export default function NewTemplatePage() {
                 <ButtonBuilder
                   buttons={buttons}
                   onChange={setButtons}
-                  maxButtons={category === "AUTHENTICATION" ? 1 : 10}
+                  maxButtons={10}
                   disableCTA={false}
                 />
               )}
