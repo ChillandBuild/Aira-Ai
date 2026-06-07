@@ -1,8 +1,14 @@
 # Bot Flow Builder — Phase 2 Design Spec
 
 **Date:** 2026-05-31
-**Status:** Approved (brainstorming) — pending implementation
+**Status:** SHIPPED. Historical brainstorming record.
 **Builds on:** Phase 1 (shipped). Extends the same in-place automations engine.
+
+> **⚠️ Note (as of 2026-06-02):** The map view shipped as the **primary/only editor**, not
+> the read-only toggle described in Phase 1. An `ai_agent` block (`services/agent_runtime.py`)
+> and BotBiz blocks (send_audio/send_list/send_catalog/add_label) were added beyond this spec.
+> The run-state engine, `flow_runtime.resume_for_inbound` 4-channel interception, and power
+> blocks below match the implementation. **CLAUDE.md → "Bot Flow Builder" is the living source.**
 
 ## Summary
 

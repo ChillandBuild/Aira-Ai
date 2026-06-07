@@ -49,3 +49,26 @@ def test_telecmi_callbacks_require_shared_secret():
 def test_telecmi_webhook_secret_is_dynamic_setting():
     source = read("app/config_dynamic.py")
     assert '"telecmi_webhook_secret": "TELECMI_WEBHOOK_SECRET"' in source
+
+
+def test_owner_only_gated_routers():
+    for router_file in ["upload.py", "automations.py", "knowledge.py", "numbers.py"]:
+        source = read(f"app/routes/{router_file}")
+        assert "require_owner" in source
+        assert "APIRouter(dependencies=[Depends(require_owner)])" in source
+
+    settings_source = read("app/routes/app_settings.py")
+    assert "Depends(require_owner)" in settings_source
+
+
+def test_segments_ensure_templates_scopes_by_tenant():
+    source = read("app/routes/segments.py")
+    assert 'def _ensure_templates(db, tenant_id: str) -> list[dict]:' in source
+    assert '.eq("tenant_id", tenant_id)' in source
+
+
+def test_template_webhook_status_requires_signature():
+    source = read("app/routes/templates.py")
+    assert "verify_meta_signature" in source
+    assert "verify_meta_signature(raw_body, signature, tenant_id)" in source
+

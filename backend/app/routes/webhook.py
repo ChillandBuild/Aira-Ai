@@ -158,14 +158,34 @@ async def verify_webhook(request: Request):
     token = request.query_params.get("hub.verify_token")
     challenge = request.query_params.get("hub.challenge")
 
-    verify_token = settings.meta_verify_token
-    if not verify_token:
-        from app.config_dynamic import get_setting
-        verify_token = get_setting("meta_webhook_verify_token")
+    from app.config_dynamic import get_setting
+    from app.db.supabase import get_supabase as _get_db
 
-    if mode == "subscribe" and token == verify_token:
-        logger.info("WhatsApp webhook verified successfully")
-        return Response(content=challenge, media_type="text/plain")
+    # Check the incoming token against every tenant's configured verify token,
+    # then fall back to the global env var. This supports multiple tenants all
+    # sharing the single /webhook/whatsapp endpoint.
+    if mode == "subscribe" and token:
+        # Try each tenant's stored verify token
+        try:
+            _db = _get_db()
+            rows = (
+                _db.table("app_settings")
+                .select("value")
+                .eq("key", "meta_webhook_verify_token")
+                .execute()
+            )
+            for row in (rows.data or []):
+                if row.get("value") and row["value"] == token:
+                    logger.info("WhatsApp webhook verified (tenant token match)")
+                    return Response(content=challenge, media_type="text/plain")
+        except Exception as _e:
+            logger.warning(f"WhatsApp verify: tenant token lookup failed: {_e}")
+
+        # Fall back to global env var
+        global_token = settings.meta_verify_token or get_setting("meta_webhook_verify_token")
+        if global_token and token == global_token:
+            logger.info("WhatsApp webhook verified (global token)")
+            return Response(content=challenge, media_type="text/plain")
 
     logger.warning(f"Webhook verification failed — token mismatch. received={token}")
     return Response(content="Forbidden", status_code=403)

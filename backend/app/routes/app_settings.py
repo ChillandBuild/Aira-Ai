@@ -5,7 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
 from app.config import settings as env_settings
-from app.dependencies.tenant import get_tenant_id
+from app.dependencies.auth import get_current_user
+from app.dependencies.tenant import get_tenant_id, require_owner
+from app.services.audit_log import record_audit_event
 from app.services.assignment import (
     get_inbox_config, get_telecalling_config,
     save_inbox_config, save_telecalling_config,
@@ -100,7 +102,8 @@ async def setup_telegram_webhook(bot_token: str, tenant_id: str) -> tuple[bool, 
 
 
 @router.get("/")
-async def list_settings(tenant_id: str = Depends(get_tenant_id)):
+async def list_settings(ctx: dict = Depends(require_owner)):
+    tenant_id = ctx["tenant_id"]
     db = get_supabase()
     result = db.table("app_settings").select("*").eq("tenant_id", tenant_id).order("key").execute()
     rows = result.data or []
@@ -132,7 +135,12 @@ async def list_settings(tenant_id: str = Depends(get_tenant_id)):
 
 
 @router.patch("/")
-async def update_settings(payload: SettingsUpdate, tenant_id: str = Depends(get_tenant_id)):
+async def update_settings(
+    payload: SettingsUpdate,
+    ctx: dict = Depends(require_owner),
+    user: dict = Depends(get_current_user),
+):
+    tenant_id = ctx["tenant_id"]
     if not payload.updates:
         raise HTTPException(status_code=400, detail="Nothing to update")
 
@@ -198,11 +206,25 @@ async def update_settings(payload: SettingsUpdate, tenant_id: str = Depends(get_
             updated.append(key)
     from app.config_dynamic import invalidate_cache
     invalidate_cache()
+    record_audit_event(
+        db,
+        tenant_id=tenant_id,
+        actor_user_id=user.get("user_id"),
+        actor_role="tenant_user",
+        action="settings.updated",
+        target_type="app_settings",
+        target_id=tenant_id,
+        metadata={
+            "updated_keys": updated,
+            "secret_keys": [key for key in updated if key in _SECRET_KEYS],
+        },
+    )
     return {"updated": updated}
 
 
 @router.get("/webhook-health")
-async def webhook_health(tenant_id: str = Depends(get_tenant_id)):
+async def webhook_health(ctx: dict = Depends(require_owner)):
+    tenant_id = ctx["tenant_id"]
     """Return last inbound event timestamp per channel + recent token_invalid incidents."""
     from datetime import datetime, timezone, timedelta
     db = get_supabase()
@@ -246,7 +268,12 @@ async def webhook_health(tenant_id: str = Depends(get_tenant_id)):
 
 
 @router.post("/activate")
-async def activate_channel(payload: ActivateChannelRequest, tenant_id: str = Depends(get_tenant_id)):
+async def activate_channel(
+    payload: ActivateChannelRequest,
+    ctx: dict = Depends(require_owner),
+    user: dict = Depends(get_current_user),
+):
+    tenant_id = ctx["tenant_id"]
     """Validate Meta credentials and auto-subscribe webhook for whatsapp / instagram / facebook."""
     channel = payload.channel
     if channel not in ("whatsapp", "instagram", "facebook"):
@@ -285,6 +312,16 @@ async def activate_channel(payload: ActivateChannelRequest, tenant_id: str = Dep
                 logger.warning(f"WA subscribed_apps failed for tenant {tenant_id}: {sub_data['error']}")
 
         logger.info(f"WhatsApp activated tenant={tenant_id} phone={data.get('display_phone_number')} subscribed={subscribed}")
+        record_audit_event(
+            db,
+            tenant_id=tenant_id,
+            actor_user_id=user.get("user_id"),
+            actor_role="tenant_user",
+            action="settings.channel_activated",
+            target_type="channel",
+            target_id="whatsapp",
+            metadata={"channel": "whatsapp", "subscribed": subscribed},
+        )
         return {
             "channel": "whatsapp",
             "phone_number": data.get("display_phone_number"),
@@ -323,6 +360,16 @@ async def activate_channel(payload: ActivateChannelRequest, tenant_id: str = Dep
         logger.warning(f"{channel} subscribed_apps failed tenant={tenant_id}: {sub_data['error']}")
 
     logger.info(f"{channel} activated tenant={tenant_id} page={data.get('name')} subscribed={subscribed}")
+    record_audit_event(
+        db,
+        tenant_id=tenant_id,
+        actor_user_id=user.get("user_id"),
+        actor_role="tenant_user",
+        action="settings.channel_activated",
+        target_type="channel",
+        target_id=channel,
+        metadata={"channel": channel, "subscribed": subscribed, "page_id": page_id},
+    )
     return {
         "channel": channel,
         "page_name": data.get("name"),
@@ -332,12 +379,14 @@ async def activate_channel(payload: ActivateChannelRequest, tenant_id: str = Dep
 
 
 @router.get("/inbox-config")
-async def get_inbox_config_route(tenant_id: str = Depends(get_tenant_id)):
+async def get_inbox_config_route(ctx: dict = Depends(require_owner)):
+    tenant_id = ctx["tenant_id"]
     return get_inbox_config(tenant_id)
 
 
 @router.patch("/inbox-config")
-async def patch_inbox_config(payload: InboxConfigUpdate, tenant_id: str = Depends(get_tenant_id)):
+async def patch_inbox_config(payload: InboxConfigUpdate, ctx: dict = Depends(require_owner)):
+    tenant_id = ctx["tenant_id"]
     current = get_inbox_config(tenant_id)
     patch = payload.model_dump(exclude_none=True)
     valid_segs = {"A", "B", "C"}
@@ -361,12 +410,14 @@ async def patch_inbox_config(payload: InboxConfigUpdate, tenant_id: str = Depend
 
 
 @router.get("/telecalling-config")
-async def get_telecalling_config_route(tenant_id: str = Depends(get_tenant_id)):
+async def get_telecalling_config_route(ctx: dict = Depends(require_owner)):
+    tenant_id = ctx["tenant_id"]
     return get_telecalling_config(tenant_id)
 
 
 @router.patch("/telecalling-config")
-async def patch_telecalling_config(payload: TelecallingConfigUpdate, tenant_id: str = Depends(get_tenant_id)):
+async def patch_telecalling_config(payload: TelecallingConfigUpdate, ctx: dict = Depends(require_owner)):
+    tenant_id = ctx["tenant_id"]
     current = get_telecalling_config(tenant_id)
     patch = payload.model_dump(exclude_none=True)
     valid_segs = {"A", "B", "C"}

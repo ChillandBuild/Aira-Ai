@@ -4,6 +4,7 @@ import {
   Phone, Sparkles, Eye, EyeOff, Save, AlertCircle, Loader2, CheckCircle2, ChevronDown, BarChart2
 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { useAuthRole } from "../contexts/AuthRoleContext";
 
 type Setting = {
   key: string;
@@ -168,6 +169,7 @@ function SecretField({
 type SaveState = "idle" | "dirty" | "saving" | "saved";
 
 export default function SettingsPage() {
+  const { role, loading: roleLoading } = useAuthRole();
   const [settings, setSettings] = useState<Setting[]>([]);
   const [drafts, setDrafts] = useState<SettingsMap>({});
   const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({});
@@ -216,6 +218,24 @@ export default function SettingsPage() {
       } catch { /* ignore parse error */ }
     }
   }, [settings]);
+
+  if (roleLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 size={24} className="animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (role !== "owner") {
+    return (
+      <div className="text-center py-20">
+        <p className="text-ink-muted font-body">
+          This section is only available for owners/admins.
+        </p>
+      </div>
+    );
+  }
 
   async function handleScoringThresholdsSave() {
     const isOrderValid = scoringThresholds.A > scoringThresholds.B && scoringThresholds.B > scoringThresholds.C;

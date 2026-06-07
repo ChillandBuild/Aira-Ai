@@ -8,6 +8,7 @@ from pydantic import BaseModel, EmailStr
 from app.db.supabase import get_supabase
 from app.dependencies.auth import get_current_user
 from app.dependencies.system_admin import get_system_admin
+from app.services.audit_log import record_audit_event
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -152,6 +153,21 @@ async def create_client(payload: CreateClientPayload, _admin: dict = Depends(get
         raise HTTPException(status_code=500, detail="Client setup failed; user account cleaned up.")
 
     logger.info(f"Operator created client: {payload.company_name} ({tenant_id}), service={payload.service}")
+    record_audit_event(
+        db,
+        tenant_id=tenant_id,
+        actor_user_id=_admin.get("user_id"),
+        actor_role="system_admin",
+        action="operator.client_created",
+        target_type="tenant",
+        target_id=tenant_id,
+        metadata={
+            "company_name": payload.company_name,
+            "email": payload.email,
+            "service": payload.service,
+            "enabled_features": features,
+        },
+    )
     return {
         "tenant_id": tenant_id,
         "company_name": payload.company_name,
@@ -168,15 +184,36 @@ def update_features(tenant_id: str, payload: UpdateFeaturesPayload, _admin: dict
     result = db.table("tenants").update({"enabled_features": features}).eq("id", tenant_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Tenant not found")
+    record_audit_event(
+        db,
+        tenant_id=tenant_id,
+        actor_user_id=_admin.get("user_id"),
+        actor_role="system_admin",
+        action="operator.features_updated",
+        target_type="tenant",
+        target_id=tenant_id,
+        metadata={"service": payload.service, "enabled_features": features},
+    )
     return {"tenant_id": tenant_id, "enabled_features": features}
 
 
 @router.patch("/clients/{tenant_id}/status")
 def update_status(tenant_id: str, payload: UpdateStatusPayload, _admin: dict = Depends(get_system_admin)):
     db = get_supabase()
+    current = db.table("tenants").select("status").eq("id", tenant_id).maybe_single().execute()
     result = db.table("tenants").update({"status": payload.status}).eq("id", tenant_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Tenant not found")
+    record_audit_event(
+        db,
+        tenant_id=tenant_id,
+        actor_user_id=_admin.get("user_id"),
+        actor_role="system_admin",
+        action="operator.status_updated",
+        target_type="tenant",
+        target_id=tenant_id,
+        metadata={"old_status": (current.data or {}).get("status"), "new_status": payload.status},
+    )
     return {"tenant_id": tenant_id, "status": payload.status}
 
 
@@ -214,6 +251,16 @@ def wipe_leads(tenant_id: str, _admin: dict = Depends(get_system_admin)):
     result = db.table("leads").delete().eq("tenant_id", tenant_id).execute()
     deleted = len(result.data or [])
     logger.warning("OPERATOR WIPE: %d leads deleted for tenant %s (%s)", deleted, tenant_id, tenant.data["name"])
+    record_audit_event(
+        db,
+        tenant_id=tenant_id,
+        actor_user_id=_admin.get("user_id"),
+        actor_role="system_admin",
+        action="operator.leads_wiped",
+        target_type="tenant",
+        target_id=tenant_id,
+        metadata={"tenant_name": tenant.data["name"], "deleted_leads": deleted},
+    )
     return {"deleted": deleted, "tenant_id": tenant_id}
 
 
@@ -232,4 +279,14 @@ async def reset_password(tenant_id: str, _admin: dict = Depends(get_system_admin
         raise HTTPException(status_code=404, detail="No owner found for this tenant")
     temp_pw = "Aira@" + secrets.token_urlsafe(10)
     db.auth.admin.update_user_by_id(owner.data["user_id"], {"password": temp_pw})
+    record_audit_event(
+        db,
+        tenant_id=tenant_id,
+        actor_user_id=_admin.get("user_id"),
+        actor_role="system_admin",
+        action="operator.password_reset",
+        target_type="tenant_owner",
+        target_id=owner.data["user_id"],
+        metadata={"tenant_id": tenant_id},
+    )
     return {"temp_password": temp_pw}

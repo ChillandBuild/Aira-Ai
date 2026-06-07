@@ -9,6 +9,8 @@ import { API_URL, getAuthHeaders } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { usePolling } from "@/hooks/usePolling";
+import { useAuthRole } from "../contexts/AuthRoleContext";
+import { Loader2 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -19,6 +21,7 @@ type ParsedData = {
   duplicate_count: number;
   preview: Record<string, string>[];
   csv_file_url: string | null;
+  csv_file_path: string | null;
   csv_file_name: string | null;
 };
 
@@ -47,6 +50,7 @@ type BroadcastHistoryItem = {
   total_leads: number;
   number_used: string;
   csv_file_url?: string;
+  csv_file_path?: string;
   csv_file_name?: string;
   tag_id?: string;
   tag_name?: string;
@@ -398,6 +402,7 @@ function ExportAllDropdown({ tagCount }: { tagCount: number }) {
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function UploadPage() {
+  const { role, loading: roleLoading } = useAuthRole();
   const [currentStep, setCurrentStep] = useState(1);
 
   const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -507,7 +512,29 @@ export default function UploadPage() {
   }, 30000, activeTab === "tags");
 
   const [csvFileUrl, setCsvFileUrl] = useState<string | null>(null);
+  const [csvFilePath, setCsvFilePath] = useState<string | null>(null);
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
+
+  async function openBroadcastCsv(item: BroadcastHistoryItem) {
+    try {
+      let url = item.csv_file_url;
+      if (item.csv_file_path) {
+        const auth = await getAuthHeaders();
+        const params = new URLSearchParams({ path: item.csv_file_path });
+        const res = await fetch(`${API_URL}/api/v1/upload/csv-signed-url?${params}`, { headers: auth });
+        if (!res.ok) throw new Error("Signed CSV URL unavailable");
+        const data: { url: string } = await res.json();
+        url = data.url;
+      }
+      if (!url) {
+        toast.error("CSV is not available for this broadcast.");
+        return;
+      }
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch {
+      toast.error("Failed to open CSV");
+    }
+  }
 
   async function downloadFailedCsv(broadcastId: string) {
     try {
@@ -661,12 +688,31 @@ export default function UploadPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStep, templates.length, templatesLoading, tags.length, tagsLoading, primaryNumber, primaryNumberLoading]);
 
+  if (roleLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 size={24} className="animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (role !== "owner") {
+    return (
+      <div className="text-center py-20">
+        <p className="text-on-surface-muted font-body">
+          This section is only available for owners/admins.
+        </p>
+      </div>
+    );
+  }
+
   function resetAll() {
     setCurrentStep(1);
     setCsvFile(null);
     setParsedData(null);
     setParseError(null);
     setCsvFileUrl(null);
+    setCsvFilePath(null);
     setCsvFileName(null);
     setOptInSource("");
     setOptInValidation(null);
@@ -747,6 +793,7 @@ export default function UploadPage() {
     setParsedData(null);
     setParseError(null);
     setCsvFileUrl(null);
+    setCsvFilePath(null);
     setCsvFileName(null);
     if (!f) return;
 
@@ -760,6 +807,7 @@ export default function UploadPage() {
       const data: ParsedData = await res.json();
       setParsedData(data);
       setCsvFileUrl(data.csv_file_url ?? null);
+      setCsvFilePath(data.csv_file_path ?? null);
       setCsvFileName(data.csv_file_name ?? null);
     } catch (err) {
       setParseError(err instanceof Error ? err.message : "Parse failed");
@@ -860,6 +908,7 @@ export default function UploadPage() {
         drip_days: scheduleType === "drip" && dripDays ? parseInt(dripDays, 10) : undefined,
         drip_send_time: scheduleType === "drip" && dripSendTime ? dripSendTime : undefined,
         csv_file_url: csvFileUrl,
+        csv_file_path: csvFilePath,
         csv_file_name: csvFileName,
         variable_mapping: variableMapping.filter(Boolean),
         tag_id: selectedTag || undefined,
@@ -2070,19 +2119,16 @@ export default function UploadPage() {
                   </div>
                   
                   {/* CSV Download */}
-                  {item.csv_file_url && (
-                    <a 
-                      href={item.csv_file_url} 
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      download={item.csv_file_name || "broadcast.csv"}
+                  {(item.csv_file_path || item.csv_file_url) && (
+                    <button
+                      onClick={() => openBroadcastCsv(item)}
                       className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg font-label text-[11px] font-semibold transition-colors border border-gray-200"
                     >
                       <Download size={12} />
                       {item.csv_file_name && item.csv_file_name.length > 20
                         ? item.csv_file_name.slice(0, 10) + "..." + item.csv_file_name.slice(-4)
                         : item.csv_file_name || "CSV"}
-                    </a>
+                    </button>
                   )}
                   
                   {/* Failed CSV Download */}

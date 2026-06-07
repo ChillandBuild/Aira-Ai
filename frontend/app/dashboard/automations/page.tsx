@@ -1,12 +1,14 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Zap, Play, Pause, Copy, Trash2, ChevronRight, Activity, Users } from "lucide-react";
+import { Plus, Zap, Play, Pause, Copy, Trash2, ChevronRight, Activity, Users, Loader2 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { useAuthRole } from "../contexts/AuthRoleContext";
 import { TRIGGER_LABELS, TRIGGER_COLORS } from "./[id]/flow/blockMeta";
 import type { FlowListItem } from "./[id]/flow/types";
 
 export default function BotFlowsPage() {
+  const { role, loading: roleLoading } = useAuthRole();
   const router = useRouter();
   const [flows, setFlows] = useState<FlowListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,6 +31,24 @@ export default function BotFlowsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  if (roleLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 size={24} className="animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (role !== "owner") {
+    return (
+      <div className="text-center py-20">
+        <p className="text-on-surface-muted font-body">
+          This section is only available for owners/admins.
+        </p>
+      </div>
+    );
+  }
 
   const toggle = async (f: FlowListItem) => {
     setToggling(f.id);

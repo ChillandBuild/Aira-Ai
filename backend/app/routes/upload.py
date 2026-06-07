@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from app.dependencies.tenant import require_owner
 from fastapi.responses import Response
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
@@ -18,7 +19,7 @@ from app.services.meta_cloud import send_template_message
 from app.services.outbound_router import get_best_number, increment_send_count
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_owner)])
 
 PHONE_RE = re.compile(r"[^\d+]")
 
@@ -300,6 +301,7 @@ class BulkSendRequest(BaseModel):
     drip_days: Optional[int] = None
     drip_send_time: Optional[str] = None  # HH:MM in IST, e.g. "10:00"
     csv_file_url: Optional[str] = None
+    csv_file_path: Optional[str] = None
     csv_file_name: Optional[str] = None
     variable_mapping: list[str] = []  # ordered CSV column names for {{1}}, {{2}}, ...
     tag_id: Optional[str] = None  # broadcast tag for per-product interest tracking
@@ -310,6 +312,54 @@ class BulkSendRequest(BaseModel):
 class RiskAuditRequest(BaseModel):
     leads: list[BulkLeadItem]
     tag_id: Optional[str] = None
+
+
+def _validate_csv_storage_path(path: str, tenant_id: str) -> str:
+    clean_path = path.strip().lstrip("/")
+    if not clean_path or not clean_path.startswith(f"{tenant_id}/"):
+        raise HTTPException(status_code=403, detail="CSV path is outside this tenant")
+    return clean_path
+
+
+def _create_csv_signed_url(db, path: str, expires_in: int = 300) -> str | None:
+    result = db.storage.from_("broadcast-csvs").create_signed_url(path, expires_in)
+    if isinstance(result, dict):
+        return (
+            result.get("signedURL")
+            or result.get("signedUrl")
+            or result.get("signed_url")
+            or result.get("url")
+        )
+    return (
+        getattr(result, "signed_url", None)
+        or getattr(result, "signedURL", None)
+        or getattr(result, "url", None)
+    )
+
+
+def _insert_scheduled_broadcast(db, record: dict) -> None:
+    try:
+        db.table("scheduled_broadcasts").insert(record).execute()
+    except Exception as exc:
+        if "csv_file_path" not in record or "csv_file_path" not in str(exc):
+            raise
+        fallback = dict(record)
+        fallback.pop("csv_file_path", None)
+        db.table("scheduled_broadcasts").insert(fallback).execute()
+
+
+def _insert_scheduled_broadcasts(db, records: list[dict]) -> None:
+    try:
+        db.table("scheduled_broadcasts").insert(records).execute()
+    except Exception as exc:
+        if not records or "csv_file_path" not in records[0] or "csv_file_path" not in str(exc):
+            raise
+        fallback = []
+        for record in records:
+            clean_record = dict(record)
+            clean_record.pop("csv_file_path", None)
+            fallback.append(clean_record)
+        db.table("scheduled_broadcasts").insert(fallback).execute()
 
 
 @router.post("/parse")
@@ -350,13 +400,15 @@ async def parse_csv(file: UploadFile = File(...), tenant_id: str = Depends(get_t
             preview.append({k.strip(): v for k, v in row.items()})
 
     csv_file_url = None
+    csv_file_path = None
     csv_file_name = file.filename
     try:
         import uuid
         safe_filename = file.filename.replace(" ", "_") if file.filename else "upload.csv"
         storage_path = f"{tenant_id}/{uuid.uuid4().hex[:8]}_{safe_filename}"
         db.storage.from_("broadcast-csvs").upload(storage_path, raw_bytes, {"content-type": "text/csv"})
-        csv_file_url = db.storage.from_("broadcast-csvs").get_public_url(storage_path)
+        csv_file_path = storage_path
+        csv_file_url = _create_csv_signed_url(db, storage_path)
     except Exception as storage_err:
         logger.exception("Failed to upload CSV to storage")
 
@@ -367,8 +419,22 @@ async def parse_csv(file: UploadFile = File(...), tenant_id: str = Depends(get_t
         "duplicate_count": duplicate_count,
         "preview": preview,
         "csv_file_url": csv_file_url,
+        "csv_file_path": csv_file_path,
         "csv_file_name": csv_file_name,
     }
+
+
+@router.get("/csv-signed-url")
+async def get_csv_signed_url(
+    path: str = Query(..., description="Tenant-scoped broadcast CSV storage path"),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    db = get_supabase()
+    storage_path = _validate_csv_storage_path(path, tenant_id)
+    signed_url = _create_csv_signed_url(db, storage_path)
+    if not signed_url:
+        raise HTTPException(status_code=404, detail="CSV file is not available")
+    return {"url": signed_url, "expires_in": 300}
 
 
 @router.post("/validate-optin")
@@ -527,7 +593,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 fire_at = datetime.fromisoformat(body.schedule_at.replace("Z", "+00:00"))
             except ValueError:
                 raise HTTPException(status_code=400, detail="Invalid schedule_at format")
-            db.table("scheduled_broadcasts").insert({
+            _insert_scheduled_broadcast(db, {
                 "tenant_id": tenant_id,
                 "template_name": body.template_name,
                 "schedule_type": "scheduled",
@@ -536,8 +602,9 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 "variable_mapping": body.variable_mapping,
                 "opt_in_source": opt_in_src,
                 "csv_file_url": body.csv_file_url,
+                "csv_file_path": body.csv_file_path,
                 "csv_file_name": body.csv_file_name,
-            }).execute()
+            })
             return {"status": "scheduled", "fire_at": fire_at.isoformat(), "total": len(eligible)}
 
         if body.schedule_type == "drip" and body.drip_days and body.drip_days > 0:
@@ -570,10 +637,11 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                     "variable_mapping": body.variable_mapping,
                     "opt_in_source": opt_in_src,
                     "csv_file_url": body.csv_file_url,
+                    "csv_file_path": body.csv_file_path,
                     "csv_file_name": body.csv_file_name,
                 })
             if records:
-                db.table("scheduled_broadcasts").insert(records).execute()
+                _insert_scheduled_broadcasts(db, records)
             return {"status": "drip_scheduled", "batches": len(records), "total": len(eligible)}
 
         raise HTTPException(status_code=400, detail="schedule_at required for scheduled type, drip_days required for drip")
@@ -594,10 +662,19 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         raise HTTPException(status_code=503, detail="No primary or healthy number available. Please set a Primary Number.")
 
     # Download original CSV, add broadcast_id column, re-upload
-    if body.csv_file_url:
+    csv_download_url = body.csv_file_url
+    if body.csv_file_path:
+        try:
+            csv_download_url = _create_csv_signed_url(db, _validate_csv_storage_path(body.csv_file_path, tenant_id)) or csv_download_url
+        except HTTPException:
+            raise
+        except Exception as signed_err:
+            logger.warning(f"Failed to create signed URL for CSV path {body.csv_file_path}: {signed_err}")
+
+    if csv_download_url:
         try:
             import httpx
-            csv_resp = httpx.get(body.csv_file_url, timeout=30)
+            csv_resp = httpx.get(csv_download_url, timeout=30)
             if csv_resp.status_code == 200:
                 raw_csv = csv_resp.text
                 csv_reader = csv.DictReader(io.StringIO(raw_csv))
@@ -613,7 +690,8 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                     safe_filename = (body.csv_file_name or "broadcast.csv").replace(" ", "_")
                     storage_path = f"{tenant_id}/{broadcast_id[:8]}_{safe_filename}"
                     db.storage.from_("broadcast-csvs").upload(storage_path, modified_csv_bytes, {"content-type": "text/csv"})
-                    body.csv_file_url = db.storage.from_("broadcast-csvs").get_public_url(storage_path)
+                    body.csv_file_path = storage_path
+                    body.csv_file_url = _create_csv_signed_url(db, storage_path) or body.csv_file_url
                     logger.info(f"Modified CSV uploaded with broadcast_id column: {storage_path}")
         except Exception as csv_err:
             logger.error(f"Failed to add broadcast_id to CSV: {csv_err}")
@@ -926,7 +1004,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
         if sent > 0:
             opt_in_src = _clean_text(eligible[0].opt_in_source) if eligible else "unknown"
             try:
-                db.table("scheduled_broadcasts").insert({
+                _insert_scheduled_broadcast(db, {
                     "id": broadcast_id,
                     "tenant_id": tenant_id,
                     "template_name": body.template_name,
@@ -937,10 +1015,11 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                     "variable_mapping": body.variable_mapping,
                     "opt_in_source": opt_in_src or "unknown",
                     "csv_file_url": body.csv_file_url,
+                    "csv_file_path": body.csv_file_path,
                     "csv_file_name": body.csv_file_name,
                     "tag_id": body.tag_id,
                     "executed_at": broadcast_timestamp.isoformat(),
-                }).execute()
+                })
                 logger.info(f"Shell scheduled_broadcasts record inserted for immediate broadcast_id: {broadcast_id}")
             except Exception as sb_err:
                 logger.error(f"scheduled_broadcasts shell insert failed: {sb_err}")
@@ -1037,6 +1116,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             "total_leads": len(eligible),
             "number_used": best_number.get("number"),
             "csv_file_url": body.csv_file_url,
+            "csv_file_path": body.csv_file_path,
             "csv_file_name": body.csv_file_name,
             "tag_id": body.tag_id,
         })

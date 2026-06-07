@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Trash2, UserPlus, Phone, Pencil, Check, X } from "lucide-react";
+import { Trash2, UserPlus, Phone, Pencil, Check, X, Loader2 } from "lucide-react";
 import { api, TeamMember } from "@/lib/api";
+import { useAuthRole } from "../contexts/AuthRoleContext";
 import WinnerBanner from "./WinnerBanner";
 
 function InlineEditCell({
@@ -69,6 +70,7 @@ function InlineEditCell({
 }
 
 export default function TeamPage() {
+  const { role, loading: roleLoading } = useAuthRole();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
@@ -91,6 +93,24 @@ export default function TeamPage() {
   }
 
   useEffect(() => { load(); }, []);
+
+  if (roleLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 size={24} className="animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (role !== "owner") {
+    return (
+      <div className="text-center py-20">
+        <p className="text-ink-muted font-body">
+          This section is only available for owners/admins.
+        </p>
+      </div>
+    );
+  }
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();

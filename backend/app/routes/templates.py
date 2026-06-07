@@ -1,7 +1,8 @@
 import logging
+import json
 from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id
@@ -19,6 +20,7 @@ from app.services.meta_cloud import (
     _build_button_components,
 )
 from app.config_dynamic import get_setting
+from app.services.meta_webhook_verify import verify_meta_signature
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -308,9 +310,49 @@ async def sync_templates_from_meta(tenant_id: str = Depends(get_tenant_id)):
 
 
 @public_router.post("/webhook-status")
-async def template_status_webhook(payload: dict):
+async def template_status_webhook(request: Request):
     """Meta calls this when template status changes (APPROVED/REJECTED). No auth."""
+    raw_body = await request.body()
+    try:
+        payload = json.loads(raw_body)
+    except Exception as e:
+        logger.warning(f"Template status webhook: invalid JSON: {e}")
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+
+    signature = request.headers.get("X-Hub-Signature-256")
+
+    meta_id = None
     entry = payload.get("entry", [])
+    for e in entry:
+        for change in e.get("changes", []):
+            if change.get("field") == "message_template_status_update":
+                value = change.get("value", {})
+                if value.get("message_template_id"):
+                    meta_id = str(value["message_template_id"])
+                    break
+        if meta_id:
+            break
+
+    if not meta_id:
+        logger.warning("Template status webhook: message_template_id not found in payload")
+        return {"status": "ok"}
+
+    db = get_supabase()
+    row = db.table("message_templates").select("tenant_id").eq("meta_template_id", meta_id).limit(1).execute()
+    if not row.data:
+        logger.warning(f"Template status webhook: tenant not found for meta_template_id: {meta_id}")
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    tenant_id = row.data[0]["tenant_id"]
+
+    if not signature:
+        logger.warning("Template status webhook: missing signature header")
+        raise HTTPException(status_code=403, detail="Missing signature")
+
+    if not verify_meta_signature(raw_body, signature, tenant_id):
+        logger.warning(f"Template status webhook: invalid signature for tenant {tenant_id}")
+        raise HTTPException(status_code=403, detail="Invalid signature")
+
     for e in entry:
         for change in e.get("changes", []):
             value = change.get("value", {})
@@ -321,7 +363,7 @@ async def template_status_webhook(payload: dict):
             reason = value.get("reason")
             if not meta_id or new_status not in ("APPROVED", "REJECTED", "PAUSED"):
                 continue
-            db = get_supabase()
+            
             updates: dict = {"status": new_status}
             if reason:
                 updates["rejection_reason"] = reason

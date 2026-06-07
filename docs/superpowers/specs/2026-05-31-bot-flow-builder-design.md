@@ -1,8 +1,17 @@
 # Bot Flow Builder — Design Spec
 
 **Date:** 2026-05-31
-**Status:** Approved (brainstorming) — pending implementation plan
+**Status:** SHIPPED — but UX superseded (see banner). Historical brainstorming record.
 **Replaces:** the Automations UI at `/dashboard/automations/` (backend preserved & extended)
+
+> **⚠️ Superseded UX (as of 2026-06-02):** The "vertical stacked-card builder as primary,
+> read-only node-graph map view as a later toggle" decision below was **inverted** during
+> implementation. The **node-graph map canvas (`Canvas.tsx` + `mapLayout.ts`) is now the
+> primary and only editor** (interactive: pan/zoom, inline `+` insert, hover toolbars). The
+> vertical stack (`FlowCanvas.tsx` + `BranchGroup.tsx`) is orphaned/legacy. An `ai_agent`
+> block (contained Groq agent, `services/agent_runtime.py`) was also added beyond this spec.
+> The backend architecture below (extend-in-place, tree-structured steps, counters) is
+> accurate. **CLAUDE.md → "Bot Flow Builder" is the living source of truth.**
 
 ## Summary
 

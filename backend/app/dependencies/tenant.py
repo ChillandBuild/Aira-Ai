@@ -67,3 +67,13 @@ def get_tenant_and_role(user: dict = Depends(get_current_user)) -> dict:
         "user_id": user["user_id"],
         "caller_id": caller_id,
     }
+
+
+def require_owner(ctx: dict = Depends(get_tenant_and_role)) -> dict:
+    if ctx.get("role") != "owner":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Organization owner privileges required."
+        )
+    return ctx
+

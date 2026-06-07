@@ -6,6 +6,8 @@ import { Plus, X, Pencil, Check, Trash2, PauseCircle, PlayCircle, Star, RefreshC
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
 import { cn } from "@/lib/utils";
+import { useAuthRole } from "../contexts/AuthRoleContext";
+import { Loader2 } from "lucide-react";
 
 type PhoneNumber = {
   id: string;
@@ -268,6 +270,7 @@ const numbersApi = {
 };
 
 function NumbersPageContent() {
+  const { role, loading: roleLoading } = useAuthRole();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -373,6 +376,24 @@ function NumbersPageContent() {
       editInputRef.current.select();
     }
   }, [editingId]);
+
+  if (roleLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 size={24} className="animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (role !== "owner") {
+    return (
+      <div className="text-center py-20">
+        <p className="text-on-surface-muted font-body">
+          This section is only available for owners/admins.
+        </p>
+      </div>
+    );
+  }
 
   function startRename(num: PhoneNumber) {
     setEditingId(num.id);

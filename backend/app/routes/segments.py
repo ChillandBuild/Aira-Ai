@@ -17,20 +17,20 @@ class TemplateUpdate(BaseModel):
     enabled: bool = True
 
 
-def _ensure_templates(db) -> list[dict]:
-    existing = db.table("segment_templates").select("*").execute()
+def _ensure_templates(db, tenant_id: str) -> list[dict]:
+    existing = db.table("segment_templates").select("*").eq("tenant_id", tenant_id).execute()
     present = {r["segment"] for r in (existing.data or [])}
-    missing = [{"segment": s, "message": "", "enabled": True} for s in SEGMENTS if s not in present]
+    missing = [{"segment": s, "message": "", "enabled": True, "tenant_id": tenant_id} for s in SEGMENTS if s not in present]
     if missing:
         db.table("segment_templates").insert(missing).execute()
-        existing = db.table("segment_templates").select("*").execute()
+        existing = db.table("segment_templates").select("*").eq("tenant_id", tenant_id).execute()
     return sorted(existing.data or [], key=lambda r: r["segment"])
 
 
 @router.get("/templates")
 async def list_templates(tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
-    return {"data": _ensure_templates(db)}
+    return {"data": _ensure_templates(db, tenant_id)}
 
 
 @router.put("/templates/{segment}")
@@ -40,7 +40,7 @@ async def upsert_template(
     tenant_id: str = Depends(get_tenant_id),
 ):
     db = get_supabase()
-    _ensure_templates(db)
+    _ensure_templates(db, tenant_id)
     result = (
         db.table("segment_templates")
         .update({"message": updates.message, "enabled": updates.enabled})
