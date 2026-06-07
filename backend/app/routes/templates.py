@@ -74,17 +74,8 @@ async def create_template(payload: CreateTemplate, tenant_id: str = Depends(get_
     if category not in ("MARKETING", "UTILITY", "AUTHENTICATION"):
         raise HTTPException(status_code=400, detail="Invalid category")
 
-    # Validate buttons: Quick Reply and CTA types cannot be mixed
-    if payload.buttons and len(payload.buttons) > 1:
-        quick_reply_types = {"QUICK_REPLY"}
-        cta_types = {"URL", "PHONE_NUMBER", "WHATSAPP_CALL", "COPY_CODE"}
-        has_qr = any(b.type in quick_reply_types for b in payload.buttons)
-        has_cta = any(b.type in cta_types for b in payload.buttons)
-        if has_qr and has_cta:
-            raise HTTPException(
-                status_code=400,
-                detail="Cannot mix Quick Reply buttons with CTA buttons (URL, PHONE_NUMBER, WHATSAPP_CALL, COPY_CODE) in the same template.",
-            )
+    # Validate buttons: Quick Reply and CTA types can be mixed (up to 10 total)
+    pass
 
     waba_id = get_setting("meta_waba_id", tenant_id=tenant_id)
 

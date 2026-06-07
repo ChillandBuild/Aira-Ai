@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef } from "react";
-import { FileText, Play, Phone, ExternalLink, Copy, MessageSquare } from "lucide-react";
+import { useRef, useState } from "react";
+import { FileText, Play, Phone, ExternalLink, Copy, MessageSquare, X } from "lucide-react";
 
 type WhatsAppPreviewProps = {
   headerType?: 'NONE' | 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
@@ -66,11 +66,18 @@ export default function WhatsAppPreview({
   const carouselRef = useRef<HTMLDivElement>(null);
 
   const hasMedia = headerType !== "NONE" && headerType !== "TEXT";
+  const [showAllOptions, setShowAllOptions] = useState(false);
+
   const visibleButtons = [...(buttons?.filter((b) => b.text.trim()) ?? [])].sort((a, b) => {
-    if (a.type === "QUICK_REPLY" && b.type !== "QUICK_REPLY") return -1;
-    if (a.type !== "QUICK_REPLY" && b.type === "QUICK_REPLY") return 1;
+    const isCtaA = a.type !== "QUICK_REPLY";
+    const isCtaB = b.type !== "QUICK_REPLY";
+    if (isCtaA && !isCtaB) return -1;
+    if (!isCtaA && isCtaB) return 1;
     return 0;
   });
+
+  const ctas = visibleButtons.filter((b) => b.type !== "QUICK_REPLY");
+  const qrs = visibleButtons.filter((b) => b.type === "QUICK_REPLY");
 
   return (
     <div className="flex flex-col items-center">
@@ -232,21 +239,53 @@ export default function WhatsAppPreview({
               {/* ── Buttons ──────────────────────────── */}
               {visibleButtons.length > 0 && (
                 <div className="mt-1 rounded-lg overflow-hidden bg-white shadow-sm">
-                  {visibleButtons.map((btn, i) => (
-                    <div key={i}>
-                      {i > 0 && (
-                        <div className="h-px" style={{ background: "#E9EDEF" }} />
-                      )}
+                  {visibleButtons.length > 3 ? (
+                    <>
+                      {visibleButtons.slice(0, 2).map((btn, i) => (
+                        <div key={i}>
+                          {i > 0 && (
+                            <div className="h-px" style={{ background: "#E9EDEF" }} />
+                          )}
+                          <button
+                            type="button"
+                            className="w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-medium hover:bg-gray-50 transition-colors"
+                            style={{ color: "#00A5F4" }}
+                          >
+                            <ButtonIcon type={btn.type} />
+                            {btn.text}
+                          </button>
+                        </div>
+                      ))}
+                      <div className="h-px" style={{ background: "#E9EDEF" }} />
                       <button
                         type="button"
-                        className="w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-medium hover:bg-gray-50 transition-colors"
+                        onClick={() => setShowAllOptions(true)}
+                        className="w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold hover:bg-gray-50 transition-colors"
                         style={{ color: "#00A5F4" }}
                       >
-                        <ButtonIcon type={btn.type} />
-                        {btn.text}
+                        <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
+                        See all options
                       </button>
-                    </div>
-                  ))}
+                    </>
+                  ) : (
+                    visibleButtons.map((btn, i) => (
+                      <div key={i}>
+                        {i > 0 && (
+                          <div className="h-px" style={{ background: "#E9EDEF" }} />
+                        )}
+                        <button
+                          type="button"
+                          className="w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-medium hover:bg-gray-50 transition-colors"
+                          style={{ color: "#00A5F4" }}
+                        >
+                          <ButtonIcon type={btn.type} />
+                          {btn.text}
+                        </button>
+                      </div>
+                    ))
+                  )}
                 </div>
               )}
             </div>
@@ -309,6 +348,51 @@ export default function WhatsAppPreview({
                 ))}
               </div>
             )}
+          </div>
+          {/* See all options bottom sheet overlay */}
+          <div
+            className={`absolute inset-x-0 bottom-0 bg-white rounded-t-2xl shadow-2xl border-t border-gray-100 z-30 transition-all duration-300 ease-out transform ${
+              showAllOptions ? "translate-y-0 opacity-100" : "translate-y-full opacity-0 pointer-events-none"
+            }`}
+          >
+            <div className="w-10 h-1 bg-gray-300 rounded-full mx-auto my-2" />
+            <div className="flex items-center justify-between px-4 pb-2 border-b border-gray-100">
+              <button
+                type="button"
+                onClick={() => setShowAllOptions(false)}
+                className="p-1 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X size={16} />
+              </button>
+              <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">All options</span>
+              <div className="w-6" />
+            </div>
+            
+            <div className="p-3 space-y-1 max-h-[220px] overflow-y-auto">
+              {ctas.map((btn, i) => (
+                <button
+                  key={`cta-${i}`}
+                  type="button"
+                  className="w-full flex items-center gap-3 py-2 px-3 text-left text-xs font-semibold text-sky-600 hover:bg-gray-50 rounded-xl transition-all"
+                >
+                  <ButtonIcon type={btn.type} />
+                  {btn.text}
+                </button>
+              ))}
+              {ctas.length > 0 && qrs.length > 0 && (
+                <div className="h-px bg-gray-100 my-2" />
+              )}
+              {qrs.map((btn, i) => (
+                <button
+                  key={`qr-${i}`}
+                  type="button"
+                  className="w-full flex items-center gap-3 py-2 px-3 text-left text-xs font-semibold text-gray-700 hover:bg-gray-50 rounded-xl transition-all"
+                >
+                  <ButtonIcon type={btn.type} />
+                  {btn.text}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

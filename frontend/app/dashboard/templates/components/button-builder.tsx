@@ -203,11 +203,10 @@ export default function ButtonBuilder({
 
       {/* Mixed-type warning */}
       {mixed && (
-        <div className="mb-3 flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
-          <AlertTriangle size={15} className="text-amber-600 shrink-0 mt-0.5" />
-          <p className="font-body text-xs text-amber-800 leading-relaxed">
-            Quick Reply and Call-to-Action buttons cannot be mixed in the same
-            template. Meta will reject this configuration.
+        <div className="mb-3 flex items-start gap-2 p-3 rounded-xl bg-violet-50 border border-violet-200">
+          <AlertTriangle size={15} className="text-violet-600 shrink-0 mt-0.5" />
+          <p className="font-body text-xs text-violet-800 leading-relaxed">
+            Mixing Quick Reply and Call-to-Action buttons is fully supported by Meta, but note that users on older WhatsApp Desktop clients may be prompted to view this message on their phone.
           </p>
         </div>
       )}

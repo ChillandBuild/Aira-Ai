@@ -591,12 +591,14 @@ async def submit_template(
         })
 
     if buttons:
-        max_btn = 1 if (header_media_type and header_media_type != "NONE") else 3
-        if len(buttons) > max_btn:
-            logger.warning("Trimming %d buttons to %d (media header limits Meta to 1)", len(buttons), max_btn)
-        button_components = _build_button_components(buttons, max_btn, category)
-        if button_components:
-            components.append({"type": "BUTTONS", "buttons": button_components})
+        max_btn = 1 if category == "AUTHENTICATION" else 10
+        built_buttons = _build_button_components(buttons, max_btn, category)
+        # Group CTA buttons first, then Quick Reply / OTP buttons
+        ctas = [b for b in built_buttons if b.get("type") in ("URL", "PHONE_NUMBER", "COPY_CODE")]
+        qrs = [b for b in built_buttons if b.get("type") not in ("URL", "PHONE_NUMBER", "COPY_CODE")]
+        grouped_buttons = ctas + qrs
+        if grouped_buttons:
+            components.append({"type": "BUTTONS", "buttons": grouped_buttons})
 
     if carousel_cards:
         cards_payload: list[dict] = []
