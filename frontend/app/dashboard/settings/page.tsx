@@ -219,23 +219,7 @@ export default function SettingsPage() {
     }
   }, [settings]);
 
-  if (roleLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 size={24} className="animate-spin text-primary" />
-      </div>
-    );
-  }
 
-  if (role !== "owner") {
-    return (
-      <div className="text-center py-20">
-        <p className="text-ink-muted font-body">
-          This section is only available for owners/admins.
-        </p>
-      </div>
-    );
-  }
 
   async function handleScoringThresholdsSave() {
     const isOrderValid = scoringThresholds.A > scoringThresholds.B && scoringThresholds.B > scoringThresholds.C;
@@ -281,6 +265,24 @@ export default function SettingsPage() {
     return map;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drafts, settings]);
+
+  if (roleLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 size={24} className="animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (role !== "owner") {
+    return (
+      <div className="text-center py-20">
+        <p className="text-ink-muted font-body">
+          This section is only available for owners/admins.
+        </p>
+      </div>
+    );
+  }
 
   async function handleSave(sectionId: string, allKeys: string[]) {
     setSaveStates(s => ({ ...s, [sectionId]: "saving" }));
