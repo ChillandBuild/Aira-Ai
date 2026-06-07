@@ -360,7 +360,7 @@ export default function TemplatesPage() {
               onEdit={(tmpl) => router.push(`/dashboard/templates/${tmpl.id}`)}
               onDelete={(tmpl) => handleDelete(tmpl.id)}
               onSync={(tmpl) => handleSyncSingle(tmpl.id)}
-              onSend={(tmpl) => router.push(`/dashboard/upload?template=${encodeURIComponent(tmpl.name)}`)}
+              onSend={(tmpl) => router.push(`/dashboard/outbound-leads?template=${encodeURIComponent(tmpl.name)}`)}
               onDuplicate={(tmpl) => {
                 // Quick duplicate to builder
                 router.push(`/dashboard/templates/new?duplicate=${tmpl.id}`);

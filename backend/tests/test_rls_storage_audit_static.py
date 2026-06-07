@@ -58,7 +58,7 @@ def test_upload_uses_signed_csv_path_contract():
 
 
 def test_frontend_uses_signed_csv_endpoint_for_history_links():
-    page_source = read_project("frontend/app/dashboard/upload/page.tsx")
+    page_source = read_project("frontend/app/dashboard/outbound-leads/page.tsx")
     assert "csv_file_path" in page_source
     assert "openBroadcastCsv" in page_source
     assert "/api/v1/upload/csv-signed-url" in page_source

@@ -1,7 +1,7 @@
 import csv
 import io
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from app.services.automation_triggers import fire_trigger
@@ -33,10 +33,21 @@ class AssignPayload(BaseModel):
     caller_id: str | None = None
 
 
+class CustomBroadcastRequest(BaseModel):
+    message: str
+    segment: str | None = None
+    source_filter: str | None = None
+    broadcast_id: str | None = None
+    ad_campaign_id: str | None = None
+
+
 @router.get("/", response_model=PaginatedResponse)
 async def list_leads(
     segment: str | None = Query(None, pattern="^[ABCD]$"),
     assigned_to: str | None = Query(None),
+    source_filter: str | None = Query(None),
+    broadcast_id: str | None = Query(None),
+    ad_campaign_id: str | None = Query(None),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
     ctx: dict = Depends(get_tenant_and_role),
@@ -55,13 +66,202 @@ async def list_leads(
         query = query.eq("assigned_to", assigned_to)
     elif ctx.get("role") == "caller" and ctx.get("caller_id"):
         query = query.eq("assigned_to", ctx["caller_id"])
+
+    # Apply medium / campaign / broadcast filters
+    INBOUND_SOURCES = ('whatsapp', 'instagram', 'facebook', 'telegram')
+    if source_filter == "inbound":
+        query = query.in_("source", list(INBOUND_SOURCES))
+    elif source_filter == "organic":
+        query = query.in_("source", list(INBOUND_SOURCES)).is_("ad_campaign_id", "null")
+    elif source_filter == "meta_ads":
+        query = query.in_("source", list(INBOUND_SOURCES)).not_.is_("ad_campaign_id", "null")
+        if ad_campaign_id:
+            query = query.eq("ad_campaign_id", ad_campaign_id)
+    elif source_filter == "broadcast":
+        if broadcast_id:
+            br_result = db.table("broadcast_recipients").select("lead_id").eq("broadcast_id", broadcast_id).eq("tenant_id", tenant_id).execute()
+            lead_ids = [r["lead_id"] for r in (br_result.data or []) if r.get("lead_id")]
+            if not lead_ids:
+                return PaginatedResponse(
+                    data=[],
+                    total=0,
+                    page=page,
+                    limit=limit,
+                )
+            query = query.in_("id", lead_ids)
+
     result = query.order("score", desc=True).range(offset, offset + limit - 1).execute()
+    leads_data = result.data or []
+
+    # Enrichment
+    lead_ids = [l["id"] for l in leads_data]
+    if lead_ids:
+        # 1. Fetch latest inbound message time for 24h window
+        inbound_msgs = (
+            db.table("messages")
+            .select("lead_id,created_at")
+            .in_("lead_id", lead_ids)
+            .eq("direction", "inbound")
+            .eq("tenant_id", tenant_id)
+            .execute()
+        )
+        last_inbound_by_lead = {}
+        for m in (inbound_msgs.data or []):
+            lid = m["lead_id"]
+            msg_time = m["created_at"]
+            if lid not in last_inbound_by_lead or msg_time > last_inbound_by_lead[lid]:
+                last_inbound_by_lead[lid] = msg_time
+
+        # 2. Fetch broadcast sent time if filtered by broadcast
+        br_time_by_lead = {}
+        if source_filter == "broadcast" and broadcast_id:
+            br_times = (
+                db.table("broadcast_recipients")
+                .select("lead_id,created_at")
+                .eq("broadcast_id", broadcast_id)
+                .in_("lead_id", lead_ids)
+                .eq("tenant_id", tenant_id)
+                .execute()
+            )
+            br_time_by_lead = {r["lead_id"]: r["created_at"] for r in (br_times.data or []) if r.get("lead_id")}
+
+        for lead in leads_data:
+            lead["last_inbound_at"] = last_inbound_by_lead.get(lead["id"])
+            if lead["id"] in br_time_by_lead:
+                lead["broadcast_sent_at"] = br_time_by_lead[lead["id"]]
+
     return PaginatedResponse(
-        data=result.data,
+        data=leads_data,
         total=result.count or 0,
         page=page,
         limit=limit,
     )
+
+
+@router.post("/broadcast")
+async def broadcast_custom_message(
+    body: CustomBroadcastRequest,
+    ctx: dict = Depends(get_tenant_and_role),
+):
+    db = get_supabase()
+    tenant_id = ctx["tenant_id"]
+
+    # Step 1: Query all leads matching filters (no pagination)
+    query = (db.table("leads").select("id,phone,source,ig_user_id,tg_user_id,fb_user_id")
+             .eq("tenant_id", tenant_id)
+             .is_("deleted_at", "null")
+             .neq("opted_out", True)
+             .neq("whatsapp_undeliverable", True))
+
+    if body.segment:
+        query = query.eq("segment", body.segment)
+
+    # Apply source filter
+    INBOUND_SOURCES = ('whatsapp', 'instagram', 'facebook', 'telegram')
+    if body.source_filter == "inbound":
+        query = query.in_("source", list(INBOUND_SOURCES))
+    elif body.source_filter == "organic":
+        query = query.in_("source", list(INBOUND_SOURCES)).is_("ad_campaign_id", "null")
+    elif body.source_filter == "meta_ads":
+        query = query.in_("source", list(INBOUND_SOURCES)).not_.is_("ad_campaign_id", "null")
+        if body.ad_campaign_id:
+            query = query.eq("ad_campaign_id", body.ad_campaign_id)
+    elif body.source_filter == "broadcast":
+        if body.broadcast_id:
+            br_result = db.table("broadcast_recipients").select("lead_id").eq("broadcast_id", body.broadcast_id).eq("tenant_id", tenant_id).execute()
+            lead_ids = [r["lead_id"] for r in (br_result.data or []) if r.get("lead_id")]
+            if not lead_ids:
+                return {"sent": 0, "failed": 0, "skipped_window": 0, "total": 0}
+            query = query.in_("id", lead_ids)
+
+    result = query.execute()
+    targets = result.data or []
+    if not targets:
+        return {"sent": 0, "failed": 0, "skipped_window": 0, "total": 0}
+
+    # Step 2: Fetch leads with inbound message in the last 24h
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    lead_ids = [t["id"] for t in targets]
+
+    recent = (
+        db.table("messages")
+        .select("lead_id")
+        .eq("direction", "inbound")
+        .eq("tenant_id", tenant_id)
+        .gte("created_at", cutoff)
+        .in_("lead_id", lead_ids)
+        .execute()
+    )
+    eligible_ids = {r["lead_id"] for r in (recent.data or [])}
+
+    sent = 0
+    failed = 0
+    skipped_window = 0
+
+    for t in targets:
+        lead_id = t["id"]
+        source = t.get("source", "whatsapp")
+
+        # Telegram has no 24h window
+        if source != "telegram" and lead_id not in eligible_ids:
+            skipped_window += 1
+            continue
+
+        channel = (
+            "instagram" if source == "instagram"
+            else "telegram" if source == "telegram"
+            else "facebook" if source == "facebook"
+            else "whatsapp"
+        )
+
+        sid = None
+        try:
+            if channel == "instagram":
+                ig_id = t.get("ig_user_id")
+                if ig_id:
+                    sid = await send_instagram(ig_id, body.message, tenant_id=tenant_id)
+            elif channel == "telegram":
+                tg_id = t.get("tg_user_id")
+                if tg_id:
+                    from app.services.ai_reply import send_telegram
+                    sid = await send_telegram(tg_id, body.message, tenant_id=tenant_id)
+            elif channel == "facebook":
+                fb_id = t.get("fb_user_id")
+                if fb_id:
+                    sid = await send_facebook(fb_id, body.message, tenant_id=tenant_id)
+            else:
+                phone = t.get("phone")
+                if phone:
+                    sid = await send_whatsapp(phone, body.message, tenant_id=tenant_id)
+        except Exception as e:
+            logger.error(f"Failed to send broadcast message to lead {lead_id} on {channel}: {e}")
+
+        if sid:
+            sent += 1
+            sid_field = (
+                "tg_message_id" if channel == "telegram"
+                else "fb_message_id" if channel == "facebook"
+                else "meta_message_id"
+            )
+            db.table("messages").insert({
+                "lead_id": str(lead_id),
+                "tenant_id": tenant_id,
+                "direction": "outbound",
+                "channel": channel,
+                "content": body.message,
+                "is_ai_generated": False,
+                sid_field: sid,
+            }).execute()
+            db.table("leads").update({"needs_human_intervention": False}).eq("id", str(lead_id)).eq("tenant_id", tenant_id).execute()
+        else:
+            failed += 1
+
+    return {
+        "total": len(targets),
+        "sent": sent,
+        "failed": failed,
+        "skipped_window": skipped_window,
+    }
 
 
 @router.patch("/{lead_id}/assign")

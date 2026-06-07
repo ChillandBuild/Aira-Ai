@@ -1,7 +1,7 @@
 "use client";
 import { toast } from "sonner";
 import { useEffect, useState } from "react";
-import { api, Lead, Caller, SegmentTemplate, BroadcastResult } from "@/lib/api";
+import { api, Lead, Caller, SegmentTemplate, BroadcastResult, BroadcastHistoryItem } from "@/lib/api";
 import { Download, Send, Save, Pencil, Plus, X, Loader2 } from "lucide-react";
 import { timeAgo, formatPhone } from "@/lib/utils";
 import Link from "next/link";
@@ -192,15 +192,33 @@ export default function LeadsPage() {
   const [composing, setComposing] = useState(false);
   const [callers, setCallers] = useState<Caller[]>([]);
 
+  // Filtering states
+  const [sourceFilter, setSourceFilter] = useState("ALL");
+  const [selectedCampaignId, setSelectedCampaignId] = useState("");
+  const [selectedBroadcastId, setSelectedBroadcastId] = useState("");
+  const [campaigns, setCampaigns] = useState<{ id: string; campaign_name: string; platform: string }[]>([]);
+  const [broadcastHistory, setBroadcastHistory] = useState<BroadcastHistoryItem[]>([]);
+
   useEffect(() => {
     api.callers.list().then((data: Caller[]) => setCallers(data.filter((c) => c.active))).catch(() => {});
+    api.inboundLeads.campaigns().then(setCampaigns).catch(() => {});
+    api.broadcasts.history().then(setBroadcastHistory).catch(() => {});
   }, []);
 
   useEffect(() => {
     setLoading(true);
-    api.leads.list({ segment: tab, limit: 200 }).then(setLeads).finally(() => setLoading(false));
+    const params: Parameters<typeof api.leads.list>[0] = { segment: tab, limit: 200 };
+    if (sourceFilter !== "ALL") {
+      params.source_filter = sourceFilter.toLowerCase();
+      if (sourceFilter === "META_ADS" && selectedCampaignId) {
+        params.ad_campaign_id = selectedCampaignId;
+      } else if (sourceFilter === "BROADCAST" && selectedBroadcastId) {
+        params.broadcast_id = selectedBroadcastId;
+      }
+    }
+    api.leads.list(params).then(setLeads).finally(() => setLoading(false));
     setLastResult(null);
-  }, [tab]);
+  }, [tab, sourceFilter, selectedCampaignId, selectedBroadcastId]);
 
   useEffect(() => {
     api.segments.templates().then((rows) => {
@@ -226,18 +244,65 @@ export default function LeadsPage() {
 
   async function broadcast() {
     if (!draft.trim()) return;
-    if (!confirm(`Send this message to all ${SEGMENT_LABELS[tab]} leads?`)) return;
+    const targetLabel = sourceFilter !== "ALL" ? "filtered" : `${SEGMENT_LABELS[tab]}`;
+    if (!confirm(`Send this message to all ${targetLabel} leads?`)) return;
     setBroadcasting(true);
     setLastResult(null);
     try {
-      if (draft !== templates[tab]?.message) await saveTemplate();
-      const result = await api.segments.broadcast(tab);
-      setLastResult(result);
+      if (sourceFilter !== "ALL") {
+        const payload: Parameters<typeof api.leads.broadcast>[0] = {
+          message: draft,
+          segment: tab,
+          source_filter: sourceFilter.toLowerCase(),
+        };
+        if (sourceFilter === "META_ADS" && selectedCampaignId) {
+          payload.ad_campaign_id = selectedCampaignId;
+        } else if (sourceFilter === "BROADCAST" && selectedBroadcastId) {
+          payload.broadcast_id = selectedBroadcastId;
+        }
+        const result = await api.leads.broadcast(payload);
+        setLastResult(result);
+      } else {
+        if (draft !== templates[tab]?.message) await saveTemplate();
+        const result = await api.segments.broadcast(tab);
+        setLastResult(result);
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Broadcast failed");
     } finally {
       setBroadcasting(false);
     }
+  }
+
+  function format24hWindow(lastInboundAt?: string | null) {
+    if (!lastInboundAt) return <span className="text-on-surface-muted/50">—</span>;
+    const lastInbound = new Date(lastInboundAt).getTime();
+    const now = new Date().getTime();
+    const diffMs = now - lastInbound;
+    const hoursLeft = 24 - diffMs / (1000 * 60 * 60);
+
+    if (hoursLeft <= 0) {
+      return (
+        <span className="inline-flex items-center font-label text-[10px] font-bold text-red-600 bg-red-50/50 px-2 py-0.5 rounded-full border border-red-100">
+          Expired
+        </span>
+      );
+    }
+
+    const h = Math.floor(hoursLeft);
+    const m = Math.floor((hoursLeft - h) * 60);
+    if (h === 0) {
+      return (
+        <span className="inline-flex items-center font-label text-[10px] font-bold text-amber-600 bg-amber-50/50 px-2 py-0.5 rounded-full border border-amber-100 animate-pulse">
+          {m}m left
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center font-label text-[10px] font-bold text-emerald-600 bg-emerald-50/50 px-2 py-0.5 rounded-full border border-emerald-100">
+        {h}h {m}m left
+      </span>
+    );
   }
 
   return (
@@ -284,12 +349,25 @@ export default function LeadsPage() {
       {composing && (
         <ComposeModal
           onClose={() => setComposing(false)}
-          onSent={() => api.leads.list({ segment: tab, limit: 200 }).then(setLeads)}
+          onSent={() => {
+            const params: Parameters<typeof api.leads.list>[0] = { segment: tab, limit: 200 };
+            if (sourceFilter !== "ALL") {
+              params.source_filter = sourceFilter.toLowerCase();
+              if (sourceFilter === "META_ADS" && selectedCampaignId) {
+                params.ad_campaign_id = selectedCampaignId;
+              } else if (sourceFilter === "BROADCAST" && selectedBroadcastId) {
+                params.broadcast_id = selectedBroadcastId;
+              }
+            }
+            api.leads.list(params).then(setLeads);
+          }}
         />
       )}
 
       <div>
-          <div className="flex gap-1 mb-6 bg-surface-mid p-1 rounded-xl w-fit">
+        <div className="flex flex-wrap items-center gap-4 mb-6">
+          {/* Segment tabs */}
+          <div className="flex gap-1 bg-surface-mid p-1 rounded-xl w-fit">
             {SEGMENTS.map((seg) => (
               <button
                 key={seg}
@@ -303,26 +381,86 @@ export default function LeadsPage() {
             ))}
           </div>
 
-          <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15 mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="font-display text-sm font-bold text-tertiary">
-                Action Box — {SEGMENT_LABELS[tab]} Leads
-              </h2>
-              {lastResult && (
-                <p className="font-label text-xs text-on-surface-muted">
-                  Sent {lastResult.sent} · Failed {lastResult.failed} · Outside 24h window{" "}
-                  {lastResult.skipped_window}
-                </p>
-              )}
+          {/* Source Filter Dropdown */}
+          <div className="flex items-center gap-2 bg-surface p-2.5 rounded-xl border border-surface-mid/80 shadow-sm">
+            <span className="font-label text-xs text-on-surface-muted font-bold uppercase tracking-wider">Source:</span>
+            <select
+              value={sourceFilter}
+              onChange={(e) => {
+                setSourceFilter(e.target.value);
+                setSelectedCampaignId("");
+                setSelectedBroadcastId("");
+              }}
+              className="bg-transparent font-body text-xs font-semibold text-tertiary focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">All Leads</option>
+              <option value="INBOUND">Inbound Leads</option>
+              <option value="ORGANIC">Organic Inbound</option>
+              <option value="META_ADS">Meta Ads</option>
+              <option value="BROADCAST">Broadcast Specific</option>
+            </select>
+          </div>
+
+          {/* Conditional Campaign Dropdown */}
+          {sourceFilter === "META_ADS" && campaigns.length > 0 && (
+            <div className="flex items-center gap-2 bg-surface p-2.5 rounded-xl border border-surface-mid/80 shadow-sm animate-slide-up">
+              <span className="font-label text-xs text-on-surface-muted font-bold uppercase tracking-wider">Campaign:</span>
+              <select
+                value={selectedCampaignId}
+                onChange={(e) => setSelectedCampaignId(e.target.value)}
+                className="bg-transparent font-body text-xs font-semibold text-tertiary focus:outline-none max-w-[200px] cursor-pointer"
+              >
+                <option value="">Select Campaign</option>
+                {campaigns.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.campaign_name}
+                  </option>
+                ))}
+              </select>
             </div>
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              rows={3}
-              placeholder={`Message to broadcast to ${SEGMENT_LABELS[tab]} leads…`}
-              className="w-full px-4 py-3 bg-surface-low rounded-xl font-body text-sm text-on-surface border-0 focus:ring-2 focus:ring-tertiary resize-none"
-            />
-            <div className="flex gap-2 mt-3">
+          )}
+
+          {/* Conditional Broadcast Dropdown */}
+          {sourceFilter === "BROADCAST" && broadcastHistory.length > 0 && (
+            <div className="flex items-center gap-2 bg-surface p-2.5 rounded-xl border border-surface-mid/80 shadow-sm animate-slide-up">
+              <span className="font-label text-xs text-on-surface-muted font-bold uppercase tracking-wider">Broadcast:</span>
+              <select
+                value={selectedBroadcastId}
+                onChange={(e) => setSelectedBroadcastId(e.target.value)}
+                className="bg-transparent font-body text-xs font-semibold text-tertiary focus:outline-none max-w-[220px] cursor-pointer"
+              >
+                <option value="">Select Broadcast</option>
+                {broadcastHistory.map((h) => (
+                  <option key={h.broadcast_id} value={h.broadcast_id}>
+                    {h.template_name} ({new Date(h.timestamp).toLocaleDateString()})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-display text-sm font-bold text-tertiary">
+              {sourceFilter !== "ALL" ? `Action Box — Filtered Leads` : `Action Box — ${SEGMENT_LABELS[tab]} Leads`}
+            </h2>
+            {lastResult && (
+              <p className="font-label text-xs text-on-surface-muted">
+                Sent {lastResult.sent} · Failed {lastResult.failed} · Outside 24h window{" "}
+                {lastResult.skipped_window}
+              </p>
+            )}
+          </div>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={3}
+            placeholder={sourceFilter !== "ALL" ? "Message to broadcast to filtered leads…" : `Message to broadcast to ${SEGMENT_LABELS[tab]} leads…`}
+            className="w-full px-4 py-3 bg-surface-low rounded-xl font-body text-sm text-on-surface border-0 focus:ring-2 focus:ring-tertiary resize-none"
+          />
+          <div className="flex gap-2 mt-3">
+            {sourceFilter === "ALL" && (
               <button
                 onClick={saveTemplate}
                 disabled={savingTpl || draft === (templates[tab]?.message ?? "")}
@@ -331,99 +469,110 @@ export default function LeadsPage() {
                 <Save size={14} />
                 {savingTpl ? "Saving…" : "Save"}
               </button>
-              <button
-                onClick={broadcast}
-                disabled={broadcasting || !draft.trim()}
-                className="flex items-center gap-2 px-4 py-2 bg-secondary text-white rounded-xl font-label text-xs font-semibold hover:bg-secondary/90 transition-colors disabled:opacity-50"
-              >
-                <Send size={14} />
-                {broadcasting ? "Sending…" : `Send to ${SEGMENT_LABELS[tab]}`}
-              </button>
-            </div>
+            )}
+            <button
+              onClick={broadcast}
+              disabled={broadcasting || !draft.trim()}
+              className="flex items-center gap-2 px-4 py-2 bg-secondary text-white rounded-xl font-label text-xs font-semibold hover:bg-secondary/90 transition-colors disabled:opacity-50"
+            >
+              <Send size={14} />
+              {broadcasting ? "Sending…" : sourceFilter !== "ALL" ? "Send to Filtered Leads" : `Send to ${SEGMENT_LABELS[tab]}`}
+            </button>
           </div>
+        </div>
 
-          <div className="bg-surface rounded-card shadow-card ring-1 ring-[#c4c7c7]/15">
-            {loading ? (
-              <div className="p-8 text-center font-body text-on-surface-muted">Loading…</div>
-            ) : leads.length === 0 ? (
-              <div className="p-8 text-center font-body text-on-surface-muted">No {SEGMENT_LABELS[tab]} leads</div>
-            ) : (
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-surface-mid">
-                    <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Contact/ID</th>
-                    <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Name</th>
-                    <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Score</th>
-                    <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Assigned To</th>
-                    <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Source</th>
-                    <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Added</th>
-                    {role === "owner" && (
-                      <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Actions</th>
+        <div className="bg-surface rounded-card shadow-card ring-1 ring-[#c4c7c7]/15">
+          {loading ? (
+            <div className="p-8 text-center font-body text-on-surface-muted">Loading…</div>
+          ) : leads.length === 0 ? (
+            <div className="p-8 text-center font-body text-on-surface-muted">No leads found for these filters</div>
+          ) : (
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-surface-mid">
+                  <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Contact/ID</th>
+                  <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Name</th>
+                  <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Score</th>
+                  <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Assigned To</th>
+                  <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Source</th>
+                  {sourceFilter === "BROADCAST" && (
+                    <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Broadcast Sent</th>
+                  )}
+                  <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">24h Window</th>
+                  <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Added</th>
+                  {role === "owner" && (
+                    <th className="px-6 py-4 text-left font-label text-xs text-on-surface-muted uppercase tracking-widest">Actions</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {leads.map((lead, i) => (
+                  <tr
+                    key={lead.id}
+                    className={`border-b border-surface-mid/50 hover:bg-surface-low transition-colors ${
+                      i % 2 === 0 ? "" : "bg-surface-low/30"
+                    }`}
+                  >
+                    <td className="px-6 py-4 font-body text-sm text-on-surface">
+                      {lead.phone ? formatPhone(lead.phone) : (lead.source === "telegram" ? `@${lead.tg_username || "unknown"}` : (lead.source === "instagram" ? lead.ig_user_id : (lead.source === "facebook" ? lead.fb_user_id : "No Contact")))}
+                    </td>
+                    <td className="px-6 py-4">
+                      <NameCell
+                        lead={lead}
+                        onUpdate={(updated) =>
+                          setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)))
+                        }
+                      />
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-16 h-1.5 rounded-full bg-surface-mid overflow-hidden">
+                          <div className="h-full rounded-full bg-secondary transition-all" style={{ width: `${lead.score * 10}%` }} />
+                        </div>
+                        <span className="font-label text-xs text-on-surface-muted">{lead.score}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      {lead.assigned_to ? (
+                        <span className="font-label text-xs font-semibold text-ink">
+                          {callers.find((c) => c.id === lead.assigned_to)?.name ?? "Caller"}
+                        </span>
+                      ) : (
+                        <span className="font-label text-xs text-ink-muted">—</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 font-label text-xs text-on-surface-muted capitalize">{lead.source}</td>
+                    {sourceFilter === "BROADCAST" && (
+                      <td className="px-6 py-4 font-label text-xs text-on-surface-muted">{lead.broadcast_sent_at ? timeAgo(lead.broadcast_sent_at) : "—"}</td>
                     )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {leads.map((lead, i) => (
-                    <tr
-                      key={lead.id}
-                      className={`border-b border-surface-mid/50 hover:bg-surface-low transition-colors ${
-                        i % 2 === 0 ? "" : "bg-surface-low/30"
-                      }`}
-                    >
-                      <td className="px-6 py-4 font-body text-sm text-on-surface">
-                        {lead.phone ? formatPhone(lead.phone) : (lead.source === "telegram" ? `@${lead.tg_username || "unknown"}` : (lead.source === "instagram" ? lead.ig_user_id : (lead.source === "facebook" ? lead.fb_user_id : "No Contact")))}
-                      </td>
-                      <td className="px-6 py-4">
-                        <NameCell
-                          lead={lead}
-                          onUpdate={(updated) =>
-                            setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)))
-                          }
-                        />
-                      </td>
+                    <td className="px-6 py-4">
+                      {format24hWindow(lead.last_inbound_at)}
+                    </td>
+                    <td className="px-6 py-4 font-label text-xs text-on-surface-muted">{timeAgo(lead.created_at)}</td>
+                    {role === "owner" && (
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
-                          <div className="w-16 h-1.5 rounded-full bg-surface-mid overflow-hidden">
-                            <div className="h-full rounded-full bg-secondary transition-all" style={{ width: `${lead.score * 10}%` }} />
-                          </div>
-                          <span className="font-label text-xs text-on-surface-muted">{lead.score}</span>
+                          <AssignButton
+                            leadId={lead.id}
+                            currentAssignedTo={lead.assigned_to}
+                            callers={callers}
+                            onAssigned={(callerId) =>
+                              setLeads((prev) =>
+                                prev.map((l) =>
+                                  l.id === lead.id ? { ...l, assigned_to: callerId } : l
+                                )
+                              )
+                            }
+                          />
                         </div>
                       </td>
-                      <td className="px-6 py-4">
-                        {lead.assigned_to ? (
-                          <span className="font-label text-xs font-semibold text-ink">
-                            {callers.find((c) => c.id === lead.assigned_to)?.name ?? "Caller"}
-                          </span>
-                        ) : (
-                          <span className="font-label text-xs text-ink-muted">—</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 font-label text-xs text-on-surface-muted capitalize">{lead.source}</td>
-                      <td className="px-6 py-4 font-label text-xs text-on-surface-muted">{timeAgo(lead.created_at)}</td>
-                      {role === "owner" && (
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            <AssignButton
-                              leadId={lead.id}
-                              currentAssignedTo={lead.assigned_to}
-                              callers={callers}
-                              onAssigned={(callerId) =>
-                                setLeads((prev) =>
-                                  prev.map((l) =>
-                                    l.id === lead.id ? { ...l, assigned_to: callerId } : l
-                                  )
-                                )
-                              }
-                            />
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
     </div>
   );

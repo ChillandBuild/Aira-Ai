@@ -29,6 +29,8 @@ export interface Lead {
   created_at: string;
   last_message_content?: string | null;
   pinned_at?: string | null;
+  last_inbound_at?: string | null;
+  broadcast_sent_at?: string | null;
 }
 
 export interface Message {
@@ -109,6 +111,30 @@ export interface SegmentTemplate {
   message: string;
   enabled: boolean;
   updated_at: string;
+}
+
+export interface BroadcastHistoryItem {
+  timestamp: string;
+  broadcast_id?: string;
+  template_name: string;
+  opt_in_source: string;
+  sent: number;
+  delivered: number;
+  opened: number;
+  failed: number;
+  total_leads: number;
+  number_used: string;
+  csv_file_url?: string;
+  csv_file_path?: string;
+  csv_file_name?: string;
+  tag_id?: string;
+  tag_name?: string;
+  hot?: number;
+  warm?: number;
+  cold?: number;
+  replied_positive?: number;
+  replied_negative?: number;
+  replied_neutral?: number;
 }
 
 export interface BroadcastResult {
@@ -362,10 +388,21 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
 
 export const api = {
   leads: {
-    list: async (params?: { segment?: string; limit?: number; skip?: number; assigned_to?: string }) => {
+    list: async (params?: {
+      segment?: string;
+      limit?: number;
+      skip?: number;
+      assigned_to?: string;
+      source_filter?: string;
+      broadcast_id?: string;
+      ad_campaign_id?: string;
+    }) => {
       const qs = new URLSearchParams();
       if (params?.segment) qs.set("segment", params.segment);
       if (params?.assigned_to) qs.set("assigned_to", params.assigned_to);
+      if (params?.source_filter) qs.set("source_filter", params.source_filter);
+      if (params?.broadcast_id) qs.set("broadcast_id", params.broadcast_id);
+      if (params?.ad_campaign_id) qs.set("ad_campaign_id", params.ad_campaign_id);
       if (typeof params?.limit === "number" && Number.isFinite(params.limit)) {
         const normalizedLimit = Math.min(Math.max(Math.trunc(params.limit), 1), MAX_LEADS_LIST_LIMIT);
         qs.set("limit", String(normalizedLimit));
@@ -416,6 +453,20 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ phone, content, name }),
       }),
+    broadcast: (data: {
+      message: string;
+      segment?: string;
+      source_filter?: string;
+      broadcast_id?: string;
+      ad_campaign_id?: string;
+    }) =>
+      apiFetch<{ total: number; sent: number; failed: number; skipped_window: number }>(
+        `/api/v1/leads/broadcast`,
+        {
+          method: "POST",
+          body: JSON.stringify(data),
+        }
+      ),
     delete: (id: string) =>
       apiFetch<{ success: boolean; message: string }>(`/api/v1/leads/${id}`, {
         method: "DELETE",
@@ -566,6 +617,12 @@ export const api = {
       }),
     broadcast: (segment: string) =>
       apiFetch<BroadcastResult>(`/api/v1/segments/${segment}/broadcast`, { method: "POST" }),
+  },
+  broadcasts: {
+    history: async () => {
+      const res = await apiFetch<{ data: BroadcastHistoryItem[] }>("/api/v1/upload/history");
+      return res.data || [];
+    },
   },
   knowledge: {
     listDocuments: async () => {
