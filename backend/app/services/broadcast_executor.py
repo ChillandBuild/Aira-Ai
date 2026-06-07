@@ -40,8 +40,17 @@ async def execute_broadcast(row: dict) -> dict:
 
     db = get_supabase()
 
-    # Mark running
-    db.table("scheduled_broadcasts").update({"status": "running"}).eq("id", row_id).execute()
+    # Mark running using a Compare-And-Swap (CAS) lock
+    res = (
+        db.table("scheduled_broadcasts")
+        .update({"status": "running"})
+        .eq("id", row_id)
+        .eq("status", "pending")
+        .execute()
+    )
+    if not res.data:
+        logger.info(f"Broadcast {row_id} already acquired by another worker or not pending.")
+        return {"sent": 0, "failed": 0}
 
     try:
         leads_raw: list[dict] = row.get("leads_json") or []

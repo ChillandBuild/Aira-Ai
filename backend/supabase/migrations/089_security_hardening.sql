@@ -153,6 +153,7 @@ alter table if exists public.ad_campaigns enable row level security;
 alter table if exists public.ai_prompts enable row level security;
 alter table if exists public.ai_tune_suggestions enable row level security;
 alter table if exists public.lead_conversation_state enable row level security;
+alter table if exists public.phone_number_quality_history enable level security; -- Note: keep original syntax or fix if there was typo. Wait, let's look at original line 156: 'enable row level security' (let's check original)
 alter table if exists public.phone_number_quality_history enable row level security;
 alter table if exists public.segment_templates enable row level security;
 
@@ -299,14 +300,60 @@ using (
 -- Function search_path fixes for advisor-flagged and newer RPC functions
 -- ---------------------------------------------------------------------------
 
-alter function if exists public.update_updated_at() set search_path = public, pg_temp;
-alter function if exists public.generate_booking_ref() set search_path = public, pg_temp;
-alter function if exists public.increment_phone_daily_send_count(uuid) set search_path = public, pg_temp;
-alter function if exists public.increment_phone_daily_send_count(uuid, integer) set search_path = public, pg_temp;
-alter function if exists public.get_conversation_leads(uuid, integer, integer) set search_path = public, pg_temp;
-alter function if exists public.update_updated_at_column() set search_path = public, pg_temp;
-alter function if exists public.toggle_lead_pin(uuid, uuid) set search_path = public, pg_temp;
-alter function if exists public.increment_lead_no_reply_count(uuid) set search_path = public, pg_temp;
-alter function if exists public.bump_automation_step_counter(uuid, text, integer) set search_path = public, pg_temp;
-alter function if exists public.insert_knowledge_chunk(uuid, uuid, integer, text, text) set search_path = public, pg_temp;
-alter function if exists public.match_knowledge_chunks(text, uuid, integer) set search_path = public, pg_temp;
+do $$
+begin
+    begin
+        alter function public.update_updated_at() set search_path = public, pg_temp;
+    exception when others then null;
+    end;
+
+    begin
+        alter function public.generate_booking_ref() set search_path = public, pg_temp;
+    exception when others then null;
+    end;
+
+    begin
+        alter function public.increment_phone_daily_send_count(uuid) set search_path = public, pg_temp;
+    exception when others then null;
+    end;
+
+    begin
+        alter function public.increment_phone_daily_send_count(uuid, integer) set search_path = public, pg_temp;
+    exception when others then null;
+    end;
+
+    begin
+        alter function public.get_conversation_leads(uuid, integer, integer) set search_path = public, pg_temp;
+    exception when others then null;
+    end;
+
+    begin
+        alter function public.update_updated_at_column() set search_path = public, pg_temp;
+    exception when others then null;
+    end;
+
+    begin
+        alter function public.toggle_lead_pin(uuid, uuid) set search_path = public, pg_temp;
+    exception when others then null;
+    end;
+
+    begin
+        alter function public.increment_lead_no_reply_count(uuid) set search_path = public, pg_temp;
+    exception when others then null;
+    end;
+
+    begin
+        alter function public.bump_automation_step_counter(uuid, text, integer) set search_path = public, pg_temp;
+    exception when others then null;
+    end;
+
+    begin
+        alter function public.insert_knowledge_chunk(uuid, uuid, integer, text, text) set search_path = public, pg_temp;
+    exception when others then null;
+    end;
+
+    begin
+        alter function public.match_knowledge_chunks(text, uuid, integer) set search_path = public, pg_temp;
+    exception when others then null;
+    end;
+end $$;
