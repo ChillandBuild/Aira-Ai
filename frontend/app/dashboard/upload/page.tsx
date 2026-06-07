@@ -90,7 +90,7 @@ function hexToLightTint(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, 0.07)`;
+  return `rgba(${r}, ${g}, ${b}, 0.15)`;
 }
 
 type ScheduleType = "now" | "scheduled" | "drip";
@@ -466,6 +466,11 @@ export default function UploadPage() {
   const [historySearch, setHistorySearch] = useState("");
   const [historyStatusFilter, setHistoryStatusFilter] = useState<"all" | "failures" | "clean">("all");
   const [activeTab, setActiveTab] = useState<"upload" | "history" | "tags">("upload");
+  const [tagsSearch, setTagsSearch] = useState("");
+
+  const filteredTagsList = tagsList.filter((tag) =>
+    tag.name.toLowerCase().includes(tagsSearch.toLowerCase())
+  );
 
   const filteredHistory = broadcastHistory.filter(item => {
     const s = historySearch.toLowerCase();
@@ -1871,6 +1876,16 @@ export default function UploadPage() {
               <p className="font-body text-sm text-on-surface-muted mt-0.5">Tag each broadcast by product to track interest per audience segment.</p>
             </div>
             <div className="flex items-center gap-3">
+              <div className="relative">
+                <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search tags…"
+                  value={tagsSearch}
+                  onChange={(e) => setTagsSearch(e.target.value)}
+                  className="w-40 pl-8 pr-3 py-1.5 font-body text-xs bg-white border border-surface-mid rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300 transition-all"
+                />
+              </div>
               <ExportAllDropdown tagCount={tagsList.length} />
               <button
                 onClick={loadTags}
@@ -1941,7 +1956,7 @@ export default function UploadPage() {
             <div className="py-12 flex items-center justify-center">
               <div className="w-6 h-6 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
             </div>
-          ) : tagsList.length === 0 ? (
+          ) : filteredTagsList.length === 0 ? (
             <div className="bg-surface rounded-2xl p-12 shadow-card ring-1 ring-[#c4c7c7]/15 text-center">
               <Tag size={32} className="text-on-surface-muted/30 mx-auto mb-3" />
               <p className="font-display font-bold text-on-surface">No tags yet</p>
@@ -1962,7 +1977,7 @@ export default function UploadPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-surface-mid/50">
-                  {tagsList.map((tag) => {
+                  {filteredTagsList.map((tag) => {
                     const s = tagStats[tag.id];
                     return (
                       <tr key={tag.id} className="hover:brightness-95 transition-all" style={{ backgroundColor: hexToLightTint(tag.color) }}>
@@ -2106,6 +2121,11 @@ export default function UploadPage() {
                   {item.tag_name && (
                     <span className="px-3 py-1.5 rounded-full bg-violet-50 text-violet-700 font-label text-xs font-semibold border border-violet-100">
                       {item.tag_name}
+                    </span>
+                  )}
+                  {item.broadcast_id && (
+                    <span className="px-3 py-1.5 rounded-full bg-gray-50 text-gray-600 font-label text-[11px] font-mono border border-gray-200" title="Broadcast ID">
+                      ID: {item.broadcast_id}
                     </span>
                   )}
                   
