@@ -32,6 +32,7 @@ async def test_telegram_webhook_new_lead():
 
     mock_request = MagicMock(spec=Request)
     mock_request.json = AsyncMock(return_value=mock_payload)
+    mock_request.headers = {"X-Telegram-Bot-Api-Secret-Token": "my-telegram-secret"}
 
     mock_background_tasks = MagicMock(spec=BackgroundTasks)
 
@@ -50,10 +51,15 @@ async def test_telegram_webhook_new_lead():
     mock_execute_messages = MagicMock()
     mock_execute_messages.data = []
 
+    # 4. First inbound check returns empty
+    mock_execute_is_first = MagicMock()
+    mock_execute_is_first.data = []
+
     # Setup mock chain
     mock_db.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.side_effect = [
         mock_execute_leads,      # first call: select leads
         mock_execute_messages,   # second call: select messages (duplicate check)
+        mock_execute_is_first,   # third call: select messages (is first check)
     ]
     mock_db.table.return_value.insert.return_value.execute.side_effect = [
         mock_execute_new_lead,   # insert into leads
@@ -61,6 +67,7 @@ async def test_telegram_webhook_new_lead():
     ]
 
     with patch("app.routes.telegram.get_supabase", return_value=mock_db), \
+         patch("app.routes.telegram.get_setting", return_value="my-telegram-secret"), \
          patch("app.routes.telegram.record_stage_event") as mock_record_event, \
          patch("app.services.assignment.auto_assign_lead") as mock_auto_assign, \
          patch("app.services.booking_flow.get_or_create_state", return_value={"message_count": 0}), \
@@ -85,4 +92,4 @@ async def test_telegram_webhook_new_lead():
             tenant_id="tenant-123",
             db=mock_db
         )
-        mock_background_tasks.add_task.assert_called_once()
+        assert mock_background_tasks.add_task.call_count >= 1

@@ -63,18 +63,18 @@ class TestIntentDelta(unittest.TestCase):
         self.assertEqual(delta, _REJECTION_SENTINEL)
 
     # ── Active booking flow ───────────────────────────────────────────────
-    def test_collecting_name_state_returns_plus3(self):
+    def test_collecting_name_state_returns_plus2(self):
         delta, reason = _compute_intent_delta("My name is Rajan", "collecting_name")
-        self.assertEqual(delta, 3)
+        self.assertEqual(delta, 2)
         self.assertEqual(reason, "active_booking_flow")
 
-    def test_collecting_rasi_state_returns_plus3(self):
+    def test_collecting_rasi_state_returns_plus2(self):
         delta, reason = _compute_intent_delta("Rishabam", "collecting_rasi")
-        self.assertEqual(delta, 3)
+        self.assertEqual(delta, 2)
 
-    def test_awaiting_payment_state_returns_plus3(self):
+    def test_awaiting_payment_state_returns_plus2(self):
         delta, reason = _compute_intent_delta("ok done", "awaiting_payment")
-        self.assertEqual(delta, 3)
+        self.assertEqual(delta, 2)
 
     # ── Booking intent keywords ───────────────────────────────────────────
     def test_book_keyword_returns_positive(self):

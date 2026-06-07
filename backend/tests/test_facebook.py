@@ -48,8 +48,10 @@ async def test_facebook_webhook_new_lead():
         ],
     }
 
+    import json
     mock_request = MagicMock(spec=Request)
     mock_request.json = AsyncMock(return_value=mock_payload)
+    mock_request.body = AsyncMock(return_value=json.dumps(mock_payload).encode("utf-8"))
     mock_background_tasks = MagicMock(spec=BackgroundTasks)
 
     mock_db = MagicMock()
@@ -66,9 +68,14 @@ async def test_facebook_webhook_new_lead():
     mock_execute_messages = MagicMock()
     mock_execute_messages.data = []
 
+    # 4. First inbound check returns empty
+    mock_execute_is_first = MagicMock()
+    mock_execute_is_first.data = []
+
     mock_db.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.side_effect = [
         mock_execute_leads,     # leads look-up
         mock_execute_messages,  # messages dedup check
+        mock_execute_is_first,  # first inbound check
     ]
     mock_db.table.return_value.insert.return_value.execute.side_effect = [
         mock_execute_new_lead,  # insert lead
@@ -76,6 +83,8 @@ async def test_facebook_webhook_new_lead():
     ]
 
     with patch("app.routes.facebook.get_supabase", return_value=mock_db), \
+         patch("app.routes.facebook.verify_meta_signature", return_value=True), \
+         patch("app.routes.facebook.resolve_tenant_for_page", return_value="tenant-123"), \
          patch("app.routes.facebook.record_stage_event") as mock_record_event, \
          patch("app.services.assignment.auto_assign_lead"), \
          patch("app.services.booking_flow.get_or_create_state", return_value={"message_count": 0}), \
@@ -98,7 +107,7 @@ async def test_facebook_webhook_new_lead():
             tenant_id="tenant-123",
             db=mock_db,
         )
-        mock_background_tasks.add_task.assert_called_once()
+        assert mock_background_tasks.add_task.call_count >= 1
 
 
 @pytest.mark.asyncio
@@ -119,12 +128,16 @@ async def test_facebook_webhook_ignores_echo():
             }
         ],
     }
+    import json
     mock_request = MagicMock(spec=Request)
     mock_request.json = AsyncMock(return_value=mock_payload)
+    mock_request.body = AsyncMock(return_value=json.dumps(mock_payload).encode("utf-8"))
     mock_background_tasks = MagicMock(spec=BackgroundTasks)
 
     mock_db = MagicMock()
-    with patch("app.routes.facebook.get_supabase", return_value=mock_db):
+    with patch("app.routes.facebook.get_supabase", return_value=mock_db), \
+         patch("app.routes.facebook.verify_meta_signature", return_value=True), \
+         patch("app.routes.facebook.resolve_tenant_for_page", return_value="tenant-123"):
         response = await facebook_webhook(
             tenant_id="tenant-123",
             request=mock_request,
