@@ -232,7 +232,7 @@ export default function ButtonBuilder({
         <div className="mb-3 flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-200">
           <AlertTriangle size={15} className="text-red-600 shrink-0 mt-0.5" />
           <p className="font-body text-xs text-red-800 leading-relaxed">
-            You can't enter the same text for multiple buttons. Meta will reject this template.
+            You can&apos;t enter the same text for multiple buttons. Meta will reject this template.
           </p>
         </div>
       )}
