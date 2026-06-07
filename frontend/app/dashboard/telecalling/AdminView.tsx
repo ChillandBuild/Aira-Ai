@@ -11,6 +11,7 @@ import LiveNotesPane from "./components/live-notes-pane";
 import { useActiveCall } from "../contexts/ActiveCallContext";
 import { TelecallingConfigPanel } from "../settings/TelecallingConfigPanel";
 import { fetchNotes } from "./lib/notes-api";
+import type { NotesResponse, Note } from "./types";
 
 function ScoreBar({ score }: { score: number }) {
   const pct = Math.round((score / 10) * 100);
@@ -45,7 +46,7 @@ export default function AdminView() {
   // Profile modal state
   const [viewingLeadId, setViewingLeadId] = useState<string | null>(null);
   const [viewingLead, setViewingLead] = useState<Lead | null>(null);
-  const [viewingLeadNotes, setViewingLeadNotes] = useState<any>(null);
+  const [viewingLeadNotes, setViewingLeadNotes] = useState<NotesResponse | null>(null);
   const [viewingLeadLoading, setViewingLeadLoading] = useState(false);
 
   // Fetch full details for the viewing lead
@@ -410,18 +411,18 @@ export default function AdminView() {
 
                 <div className="border-t border-surface-mid pt-3">
                   <p className="font-label text-[10px] text-on-surface-muted uppercase mb-1.5">recent notes</p>
-                  {viewingLeadNotes?.pinned?.length > 0 && (
+                  {viewingLeadNotes?.pinned && viewingLeadNotes.pinned.length > 0 && (
                     <div className="mb-2 space-y-1">
-                      {viewingLeadNotes.pinned.map((n: any) => (
+                      {viewingLeadNotes.pinned.map((n: Note) => (
                         <div key={n.id} className="p-2 bg-purple-50 border border-purple-100 rounded-lg text-xs text-slate-700">
                           {n.content}
                         </div>
                       ))}
                     </div>
                   )}
-                  {viewingLeadNotes?.notes?.length > 0 ? (
+                  {viewingLeadNotes?.notes && viewingLeadNotes.notes.length > 0 ? (
                     <div className="space-y-1.5">
-                      {viewingLeadNotes.notes.slice(0, 2).map((n: any) => (
+                      {viewingLeadNotes.notes.slice(0, 2).map((n: Note) => (
                         <div key={n.id} className="p-2 bg-slate-50 border border-slate-100 rounded-lg text-xs text-slate-600">
                           <p className="text-[9px] text-on-surface-muted mb-0.5">{timeAgo(n.created_at)}</p>
                           <p>{n.content}</p>

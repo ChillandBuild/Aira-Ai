@@ -1,10 +1,9 @@
 "use client";
 import { toast } from "sonner";
 import { useEffect, useState, useCallback } from "react";
-import { Phone, Eye, RefreshCw, ChevronDown, StickyNote, Check, CheckCheck, Download, Calendar, Tag, Megaphone, Target, Inbox, Info, Copy } from "lucide-react";
+import { Phone, RefreshCw, ChevronDown, StickyNote, Check, CheckCheck, Download, Calendar, Tag, Target, Inbox, Copy } from "lucide-react";
 import { api, Caller, Lead } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
-import BriefingModal from "./components/briefing-modal";
 import LiveNotesPane from "./components/live-notes-pane";
 import NotesHistoryModal from "./components/notes-history-modal";
 import { fetchNotes, fetchTodayCallbacks, fetchTodayCompletedCallbacks, markCallbackDone, saveNote } from "./lib/notes-api";
