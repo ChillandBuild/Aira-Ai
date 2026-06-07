@@ -26,13 +26,16 @@ public_router = APIRouter()  # No auth — Meta calls these endpoints directly
 
 
 class Button(BaseModel):
-    type: str  # QUICK_REPLY | URL | PHONE_NUMBER | WHATSAPP_CALL | COPY_CODE
+    type: str  # QUICK_REPLY | URL | PHONE_NUMBER | WHATSAPP_CALL | COPY_CODE | ONE_TAP
     text: str
     url: str | None = None
     phone: str | None = None
     country: str | None = None
     offer_code: str | None = None
     active_for_days: int | None = None
+    autofill_text: str | None = None
+    package_name: str | None = None
+    signature_hash: str | None = None
 
 
 class CarouselCard(BaseModel):

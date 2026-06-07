@@ -12,7 +12,6 @@ import {
   List,
   Shuffle,
   Trash2,
-  Send,
   Eye,
   Layers,
   ChevronRight,
@@ -21,7 +20,7 @@ import {
   HelpCircle,
 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
-import { LANGUAGES, CATEGORIES, STATUS_COLORS } from "./types";
+import { LANGUAGES, STATUS_COLORS } from "./types";
 import type { Template } from "./types";
 import TemplateCard from "./components/template-card";
 import WhatsAppPreview from "./components/whatsapp-preview";
@@ -35,7 +34,6 @@ export default function TemplatesPage() {
   // Sync / Action states
   const [syncing, setSyncing] = useState(false);
   const [syncingId, setSyncingId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -97,8 +95,8 @@ export default function TemplatesPage() {
   }
 
   // Single Template Actions
-  async function handleSyncSingle(id: string, e: React.MouseEvent) {
-    e.stopPropagation();
+  async function handleSyncSingle(id: string, e?: React.MouseEvent) {
+    e?.stopPropagation();
     setSyncingId(id);
     try {
       const authHeaders = await getAuthHeaders();
@@ -117,10 +115,9 @@ export default function TemplatesPage() {
     }
   }
 
-  async function handleDelete(id: string, e: React.MouseEvent) {
-    e.stopPropagation();
+  async function handleDelete(id: string, e?: React.MouseEvent) {
+    e?.stopPropagation();
     if (!confirm("Are you sure you want to delete this template?")) return;
-    setDeletingId(id);
     try {
       const authHeaders = await getAuthHeaders();
       const res = await fetch(`${API_URL}/api/v1/templates/${id}`, {
@@ -137,8 +134,6 @@ export default function TemplatesPage() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
-    } finally {
-      setDeletingId(null);
     }
   }
 
@@ -362,8 +357,8 @@ export default function TemplatesPage() {
               key={t.id}
               template={t}
               onEdit={(tmpl) => router.push(`/dashboard/templates/${tmpl.id}`)}
-              onDelete={(tmpl) => handleDelete(tmpl.id, {} as any)}
-              onSync={(tmpl) => handleSyncSingle(tmpl.id, {} as any)}
+              onDelete={(tmpl) => handleDelete(tmpl.id)}
+              onSync={(tmpl) => handleSyncSingle(tmpl.id)}
               onSend={(tmpl) => router.push(`/dashboard/upload?template=${encodeURIComponent(tmpl.name)}`)}
               onDuplicate={(tmpl) => {
                 // Quick duplicate to builder
@@ -538,7 +533,7 @@ export default function TemplatesPage() {
               <div className="md:col-span-6 space-y-3">
                 <label className="font-body text-xs font-bold text-ink uppercase tracking-wider block">Live Message Preview</label>
                 <WhatsAppPreview
-                  headerType={selectedTemplate.header_media_type as any}
+                  headerType={selectedTemplate.header_media_type as "NONE" | "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | undefined}
                   headerText={selectedTemplate.header_text || undefined}
                   headerMediaUrl={selectedTemplate.header_media_url || undefined}
                   bodyText={selectedTemplate.body_text}

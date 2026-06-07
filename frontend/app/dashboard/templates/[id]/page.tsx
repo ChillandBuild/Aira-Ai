@@ -5,14 +5,11 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
-  Check,
   AlertCircle,
   RefreshCw,
   Trash2,
   Send,
   Edit3,
-  Clock,
-  Layers,
   Lock,
   X,
   Upload,
@@ -43,7 +40,6 @@ export default function TemplateDetailsPage() {
   const [headerType, setHeaderType] = useState<"NONE" | "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT">("NONE");
   const [headerText, setHeaderText] = useState("");
   const [headerMediaUrl, setHeaderMediaUrl] = useState("");
-  const [headerMediaFile, setHeaderMediaFile] = useState<File | null>(null);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [footerText, setFooterText] = useState("");
   const [buttons, setButtons] = useState<Button[]>([]);
@@ -70,7 +66,7 @@ export default function TemplateDetailsPage() {
       setButtons(match.buttons || []);
 
       if (match.header_media_type) {
-        setHeaderType(match.header_media_type.toUpperCase() as any);
+        setHeaderType(match.header_media_type.toUpperCase() as "NONE" | "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT");
         setHeaderMediaUrl(match.header_media_url || "");
       } else if (match.header_text) {
         setHeaderType("TEXT");
@@ -88,6 +84,7 @@ export default function TemplateDetailsPage() {
     if (templateId) {
       loadTemplate();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId]);
 
   // Sync template status
@@ -152,7 +149,6 @@ export default function TemplateDetailsPage() {
       setHeaderMediaUrl(data.header_handle);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Media upload failed");
-      setHeaderMediaFile(null);
     } finally {
       setUploadingMedia(false);
     }
@@ -161,13 +157,11 @@ export default function TemplateDetailsPage() {
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) {
-      setHeaderMediaFile(file);
       handleMediaUpload(file);
     }
   }
 
   function clearMedia() {
-    setHeaderMediaFile(null);
     setHeaderMediaUrl("");
   }
 
@@ -364,7 +358,7 @@ export default function TemplateDetailsPage() {
                   <select
                     value={headerType}
                     onChange={(e) => {
-                      setHeaderType(e.target.value as any);
+                      setHeaderType(e.target.value as "NONE" | "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT");
                       setHeaderText("");
                       clearMedia();
                     }}
@@ -585,7 +579,7 @@ export default function TemplateDetailsPage() {
                 ? headerType === "NONE" || headerType === "TEXT"
                   ? undefined
                   : headerType
-                : (template.header_media_type as any)
+                : (template.header_media_type as "NONE" | "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | undefined)
             }
             headerText={editMode ? (headerType === "TEXT" ? headerText : undefined) : template.header_text || undefined}
             headerMediaUrl={editMode ? headerMediaUrl || undefined : template.header_media_url || undefined}

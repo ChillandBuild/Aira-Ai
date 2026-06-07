@@ -7,7 +7,6 @@ import {
   Copy,
   Send,
   RefreshCw,
-  MoreHorizontal,
 } from "lucide-react";
 import type { Template } from "../types";
 import { STATUS_COLORS, CATEGORY_COLORS, LANGUAGES } from "../types";
@@ -186,7 +185,7 @@ function ActionBtn({
   accent = false,
   destructive = false,
 }: {
-  icon: React.ComponentType<any>;
+  icon: React.ElementType;
   label: string;
   onClick: () => void;
   accent?: boolean;

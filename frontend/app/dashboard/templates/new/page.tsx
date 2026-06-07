@@ -9,7 +9,6 @@ import {
   ChevronRight,
   ChevronLeft,
   AlertCircle,
-  FileText,
   Upload,
   X,
   FileCode,
@@ -37,7 +36,6 @@ export default function NewTemplatePage() {
   const [headerType, setHeaderType] = useState<"NONE" | "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT">("NONE");
   const [headerText, setHeaderText] = useState("");
   const [headerMediaUrl, setHeaderMediaUrl] = useState("");
-  const [headerMediaFile, setHeaderMediaFile] = useState<File | null>(null);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [bodyText, setBodyText] = useState("");
   const [footerText, setFooterText] = useState("");
@@ -79,7 +77,6 @@ export default function NewTemplatePage() {
       setHeaderMediaUrl(handle);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Media upload failed");
-      setHeaderMediaFile(null);
     } finally {
       setUploadingMedia(false);
     }
@@ -88,13 +85,11 @@ export default function NewTemplatePage() {
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) {
-      setHeaderMediaFile(file);
       handleMediaUpload(file);
     }
   }
 
   function clearMedia() {
-    setHeaderMediaFile(null);
     setHeaderMediaUrl("");
   }
 
@@ -353,7 +348,7 @@ export default function NewTemplatePage() {
                   <select
                     value={headerType}
                     onChange={(e) => {
-                      setHeaderType(e.target.value as any);
+                      setHeaderType(e.target.value as "NONE" | "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT");
                       setHeaderText("");
                       clearMedia();
                     }}
