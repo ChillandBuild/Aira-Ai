@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     facebook_page_id: str | None = None
     meta_app_secret: str | None = None
     redis_url: str = "redis://localhost:6379/0"
+    sentry_dsn: str | None = None
 
     model_config = {"env_file": ".env", "case_sensitive": False, "extra": "ignore"}
 

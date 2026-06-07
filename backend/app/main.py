@@ -19,9 +19,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Initialize Sentry
+if settings.sentry_dsn:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        traces_sample_rate=1.0,
+    )
+    logger.info("Sentry SDK initialized successfully.")
+
+from datetime import datetime, timezone
+_startup_time = datetime.now(timezone.utc)
+_heartbeats = {
+    "scheduled-broadcasts": None,
+    "automation-pending": None,
+}
+
 
 async def _process_automation_waits() -> None:
     """APScheduler job: resume automation wait-step executions that are due."""
+    _heartbeats["automation-pending"] = datetime.now(timezone.utc)
     try:
         from app.services.automation_engine import resume_due_flow_runs
         count = await resume_due_flow_runs()
@@ -33,6 +50,7 @@ async def _process_automation_waits() -> None:
 
 async def _process_scheduled_broadcasts() -> None:
     """APScheduler job: fire scheduled_broadcasts rows whose fire_at has passed."""
+    _heartbeats["scheduled-broadcasts"] = datetime.now(timezone.utc)
     try:
         from app.db.supabase import get_supabase
         from app.services.broadcast_executor import execute_broadcast
@@ -237,7 +255,75 @@ app.add_middleware(
 # Health check (no auth, no prefix)
 @app.get("/health", tags=["system"])
 async def health():
-    return {"status": "ok", "service": "aira-ai"}
+    from fastapi.responses import JSONResponse
+    from datetime import datetime, timezone
+    
+    # 1. Ping the Supabase database
+    db_ok = False
+    db_error = None
+    try:
+        from app.db.supabase import get_supabase
+        db = get_supabase()
+        db.table("app_settings").select("key").limit(1).execute()
+        db_ok = True
+    except Exception as e:
+        db_error = str(e)
+        logger.error(f"Health check database ping failed: {db_error}")
+
+    # 2. Check scheduled jobs heartbeats
+    now = datetime.now(timezone.utc)
+    
+    # scheduled-broadcasts (runs every 1 minute)
+    sb_heartbeat = _heartbeats["scheduled-broadcasts"]
+    sb_ok = False
+    if sb_heartbeat is not None:
+        if (now - sb_heartbeat).total_seconds() <= 180: # 3 minutes threshold
+            sb_ok = True
+    else:
+        # Grace period since startup
+        if (now - _startup_time).total_seconds() <= 180:
+            sb_ok = True
+
+    # automation-pending (runs every 5 minutes)
+    ap_heartbeat = _heartbeats["automation-pending"]
+    ap_ok = False
+    if ap_heartbeat is not None:
+        if (now - ap_heartbeat).total_seconds() <= 600: # 10 minutes threshold
+            ap_ok = True
+    else:
+        # Grace period since startup
+        if (now - _startup_time).total_seconds() <= 600:
+            ap_ok = True
+
+    details = {
+        "database": "ok" if db_ok else f"error: {db_error}",
+        "scheduler_jobs": {
+            "scheduled-broadcasts": {
+                "status": "healthy" if sb_ok else "unhealthy",
+                "last_heartbeat": sb_heartbeat.isoformat() if sb_heartbeat else None,
+            },
+            "automation-pending": {
+                "status": "healthy" if ap_ok else "unhealthy",
+                "last_heartbeat": ap_heartbeat.isoformat() if ap_heartbeat else None,
+            }
+        }
+    }
+
+    if db_ok and sb_ok and ap_ok:
+        return {
+            "status": "healthy",
+            "service": "aira-ai",
+            "details": details
+        }
+    else:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "service": "aira-ai",
+                "details": details
+            }
+        )
 
 _auth = [Depends(get_current_user)]
 
