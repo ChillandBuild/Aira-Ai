@@ -7,11 +7,10 @@ from app.db.supabase import get_supabase
 logger = logging.getLogger(__name__)
 
 SEGMENT_DEPTH = {"D": 0, "C": 1, "B": 2, "A": 3}
-FOLLOW_UP_CADENCES = (
-    ("1d", timedelta(days=1)),
-    ("1w", timedelta(days=7)),
-    ("1m", timedelta(days=30)),
-)
+# 1d/1w/1m cadences retired in migration 095 — they sent freeform text outside
+# the WhatsApp 24h window. Automated re-engagement is now handled by the
+# reengagement_steps engine (migration 094). callback cadence stays.
+FOLLOW_UP_CADENCES = ()
 PLATFORMS = {"instagram", "facebook", "google", "whatsapp"}
 
 
@@ -153,6 +152,8 @@ def sync_follow_up_jobs(
     db=None,
 ) -> list[dict[str, Any]]:
     db = db or get_supabase()
+    if not FOLLOW_UP_CADENCES:
+        return []
     current_segment = (segment or "D").upper()
     if converted_at or not ai_enabled or not phone or current_segment not in {"A", "B"}:
         cancel_pending_follow_ups(

@@ -109,11 +109,7 @@ If the customer asks to speak in a regional language, respond in that language.
 # via the AI Tune page (Knowledge → AI Tune tab). The fallback is only used when no
 # custom prompt exists for a given channel.
 
-REENGAGEMENT_FALLBACKS = {
-    "1d": "Hi! Just checking in — happy to help if you still have questions. Reply here and I can point you in the right direction today.",
-    "1w": "Hi! Following up in case you’re still exploring your options. If you’d like a quick update or want to take the next step, just reply and I’ll help.",
-    "1m": "Hi! One last check-in in case we can still be of help. If you’d like to pick things up where we left off, just send us a message.",
-}
+REENGAGEMENT_FALLBACKS = {}
 
 _prompt_cache: dict[str, tuple[float, str]] = {}
 _PROMPT_TTL = 60.0
@@ -349,7 +345,7 @@ Do not use markdown or quotes."""
         return text[:280] if len(text) > 280 else text
     except Exception as e:
         logger.error(f"Re-engagement copy failed for lead {lead_id}: {e}")
-        return REENGAGEMENT_FALLBACKS.get(cadence, REENGAGEMENT_FALLBACKS["1w"])
+        return REENGAGEMENT_FALLBACKS.get(cadence, "Hi! Just checking in — happy to help if you have any questions.")
 
 
 _ESCALATION_PHRASES = [
