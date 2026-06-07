@@ -90,7 +90,7 @@ function hexToLightTint(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, 0.7)`;
+  return `rgba(${r}, ${g}, ${b}, 0.45)`;
 }
 
 type ScheduleType = "now" | "scheduled" | "drip";
@@ -1982,15 +1982,15 @@ export default function OutboundLeadsPage() {
                     return (
                       <tr key={tag.id} className="hover:brightness-95 transition-all" style={{ backgroundColor: hexToLightTint(tag.color) }}>
                         <td className="px-5 py-3">
-                          <span className="font-label text-sm font-semibold text-on-surface">{tag.name}</span>
+                          <span className="font-label text-sm font-semibold text-gray-900">{tag.name}</span>
                         </td>
-                        <td className="px-3 py-3 text-center font-label text-sm text-on-surface-muted">{s?.total_sent ?? 0}</td>
-                        <td className="px-3 py-3 text-center font-label text-sm font-semibold text-green-600">{s?.hot ?? 0}</td>
-                        <td className="px-3 py-3 text-center font-label text-sm font-semibold text-amber-600">{s?.warm ?? 0}</td>
-                        <td className="px-3 py-3 text-center font-label text-sm text-on-surface-muted">{s?.cold ?? 0}</td>
-                        <td className="px-3 py-3 text-center font-label text-sm font-semibold text-red-500">{s?.disqualified ?? 0}</td>
-                        <td className="px-3 py-3 text-center font-label text-sm font-semibold text-orange-500">{s?.opted_out ?? 0}</td>
-                        <td className="px-3 py-3 text-center font-label text-sm text-on-surface-muted">{s?.failed ?? 0}</td>
+                        <td className="px-3 py-3 text-center font-label text-sm font-medium text-gray-900">{s?.total_sent ?? 0}</td>
+                        <td className="px-3 py-3 text-center font-label text-sm font-bold text-gray-900">{s?.hot ?? 0}</td>
+                        <td className="px-3 py-3 text-center font-label text-sm font-bold text-gray-900">{s?.warm ?? 0}</td>
+                        <td className="px-3 py-3 text-center font-label text-sm font-medium text-gray-900">{s?.cold ?? 0}</td>
+                        <td className="px-3 py-3 text-center font-label text-sm font-bold text-gray-900">{s?.disqualified ?? 0}</td>
+                        <td className="px-3 py-3 text-center font-label text-sm font-bold text-gray-900">{s?.opted_out ?? 0}</td>
+                        <td className="px-3 py-3 text-center font-label text-sm font-medium text-gray-900">{s?.failed ?? 0}</td>
                         <td className="px-5 py-3">
                           <div className="flex items-center justify-end gap-2">
                             <SegmentDropdown tagId={tag.id} />
@@ -2098,11 +2098,11 @@ export default function OutboundLeadsPage() {
             {filteredHistory.map((item, i) => (
               <div key={i} className="p-6 first:pt-4 last:pb-4">
                 {/* Campaign Info Bar */}
-                <div className="flex items-center gap-4 mb-5 pb-4 border-b border-gray-100">
+                <div className="flex items-center gap-3 mb-5 pb-4 border-b border-gray-100 flex-wrap xl:flex-nowrap">
                   {/* Date */}
-                  <div className="flex items-center gap-2 min-w-[160px]">
-                    <Calendar size={16} className="text-gray-400 shrink-0" />
-                    <span className="font-display text-sm font-semibold text-gray-800">
+                  <div className="flex items-center gap-1.5 shrink-0 min-w-[140px]">
+                    <Calendar size={14} className="text-gray-400 shrink-0" />
+                    <span className="font-display text-xs font-semibold text-gray-800">
                       {new Date(item.timestamp).toLocaleString("en-IN", { 
                         day: "numeric", 
                         month: "short", 
@@ -2115,38 +2115,38 @@ export default function OutboundLeadsPage() {
                   </div>
                   
                   {/* Template Badge */}
-                  <span className="px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 font-label text-xs font-semibold border border-emerald-100">
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-label text-[11px] font-semibold border border-emerald-100 shrink-0 whitespace-nowrap">
                     {item.template_name}
                   </span>
                   {item.tag_name && (
-                    <span className="px-3 py-1.5 rounded-full bg-violet-50 text-violet-700 font-label text-xs font-semibold border border-violet-100">
+                    <span className="px-2.5 py-1 rounded-full bg-violet-50 text-violet-700 font-label text-[11px] font-semibold border border-violet-100 shrink-0 whitespace-nowrap">
                       {item.tag_name}
                     </span>
                   )}
                   {item.broadcast_id && (
-                    <span className="px-3 py-1.5 rounded-full bg-gray-50 text-gray-600 font-label text-[11px] font-mono border border-gray-200" title="Broadcast ID">
-                      ID: {item.broadcast_id}
+                    <span className="px-2.5 py-1 rounded-full bg-gray-50 text-gray-600 font-label text-[10px] font-mono border border-gray-200 shrink-0 whitespace-nowrap" title={`Broadcast ID: ${item.broadcast_id}`}>
+                      ID: {item.broadcast_id.slice(0, 8)}
                     </span>
                   )}
                   
                   {/* Spacer */}
-                  <div className="flex-1" />
+                  <div className="flex-1 min-w-[20px]" />
                   
                   {/* Phone Number */}
-                  <div className="flex items-center gap-2">
-                    <Phone size={14} className="text-gray-400" />
-                    <span className="font-body text-sm text-gray-600 font-medium">{item.number_used || "—"}</span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Phone size={12} className="text-gray-400" />
+                    <span className="font-body text-xs text-gray-600 font-medium whitespace-nowrap">{item.number_used || "—"}</span>
                   </div>
                   
                   {/* CSV Download */}
                   {(item.csv_file_path || item.csv_file_url) && (
                     <button
                       onClick={() => openBroadcastCsv(item)}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg font-label text-[11px] font-semibold transition-colors border border-gray-200"
+                      className="inline-flex items-center gap-1 px-2 py-1 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-md font-label text-[10px] font-semibold transition-colors border border-gray-200 shrink-0 whitespace-nowrap"
                     >
-                      <Download size={12} />
-                      {item.csv_file_name && item.csv_file_name.length > 20
-                        ? item.csv_file_name.slice(0, 10) + "..." + item.csv_file_name.slice(-4)
+                      <Download size={10} />
+                      {item.csv_file_name && item.csv_file_name.length > 15
+                        ? item.csv_file_name.slice(0, 8) + "..." + item.csv_file_name.slice(-4)
                         : item.csv_file_name || "CSV"}
                     </button>
                   )}
@@ -2155,25 +2155,27 @@ export default function OutboundLeadsPage() {
                   {item.failed > 0 && item.broadcast_id ? (
                     <button
                       onClick={() => downloadFailedCsv(item.broadcast_id!)}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg font-label text-[11px] font-semibold transition-colors border border-red-200"
+                      className="inline-flex items-center gap-1 px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 rounded-md font-label text-[10px] font-semibold transition-colors border border-red-200 shrink-0 whitespace-nowrap"
                     >
-                      <Download size={12} />
+                      <Download size={10} />
                       Failed Leads
                     </button>
                   ) : item.failed === 0 ? (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-green-50 text-green-700 rounded-lg font-label text-[11px] font-medium border border-green-100">
-                      <CheckCircle2 size={12} />
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 text-green-700 rounded-md font-label text-[10px] font-medium border border-green-100 shrink-0 whitespace-nowrap">
+                      <CheckCircle2 size={10} />
                       No failures
                     </span>
                   ) : null}
 
                   {/* Interest CSV Download */}
                   {item.broadcast_id && (
-                    <BroadcastSegmentDropdown
-                      broadcastId={item.broadcast_id}
-                      tagId={item.tag_id}
-                      onDownload={downloadBroadcastTagCsv}
-                    />
+                    <div className="shrink-0">
+                      <BroadcastSegmentDropdown
+                        broadcastId={item.broadcast_id}
+                        tagId={item.tag_id}
+                        onDownload={downloadBroadcastTagCsv}
+                      />
+                    </div>
                   )}
                 </div>
                 
