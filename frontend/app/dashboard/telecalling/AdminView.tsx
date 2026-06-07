@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { useEffect, useState, useCallback } from "react";
 import {
   Phone, ToggleLeft, ToggleRight, RefreshCw, TrendingUp,
-  Users, Coffee, ChevronDown, Settings, Eye, X, Calendar, Copy
+  Users, Coffee, ChevronDown, Settings, Eye, X, Calendar, Copy, Tag, Target, StickyNote
 } from "lucide-react";
 import { api, Caller, Lead, API_URL, getAuthHeaders } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
@@ -322,116 +322,172 @@ export default function AdminView() {
           onClick={() => setViewingLeadId(null)}
         >
           <div 
-            className="w-full max-w-md bg-white rounded-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto cursor-default border border-surface-mid/40 flex flex-col gap-4"
+            className="w-full max-w-4xl bg-white rounded-3xl p-7 shadow-2xl max-h-[90vh] overflow-y-auto cursor-default border border-slate-200/50 flex flex-col gap-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-surface-mid pb-3">
-              <h3 className="font-display text-base font-bold text-tertiary">Lead Attribution Profile</h3>
-              <button onClick={() => setViewingLeadId(null)} className="p-1.5 text-on-surface-muted hover:text-tertiary rounded-lg hover:bg-surface-low transition-colors">
-                <X size={15} />
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h3 className="font-display text-lg font-bold text-slate-800 flex items-center gap-2">
+                🔍 Lead Attribution profile
+              </h3>
+              <button 
+                onClick={() => setViewingLeadId(null)} 
+                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-50 rounded-xl transition-all"
+              >
+                <X size={16} />
               </button>
             </div>
             
             {viewingLeadLoading ? (
-              <div className="py-8 flex flex-col items-center justify-center">
-                <RefreshCw size={24} className="animate-spin text-primary mb-2" />
-                <p className="text-xs text-on-surface-muted">Loading profile...</p>
+              <div className="py-12 flex flex-col items-center justify-center">
+                <RefreshCw size={28} className="animate-spin text-indigo-500 mb-2" />
+                <p className="text-xs text-slate-500 font-medium">Fetching lead history...</p>
               </div>
             ) : viewingLead ? (
-              <div className="space-y-4">
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-body text-base font-bold text-on-surface">{viewingLead.name || "Unnamed Lead"}</p>
-                    <span className={`px-1.5 py-0.5 rounded font-label text-[9px] font-semibold ${
-                      viewingLead.segment === "A" ? "bg-emerald-100 text-emerald-700" :
-                      viewingLead.segment === "B" ? "bg-blue-100 text-blue-700" :
-                      viewingLead.segment === "C" ? "bg-amber-100 text-amber-700" :
-                      "bg-gray-100 text-gray-700"
-                    }`}>
-                      Seg {viewingLead.segment}
-                    </span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+                {/* Left Column: Demographics & Attribution */}
+                <div className="space-y-6">
+                  {/* Demographics Card */}
+                  <div className="bg-slate-50/50 border border-slate-100 p-5 rounded-2xl">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-xl bg-indigo-500 text-white font-display text-lg font-bold flex items-center justify-center">
+                        {viewingLead.name ? viewingLead.name.charAt(0).toUpperCase() : <Users size={18} />}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-body text-base font-extrabold text-slate-850">{viewingLead.name || "Unnamed Lead"}</p>
+                          <span className={`px-2 py-0.5 rounded font-label text-[9px] font-black uppercase ${
+                            viewingLead.segment === "A" ? "bg-emerald-50 text-emerald-700 border border-emerald-100" :
+                            viewingLead.segment === "B" ? "bg-blue-50 text-blue-700 border border-blue-100" :
+                            viewingLead.segment === "C" ? "bg-amber-50 text-amber-700 border border-amber-100" :
+                            "bg-slate-100 text-slate-700"
+                          }`}>
+                            Seg {viewingLead.segment}
+                          </span>
+                        </div>
+                        <p className="font-label text-xs text-slate-500 mt-1 select-all">
+                          {formatPhone(viewingLead.phone)} · Score {viewingLead.score}/10
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                  <p className="font-label text-xs text-on-surface-muted mt-1 select-all">
-                    {formatPhone(viewingLead.phone)} · Score {viewingLead.score}
-                  </p>
-                </div>
 
-                <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 flex items-center gap-2.5">
-                  <Calendar size={14} className="text-primary shrink-0" />
-                  <div>
-                    <p className="font-label text-[9px] text-on-surface-muted uppercase">Telecaller Assignment</p>
-                    <p className="font-body text-xs text-slate-800 font-semibold mt-0.5">
-                      {viewingLead.assigned_at 
-                        ? new Date(viewingLead.assigned_at).toLocaleString()
-                        : "Unknown / Pre-assigned"}
-                    </p>
+                  {/* Assignment Card */}
+                  <div className="bg-white border border-slate-200/60 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
+                    <Calendar size={16} className="text-indigo-500 shrink-0" />
+                    <div>
+                      <p className="font-label text-[9px] text-slate-400 uppercase tracking-wider font-extrabold">Queue Assignment Timestamp</p>
+                      <p className="font-body text-xs text-slate-800 font-bold mt-0.5">
+                        {viewingLead.assigned_at 
+                          ? new Date(viewingLead.assigned_at).toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' })
+                          : "Unknown (Assigned prior to tracking)"}
+                      </p>
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <p className="font-label text-[10px] text-on-surface-muted uppercase mb-2">attribution info</p>
+                  {/* Marketing Attribution Widget */}
                   {viewingLead.broadcast_id || viewingLead.template_name ? (
-                    <div className="space-y-2">
-                      <div className="bg-white border border-surface-mid rounded-lg p-2.5 text-xs flex justify-between items-center">
-                        <div>
-                          <span className="font-label text-[9px] text-on-surface-muted uppercase block">Broadcast ID</span>
-                          <p className="font-mono text-slate-800 font-semibold truncate mt-0.5">{viewingLead.broadcast_id}</p>
+                    // Outbound campaign attribution
+                    <div className="bg-gradient-to-br from-purple-50/50 to-indigo-50/20 border border-purple-100/60 rounded-3xl p-5 shadow-sm space-y-4">
+                      <span className="font-display text-[11px] font-black text-purple-800 uppercase tracking-widest flex items-center gap-1.5">
+                        <Target size={12} className="text-purple-500" /> Outbound Campaign
+                      </span>
+                      <div className="space-y-3.5">
+                        <div className="bg-white/90 backdrop-blur-sm border border-purple-100/65 rounded-xl p-3.5 relative shadow-sm">
+                          <span className="font-label text-[9px] text-purple-700/60 uppercase font-extrabold block">Broadcast Campaign ID</span>
+                          <p className="font-mono text-xs text-slate-800 font-bold mt-1.5 truncate pr-8 select-all">
+                            {viewingLead.broadcast_id || "None"}
+                          </p>
+                          {viewingLead.broadcast_id && (
+                            <button 
+                              onClick={() => { navigator.clipboard.writeText(viewingLead.broadcast_id || ""); toast.success("Copied Campaign ID"); }}
+                              className="absolute right-3 bottom-3 p-1.5 text-purple-400 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition-colors"
+                              title="Copy ID"
+                            >
+                              <Copy size={11} />
+                            </button>
+                          )}
                         </div>
-                        <button 
-                          onClick={() => { navigator.clipboard.writeText(viewingLead.broadcast_id || ""); toast.success("Copied Broadcast ID"); }}
-                          className="p-1 text-on-surface-muted hover:text-tertiary hover:bg-slate-50 rounded transition-colors"
-                        >
-                          <Copy size={11} />
-                        </button>
-                      </div>
-                      <div className="bg-white border border-surface-mid rounded-lg p-2.5 text-xs">
-                        <span className="font-label text-[9px] text-on-surface-muted uppercase block">Template Name</span>
-                        <p className="font-body text-slate-800 font-semibold truncate mt-0.5">{viewingLead.template_name || "N/A"}</p>
-                      </div>
-                      {viewingLead.tag_name && (
-                        <div className="bg-white border border-surface-mid rounded-lg p-2.5 text-xs">
-                          <span className="font-label text-[9px] text-on-surface-muted uppercase block">Campaign Tag</span>
-                          <span className="inline-block mt-1 font-body font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md">{viewingLead.tag_name}</span>
+
+                        <div className="bg-white/90 backdrop-blur-sm border border-purple-100/65 rounded-xl p-3.5 shadow-sm">
+                          <span className="font-label text-[9px] text-purple-700/60 uppercase font-extrabold block">Message Template</span>
+                          <p className="font-body text-xs text-slate-850 font-bold mt-1.5 truncate">
+                            {viewingLead.template_name || "N/A"}
+                          </p>
                         </div>
-                      )}
+
+                        {viewingLead.tag_name && (
+                          <div className="bg-white/90 backdrop-blur-sm border border-purple-100/65 rounded-xl p-3.5 shadow-sm flex items-center gap-1.5">
+                            <Tag size={11} className="text-purple-500" />
+                            <div>
+                              <span className="font-label text-[9px] text-purple-700/60 uppercase font-extrabold block">Campaign Tag</span>
+                              <span className="text-xs font-bold text-purple-700 mt-0.5 inline-block">{viewingLead.tag_name}</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="bg-white border border-surface-mid rounded-lg p-2.5 text-xs">
-                        <span className="font-label text-[9px] text-on-surface-muted uppercase block">Ad Campaign</span>
-                        <p className="font-body text-slate-800 font-semibold truncate mt-0.5">{viewingLead.ad_campaign_name || "Organic"}</p>
-                      </div>
-                      <div className="bg-white border border-surface-mid rounded-lg p-2.5 text-xs">
-                        <span className="font-label text-[9px] text-on-surface-muted uppercase block">Channel</span>
-                        <p className="font-body text-slate-800 font-semibold capitalize mt-0.5">{viewingLead.channel || viewingLead.source}</p>
+                    // Inbound lead attribution
+                    <div className="bg-gradient-to-br from-emerald-50/50 to-teal-50/20 border border-emerald-100/60 rounded-3xl p-5 shadow-sm space-y-4">
+                      <span className="font-display text-[11px] font-black text-emerald-800 uppercase tracking-widest flex items-center gap-1.5">
+                        <Target size={12} className="text-emerald-500" /> Inbound Origin
+                      </span>
+                      <div className="grid grid-cols-2 gap-3.5">
+                        <div className="bg-white/90 backdrop-blur-sm border border-emerald-100/65 rounded-xl p-3.5 shadow-sm">
+                          <span className="font-label text-[9px] text-emerald-700/60 uppercase font-extrabold block">Ad Campaign</span>
+                          <p className="font-body text-xs text-slate-850 font-bold mt-1 truncate">{viewingLead.ad_campaign_name || "Organic Traffic"}</p>
+                        </div>
+                        <div className="bg-white/90 backdrop-blur-sm border border-emerald-100/65 rounded-xl p-3.5 shadow-sm">
+                          <span className="font-label text-[9px] text-emerald-700/60 uppercase font-extrabold block">Channel Source</span>
+                          <p className="font-body text-xs text-slate-850 font-bold mt-1 capitalize truncate">{viewingLead.channel || viewingLead.source || "Organic"}</p>
+                        </div>
                       </div>
                     </div>
                   )}
                 </div>
 
-                <div className="border-t border-surface-mid pt-3">
-                  <p className="font-label text-[10px] text-on-surface-muted uppercase mb-1.5">recent notes</p>
+                {/* Right Column: Interaction Logs */}
+                <div className="space-y-4">
+                  <h4 className="font-display text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-1.5">
+                    <StickyNote size={12} className="text-indigo-500" /> Lead Interaction Timeline
+                  </h4>
+
+                  {/* Pinned notes */}
                   {viewingLeadNotes?.pinned && viewingLeadNotes.pinned.length > 0 && (
-                    <div className="mb-2 space-y-1">
+                    <div className="space-y-1.5">
+                      <p className="font-label text-[9px] text-slate-400 uppercase tracking-wider font-extrabold">📌 Pinned Notes</p>
                       {viewingLeadNotes.pinned.map((n: Note) => (
-                        <div key={n.id} className="p-2 bg-purple-50 border border-purple-100 rounded-lg text-xs text-slate-700">
+                        <div key={n.id} className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl text-xs text-slate-700 font-semibold shadow-sm">
                           {n.content}
                         </div>
                       ))}
                     </div>
                   )}
-                  {viewingLeadNotes?.notes && viewingLeadNotes.notes.length > 0 ? (
-                    <div className="space-y-1.5">
-                      {viewingLeadNotes.notes.slice(0, 2).map((n: Note) => (
-                        <div key={n.id} className="p-2 bg-slate-50 border border-slate-100 rounded-lg text-xs text-slate-600">
-                          <p className="text-[9px] text-on-surface-muted mb-0.5">{timeAgo(n.created_at)}</p>
-                          <p>{n.content}</p>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-on-surface-muted text-center py-3 bg-slate-50 border border-slate-100 rounded-lg">No notes recorded.</p>
-                  )}
+
+                  {/* Notes Feed */}
+                  <div className="space-y-3">
+                    <p className="font-label text-[9px] text-slate-400 uppercase tracking-wider font-extrabold">📝 Recent Notes</p>
+                    {viewingLeadNotes?.notes && viewingLeadNotes.notes.length > 0 ? (
+                      <div className="relative border-l border-slate-100 pl-4 ml-2.5 max-h-[350px] overflow-y-auto pr-1 space-y-4">
+                        {viewingLeadNotes.notes.slice(0, 5).map((n: Note) => (
+                          <div key={n.id} className="relative">
+                            <span className="absolute -left-[21px] top-1 w-2 h-2 rounded-full bg-indigo-400 border-2 border-white ring-4 ring-white" />
+                            <div className="flex justify-between items-center text-[9px] text-slate-450 font-bold mb-1">
+                              <span>{timeAgo(n.created_at)}</span>
+                              {n.is_pinned && <span className="text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-black text-[8px]">PINNED</span>}
+                            </div>
+                            <p className="font-body text-xs text-slate-600 bg-slate-50 border border-slate-100/80 p-3 rounded-2xl leading-relaxed break-words">
+                              {n.content}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 text-center py-8 bg-slate-50/60 border border-slate-100 rounded-2xl">
+                        No prior interaction notes logged.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             ) : null}
