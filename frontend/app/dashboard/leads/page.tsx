@@ -663,6 +663,43 @@ export default function LeadsPage() {
               </button>
             </div>
 
+            {/* Visual Re-engagement Flow Map */}
+            {reengagementSteps.length > 0 && (
+              <div className="bg-surface-low border border-surface-mid/60 rounded-xl p-4 mb-5 space-y-2.5">
+                <span className="font-label text-[10px] font-bold text-on-surface-muted uppercase tracking-wider block">
+                  🛤️ Active Re-engagement Sequence Flow
+                </span>
+                <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-on-surface">
+                  <div className="px-3 py-1.5 bg-surface border border-surface-mid rounded-lg shadow-sm">
+                    🏁 {sourceFilter === "INBOUND" ? "Lead Messages Us" : "Broadcast Sent"}
+                  </div>
+                  {(() => {
+                    const sortedSteps = [...reengagementSteps].sort((a, b) => a.delay_hours - b.delay_hours);
+                    return sortedSteps.map((step, idx) => (
+                      <div key={step.id} className="flex items-center gap-2">
+                        <span className="text-on-surface-muted">➔</span>
+                        <div className={cn(
+                          "px-3 py-1.5 border rounded-lg shadow-sm flex items-center gap-1.5",
+                          step.delay_hours < 24 ? "bg-emerald-50/50 border-emerald-100 text-emerald-800" : "bg-red-50/50 border-red-100 text-red-800"
+                        )}>
+                          <span className="bg-white/80 px-1.5 py-0.5 rounded text-[9px] font-bold">
+                            {idx + 1}
+                          </span>
+                          <span>{step.delay_hours}h Delay</span>
+                          <span className="text-[10px] font-normal italic">
+                            ({step.message_type === "freeform" ? "Freeform" : "Template"})
+                          </span>
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+                <p className="text-[10px] text-on-surface-muted mt-1 leading-relaxed">
+                  💡 You can customize the time intervals and add multiple re-engagement steps above. Each step will trigger sequentially at its configured delay hour.
+                </p>
+              </div>
+            )}
+
             {showAddStep && (
               <div className="bg-surface-low border border-surface-mid/85 rounded-xl p-5 mb-5 space-y-4 animate-slide-up">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -730,31 +767,42 @@ export default function LeadsPage() {
                     }
                     
                     const triggerDate = new Date(new Date(selectedBroadcast.timestamp).getTime() + stepDelayHours * 60 * 60 * 1000);
+                    const remainingHours = 24 - stepDelayHours;
                     return (
-                      <div className="bg-surface border border-surface-mid rounded-xl p-4 space-y-3 shadow-sm ring-1 ring-black/5 animate-slide-up">
+                      <div className="bg-surface border border-surface-mid rounded-xl p-4 space-y-4 shadow-sm ring-1 ring-black/5 animate-slide-up">
                         <div className="text-xs font-bold text-on-surface-muted uppercase tracking-wider">
                           ⏱️ Timing Assistant (India Standard Time)
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-semibold">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-b border-surface-mid pb-3">
                           <div>
-                            <span className="text-on-surface-muted block">Broadcast Sent:</span>
-                            <span className="text-on-surface font-mono">{formatIndianTime(selectedBroadcast.timestamp)}</span>
+                            <span className="text-[11px] text-on-surface-muted font-bold block uppercase">Broadcast Sent:</span>
+                            <span className="text-xs text-on-surface font-semibold font-mono">{formatIndianTime(selectedBroadcast.timestamp)}</span>
                           </div>
                           <div>
-                            <span className="text-on-surface-muted block">Scheduled Trigger:</span>
-                            <span className="text-tertiary font-bold font-mono">{formatIndianTime(triggerDate)}</span>
+                            <span className="text-[11px] text-on-surface-muted font-bold block uppercase">Expected Trigger Time:</span>
+                            <span className="text-tertiary text-xs font-bold font-mono">{formatIndianTime(triggerDate)} ({stepDelayHours}h after send)</span>
                           </div>
-                          <div>
-                            <span className="text-on-surface-muted block">24h Session Window:</span>
-                            {stepDelayHours < 24 ? (
-                              <span className="text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 inline-block mt-0.5">
-                                Open ({24 - stepDelayHours}h left)
-                              </span>
-                            ) : (
-                              <span className="text-red-600 font-bold bg-red-50 px-1.5 py-0.5 rounded border border-red-100 inline-block mt-0.5">
-                                Expired (Must use Template)
-                              </span>
-                            )}
+                        </div>
+                        
+                        <div className="space-y-2.5 text-xs">
+                          <p className="font-bold text-on-surface">How will this message reach leads?</p>
+                          <div className="space-y-2 font-medium">
+                            <div className="flex items-start gap-2 bg-emerald-50/50 border border-emerald-100 p-2.5 rounded-lg">
+                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
+                              <p className="text-emerald-800 leading-relaxed">
+                                <strong>For leads who replied:</strong> Since they messaged back, their 24-hour window was opened. When this trigger runs at the {stepDelayHours}th hour, they will have <strong>{remainingHours > 0 ? `${remainingHours} hours remaining` : "0 hours remaining"}</strong> in their active window.
+                                <br />
+                                <span className="font-semibold">{remainingHours > 0 ? "✅ Both Freeform Text and Template messages can be sent." : "⚠️ Since the 24h window has expired, only Template messages will deliver."}</span>
+                              </p>
+                            </div>
+                            <div className="flex items-start gap-2 bg-amber-50/40 border border-amber-100 p-2.5 rounded-lg">
+                              <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+                              <p className="text-amber-800 leading-relaxed">
+                                <strong>For leads who did not reply:</strong> They never messaged us back, so they have <strong>no open 24h window</strong>.
+                                <br />
+                                <span className="font-semibold">⚠️ Only Approved Templates will deliver to them. (If you choose Freeform Text, these non-replying leads will be automatically skipped to prevent delivery failures).</span>
+                              </p>
+                            </div>
                           </div>
                         </div>
                         {isFreeformOutOfWindow && (
@@ -766,34 +814,37 @@ export default function LeadsPage() {
                     );
                   } else if (sourceFilter === "INBOUND") {
                     const sim = getSimulatedInboundTrigger(stepDelayHours);
+                    const remainingHours = 24 - stepDelayHours;
                     return (
-                      <div className="bg-surface border border-surface-mid rounded-xl p-4 space-y-3 shadow-sm ring-1 ring-black/5 animate-slide-up">
+                      <div className="bg-surface border border-surface-mid rounded-xl p-4 space-y-4 shadow-sm ring-1 ring-black/5 animate-slide-up">
                         <div className="text-xs font-bold text-on-surface-muted uppercase tracking-wider">
                           ⏱️ Timing Assistant (India Standard Time)
                         </div>
                         <p className="text-[11px] text-on-surface-muted leading-relaxed">
-                          Since Inbound follow-ups run relative to each lead&apos;s last reply, here is a mock scenario:
+                          Since Inbound follow-ups run relative to each lead&apos;s last inbound message, here is a mock scenario:
                         </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-semibold">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-b border-surface-mid pb-3">
                           <div>
-                            <span className="text-on-surface-muted block">If Lead replies at:</span>
-                            <span className="text-on-surface font-mono">Today, 10:00 AM</span>
+                            <span className="text-[11px] text-on-surface-muted font-bold block uppercase">If Lead replies at:</span>
+                            <span className="text-xs text-on-surface font-semibold font-mono">Today, 10:00 AM</span>
                           </div>
                           <div>
-                            <span className="text-on-surface-muted block">Expected Trigger:</span>
-                            <span className="text-tertiary font-bold font-mono">{sim.timeStr}</span>
+                            <span className="text-[11px] text-on-surface-muted font-bold block uppercase">Expected Trigger:</span>
+                            <span className="text-tertiary text-xs font-bold font-mono">{sim.timeStr} ({stepDelayHours}h after reply)</span>
                           </div>
-                          <div>
-                            <span className="text-on-surface-muted block">24h Session Window:</span>
-                            {sim.isOpen ? (
-                              <span className="text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 inline-block mt-0.5">
-                                Open ({24 - stepDelayHours}h left)
-                              </span>
-                            ) : (
-                              <span className="text-red-600 font-bold bg-red-50 px-1.5 py-0.5 rounded border border-red-100 inline-block mt-0.5">
-                                Expired (Must use Template)
-                              </span>
-                            )}
+                        </div>
+                        
+                        <div className="space-y-2.5 text-xs">
+                          <p className="font-bold text-on-surface">How will this message reach leads?</p>
+                          <div className="space-y-2 font-medium">
+                            <div className="flex items-start gap-2 bg-emerald-50/50 border border-emerald-100 p-2.5 rounded-lg">
+                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
+                              <p className="text-emerald-800 leading-relaxed">
+                                <strong>WhatsApp 24h Session Window:</strong> Since the message triggers at the {stepDelayHours}th hour after their reply, their window will have <strong>{remainingHours > 0 ? `${remainingHours} hours remaining` : "0 hours remaining"}</strong>.
+                                <br />
+                                <span className="font-semibold">{remainingHours > 0 ? "✅ Both Freeform Text and Template messages can be sent." : "⚠️ Since the 24h window has expired, only Template messages will deliver."}</span>
+                              </p>
+                            </div>
                           </div>
                         </div>
                         {isFreeformOutOfWindow && (
@@ -967,14 +1018,20 @@ export default function LeadsPage() {
                       if (selectedBroadcast) {
                         const triggerDate = new Date(new Date(selectedBroadcast.timestamp).getTime() + step.delay_hours * 60 * 60 * 1000);
                         triggerDetailText = `Scheduled: ${formatIndianTime(triggerDate)}`;
-                        windowDetailText = isWindowOpen ? `(${24 - step.delay_hours}h left in window)` : "(Window Expired)";
+                        windowDetailText = isWindowOpen 
+                          ? `replied leads: open (${24 - step.delay_hours}h left) | non-replied: template only`
+                          : "session window expired (template only)";
                       } else {
                         triggerDetailText = `Triggers: ${step.delay_hours}h after broadcast sent`;
-                        windowDetailText = isWindowOpen ? `(${24 - step.delay_hours}h left in window)` : "(Window Expired)";
+                        windowDetailText = isWindowOpen 
+                          ? `replied leads: open (${24 - step.delay_hours}h left) | non-replied: template only`
+                          : "session window expired (template only)";
                       }
                     } else {
                       triggerDetailText = `Triggers: ${step.delay_hours}h after last inbound message`;
-                      windowDetailText = isWindowOpen ? `(${24 - step.delay_hours}h left in window)` : "(Window Expired)";
+                      windowDetailText = isWindowOpen 
+                        ? `session window: open (${24 - step.delay_hours}h left)`
+                        : "session window expired (template only)";
                     }
 
                     return (
