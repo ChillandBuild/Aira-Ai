@@ -36,7 +36,7 @@ Separately, the operator wants to send **multiple** re-engagement messages at **
 | Closed-window behavior | Auto-fallback to a backup template per freeform step | user (Q3) |
 | Number/values of steps | Fully client-defined, arbitrary count + delays | user |
 | Trigger scope | **Both** triggers built as **separate tools**, each on its own screen with only its own clock | user |
-| Placement | Stay in the Leads page (Broadcast tab + inbound view) | user |
+| Placement | A **sub-tab inside the Leads page** (not the source dropdown) | user |
 
 ## Two tools, two clocks — never mixed
 
@@ -49,6 +49,22 @@ Separately, the operator wants to send **multiple** re-engagement messages at **
 | `remaining = 24 − delay` valid? | **No** — window is per-lead, anchored to each reply | **Yes** — hour 0 *is* the reply |
 
 The two screens never reference the other's clock. This is the structural fix for "which timing is which."
+
+## Placement
+
+Re-engagement today is buried: it only appears inline above the leads table when the **source dropdown** ([leads/page.tsx:568-580](../../../frontend/app/dashboard/leads/page.tsx#L568)) is set to "Inbound Leads" or "Broadcast Specific" ([line 644](../../../frontend/app/dashboard/leads/page.tsx#L644)). That cramped, filter-driven home is a root cause of the confusion and cannot give each tool its own screen.
+
+New home: a **header sub-tab inside the Leads page** — same route (`/dashboard/leads`), same sidebar entry:
+
+```
+[ Leads ]  [ Re-engagement ]
+              └─ [ Campaign Follow-up ]  [ Reply Follow-up ]
+                   └─ 24h timeline sequence builder · + Add message
+```
+
+- `Leads` keeps the existing segment tabs + table untouched.
+- `Re-engagement` is a new view with two inner tabs, each rendering the shared sequence builder bound to its own trigger type.
+- The re-engagement panel is **removed** from the source dropdown's inline render; the source dropdown reverts to a pure leads filter.
 
 ## The sequence builder (shared component, both screens)
 
@@ -93,10 +109,13 @@ Template-type steps are unchanged (they always deliver). This makes "open vs exp
 - No change to the scheduling loop, dedup (per `lead × step`), or per-lead window math.
 
 ### Frontend — `frontend/app/dashboard/leads/page.tsx` (bulk of the work)
-- Rebuild both panels as the timeline sequence builder.
+- Add a `Leads | Re-engagement` header sub-tab; gate the existing table/segments under `Leads`.
+- Build the `Re-engagement` view with `Campaign Follow-up | Reply Follow-up` inner tabs, each rendering the shared timeline sequence builder bound to its trigger type.
+- Remove the inline re-engagement panel from the source-dropdown render path (revert the dropdown to a pure filter).
 - Add the **backup template** field to freeform step config.
 - Add `fallback_template_name` / `fallback_template_variables` to the `ReengagementStep` type and `createStep` call in `frontend/lib/api.ts`.
 - Replace the broadcast-screen timing copy (currently around the "remaining hours" block) with the honest per-lead copy; keep the inbound-screen copy.
+- Extract the sequence builder into its own component (the page is already ~1250 lines — keep it from growing further).
 
 ## Data flow
 
