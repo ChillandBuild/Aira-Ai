@@ -1,7 +1,7 @@
 "use client";
 import { toast } from "sonner";
-import { useEffect, useState, useCallback, useRef } from "react";
-import { Phone, RefreshCw, ChevronDown, StickyNote, Check, CheckCheck, Download, Calendar, Tag, Target, Inbox, Copy, User, Sparkles, Search, Clock, Bell, X } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { Phone, RefreshCw, ChevronDown, StickyNote, Check, CheckCheck, Download, Calendar, Tag, Target, Inbox, Copy, User, Sparkles, Search, Clock } from "lucide-react";
 import { api, Caller, Lead } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import LiveNotesPane from "./components/live-notes-pane";
@@ -16,7 +16,6 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   const [myCaller, setMyCaller] = useState<Caller | null>(null);
   const [myStatus, setMyStatus] = useState<"active" | "break" | "logged_out">("active");
   const [togglingStatus, setTogglingStatus] = useState(false);
-  const autoLoginRef = useRef(false);
 
   // my leads (assigned to me, sorted by score desc)
   const [myLeads, setMyLeads] = useState<Lead[]>([]);
@@ -54,9 +53,6 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   const [schedReminder, setSchedReminder] = useState(false);
   const [scheduleSaving, setScheduleSaving] = useState(false);
 
-  // notification bell
-  const [showNotifDropdown, setShowNotifDropdown] = useState(false);
-
   // modals
   const [historyLead, setHistoryLead] = useState<Lead | null>(null);
   const { activeCall: activeCallCtx, setActiveCall: setActiveCallCtx } = useActiveCall();
@@ -90,13 +86,6 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   }, [callerId, loadCallbacks]);
 
   useEffect(() => { loadData(); }, [loadData]);
-
-  // Auto-login: set status to active on mount if logged_out
-  useEffect(() => {
-    if (!callerId || autoLoginRef.current) return;
-    autoLoginRef.current = true;
-    api.callers.setMyStatus("active").catch(() => {});
-  }, [callerId]);
 
   // auto-refresh callbacks every 5 minutes
   usePolling(loadCallbacks, 5 * 60 * 1000);
@@ -290,51 +279,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
             Export Leads CSV
           </button>
 
-          {/* Notification Bell */}
-          <div className="relative">
-            <button
-              onClick={() => setShowNotifDropdown((v) => !v)}
-              className="relative p-2.5 bg-white border border-slate-200/80 rounded-2xl hover:bg-slate-50 hover:border-indigo-500 transition-all shadow-sm"
-              title="Scheduled callback reminders"
-            >
-              <Bell size={16} className="text-slate-600" />
-              {todayCallbacks.length > 0 && (
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-gradient-to-r from-rose-500 to-pink-600 text-white text-[9px] font-black rounded-full flex items-center justify-center ring-2 ring-white animate-pulse">
-                  {todayCallbacks.length}
-                </span>
-              )}
-            </button>
-            {showNotifDropdown && (
-              <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-slate-200/80 rounded-2xl shadow-xl z-50 overflow-hidden">
-                <div className="px-4 py-3 bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-slate-100 flex items-center justify-between">
-                  <span className="font-display text-xs font-black text-slate-800 uppercase tracking-wider">Due Callbacks</span>
-                  <button onClick={() => setShowNotifDropdown(false)} className="p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-white/50 transition-colors">
-                    <X size={14} />
-                  </button>
-                </div>
-                <div className="max-h-72 overflow-y-auto">
-                  {todayCallbacks.length === 0 ? (
-                    <div className="px-4 py-8 text-center text-xs text-slate-400">No pending callbacks</div>
-                  ) : (
-                    todayCallbacks.map((cb) => (
-                      <div key={cb.id} className="px-4 py-3 border-b border-slate-50 hover:bg-slate-50/50 transition-colors flex items-center justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <p className="font-body text-sm font-bold text-slate-800 truncate">{cb.lead.name ?? "Unnamed"}</p>
-                          <p className="font-label text-[10px] text-slate-400">{cb.lead.phone} · {new Date(cb.scheduled_for).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
-                        </div>
-                        <button
-                          onClick={() => { setSelectedLeadId(cb.lead.id); setShowNotifDropdown(false); }}
-                          className="shrink-0 px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-label text-[10px] font-bold hover:bg-indigo-700 transition-colors"
-                        >
-                          View
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+
 
           <button
             onClick={toggleMyStatus}

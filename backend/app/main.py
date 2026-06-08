@@ -8,7 +8,7 @@ from app.dependencies.auth import get_current_user
 
 import os
 from app.config import settings
-from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team, media, todos, bookings, conversations, operator, chat_handovers, telegram, instagram, facebook, automations, tags, inbound_leads, reengagement
+from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team, media, todos, bookings, conversations, operator, chat_handovers, telegram, instagram, facebook, automations, tags, inbound_leads, reengagement, notifications
 from app.routes.calls import public_router as calls_public_router
 
 # Configure logging
@@ -204,7 +204,7 @@ async def _process_callback_reassignments() -> None:
 
         overdue = (
             db.table("follow_up_jobs")
-            .select("id,lead_id,tenant_id")
+            .select("id,lead_id,tenant_id,scheduled_for")
             .eq("cadence", "callback")
             .eq("status", "pending")
             .lte("scheduled_for", cutoff)
@@ -218,7 +218,7 @@ async def _process_callback_reassignments() -> None:
             try:
                 lead = (
                     db.table("leads")
-                    .select("id,assigned_to,tenant_id")
+                    .select("id,name,assigned_to,tenant_id")
                     .eq("id", job["lead_id"])
                     .maybe_single()
                     .execute()
@@ -228,11 +228,13 @@ async def _process_callback_reassignments() -> None:
 
                 current_caller_id = lead.data["assigned_to"]
                 tid = job["tenant_id"]
+                scheduled_for_str = job["scheduled_for"]
+                lead_name = lead.data.get("name") or "Unknown"
 
                 # Check if the assigned caller is active
                 caller = (
                     db.table("callers")
-                    .select("id,status")
+                    .select("id,name,status")
                     .eq("id", current_caller_id)
                     .maybe_single()
                     .execute()
@@ -240,20 +242,62 @@ async def _process_callback_reassignments() -> None:
                 if caller and caller.data and caller.data.get("status") == "active":
                     continue  # caller is active, no reassignment needed
 
-                # Find another active caller in the same tenant
-                alt = (
+                old_caller_name = caller.data.get("name", "Unknown") if caller and caller.data else "Unknown"
+
+                # Fetch all active callers in the same tenant (excluding current)
+                active_callers_res = (
                     db.table("callers")
-                    .select("id")
+                    .select("id,user_id")
                     .eq("tenant_id", tid)
                     .eq("active", True)
                     .eq("status", "active")
                     .neq("id", current_caller_id)
-                    .limit(1)
                     .execute()
                 )
-                new_caller_id = None
-                if alt.data:
-                    new_caller_id = alt.data[0]["id"]
+                active_callers = active_callers_res.data or []
+
+                # Parse scheduled_for to check +/- 30m window
+                try:
+                    job_time = datetime.fromisoformat(scheduled_for_str.replace("Z", "+00:00"))
+                    window_start = (job_time - timedelta(minutes=30)).isoformat()
+                    window_end = (job_time + timedelta(minutes=30)).isoformat()
+
+                    # Find pending callbacks in this window for this tenant
+                    conflicting_jobs_res = (
+                        db.table("follow_up_jobs")
+                        .select("lead_id")
+                        .eq("tenant_id", tid)
+                        .eq("cadence", "callback")
+                        .eq("status", "pending")
+                        .gte("scheduled_for", window_start)
+                        .lte("scheduled_for", window_end)
+                        .execute()
+                    )
+                    conflicting_jobs = conflicting_jobs_res.data or []
+                except Exception:
+                    conflicting_jobs = []
+
+                # Extract caller IDs for these conflicting jobs
+                conflicting_caller_ids = set()
+                if conflicting_jobs:
+                    lead_ids = [j["lead_id"] for j in conflicting_jobs]
+                    if lead_ids:
+                        leads_with_conflict = (
+                            db.table("leads")
+                            .select("assigned_to")
+                            .in_("id", lead_ids)
+                            .execute()
+                        ).data or []
+                        for lc in leads_with_conflict:
+                            if lc.get("assigned_to"):
+                                conflicting_caller_ids.add(lc["assigned_to"])
+
+                available_callers = [c for c in active_callers if c["id"] not in conflicting_caller_ids]
+                
+                new_caller = None
+                if available_callers:
+                    # Just pick the first available one for now
+                    new_caller = available_callers[0]
                 else:
                     # Fallback: assign to tenant owner
                     owner = (
@@ -267,22 +311,34 @@ async def _process_callback_reassignments() -> None:
                     if owner and owner.data:
                         owner_caller = (
                             db.table("callers")
-                            .select("id")
+                            .select("id,user_id")
                             .eq("user_id", owner.data["user_id"])
                             .eq("tenant_id", tid)
                             .maybe_single()
                             .execute()
                         )
                         if owner_caller and owner_caller.data:
-                            new_caller_id = owner_caller.data["id"]
+                            new_caller = owner_caller.data
 
-                if new_caller_id and new_caller_id != current_caller_id:
+                if new_caller and new_caller["id"] != current_caller_id:
+                    # Reassign lead
                     db.table("leads").update(
-                        {"assigned_to": new_caller_id}
+                        {"assigned_to": new_caller["id"]}
                     ).eq("id", job["lead_id"]).execute()
+                    
+                    # Send notification
+                    if new_caller.get("user_id"):
+                        db.table("app_notifications").insert({
+                            "tenant_id": tid,
+                            "user_id": new_caller["user_id"],
+                            "type": "reassignment",
+                            "title": "Lead Reassigned",
+                            "message": f"Lead '{lead_name}' has been switched to you because '{old_caller_name}' was not available."
+                        }).execute()
+
                     logger.info(
                         f"Callback reassignment: job={job['id']} lead={job['lead_id']} "
-                        f"from={current_caller_id} to={new_caller_id}"
+                        f"from={current_caller_id} to={new_caller['id']}"
                     )
             except Exception as e:
                 logger.error(f"Callback reassignment failed for job {job['id']}: {e}")
@@ -487,5 +543,6 @@ app.include_router(automations.router, prefix="/api/v1/automations", tags=["auto
 app.include_router(tags.router, prefix="/api/v1/broadcast-tags", tags=["broadcast-tags"], dependencies=_auth)
 app.include_router(inbound_leads.router, prefix="/api/v1/inbound-leads", tags=["inbound-leads"], dependencies=_auth)
 app.include_router(reengagement.router, prefix="/api/v1/reengagement", tags=["reengagement"], dependencies=_auth)
+app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["notifications"], dependencies=_auth)
 
 

@@ -416,6 +416,15 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
   }
 }
 
+export interface AppNotification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+}
+
 export const api = {
   leads: {
     list: async (params?: {
@@ -960,6 +969,13 @@ export const api = {
       a.remove();
       window.URL.revokeObjectURL(url);
     },
+  },
+  notifications: {
+    list: () => apiFetch<{ data: AppNotification[] }>("/api/v1/notifications"),
+    markRead: (id: string) =>
+      apiFetch<{ success: boolean; data: AppNotification }>(`/api/v1/notifications/${id}/read`, {
+        method: "PATCH",
+      }),
   },
 };
 

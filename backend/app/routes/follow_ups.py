@@ -32,6 +32,7 @@ async def run_due_follow_ups(limit: int = Query(20, ge=1, le=100), tenant_id: st
         db.table("follow_up_jobs")
         .select("*")
         .eq("status", "pending")
+        .neq("cadence", "callback")
         .eq("tenant_id", tenant_id)
         .lte("scheduled_for", now)
         .order("scheduled_for")

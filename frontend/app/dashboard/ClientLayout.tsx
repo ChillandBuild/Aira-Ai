@@ -4,7 +4,8 @@ import { Sidebar } from "@/components/sidebar";
 import { AuthRoleProvider } from "./contexts/AuthRoleContext";
 import { ActiveCallProvider } from "./contexts/ActiveCallContext";
 import { CalendarPanel } from "@/components/CalendarPanel";
-import { CallbackNotifier } from "@/components/CallbackNotifier";
+import { NotificationCenter } from "@/components/NotificationCenter";
+import { SessionTracker } from "@/components/SessionTracker";
 import { Calendar } from "lucide-react";
 import { API_URL } from "@/lib/api";
 
@@ -23,7 +24,8 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthRoleProvider>
       <ActiveCallProvider>
-        <CallbackNotifier />
+        <NotificationCenter />
+        <SessionTracker />
         <div className="flex min-h-screen bg-background">
           <Sidebar />
 
