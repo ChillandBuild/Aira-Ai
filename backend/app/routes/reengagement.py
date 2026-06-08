@@ -77,6 +77,15 @@ def create_step(
     return res.data[0] if res.data else {}
 
 
+@router.post("/trigger-now")
+async def trigger_now(ctx: dict = Depends(get_tenant_and_role)):
+    if ctx["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Only owners can trigger re-engagement")
+    from app.services.reengagement_service import process_due_reengagements
+    fired = await process_due_reengagements()
+    return {"fired": fired}
+
+
 @router.delete("/steps/{step_id}")
 def delete_step(
     step_id: str,
