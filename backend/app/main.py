@@ -295,9 +295,11 @@ async def _process_callback_reassignments() -> None:
                 available_callers = [c for c in active_callers if c["id"] not in conflicting_caller_ids]
                 
                 new_caller = None
+                new_caller_name = "Admin/Owner"
                 if available_callers:
-                    # Just pick the first available one for now
-                    new_caller = available_callers[0]
+                    import random
+                    new_caller = random.choice(available_callers)
+                    new_caller_name = new_caller.get("name") or "another caller"
                 else:
                     # Fallback: assign to tenant owner
                     owner = (
@@ -326,14 +328,24 @@ async def _process_callback_reassignments() -> None:
                         {"assigned_to": new_caller["id"]}
                     ).eq("id", job["lead_id"]).execute()
                     
-                    # Send notification
+                    # Send notification to the NEW caller (if they have a user account)
                     if new_caller.get("user_id"):
                         db.table("app_notifications").insert({
                             "tenant_id": tid,
                             "user_id": new_caller["user_id"],
                             "type": "reassignment",
-                            "title": "Lead Reassigned",
+                            "title": "Lead Reassigned To You",
                             "message": f"Lead '{lead_name}' has been switched to you because '{old_caller_name}' was not available."
+                        }).execute()
+
+                    # Send notification to the OLD caller
+                    if caller and caller.data and caller.data.get("user_id"):
+                        db.table("app_notifications").insert({
+                            "tenant_id": tid,
+                            "user_id": caller.data["user_id"],
+                            "type": "reassignment",
+                            "title": "Lead Reassigned",
+                            "message": f"Lead '{lead_name}' has been switched to {new_caller_name} because you were not available."
                         }).execute()
 
                     logger.info(
