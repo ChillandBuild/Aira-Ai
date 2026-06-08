@@ -410,6 +410,13 @@ async def whatsapp_webhook(
                                 logger.warning(f"Booking-flow scoring failed for lead {lead_id}: {_bk_se}")
                             continue
 
+                    # Autopilot: tenant-opt-in autonomous agent. OFF by default — returns
+                    # False instantly when disabled, leaving the pipeline below untouched.
+                    if body:
+                        from app.services.autopilot import run_autopilot
+                        if await run_autopilot(lead_id, tenant_id, body, "whatsapp", db):
+                            continue
+
                     if body:
                         fire_trigger(
                             background_tasks, lead_id, tenant_id,
