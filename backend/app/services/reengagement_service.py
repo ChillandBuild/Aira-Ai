@@ -78,7 +78,7 @@ async def process_due_reengagements() -> int:
                 # Fetch lead details to check current segment and last_inbound_at
                 lead_res = (
                     db.table("leads")
-                    .select("id, name, phone, segment, last_inbound_at, source, extra_cols, collected_data")
+                    .select("id, name, phone, segment, last_inbound_at, source, collected_data")
                     .eq("id", lead_id)
                     .eq("tenant_id", tenant_id)
                     .maybe_single()
@@ -98,7 +98,7 @@ async def process_due_reengagements() -> int:
             # Find leads with last_inbound_at
             leads_res = (
                 db.table("leads")
-                .select("id, name, phone, segment, last_inbound_at, source, extra_cols, collected_data")
+                .select("id, name, phone, segment, last_inbound_at, source, collected_data")
                 .eq("tenant_id", tenant_id)
                 .not_.is_("last_inbound_at", "null")
                 .execute()
@@ -166,8 +166,7 @@ async def _send_step_template(
             val = lead.get("phone") or ""
         else:
             val = (
-                (lead.get("extra_cols") or {}).get(var_name)
-                or (lead.get("collected_data") or {}).get(var_name)
+                (lead.get("collected_data") or {}).get(var_name)
                 or ""
             )
         parameters.append({"type": "text", "text": str(val)})
