@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id
+from app.dependencies.auth import get_current_user
 from app.services.ai_reply import generate_reengagement_message, send_whatsapp
 from app.services.growth import build_follow_up_summary, utcnow
 
@@ -135,11 +136,22 @@ async def create_callback(payload: CallbackCreate, tenant_id: str = Depends(get_
 
 
 @router.get("/callbacks/today")
-async def today_callbacks(tenant_id: str = Depends(get_tenant_id)):
+async def today_callbacks(tenant_id: str = Depends(get_tenant_id), current_user: dict = Depends(get_current_user)):
     db = get_supabase()
     now = datetime.now(timezone.utc)
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     day_end = now.replace(hour=23, minute=59, second=59, microsecond=0).isoformat()
+
+    is_owner = False
+    tenant_user = db.table("tenant_users").select("role").eq("user_id", current_user["user_id"]).eq("tenant_id", tenant_id).maybe_single().execute()
+    if tenant_user and tenant_user.data and tenant_user.data.get("role") == "owner":
+        is_owner = True
+
+    caller_id = None
+    if not is_owner:
+        caller = db.table("callers").select("id").eq("user_id", current_user["user_id"]).eq("tenant_id", tenant_id).maybe_single().execute()
+        if caller and caller.data:
+            caller_id = caller.data["id"]
 
     jobs = db.table("follow_up_jobs").select(
         "id,lead_id,scheduled_for,message_preview,status"
@@ -152,15 +164,31 @@ async def today_callbacks(tenant_id: str = Depends(get_tenant_id)):
         lead = db.table("leads").select("id,name,phone,segment,assigned_to").eq(
             "id", job["lead_id"]
         ).eq("tenant_id", tenant_id).maybe_single().execute()
-        result.append({**job, "lead": (lead and lead.data) or {}})
+        lead_data = (lead and lead.data) or {}
+        
+        if not is_owner and lead_data.get("assigned_to") != caller_id:
+            continue
+            
+        result.append({**job, "lead": lead_data})
 
     return {"data": result}
 
 
 @router.get("/callbacks/all")
-async def all_callbacks(tenant_id: str = Depends(get_tenant_id)):
+async def all_callbacks(tenant_id: str = Depends(get_tenant_id), current_user: dict = Depends(get_current_user)):
     """Return all pending callback jobs for the tenant, grouped for the scheduled calls page."""
     db = get_supabase()
+
+    is_owner = False
+    tenant_user = db.table("tenant_users").select("role").eq("user_id", current_user["user_id"]).eq("tenant_id", tenant_id).maybe_single().execute()
+    if tenant_user and tenant_user.data and tenant_user.data.get("role") == "owner":
+        is_owner = True
+
+    caller_id = None
+    if not is_owner:
+        caller = db.table("callers").select("id").eq("user_id", current_user["user_id"]).eq("tenant_id", tenant_id).maybe_single().execute()
+        if caller and caller.data:
+            caller_id = caller.data["id"]
 
     jobs = (
         db.table("follow_up_jobs")
@@ -183,7 +211,12 @@ async def all_callbacks(tenant_id: str = Depends(get_tenant_id)):
             .maybe_single()
             .execute()
         )
-        result.append({**job, "lead": (lead and lead.data) or {}})
+        lead_data = (lead and lead.data) or {}
+        
+        if not is_owner and lead_data.get("assigned_to") != caller_id:
+            continue
+            
+        result.append({**job, "lead": lead_data})
 
     return {"data": result}
 
@@ -196,12 +229,23 @@ async def mark_callback_done(job_id: str, tenant_id: str = Depends(get_tenant_id
 
 
 @router.get("/callbacks/today-completed")
-async def today_completed_callbacks(tenant_id: str = Depends(get_tenant_id)):
+async def today_completed_callbacks(tenant_id: str = Depends(get_tenant_id), current_user: dict = Depends(get_current_user)):
     """Return callbacks that were marked as done today."""
     db = get_supabase()
     now = datetime.now(timezone.utc)
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     day_end = now.replace(hour=23, minute=59, second=59, microsecond=0).isoformat()
+
+    is_owner = False
+    tenant_user = db.table("tenant_users").select("role").eq("user_id", current_user["user_id"]).eq("tenant_id", tenant_id).maybe_single().execute()
+    if tenant_user and tenant_user.data and tenant_user.data.get("role") == "owner":
+        is_owner = True
+
+    caller_id = None
+    if not is_owner:
+        caller = db.table("callers").select("id").eq("user_id", current_user["user_id"]).eq("tenant_id", tenant_id).maybe_single().execute()
+        if caller and caller.data:
+            caller_id = caller.data["id"]
 
     jobs = db.table("follow_up_jobs").select(
         "id,lead_id,scheduled_for,message_preview,status"
@@ -214,6 +258,11 @@ async def today_completed_callbacks(tenant_id: str = Depends(get_tenant_id)):
         lead = db.table("leads").select("id,name,phone,segment,assigned_to").eq(
             "id", job["lead_id"]
         ).eq("tenant_id", tenant_id).maybe_single().execute()
-        result.append({**job, "lead": (lead and lead.data) or {}})
+        lead_data = (lead and lead.data) or {}
+        
+        if not is_owner and lead_data.get("assigned_to") != caller_id:
+            continue
+            
+        result.append({**job, "lead": lead_data})
 
     return {"data": result}
