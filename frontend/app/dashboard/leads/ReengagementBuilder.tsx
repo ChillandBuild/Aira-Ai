@@ -204,17 +204,18 @@ export default function ReengagementBuilder({ type, broadcastId, templates }: Re
                 min={1}
                 max={MAX_DELAY}
                 value={delayHours}
-                onChange={(e) => setDelayHours(Number(e.target.value))}
+                onChange={(e) => setDelayHours(Number(e.target.value) || 1)}
                 className="mt-1 w-full rounded-xl border border-on-surface/20 px-3 py-2"
               />
             </label>
-            <div>
-              <span className="font-label text-xs uppercase tracking-widest text-on-surface-muted">Target segments</span>
+            <div role="group" aria-labelledby="seg-label">
+              <span id="seg-label" className="font-label text-xs uppercase tracking-widest text-on-surface-muted">Target segments</span>
               <div className="mt-1 flex gap-2">
                 {SEGMENTS.map((s) => (
                   <button
                     key={s}
                     type="button"
+                    aria-pressed={segments.includes(s)}
                     onClick={() => toggleSegment(s)}
                     className={`rounded-full px-3 py-1 text-xs ${segments.includes(s) ? "bg-on-surface text-surface" : "bg-on-surface/10 text-on-surface"}`}
                   >
@@ -228,6 +229,7 @@ export default function ReengagementBuilder({ type, broadcastId, templates }: Re
           <div className="flex gap-2">
             <button
               type="button"
+              aria-pressed={messageType === "freeform"}
               onClick={() => setMessageType("freeform")}
               className={`rounded-xl px-4 py-2 text-sm ${messageType === "freeform" ? "bg-on-surface text-surface" : "bg-on-surface/10 text-on-surface"}`}
             >
@@ -235,6 +237,7 @@ export default function ReengagementBuilder({ type, broadcastId, templates }: Re
             </button>
             <button
               type="button"
+              aria-pressed={messageType === "template"}
               onClick={() => setMessageType("template")}
               className={`rounded-xl px-4 py-2 text-sm ${messageType === "template" ? "bg-on-surface text-surface" : "bg-on-surface/10 text-on-surface"}`}
             >

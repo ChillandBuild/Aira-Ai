@@ -441,6 +441,7 @@ export default function LeadsPage() {
           )}
 
           <ReengagementBuilder
+            key={`${reengageTrigger}:${selectedBroadcastId ?? ""}`}
             type={reengageTrigger}
             broadcastId={reengageTrigger === "broadcast" ? selectedBroadcastId : undefined}
             templates={wabaTemplates}
