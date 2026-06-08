@@ -137,6 +137,7 @@ export default function TelecallerProfilePage({ params }: { params: { id: string
               </div>
             ) : (
               <div className="relative border-l-2 border-border-subtle ml-3 space-y-6">
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                 {eventsWithGaps.map((ev: any) => {
                   
                   let Icon = UserCircle;
