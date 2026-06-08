@@ -141,6 +141,67 @@ async def process_due_reengagements() -> int:
     return sent_count
 
 
+async def _send_step_template(
+    db,
+    tenant_id: str,
+    lead: dict,
+    step: dict,
+    *,
+    template_name: str,
+    template_variables: list[str] | None,
+    log_status: str,
+) -> bool:
+    """Send a template message for a step and write message + reengagement logs."""
+    lead_id = lead["id"]
+    phone = lead["phone"]
+    step_id = step["id"]
+    if not template_name:
+        raise ValueError("Template name not configured")
+
+    parameters = []
+    for var_name in (template_variables or []):
+        if var_name == "name":
+            val = lead.get("name") or "there"
+        elif var_name == "phone":
+            val = lead.get("phone") or ""
+        else:
+            val = (
+                (lead.get("extra_cols") or {}).get(var_name)
+                or (lead.get("collected_data") or {}).get(var_name)
+                or ""
+            )
+        parameters.append({"type": "text", "text": str(val)})
+
+    components = [{"type": "body", "parameters": parameters}] if parameters else []
+
+    res = await send_template_message(
+        to_number=phone,
+        template_name=template_name,
+        components=components,
+        tenant_id=tenant_id,
+    )
+    sid = res.get("messages", [{}])[0].get("id") if res else None
+
+    db.table("messages").insert({
+        "lead_id": lead_id,
+        "tenant_id": tenant_id,
+        "direction": "outbound",
+        "channel": "whatsapp",
+        "content": f"[Template Broadcast: {template_name}]",
+        "is_ai_generated": True,
+        "meta_message_id": sid or "",
+    }).execute()
+
+    db.table("reengagement_logs").insert({
+        "tenant_id": tenant_id,
+        "lead_id": lead_id,
+        "step_id": step_id,
+        "status": log_status,
+    }).execute()
+    logger.info(f"Re-engagement step {step_id} ({log_status}) sent to lead {lead_id}")
+    return True
+
+
 async def _send_reengagement(db, tenant_id: str, lead: dict, step: dict) -> bool:
     """Send the re-engagement message to a single lead and write a log entry."""
     lead_id = lead["id"]
@@ -168,14 +229,32 @@ async def _send_reengagement(db, tenant_id: str, lead: dict, step: dict) -> bool
 
     if message_type == "freeform":
         if not is_window_active:
-            # Cannot send freeform text outside the 24h window
+            fallback_name = step.get("fallback_template_name")
+            if fallback_name:
+                try:
+                    return await _send_step_template(
+                        db, tenant_id, lead, step,
+                        template_name=fallback_name,
+                        template_variables=step.get("fallback_template_variables"),
+                        log_status="sent_fallback",
+                    )
+                except Exception as e:
+                    logger.error(f"Re-engagement fallback template {step_id} failed for lead {lead_id}: {e}")
+                    db.table("reengagement_logs").insert({
+                        "tenant_id": tenant_id,
+                        "lead_id": lead_id,
+                        "step_id": step_id,
+                        "status": "failed",
+                    }).execute()
+                    return False
+
             db.table("reengagement_logs").insert({
                 "tenant_id": tenant_id,
                 "lead_id": lead_id,
                 "step_id": step_id,
                 "status": "skipped_window",
             }).execute()
-            logger.info(f"Re-engagement step {step_id} skipped for lead {lead_id} (outside 24h window)")
+            logger.info(f"Re-engagement step {step_id} skipped for lead {lead_id} (outside 24h window, no fallback)")
             return False
 
         try:
@@ -184,7 +263,6 @@ async def _send_reengagement(db, tenant_id: str, lead: dict, step: dict) -> bool
             if not sid:
                 raise RuntimeError("Channel send returned empty SID")
 
-            # Log message in history
             db.table("messages").insert({
                 "lead_id": lead_id,
                 "tenant_id": tenant_id,
@@ -195,7 +273,6 @@ async def _send_reengagement(db, tenant_id: str, lead: dict, step: dict) -> bool
                 "meta_message_id": sid,
             }).execute()
 
-            # Write re-engagement log
             db.table("reengagement_logs").insert({
                 "tenant_id": tenant_id,
                 "lead_id": lead_id,
@@ -216,62 +293,12 @@ async def _send_reengagement(db, tenant_id: str, lead: dict, step: dict) -> bool
 
     elif message_type == "template":
         try:
-            template_name = step["template_name"]
-            if not template_name:
-                raise ValueError("Template name not configured")
-
-            # Resolve template parameters/variables
-            components = []
-            parameters = []
-            for var_name in (step["template_variables"] or []):
-                val = ""
-                if var_name == "name":
-                    val = lead.get("name") or "there"
-                elif var_name == "phone":
-                    val = lead.get("phone") or ""
-                else:
-                    # Resolve from extra columns or collected data
-                    val = (
-                        (lead.get("extra_cols") or {}).get(var_name)
-                        or (lead.get("collected_data") or {}).get(var_name)
-                        or ""
-                    )
-                parameters.append({"type": "text", "text": str(val)})
-            
-            if parameters:
-                components.append({
-                    "type": "body",
-                    "parameters": parameters,
-                })
-
-            res = await send_template_message(
-                to_number=phone,
-                template_name=template_name,
-                components=components,
-                tenant_id=tenant_id,
+            return await _send_step_template(
+                db, tenant_id, lead, step,
+                template_name=step.get("template_name"),
+                template_variables=step.get("template_variables"),
+                log_status="sent",
             )
-            sid = res.get("messages", [{}])[0].get("id") if res else None
-
-            # Log message in history
-            db.table("messages").insert({
-                "lead_id": lead_id,
-                "tenant_id": tenant_id,
-                "direction": "outbound",
-                "channel": "whatsapp",
-                "content": f"[Template Broadcast: {template_name}]",
-                "is_ai_generated": True,
-                "meta_message_id": sid or "",
-            }).execute()
-
-            # Write re-engagement log
-            db.table("reengagement_logs").insert({
-                "tenant_id": tenant_id,
-                "lead_id": lead_id,
-                "step_id": step_id,
-                "status": "sent",
-            }).execute()
-            logger.info(f"Re-engagement step {step_id} (template) sent to lead {lead_id}")
-            return True
         except Exception as e:
             logger.error(f"Failed to send re-engagement template step {step_id} to lead {lead_id}: {e}")
             db.table("reengagement_logs").insert({

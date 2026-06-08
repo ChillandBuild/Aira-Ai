@@ -1,0 +1,114 @@
+import pytest
+from datetime import datetime, timezone, timedelta
+from unittest.mock import MagicMock, AsyncMock, patch
+
+
+def _make_db(captured_logs):
+    """Supabase mock that records every reengagement_logs insert into captured_logs."""
+    db = MagicMock()
+
+    def table_selector(name):
+        t = MagicMock()
+        if name == "reengagement_logs":
+            def _insert(row):
+                captured_logs.append(row)
+                res = MagicMock()
+                res.execute.return_value.data = [{"id": "log-1"}]
+                return res
+            t.insert.side_effect = _insert
+        elif name == "messages":
+            t.insert.return_value.execute.return_value.data = [{"id": "msg-1"}]
+        else:
+            t.insert.return_value.execute.return_value.data = [{"id": "x"}]
+        return t
+
+    db.table.side_effect = table_selector
+    return db
+
+
+def _now_iso(hours_ago: float) -> str:
+    return (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat()
+
+
+def _step(message_type="freeform", fallback=None):
+    return {
+        "id": "step-1",
+        "message_type": message_type,
+        "message_content": "Hi there!",
+        "template_name": "promo_v1",
+        "template_variables": ["name"],
+        "fallback_template_name": fallback,
+        "fallback_template_variables": ["name"] if fallback else None,
+    }
+
+
+def _lead(hours_since_reply: float, source=None):
+    return {
+        "id": "lead-1",
+        "name": "Asha",
+        "phone": "919999999999",
+        "last_inbound_at": _now_iso(hours_since_reply),
+        "source": source,
+        "extra_cols": {},
+        "collected_data": {},
+    }
+
+
+@pytest.mark.asyncio
+async def test_freeform_window_open_sends_freeform():
+    from app.services import reengagement_service as svc
+    logs = []
+    db = _make_db(logs)
+    with patch.object(svc, "send_whatsapp", new=AsyncMock(return_value="sid-1")) as wa, \
+         patch.object(svc, "send_template_message", new=AsyncMock()) as tpl:
+        ok = await svc._send_reengagement(db, "t1", _lead(2), _step())
+    assert ok is True
+    wa.assert_awaited_once()
+    tpl.assert_not_awaited()
+    assert logs[-1]["status"] == "sent"
+
+
+@pytest.mark.asyncio
+async def test_freeform_window_closed_with_fallback_sends_template():
+    from app.services import reengagement_service as svc
+    logs = []
+    db = _make_db(logs)
+    with patch.object(svc, "send_whatsapp", new=AsyncMock()) as wa, \
+         patch.object(svc, "send_template_message",
+                      new=AsyncMock(return_value={"messages": [{"id": "sid-2"}]})) as tpl:
+        ok = await svc._send_reengagement(db, "t1", _lead(30), _step(fallback="winback_v1"))
+    assert ok is True
+    wa.assert_not_awaited()
+    tpl.assert_awaited_once()
+    assert tpl.await_args.kwargs["template_name"] == "winback_v1"
+    assert logs[-1]["status"] == "sent_fallback"
+
+
+@pytest.mark.asyncio
+async def test_freeform_window_closed_no_fallback_skips():
+    from app.services import reengagement_service as svc
+    logs = []
+    db = _make_db(logs)
+    with patch.object(svc, "send_whatsapp", new=AsyncMock()) as wa, \
+         patch.object(svc, "send_template_message", new=AsyncMock()) as tpl:
+        ok = await svc._send_reengagement(db, "t1", _lead(30), _step(fallback=None))
+    assert ok is False
+    wa.assert_not_awaited()
+    tpl.assert_not_awaited()
+    assert logs[-1]["status"] == "skipped_window"
+
+
+@pytest.mark.asyncio
+async def test_template_step_always_sends_template():
+    from app.services import reengagement_service as svc
+    logs = []
+    db = _make_db(logs)
+    with patch.object(svc, "send_whatsapp", new=AsyncMock()) as wa, \
+         patch.object(svc, "send_template_message",
+                      new=AsyncMock(return_value={"messages": [{"id": "sid-3"}]})) as tpl:
+        ok = await svc._send_reengagement(db, "t1", _lead(30), _step(message_type="template"))
+    assert ok is True
+    wa.assert_not_awaited()
+    tpl.assert_awaited_once()
+    assert tpl.await_args.kwargs["template_name"] == "promo_v1"
+    assert logs[-1]["status"] == "sent"
