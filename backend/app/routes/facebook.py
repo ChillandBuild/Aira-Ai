@@ -220,6 +220,12 @@ async def facebook_webhook(tenant_id: str, request: Request, background_tasks: B
                 if phone and await route_booking_intent(lead_id, tenant_id, phone, text, db):
                     continue
 
+            # Autopilot: OFF by default — returns False instantly when disabled.
+            if text:
+                from app.services.autopilot import run_autopilot
+                if await run_autopilot(lead_id, tenant_id, text, "facebook", db):
+                    continue
+
             fire_trigger(
                 background_tasks, lead_id, tenant_id,
                 "new_message_received", message=text,

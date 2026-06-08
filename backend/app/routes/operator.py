@@ -53,6 +53,7 @@ _SETTING_KEYS: list[tuple[str, bool]] = [
     ("telecmi_callerid", False), ("telecmi_recording_base_url", False),
     ("groq_api_key", True),
     ("ai_auto_reply_enabled", False), ("bot_auto_reply_enabled", False),
+    ("autopilot_enabled", False),
     ("reengagement_enabled", False),
     ("booking_event_name", False), ("booking_ref_prefix", False), ("booking_amount_paise", False),
     ("razorpay_key_id", False), ("razorpay_key_secret", True),
