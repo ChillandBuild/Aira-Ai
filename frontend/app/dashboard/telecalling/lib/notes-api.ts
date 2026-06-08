@@ -70,3 +70,13 @@ export async function fetchTodayCompletedCallbacks(): Promise<CallbackJob[]> {
   return data.data || [];
 }
 
+export async function fetchAllCallbacks(): Promise<CallbackJob[]> {
+  const auth = await getAuthHeaders();
+  const res = await fetch(`${API_URL}/api/v1/follow-ups/callbacks/all`, {
+    headers: { "Content-Type": "application/json", ...auth },
+  });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
+}
+

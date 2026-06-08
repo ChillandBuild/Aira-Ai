@@ -1,12 +1,12 @@
 "use client";
 import { toast } from "sonner";
-import { useEffect, useState, useCallback } from "react";
-import { Phone, RefreshCw, ChevronDown, StickyNote, Check, CheckCheck, Download, Calendar, Tag, Target, Inbox, Copy, User, Sparkles, Search, Clock } from "lucide-react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { Phone, RefreshCw, ChevronDown, StickyNote, Check, CheckCheck, Download, Calendar, Tag, Target, Inbox, Copy, User, Sparkles, Search, Clock, Bell, X } from "lucide-react";
 import { api, Caller, Lead } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import LiveNotesPane from "./components/live-notes-pane";
 import NotesHistoryModal from "./components/notes-history-modal";
-import { fetchNotes, fetchTodayCallbacks, fetchTodayCompletedCallbacks, markCallbackDone, saveNote } from "./lib/notes-api";
+import { fetchNotes, fetchTodayCallbacks, fetchTodayCompletedCallbacks, markCallbackDone, saveNote, createCallback } from "./lib/notes-api";
 import type { CallbackJob, NotesResponse } from "./types";
 import { usePolling } from "@/hooks/usePolling";
 import { useActiveCall } from "../contexts/ActiveCallContext";
@@ -14,8 +14,9 @@ import { useActiveCall } from "../contexts/ActiveCallContext";
 export default function CallerView({ callerId }: { callerId: string | null }) {
   // caller profile
   const [myCaller, setMyCaller] = useState<Caller | null>(null);
-  const [myStatus, setMyStatus] = useState<"active" | "idle">("active");
+  const [myStatus, setMyStatus] = useState<"active" | "break" | "logged_out">("active");
   const [togglingStatus, setTogglingStatus] = useState(false);
+  const autoLoginRef = useRef(false);
 
   // my leads (assigned to me, sorted by score desc)
   const [myLeads, setMyLeads] = useState<Lead[]>([]);
@@ -47,6 +48,15 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   const [quickNoteContent, setQuickNoteContent] = useState("");
   const [quickNoteSaving, setQuickNoteSaving] = useState(false);
 
+  // scheduling
+  const [schedDate, setSchedDate] = useState("");
+  const [schedTime, setSchedTime] = useState("");
+  const [schedReminder, setSchedReminder] = useState(false);
+  const [scheduleSaving, setScheduleSaving] = useState(false);
+
+  // notification bell
+  const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+
   // modals
   const [historyLead, setHistoryLead] = useState<Lead | null>(null);
   const { activeCall: activeCallCtx, setActiveCall: setActiveCallCtx } = useActiveCall();
@@ -64,7 +74,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       ]);
       const me = callers.find((c: Caller) => c.id === callerId) || null;
       setMyCaller(me);
-      if (me) setMyStatus((me.status as "active" | "idle") || "active");
+      if (me) setMyStatus((me.status as "active" | "break" | "logged_out") || "active");
 
       const dialable = leads.filter((l: Lead) => l.phone && l.phone.trim() !== "");
       const sorted = dialable.sort((a: Lead, b: Lead) => (b.score ?? 0) - (a.score ?? 0));
@@ -80,6 +90,13 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   }, [callerId, loadCallbacks]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // Auto-login: set status to active on mount if logged_out
+  useEffect(() => {
+    if (!callerId || autoLoginRef.current) return;
+    autoLoginRef.current = true;
+    api.callers.setMyStatus("active").catch(() => {});
+  }, [callerId]);
 
   // auto-refresh callbacks every 5 minutes
   usePolling(loadCallbacks, 5 * 60 * 1000);
@@ -112,16 +129,31 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
 
   // actions
   async function toggleMyStatus() {
-    const next = myStatus === "active" ? "idle" : "active";
+    const next = myStatus === "active" ? "break" : "active";
     setTogglingStatus(true);
     try {
       await api.callers.setMyStatus(next);
       setMyStatus(next);
+      toast.success(next === "active" ? "You are now active" : "Break mode enabled");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update status");
     } finally {
       setTogglingStatus(false);
     }
+  }
+
+  async function handleScheduleCallback(leadId: string) {
+    if (!schedDate || !schedTime) { toast.error("Pick a date & time"); return; }
+    setScheduleSaving(true);
+    try {
+      const iso = new Date(`${schedDate}T${schedTime}`).toISOString();
+      await createCallback(leadId, iso, quickNoteContent.trim() || undefined);
+      toast.success("Callback scheduled!");
+      setSchedDate(""); setSchedTime(""); setSchedReminder(false);
+      loadCallbacks();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to schedule");
+    } finally { setScheduleSaving(false); }
   }
 
   async function executeDial(leadId: string, lead: Lead) {
@@ -258,6 +290,52 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
             Export Leads CSV
           </button>
 
+          {/* Notification Bell */}
+          <div className="relative">
+            <button
+              onClick={() => setShowNotifDropdown((v) => !v)}
+              className="relative p-2.5 bg-white border border-slate-200/80 rounded-2xl hover:bg-slate-50 hover:border-indigo-500 transition-all shadow-sm"
+              title="Scheduled callback reminders"
+            >
+              <Bell size={16} className="text-slate-600" />
+              {todayCallbacks.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-gradient-to-r from-rose-500 to-pink-600 text-white text-[9px] font-black rounded-full flex items-center justify-center ring-2 ring-white animate-pulse">
+                  {todayCallbacks.length}
+                </span>
+              )}
+            </button>
+            {showNotifDropdown && (
+              <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-slate-200/80 rounded-2xl shadow-xl z-50 overflow-hidden">
+                <div className="px-4 py-3 bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-slate-100 flex items-center justify-between">
+                  <span className="font-display text-xs font-black text-slate-800 uppercase tracking-wider">Due Callbacks</span>
+                  <button onClick={() => setShowNotifDropdown(false)} className="p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-white/50 transition-colors">
+                    <X size={14} />
+                  </button>
+                </div>
+                <div className="max-h-72 overflow-y-auto">
+                  {todayCallbacks.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-xs text-slate-400">No pending callbacks</div>
+                  ) : (
+                    todayCallbacks.map((cb) => (
+                      <div key={cb.id} className="px-4 py-3 border-b border-slate-50 hover:bg-slate-50/50 transition-colors flex items-center justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-body text-sm font-bold text-slate-800 truncate">{cb.lead.name ?? "Unnamed"}</p>
+                          <p className="font-label text-[10px] text-slate-400">{cb.lead.phone} · {new Date(cb.scheduled_for).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+                        </div>
+                        <button
+                          onClick={() => { setSelectedLeadId(cb.lead.id); setShowNotifDropdown(false); }}
+                          className="shrink-0 px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-label text-[10px] font-bold hover:bg-indigo-700 transition-colors"
+                        >
+                          View
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           <button
             onClick={toggleMyStatus}
             disabled={togglingStatus}
@@ -267,7 +345,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                 : "bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 shadow-amber-500/10"
             } ${togglingStatus ? "opacity-60 cursor-not-allowed" : ""} hover:scale-[1.02] active:scale-[0.98]`}
           >
-            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+            <span className={`w-2 h-2 rounded-full bg-white ${myStatus === "active" ? "animate-pulse" : ""}`} />
             {myStatus === "active" ? "Active Queue" : "On Break"}
           </button>
         </div>
@@ -738,10 +816,10 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                   </div>
                 </div>
 
-                {/* 4. Log call note */}
+                {/* 4. Notes & Schedule */}
                 <div className="bg-white border border-slate-200/60 rounded-3xl p-6 shadow-sm">
                   <h3 className="font-display text-xs font-black text-slate-800 mb-3 uppercase tracking-widest flex items-center gap-2">
-                    <StickyNote size={14} className="text-indigo-500" /> Log Call Outcome
+                    <StickyNote size={14} className="text-indigo-500" /> Notes &amp; Schedule
                   </h3>
                   <div className="flex flex-col gap-3">
                     <textarea
@@ -751,6 +829,58 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                       rows={3}
                       className="w-full px-4 py-3.5 rounded-2xl bg-slate-50 border border-slate-200 font-body text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:border-transparent transition-all resize-none shadow-inner"
                     />
+
+                    {/* Schedule Callback Section */}
+                    <div className="border-t border-slate-100 pt-3">
+                      <button
+                        onClick={() => setSchedReminder((v) => !v)}
+                        className={`flex items-center gap-2 text-xs font-bold transition-colors ${
+                          schedReminder ? "text-indigo-600" : "text-slate-500 hover:text-slate-700"
+                        }`}
+                      >
+                        <div className={`w-8 h-[18px] rounded-full relative transition-colors ${
+                          schedReminder ? "bg-indigo-600" : "bg-slate-200"
+                        }`}>
+                          <div className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow-sm transition-all ${
+                            schedReminder ? "left-[15px]" : "left-[2px]"
+                          }`} />
+                        </div>
+                        <Calendar size={12} />
+                        Set Callback Reminder
+                      </button>
+
+                      {schedReminder && (
+                        <div className="mt-3 flex items-end gap-2">
+                          <div className="flex-1">
+                            <label className="font-label text-[10px] text-slate-400 uppercase tracking-wider font-bold block mb-1">Date</label>
+                            <input
+                              type="date"
+                              value={schedDate}
+                              onChange={(e) => setSchedDate(e.target.value)}
+                              min={new Date().toISOString().split("T")[0]}
+                              className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="font-label text-[10px] text-slate-400 uppercase tracking-wider font-bold block mb-1">Time</label>
+                            <input
+                              type="time"
+                              value={schedTime}
+                              onChange={(e) => setSchedTime(e.target.value)}
+                              className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                            />
+                          </div>
+                          <button
+                            onClick={() => handleScheduleCallback(selectedLead.id)}
+                            disabled={scheduleSaving || !schedDate || !schedTime}
+                            className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-label text-xs font-bold hover:from-amber-600 hover:to-orange-600 disabled:opacity-50 transition-all shadow-sm hover:scale-[1.01] active:scale-[0.99] shrink-0"
+                          >
+                            {scheduleSaving ? <RefreshCw size={12} className="animate-spin" /> : "Schedule"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="flex justify-end">
                       <button
                         onClick={() => saveQuickNote(selectedLead.id)}

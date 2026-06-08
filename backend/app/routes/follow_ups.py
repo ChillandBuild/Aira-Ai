@@ -156,6 +156,37 @@ async def today_callbacks(tenant_id: str = Depends(get_tenant_id)):
     return {"data": result}
 
 
+@router.get("/callbacks/all")
+async def all_callbacks(tenant_id: str = Depends(get_tenant_id)):
+    """Return all pending callback jobs for the tenant, grouped for the scheduled calls page."""
+    db = get_supabase()
+
+    jobs = (
+        db.table("follow_up_jobs")
+        .select("id,lead_id,scheduled_for,message_preview,status")
+        .eq("tenant_id", tenant_id)
+        .eq("cadence", "callback")
+        .eq("status", "pending")
+        .order("scheduled_for")
+        .limit(100)
+        .execute()
+    )
+
+    result = []
+    for job in (jobs.data or []):
+        lead = (
+            db.table("leads")
+            .select("id,name,phone,segment,assigned_to")
+            .eq("id", job["lead_id"])
+            .eq("tenant_id", tenant_id)
+            .maybe_single()
+            .execute()
+        )
+        result.append({**job, "lead": (lead and lead.data) or {}})
+
+    return {"data": result}
+
+
 @router.patch("/callback/{job_id}/done")
 async def mark_callback_done(job_id: str, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()

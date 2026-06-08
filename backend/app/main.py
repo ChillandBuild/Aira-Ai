@@ -28,7 +28,7 @@ if settings.sentry_dsn:
     )
     logger.info("Sentry SDK initialized successfully.")
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 _startup_time = datetime.now(timezone.utc)
 _heartbeats = {
     "scheduled-broadcasts": None,
@@ -194,6 +194,102 @@ async def _process_reengagement_rules() -> None:
         logger.error(f"Re-engagement scheduler error: {e}")
 
 
+async def _process_callback_reassignments() -> None:
+    """APScheduler job: reassign overdue callbacks from non-active callers."""
+    try:
+        from app.db.supabase import get_supabase
+        db = get_supabase()
+        now = datetime.now(timezone.utc)
+        cutoff = (now - timedelta(minutes=30)).isoformat()
+
+        overdue = (
+            db.table("follow_up_jobs")
+            .select("id,lead_id,tenant_id")
+            .eq("cadence", "callback")
+            .eq("status", "pending")
+            .lte("scheduled_for", cutoff)
+            .limit(50)
+            .execute()
+        )
+        if not overdue.data:
+            return
+
+        for job in overdue.data:
+            try:
+                lead = (
+                    db.table("leads")
+                    .select("id,assigned_to,tenant_id")
+                    .eq("id", job["lead_id"])
+                    .maybe_single()
+                    .execute()
+                )
+                if not lead or not lead.data or not lead.data.get("assigned_to"):
+                    continue
+
+                current_caller_id = lead.data["assigned_to"]
+                tid = job["tenant_id"]
+
+                # Check if the assigned caller is active
+                caller = (
+                    db.table("callers")
+                    .select("id,status")
+                    .eq("id", current_caller_id)
+                    .maybe_single()
+                    .execute()
+                )
+                if caller and caller.data and caller.data.get("status") == "active":
+                    continue  # caller is active, no reassignment needed
+
+                # Find another active caller in the same tenant
+                alt = (
+                    db.table("callers")
+                    .select("id")
+                    .eq("tenant_id", tid)
+                    .eq("active", True)
+                    .eq("status", "active")
+                    .neq("id", current_caller_id)
+                    .limit(1)
+                    .execute()
+                )
+                new_caller_id = None
+                if alt.data:
+                    new_caller_id = alt.data[0]["id"]
+                else:
+                    # Fallback: assign to tenant owner
+                    owner = (
+                        db.table("tenant_users")
+                        .select("user_id")
+                        .eq("tenant_id", tid)
+                        .eq("role", "owner")
+                        .maybe_single()
+                        .execute()
+                    )
+                    if owner and owner.data:
+                        owner_caller = (
+                            db.table("callers")
+                            .select("id")
+                            .eq("user_id", owner.data["user_id"])
+                            .eq("tenant_id", tid)
+                            .maybe_single()
+                            .execute()
+                        )
+                        if owner_caller and owner_caller.data:
+                            new_caller_id = owner_caller.data["id"]
+
+                if new_caller_id and new_caller_id != current_caller_id:
+                    db.table("leads").update(
+                        {"assigned_to": new_caller_id}
+                    ).eq("id", job["lead_id"]).execute()
+                    logger.info(
+                        f"Callback reassignment: job={job['id']} lead={job['lead_id']} "
+                        f"from={current_caller_id} to={new_caller_id}"
+                    )
+            except Exception as e:
+                logger.error(f"Callback reassignment failed for job {job['id']}: {e}")
+    except Exception as e:
+        logger.error(f"Callback reassignment scheduler error: {e}")
+
+
 _scheduler = AsyncIOScheduler()
 
 
@@ -239,8 +335,15 @@ async def lifespan(app: FastAPI):
         id="reengagement-rules",
         replace_existing=True,
     )
+    _scheduler.add_job(
+        _process_callback_reassignments,
+        trigger="interval",
+        minutes=1,
+        id="callback-reassignment",
+        replace_existing=True,
+    )
     _scheduler.start()
-    logger.info("Schedulers started: automation(5m) + broadcasts(1m) + token-health(24h) + engagement-decay(6h) + reengagement(1m)")
+    logger.info("Schedulers started: automation(5m) + broadcasts(1m) + token-health(24h) + engagement-decay(6h) + reengagement(1m) + callback-reassignment(1m)")
 
     yield
 

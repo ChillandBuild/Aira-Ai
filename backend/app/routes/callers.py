@@ -29,7 +29,7 @@ class RoundRobinToggle(BaseModel):
 
 
 class StatusToggle(BaseModel):
-    status: str  # "active" | "idle"
+    status: str  # "active" | "break" | "logged_out"
 
 
 # ── Round-robin toggle ───────────────────────────────────────────────────────
@@ -54,9 +54,9 @@ async def toggle_round_robin(payload: RoundRobinToggle, tenant_id: str = Depends
 
 @router.patch("/my-status")
 async def update_my_status(payload: StatusToggle, ctx: dict = Depends(get_tenant_and_role)):
-    """Caller toggles their own idle/active status."""
-    if payload.status not in ("active", "idle"):
-        raise HTTPException(status_code=400, detail="Status must be 'active' or 'idle'")
+    """Caller toggles their own status."""
+    if payload.status not in ("active", "break", "logged_out"):
+        raise HTTPException(status_code=400, detail="Status must be 'active', 'break', or 'logged_out'")
 
     caller_id = ctx.get("caller_id")
     if not caller_id:
@@ -71,12 +71,15 @@ async def update_my_status(payload: StatusToggle, ctx: dict = Depends(get_tenant
     ).eq("caller_id", caller_id).is_("ended_at", "null").execute()
 
     # Insert new status log entry
-    db.table("caller_status_logs").insert({
+    insert_data = {
         "caller_id": caller_id,
         "tenant_id": ctx["tenant_id"],
         "status": payload.status,
         "started_at": now,
-    }).execute()
+    }
+    if payload.status == "logged_out":
+        insert_data["ended_at"] = now
+    db.table("caller_status_logs").insert(insert_data).execute()
 
     # Update caller record
     db.table("callers").update({
@@ -186,7 +189,7 @@ async def get_my_stats(ctx: dict = Depends(get_tenant_and_role)):
 
 @router.get("/{caller_id}/status-summary")
 async def get_status_summary(caller_id: UUID, tenant_id: str = Depends(get_tenant_id)):
-    """Admin views a caller's active/idle time breakdown for today."""
+    """Admin views a caller's status breakdown for today."""
     db = get_supabase()
     now = datetime.now(timezone.utc)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
@@ -201,13 +204,30 @@ async def get_status_summary(caller_id: UUID, tenant_id: str = Depends(get_tenan
     )
 
     active_minutes = 0
+    break_minutes = 0
     idle_minutes = 0
+    first_login_at = None
+    last_logout_at = None
+    breaks = []
+
     for log in (logs.data or []):
         start = datetime.fromisoformat(log["started_at"].replace("Z", "+00:00"))
         end = datetime.fromisoformat(log["ended_at"].replace("Z", "+00:00")) if log["ended_at"] else now
         delta = (end - start).total_seconds() / 60
+
         if log["status"] == "active":
             active_minutes += delta
+            if first_login_at is None:
+                first_login_at = log["started_at"]
+        elif log["status"] == "break":
+            break_minutes += delta
+            breaks.append({
+                "started_at": log["started_at"],
+                "ended_at": log["ended_at"],
+                "duration_minutes": round(delta),
+            })
+        elif log["status"] == "logged_out":
+            last_logout_at = log["started_at"]
         else:
             idle_minutes += delta
 
@@ -220,11 +240,39 @@ async def get_status_summary(caller_id: UUID, tenant_id: str = Depends(get_tenan
         .execute()
     )
 
+    # Scheduled callbacks count
+    assigned_leads = (
+        db.table("leads")
+        .select("id")
+        .eq("assigned_to", str(caller_id))
+        .eq("tenant_id", tenant_id)
+        .execute()
+    )
+    lead_ids = [l["id"] for l in (assigned_leads.data or [])]
+
+    scheduled_count = 0
+    if lead_ids:
+        sched = (
+            db.table("follow_up_jobs")
+            .select("id", count="exact")
+            .eq("cadence", "callback")
+            .eq("status", "pending")
+            .eq("tenant_id", tenant_id)
+            .in_("lead_id", lead_ids)
+            .execute()
+        )
+        scheduled_count = sched.count or 0
+
     return {
         "active_minutes_today": round(active_minutes),
+        "break_minutes_today": round(break_minutes),
         "idle_minutes_today": round(idle_minutes),
         "current_status": caller.data.get("status", "active"),
         "since": caller.data.get("status_changed_at"),
+        "first_login_at": first_login_at,
+        "last_logout_at": last_logout_at,
+        "breaks": breaks,
+        "scheduled_count": scheduled_count,
     }
 
 

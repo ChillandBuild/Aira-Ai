@@ -7,7 +7,7 @@ import { API_URL, getAuthHeaders } from "@/lib/api";
 import {
   LayoutDashboard, MessageSquare, Users, Settings, Phone,
   BarChart2, Upload, BookOpen, Layers, FileCheck, StickyNote,
-  LogOut, Inbox, Zap, ChevronDown, ChevronRight, RadioTower,
+  LogOut, Inbox, Zap, ChevronDown, ChevronRight, RadioTower, Calendar,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AiraLogo } from "./logo";
@@ -25,6 +25,7 @@ type NavItem = {
 
 const TELECALLING_ITEMS: NavItem[] = [
   { href: "/dashboard/telecalling", icon: Phone, label: "Dialer" },
+  { href: "/dashboard/telecalling/scheduled", icon: Calendar, label: "Scheduled Calls" },
   { href: "/dashboard/notes", icon: StickyNote, label: "Call Notes" },
 ];
 
@@ -32,6 +33,15 @@ function LogoutButton() {
   const router = useRouter();
   async function handleLogout() {
     clearRoleCache();
+    // Set telecaller status to logged_out before signing out
+    try {
+      const headers = await getAuthHeaders();
+      await fetch(`${API_URL}/api/v1/callers/my-status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...headers },
+        body: JSON.stringify({ status: "logged_out" }),
+      });
+    } catch {}
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/login");

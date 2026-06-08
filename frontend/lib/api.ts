@@ -61,7 +61,7 @@ export interface Caller {
   phone: string | null;
   overall_score: number;
   active: boolean;
-  status?: "active" | "idle";
+  status?: "active" | "break" | "logged_out";
   status_changed_at?: string;
 }
 
@@ -577,7 +577,7 @@ export const api = {
       apiFetch<{ caller_id: string; tip: string }>(`/api/v1/callers/${id}/coaching`),
     myStatus: () =>
       apiFetch<{ status: string; caller_id: string | null }>(`/api/v1/callers/my-status`),
-    setMyStatus: (status: "active" | "idle") =>
+    setMyStatus: (status: "active" | "break" | "logged_out") =>
       apiFetch<{ status: string; changed_at: string }>(`/api/v1/callers/my-status`, {
         method: "PATCH",
         body: JSON.stringify({ status }),
@@ -585,7 +585,17 @@ export const api = {
     myStats: () =>
       apiFetch<CallerStats>(`/api/v1/callers/my-stats`),
     statusSummary: (id: string) =>
-      apiFetch<{ active_minutes_today: number; idle_minutes_today: number; current_status: string; since: string }>(`/api/v1/callers/${id}/status-summary`),
+      apiFetch<{
+        active_minutes_today: number;
+        break_minutes_today: number;
+        idle_minutes_today: number;
+        current_status: string;
+        since: string;
+        first_login_at: string | null;
+        last_logout_at: string | null;
+        breaks: { started_at: string; ended_at: string | null; duration_minutes: number }[];
+        scheduled_count: number;
+      }>(`/api/v1/callers/${id}/status-summary`),
     winners: () =>
       apiFetch<{
         daily: { caller_id: string; name: string; value: number; label: string } | null;
