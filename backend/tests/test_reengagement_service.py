@@ -66,6 +66,7 @@ async def test_freeform_window_open_sends_freeform():
     wa.assert_awaited_once()
     tpl.assert_not_awaited()
     assert logs[-1]["status"] == "sent"
+    assert len(logs) == 1
 
 
 @pytest.mark.asyncio
@@ -82,6 +83,25 @@ async def test_freeform_window_closed_with_fallback_sends_template():
     tpl.assert_awaited_once()
     assert tpl.await_args.kwargs["template_name"] == "winback_v1"
     assert logs[-1]["status"] == "sent_fallback"
+    assert len(logs) == 1
+    components = tpl.await_args.kwargs["components"]
+    assert components == [{"type": "body", "parameters": [{"type": "text", "text": "Asha"}]}]
+
+
+@pytest.mark.asyncio
+async def test_freeform_window_closed_fallback_send_fails_logs_failed():
+    from app.services import reengagement_service as svc
+    logs = []
+    db = _make_db(logs)
+    with patch.object(svc, "send_whatsapp", new=AsyncMock()) as wa, \
+         patch.object(svc, "send_template_message",
+                      new=AsyncMock(side_effect=RuntimeError("Meta API down"))) as tpl:
+        ok = await svc._send_reengagement(db, "t1", _lead(30), _step(fallback="winback_v1"))
+    assert ok is False
+    wa.assert_not_awaited()
+    tpl.assert_awaited_once()
+    assert logs[-1]["status"] == "failed"
+    assert len(logs) == 1
 
 
 @pytest.mark.asyncio
@@ -96,6 +116,7 @@ async def test_freeform_window_closed_no_fallback_skips():
     wa.assert_not_awaited()
     tpl.assert_not_awaited()
     assert logs[-1]["status"] == "skipped_window"
+    assert len(logs) == 1
 
 
 @pytest.mark.asyncio
@@ -112,3 +133,6 @@ async def test_template_step_always_sends_template():
     tpl.assert_awaited_once()
     assert tpl.await_args.kwargs["template_name"] == "promo_v1"
     assert logs[-1]["status"] == "sent"
+    assert len(logs) == 1
+    components = tpl.await_args.kwargs["components"]
+    assert components == [{"type": "body", "parameters": [{"type": "text", "text": "Asha"}]}]
