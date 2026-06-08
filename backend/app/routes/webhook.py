@@ -449,7 +449,13 @@ async def whatsapp_webhook(
                             from app.services.context_builder import build_scorer_context
                             context_block = build_scorer_context(lead_id, db)
                             from app.services.ai_reply import generate_reply
-                            await generate_reply(lead_id=lead_id, message=body, phone=phone, context_block=context_block)
+                            background_tasks.add_task(
+                                generate_reply,
+                                lead_id=lead_id,
+                                message=body,
+                                phone=phone,
+                                context_block=context_block,
+                            )
                         except Exception as e:
                             logger.error(f"Reply routing failed for lead {lead_id}: {e}")
 

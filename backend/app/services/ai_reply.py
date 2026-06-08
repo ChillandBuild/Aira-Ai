@@ -645,10 +645,19 @@ async def generate_reply(
                 get_or_create_state as _get_bk_state,
                 get_pending_step_prompt as _get_pending_prompt,
             )
-            _bk = _get_bk_state(str(lead_id), lead_data.get("tenant_id", tenant_id), db)
-            _pending = _get_pending_prompt(_bk)
-            if _pending:
-                reply_text = f"{reply_text}\n\n{_pending}"
+            from app.services.scoring_engine import _REJECTION_PATTERNS
+            
+            is_rejection = False
+            for pat in _REJECTION_PATTERNS:
+                if re.search(pat, message, re.IGNORECASE):
+                    is_rejection = True
+                    break
+            
+            if not is_rejection:
+                _bk = _get_bk_state(str(lead_id), lead_data.get("tenant_id", tenant_id), db)
+                _pending = _get_pending_prompt(_bk)
+                if _pending:
+                    reply_text = f"{reply_text}\n\n{_pending}"
         except Exception:
             pass
 

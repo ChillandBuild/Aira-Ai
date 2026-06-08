@@ -148,7 +148,7 @@ InboxConfigPanel: escalation on/off, auto-assign, per-trigger (A–F), per-segme
 TelecallingConfigPanel: module on/off, auto-assign, per-segment assignment (A/B/C/D), channels.
 
 ## Known Tech Debt
-- RLS DISABLED on 43 tables — app-layer tenant filter is only guard (Supabase advisory flagged 43)
+- RLS enabled on all core tables (few untracked tables like bot_flows / reengagement_steps pending review)
 
 ## Key File Locations
 | File | Purpose |
