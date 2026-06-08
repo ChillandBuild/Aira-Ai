@@ -18,6 +18,8 @@ class ReengagementStepCreate(BaseModel):
     message_content: str | None = None
     template_name: str | None = None
     template_variables: list[str] | None = None
+    fallback_template_name: str | None = None
+    fallback_template_variables: list[str] | None = None
 
 
 @router.get("/steps")
@@ -52,6 +54,10 @@ def create_step(
         raise HTTPException(status_code=400, detail="Invalid message type")
     if payload.delay_hours <= 0:
         raise HTTPException(status_code=400, detail="delay_hours must be positive")
+    if payload.delay_hours > 24:
+        raise HTTPException(status_code=400, detail="delay_hours must be within the 24h window (1-24)")
+    if payload.type == "broadcast" and not payload.broadcast_id:
+        raise HTTPException(status_code=400, detail="broadcast_id is required for broadcast steps")
 
     db = get_supabase()
     row = {
@@ -64,6 +70,8 @@ def create_step(
         "message_content": payload.message_content,
         "template_name": payload.template_name,
         "template_variables": payload.template_variables,
+        "fallback_template_name": payload.fallback_template_name,
+        "fallback_template_variables": payload.fallback_template_variables,
     }
     res = db.table("reengagement_steps").insert(row).execute()
     return res.data[0] if res.data else {}

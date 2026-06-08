@@ -1,19 +1,13 @@
 "use client";
 import { toast } from "sonner";
-import { useEffect, useState, useCallback } from "react";
-import { api, Lead, Caller, SegmentTemplate, BroadcastResult, BroadcastHistoryItem, ReengagementStep, getAuthHeaders, API_URL } from "@/lib/api";
-import { Download, Send, Save, Pencil, Plus, X, Loader2, Clock, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { api, Lead, Caller, SegmentTemplate, BroadcastResult, BroadcastHistoryItem, WabaTemplate, getAuthHeaders, API_URL } from "@/lib/api";
+import { Download, Send, Save, Pencil, Plus, X, Loader2, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { timeAgo, formatPhone } from "@/lib/utils";
 import { useAuthRole } from "../contexts/AuthRoleContext";
 import { AssignButton } from "./AssignButton";
-
-interface WabaTemplate {
-  id: string;
-  name: string;
-  category: string;
-  status: string;
-}
+import ReengagementBuilder from "./ReengagementBuilder";
 
 function NameCell({ lead, onUpdate }: { lead: Lead; onUpdate: (l: Lead) => void }) {
   const [editing, setEditing] = useState(false);
@@ -207,18 +201,9 @@ export default function LeadsPage() {
   const [broadcastHistory, setBroadcastHistory] = useState<BroadcastHistoryItem[]>([]);
 
   // Re-engagement states
-  const [reengagementSteps, setReengagementSteps] = useState<ReengagementStep[]>([]);
   const [wabaTemplates, setWabaTemplates] = useState<WabaTemplate[]>([]);
-  const [loadingSteps, setLoadingSteps] = useState(false);
-  const [showAddStep, setShowAddStep] = useState(false);
-
-  // Form states
-  const [stepDelayHours, setStepDelayHours] = useState<number>(6);
-  const [stepTargetSegments, setStepTargetSegments] = useState<string[]>(["C"]);
-  const [stepMessageType, setStepMessageType] = useState<"freeform" | "template">("freeform");
-  const [stepMessageContent, setStepMessageContent] = useState("");
-  const [stepTemplateName, setStepTemplateName] = useState("");
-  const [stepTemplateVariables, setStepTemplateVariables] = useState<string[]>([]);
+  const [pageView, setPageView] = useState<"leads" | "reengagement">("leads");
+  const [reengageTrigger, setReengageTrigger] = useState<"broadcast" | "inbound">("inbound");
 
   useEffect(() => {
     api.callers.list().then((data: Caller[]) => setCallers(data.filter((c) => c.active))).catch(() => {});
@@ -250,92 +235,6 @@ export default function LeadsPage() {
     api.leads.list(params).then(setLeads).finally(() => setLoading(false));
     setLastResult(null);
   }, [tab, sourceFilter, selectedCampaignId, selectedBroadcastId]);
-
-  // Re-engagement side effects
-  const fetchReengagementSteps = useCallback(async () => {
-    if (sourceFilter === "BROADCAST" && selectedBroadcastId) {
-      setLoadingSteps(true);
-      try {
-        const steps = await api.reengagement.listSteps({ type: "broadcast", broadcast_id: selectedBroadcastId });
-        setReengagementSteps(steps);
-      } catch {
-        toast.error("Failed to load re-engagement steps");
-      } finally {
-        setLoadingSteps(false);
-      }
-    } else if (sourceFilter === "INBOUND") {
-      setLoadingSteps(true);
-      try {
-        const steps = await api.reengagement.listSteps({ type: "inbound" });
-        setReengagementSteps(steps);
-      } catch {
-        toast.error("Failed to load re-engagement steps");
-      } finally {
-        setLoadingSteps(false);
-      }
-    } else {
-      setReengagementSteps([]);
-    }
-  }, [sourceFilter, selectedBroadcastId]);
-
-  useEffect(() => {
-    fetchReengagementSteps();
-  }, [fetchReengagementSteps]);
-
-  async function handleAddStep() {
-    if (stepTargetSegments.length === 0) {
-      toast.error("Select at least one target segment");
-      return;
-    }
-    if (stepMessageType === "freeform" && !stepMessageContent.trim()) {
-      toast.error("Message content is required for freeform messages");
-      return;
-    }
-    if (stepMessageType === "template" && !stepTemplateName) {
-      toast.error("Select a template");
-      return;
-    }
-
-    try {
-      const payload: Parameters<typeof api.reengagement.createStep>[0] = {
-        type: sourceFilter === "INBOUND" ? "inbound" : "broadcast",
-        delay_hours: stepDelayHours,
-        target_segments: stepTargetSegments,
-        message_type: stepMessageType,
-        message_content: stepMessageType === "freeform" ? stepMessageContent : null,
-        template_name: stepMessageType === "template" ? stepTemplateName : null,
-        template_variables: stepMessageType === "template" ? stepTemplateVariables.filter(Boolean) : null,
-        broadcast_id: sourceFilter === "BROADCAST" ? selectedBroadcastId : null,
-      };
-
-      await api.reengagement.createStep(payload);
-      toast.success("Re-engagement step added");
-      setShowAddStep(false);
-      
-      // Reset form
-      setStepDelayHours(6);
-      setStepTargetSegments(["C"]);
-      setStepMessageType("freeform");
-      setStepMessageContent("");
-      setStepTemplateName("");
-      setStepTemplateVariables([]);
-
-      fetchReengagementSteps();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create re-engagement step");
-    }
-  }
-
-  async function handleDeleteStep(stepId: string) {
-    if (!confirm("Are you sure you want to delete this re-engagement step?")) return;
-    try {
-      await api.reengagement.deleteStep(stepId);
-      toast.success("Re-engagement step deleted");
-      fetchReengagementSteps();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete step");
-    }
-  }
 
   useEffect(() => {
     api.segments.templates().then((rows) => {
@@ -440,59 +339,6 @@ export default function LeadsPage() {
     return `${h}h ${m}m left`;
   }
 
-  function formatIndianTime(dateInput: Date | string | number): string {
-    const date = new Date(dateInput);
-    if (isNaN(date.getTime())) return "Invalid Date";
-    
-    const options: Intl.DateTimeFormatOptions = {
-      timeZone: "Asia/Kolkata",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    };
-    
-    try {
-      const formatter = new Intl.DateTimeFormat("en-IN", options);
-      return formatter.format(date) + " IST";
-    } catch {
-      return date.toLocaleString() + " IST";
-    }
-  }
-
-  function getSimulatedInboundTrigger(delayHours: number): { timeStr: string; windowStr: string; isOpen: boolean } {
-    const mockInbound = new Date();
-    mockInbound.setHours(10, 0, 0, 0); // 10:00 AM Today
-    const triggerTime = new Date(mockInbound.getTime() + delayHours * 60 * 60 * 1000);
-    const isOpen = delayHours < 24;
-    
-    const options: Intl.DateTimeFormatOptions = {
-      day: "2-digit",
-      month: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    };
-    
-    let timeStr = "";
-    try {
-      timeStr = new Intl.DateTimeFormat("en-IN", options).format(triggerTime);
-    } catch {
-      timeStr = triggerTime.toLocaleString();
-    }
-    
-    const relativeDay = triggerTime.getDate() === mockInbound.getDate() ? "Today" : "Tomorrow";
-    const formattedTime = `${relativeDay}, ${timeStr.split(",")[1]?.trim() || timeStr}`;
-    
-    return {
-      timeStr: formattedTime,
-      windowStr: isOpen ? `Open (${24 - delayHours}h left)` : "Expired (Must use Template)",
-      isOpen,
-    };
-  }
-
   return (
     <div>
       <div className="flex items-center justify-between mb-8">
@@ -544,6 +390,66 @@ export default function LeadsPage() {
         />
       )}
 
+      <div className="mb-6 flex gap-2 border-b border-on-surface/10">
+        <button
+          onClick={() => setPageView("leads")}
+          className={`px-4 py-2 text-sm font-medium ${pageView === "leads" ? "border-b-2 border-on-surface text-on-surface" : "text-on-surface-muted"}`}
+        >
+          Leads
+        </button>
+        <button
+          onClick={() => setPageView("reengagement")}
+          className={`px-4 py-2 text-sm font-medium ${pageView === "reengagement" ? "border-b-2 border-on-surface text-on-surface" : "text-on-surface-muted"}`}
+        >
+          Re-engagement
+        </button>
+      </div>
+
+      {pageView === "reengagement" && (
+        <div className="space-y-6">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setReengageTrigger("inbound")}
+              className={`rounded-xl px-4 py-2 text-sm ${reengageTrigger === "inbound" ? "bg-on-surface text-surface" : "bg-on-surface/10 text-on-surface"}`}
+            >
+              Reply Follow-up
+            </button>
+            <button
+              onClick={() => setReengageTrigger("broadcast")}
+              className={`rounded-xl px-4 py-2 text-sm ${reengageTrigger === "broadcast" ? "bg-on-surface text-surface" : "bg-on-surface/10 text-on-surface"}`}
+            >
+              Campaign Follow-up
+            </button>
+          </div>
+
+          {reengageTrigger === "broadcast" && (
+            <label className="block">
+              <span className="font-label text-xs uppercase tracking-widest text-on-surface-muted">Broadcast</span>
+              <select
+                value={selectedBroadcastId}
+                onChange={(e) => setSelectedBroadcastId(e.target.value)}
+                className="mt-1 w-full max-w-md rounded-xl border border-on-surface/20 px-3 py-2 text-sm"
+              >
+                <option value="">Select a broadcast…</option>
+                {broadcastHistory.filter((b) => b.broadcast_id).map((b) => (
+                  <option key={b.broadcast_id} value={b.broadcast_id}>
+                    {b.template_name} · {new Date(b.timestamp).toLocaleString()}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          <ReengagementBuilder
+            key={`${reengageTrigger}:${selectedBroadcastId ?? ""}`}
+            type={reengageTrigger}
+            broadcastId={reengageTrigger === "broadcast" ? selectedBroadcastId : undefined}
+            templates={wabaTemplates}
+          />
+        </div>
+      )}
+
+      {pageView === "leads" && (
       <div>
         <div className="flex flex-wrap items-center gap-4 mb-6">
           {/* Segment tabs */}
@@ -640,473 +546,7 @@ export default function LeadsPage() {
           )}
         </div>
 
-        {/* Re-engagement Panel */}
-        {(sourceFilter === "INBOUND" || (sourceFilter === "BROADCAST" && selectedBroadcastId)) && (
-          <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15 mb-6">
-            <div className="flex items-center justify-between mb-4 border-b border-surface-mid pb-3">
-              <div>
-                <h2 className="font-display text-base font-bold text-tertiary">
-                  {sourceFilter === "INBOUND" ? "Inbound Automated Re-engagement" : "Broadcast Re-engagement Workflow"}
-                </h2>
-                <p className="font-body text-xs text-on-surface-muted mt-0.5">
-                  {sourceFilter === "INBOUND"
-                    ? "Trigger automatic messages after a lead's last inbound reply"
-                    : "Trigger automatic follow-ups at custom intervals relative to the broadcast send time"}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowAddStep(!showAddStep)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 transition-colors shadow-sm"
-              >
-                {showAddStep ? <X size={13} /> : <Plus size={13} />}
-                {showAddStep ? "Cancel" : "Add Step"}
-              </button>
-            </div>
 
-            {/* Visual Re-engagement Flow Map */}
-            {reengagementSteps.length > 0 && (
-              <div className="bg-surface-low border border-surface-mid/60 rounded-xl p-4 mb-5 space-y-2.5">
-                <span className="font-label text-[10px] font-bold text-on-surface-muted uppercase tracking-wider block">
-                  🛤️ Active Re-engagement Sequence Flow
-                </span>
-                <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-on-surface">
-                  <div className="px-3 py-1.5 bg-surface border border-surface-mid rounded-lg shadow-sm">
-                    🏁 {sourceFilter === "INBOUND" ? "Lead Messages Us" : "Broadcast Sent"}
-                  </div>
-                  {(() => {
-                    const sortedSteps = [...reengagementSteps].sort((a, b) => a.delay_hours - b.delay_hours);
-                    return sortedSteps.map((step, idx) => (
-                      <div key={step.id} className="flex items-center gap-2">
-                        <span className="text-on-surface-muted">➔</span>
-                        <div className={cn(
-                          "px-3 py-1.5 border rounded-lg shadow-sm flex items-center gap-1.5",
-                          step.delay_hours < 24 ? "bg-emerald-50/50 border-emerald-100 text-emerald-800" : "bg-red-50/50 border-red-100 text-red-800"
-                        )}>
-                          <span className="bg-white/80 px-1.5 py-0.5 rounded text-[9px] font-bold">
-                            {idx + 1}
-                          </span>
-                          <span>{step.delay_hours}h Delay</span>
-                          <span className="text-[10px] font-normal italic">
-                            ({step.message_type === "freeform" ? "Freeform" : "Template"})
-                          </span>
-                        </div>
-                      </div>
-                    ));
-                  })()}
-                </div>
-                <p className="text-[10px] text-on-surface-muted mt-1 leading-relaxed">
-                  💡 You can customize the time intervals and add multiple re-engagement steps above. Each step will trigger sequentially at its configured delay hour.
-                </p>
-              </div>
-            )}
-
-            {showAddStep && (
-              <div className="bg-surface-low border border-surface-mid/85 rounded-xl p-5 mb-5 space-y-4 animate-slide-up">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Delay Hours */}
-                  <div>
-                    <label className="block font-label text-xs font-bold text-on-surface-muted uppercase tracking-wider mb-2">
-                      Trigger Delay (Hours)
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={720}
-                      value={stepDelayHours}
-                      onChange={(e) => setStepDelayHours(parseInt(e.target.value) || 1)}
-                      className="w-full px-4 py-2 bg-surface rounded-xl font-body text-sm text-on-surface border border-surface-mid focus:ring-2 focus:ring-tertiary outline-none"
-                    />
-                  </div>
-
-                  {/* Target Segments */}
-                  <div>
-                    <label className="block font-label text-xs font-bold text-on-surface-muted uppercase tracking-wider mb-2">
-                      Target Segments
-                    </label>
-                    <div className="flex flex-wrap gap-2.5 mt-1">
-                      {["A", "B", "C", "D"].map((seg) => (
-                        <label
-                          key={seg}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer font-label text-xs font-semibold select-none transition-colors ${
-                            stepTargetSegments.includes(seg)
-                              ? "bg-tertiary/10 border-tertiary text-tertiary"
-                              : "bg-surface border-surface-mid text-on-surface-muted hover:border-tertiary/50"
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={stepTargetSegments.includes(seg)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setStepTargetSegments([...stepTargetSegments, seg]);
-                              } else {
-                                setStepTargetSegments(stepTargetSegments.filter((s) => s !== seg));
-                              }
-                            }}
-                            className="hidden"
-                          />
-                          {SEGMENT_LABELS[seg]}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Dynamic Timing Assistant & Safety Alert */}
-                {(() => {
-                  const isFreeformOutOfWindow = stepDelayHours >= 24 && stepMessageType === "freeform";
-                  
-                  if (sourceFilter === "BROADCAST") {
-                    const selectedBroadcast = broadcastHistory.find(h => h.broadcast_id === selectedBroadcastId);
-                    if (!selectedBroadcast) {
-                      return (
-                        <div className="bg-surface border border-surface-mid rounded-xl p-4 text-xs font-semibold text-on-surface-muted italic">
-                          💡 Please select a broadcast to view scheduled IST trigger times.
-                        </div>
-                      );
-                    }
-                    
-                    const triggerDate = new Date(new Date(selectedBroadcast.timestamp).getTime() + stepDelayHours * 60 * 60 * 1000);
-                    const remainingHours = 24 - stepDelayHours;
-                    return (
-                      <div className="bg-surface border border-surface-mid rounded-xl p-4 space-y-4 shadow-sm ring-1 ring-black/5 animate-slide-up">
-                        <div className="text-xs font-bold text-on-surface-muted uppercase tracking-wider">
-                          ⏱️ Timing Assistant (India Standard Time)
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-b border-surface-mid pb-3">
-                          <div>
-                            <span className="text-[11px] text-on-surface-muted font-bold block uppercase">Broadcast Sent:</span>
-                            <span className="text-xs text-on-surface font-semibold font-mono">{formatIndianTime(selectedBroadcast.timestamp)}</span>
-                          </div>
-                          <div>
-                            <span className="text-[11px] text-on-surface-muted font-bold block uppercase">Expected Trigger Time:</span>
-                            <span className="text-tertiary text-xs font-bold font-mono">{formatIndianTime(triggerDate)} ({stepDelayHours}h after send)</span>
-                          </div>
-                        </div>
-                        
-                        <div className="space-y-2.5 text-xs">
-                          <p className="font-bold text-on-surface">How will this message reach leads?</p>
-                          <div className="space-y-2 font-medium">
-                            <div className="flex items-start gap-2 bg-emerald-50/50 border border-emerald-100 p-2.5 rounded-lg">
-                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
-                              <p className="text-emerald-800 leading-relaxed">
-                                <strong>For leads who replied:</strong> Since they messaged back, their 24-hour window was opened. When this trigger runs at the {stepDelayHours}th hour, they will have <strong>{remainingHours > 0 ? `${remainingHours} hours remaining` : "0 hours remaining"}</strong> in their active window.
-                                <br />
-                                <span className="font-semibold">{remainingHours > 0 ? "✅ Both Freeform Text and Template messages can be sent." : "⚠️ Since the 24h window has expired, only Template messages will deliver."}</span>
-                              </p>
-                            </div>
-                            <div className="flex items-start gap-2 bg-amber-50/40 border border-amber-100 p-2.5 rounded-lg">
-                              <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
-                              <p className="text-amber-800 leading-relaxed">
-                                <strong>For leads who did not reply:</strong> They never messaged us back, so they have <strong>no open 24h window</strong>.
-                                <br />
-                                <span className="font-semibold">⚠️ Only Approved Templates will deliver to them. (If you choose Freeform Text, these non-replying leads will be automatically skipped to prevent delivery failures).</span>
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                        {isFreeformOutOfWindow && (
-                          <div className="bg-red-50 border border-red-100 rounded-lg p-3 text-xs font-semibold text-red-700">
-                            ⚠️ Error: You have configured a Freeform message at the {stepDelayHours}th hour, which is past the 24-hour WhatsApp session window. Please change the Message Type below to an &quot;Approved Template&quot; or reduce the Trigger Delay to less than 24 hours.
-                          </div>
-                        )}
-                      </div>
-                    );
-                  } else if (sourceFilter === "INBOUND") {
-                    const sim = getSimulatedInboundTrigger(stepDelayHours);
-                    const remainingHours = 24 - stepDelayHours;
-                    return (
-                      <div className="bg-surface border border-surface-mid rounded-xl p-4 space-y-4 shadow-sm ring-1 ring-black/5 animate-slide-up">
-                        <div className="text-xs font-bold text-on-surface-muted uppercase tracking-wider">
-                          ⏱️ Timing Assistant (India Standard Time)
-                        </div>
-                        <p className="text-[11px] text-on-surface-muted leading-relaxed">
-                          Since Inbound follow-ups run relative to each lead&apos;s last inbound message, here is a mock scenario:
-                        </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-b border-surface-mid pb-3">
-                          <div>
-                            <span className="text-[11px] text-on-surface-muted font-bold block uppercase">If Lead replies at:</span>
-                            <span className="text-xs text-on-surface font-semibold font-mono">Today, 10:00 AM</span>
-                          </div>
-                          <div>
-                            <span className="text-[11px] text-on-surface-muted font-bold block uppercase">Expected Trigger:</span>
-                            <span className="text-tertiary text-xs font-bold font-mono">{sim.timeStr} ({stepDelayHours}h after reply)</span>
-                          </div>
-                        </div>
-                        
-                        <div className="space-y-2.5 text-xs">
-                          <p className="font-bold text-on-surface">How will this message reach leads?</p>
-                          <div className="space-y-2 font-medium">
-                            <div className="flex items-start gap-2 bg-emerald-50/50 border border-emerald-100 p-2.5 rounded-lg">
-                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
-                              <p className="text-emerald-800 leading-relaxed">
-                                <strong>WhatsApp 24h Session Window:</strong> Since the message triggers at the {stepDelayHours}th hour after their reply, their window will have <strong>{remainingHours > 0 ? `${remainingHours} hours remaining` : "0 hours remaining"}</strong>.
-                                <br />
-                                <span className="font-semibold">{remainingHours > 0 ? "✅ Both Freeform Text and Template messages can be sent." : "⚠️ Since the 24h window has expired, only Template messages will deliver."}</span>
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                        {isFreeformOutOfWindow && (
-                          <div className="bg-red-50 border border-red-100 rounded-lg p-3 text-xs font-semibold text-red-700">
-                            ⚠️ Error: You have configured a Freeform message at the {stepDelayHours}th hour, which is past the 24-hour WhatsApp session window. Please change the Message Type below to an &quot;Approved Template&quot; or reduce the Trigger Delay to less than 24 hours.
-                          </div>
-                        )}
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
-
-                {/* Message Type */}
-                <div>
-                  <label className="block font-label text-xs font-bold text-on-surface-muted uppercase tracking-wider mb-2">
-                    Message Type
-                  </label>
-                  <div className="flex gap-2">
-                    {(["freeform", "template"] as const).map((type) => (
-                      <button
-                        key={type}
-                        type="button"
-                        onClick={() => setStepMessageType(type)}
-                        className={`px-4 py-2 rounded-lg font-label text-xs font-semibold capitalize transition-all border ${
-                          stepMessageType === type
-                            ? "bg-secondary border-secondary text-white"
-                            : "bg-surface border-surface-mid text-on-surface-muted hover:border-surface-mid/80"
-                        }`}
-                      >
-                        {type === "freeform" ? "Freeform Text (Window only)" : "Approved Template (Always sent)"}
-                      </button>
-                    ))}
-                  </div>
-                  {stepMessageType === "freeform" && (
-                    <p className="font-body text-[10px] text-amber-600 mt-1.5 font-semibold">
-                      ⚠ Note: Freeform messages will be automatically skipped if the lead&apos;s 24-hour window has expired.
-                    </p>
-                  )}
-                </div>
-
-                {/* Conditional Fields based on Message Type */}
-                {stepMessageType === "freeform" ? (
-                  <div>
-                    <label className="block font-label text-xs font-bold text-on-surface-muted uppercase tracking-wider mb-2">
-                      Message Content
-                    </label>
-                    <textarea
-                      value={stepMessageContent}
-                      onChange={(e) => setStepMessageContent(e.target.value)}
-                      rows={3}
-                      placeholder="Hi! We noticed you haven't booked a time yet. Let us know if you have questions!"
-                      className="w-full px-4 py-3 bg-surface rounded-xl font-body text-sm text-on-surface border border-surface-mid focus:ring-2 focus:ring-tertiary outline-none resize-none"
-                    />
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block font-label text-xs font-bold text-on-surface-muted uppercase tracking-wider mb-2">
-                        WhatsApp Template
-                      </label>
-                      <select
-                        value={stepTemplateName}
-                        onChange={(e) => {
-                          setStepTemplateName(e.target.value);
-                          setStepTemplateVariables([]);
-                        }}
-                        className="w-full px-4 py-2 bg-surface rounded-xl font-body text-sm text-on-surface border border-surface-mid focus:ring-2 focus:ring-tertiary outline-none cursor-pointer"
-                      >
-                        <option value="">Select an approved template...</option>
-                        {wabaTemplates.map((t) => (
-                          <option key={t.id} value={t.name}>
-                            {t.name} ({t.category.toLowerCase()})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {stepTemplateName && (
-                      <div className="bg-surface border border-surface-mid rounded-xl p-4 space-y-3">
-                        <p className="font-label text-xs font-bold text-on-surface uppercase tracking-wider">
-                          Variable Mapping
-                        </p>
-                        <p className="font-body text-xs text-on-surface-muted">
-                          Define custom column keys or variables for the template parameters (e.g. `name`).
-                        </p>
-                        <div className="space-y-2">
-                          {stepTemplateVariables.map((val, idx) => (
-                            <div key={idx} className="flex items-center gap-2 bg-surface-low p-2 rounded-lg border border-surface-mid/60">
-                              <span className="font-mono text-xs text-on-surface-muted w-10 shrink-0 font-bold">{`{{${idx + 1}}}`}</span>
-                              <select
-                                value={val}
-                                onChange={(e) => {
-                                  const next = [...stepTemplateVariables];
-                                  next[idx] = e.target.value;
-                                  setStepTemplateVariables(next);
-                                }}
-                                className="flex-1 bg-surface rounded-lg px-2.5 py-1.5 font-body text-xs text-on-surface border border-surface-mid focus:outline-none focus:ring-1 focus:ring-tertiary"
-                              >
-                                <option value="">— pick a field —</option>
-                                <option value="name">Lead Name</option>
-                                <option value="phone">Lead Phone</option>
-                                <option value="course">Course</option>
-                                <option value="city">City</option>
-                              </select>
-                              <button
-                                type="button"
-                                onClick={() => setStepTemplateVariables(stepTemplateVariables.filter((_, i) => i !== idx))}
-                                className="text-xs text-red-500 hover:text-red-700 px-2 py-1.5 rounded hover:bg-red-50 transition-colors font-semibold"
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          ))}
-                          <button
-                            type="button"
-                            onClick={() => setStepTemplateVariables([...stepTemplateVariables, ""])}
-                            className="text-xs font-bold text-tertiary hover:underline flex items-center gap-1 mt-1 pl-1"
-                          >
-                            + Add variable mapping
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <button
-                    onClick={() => setShowAddStep(false)}
-                    className="px-4 py-2 bg-surface text-on-surface-muted rounded-xl font-label text-xs font-semibold border border-surface-mid hover:bg-surface-low transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleAddStep}
-                    disabled={stepDelayHours >= 24 && stepMessageType === "freeform"}
-                    className="flex items-center gap-2 px-4 py-2 bg-tertiary text-white rounded-xl font-label text-xs font-semibold hover:bg-tertiary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Save Step
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* List of current steps */}
-            {loadingSteps ? (
-              <div className="text-center py-4 font-body text-xs text-on-surface-muted">Loading steps...</div>
-            ) : reengagementSteps.length === 0 ? (
-              <div className="text-center py-6 border border-dashed border-surface-mid rounded-xl bg-surface-low/30 font-body text-xs text-on-surface-muted">
-                No automatic re-engagement steps configured yet. Click &quot;Add Step&quot; above to create one.
-              </div>
-            ) : (
-              <div className="relative border-l-2 border-surface-mid ml-3 pl-6 space-y-5 py-2">
-                {(() => {
-                  const sortedSteps = [...reengagementSteps].sort((a, b) => a.delay_hours - b.delay_hours);
-                  return sortedSteps.map((step, idx) => {
-                    const segLabels = (step.target_segments || []).map(s => SEGMENT_LABELS[s] || s).join(", ");
-                    const stepIndexLabel = `${idx + 1}${
-                      ["st", "nd", "rd"][((idx + 1) % 100 - 20) % 10] || 
-                      ["st", "nd", "rd"][idx] || 
-                      "th"
-                    } Follow-up`;
-                    
-                    let triggerDetailText = "";
-                    let windowDetailText = "";
-                    const isWindowOpen = step.delay_hours < 24;
-                    
-                    if (step.type === "broadcast" && selectedBroadcastId) {
-                      const selectedBroadcast = broadcastHistory.find(h => h.broadcast_id === selectedBroadcastId);
-                      if (selectedBroadcast) {
-                        const triggerDate = new Date(new Date(selectedBroadcast.timestamp).getTime() + step.delay_hours * 60 * 60 * 1000);
-                        triggerDetailText = `Scheduled: ${formatIndianTime(triggerDate)}`;
-                        windowDetailText = isWindowOpen 
-                          ? `replied leads: open (${24 - step.delay_hours}h left) | non-replied: template only`
-                          : "session window expired (template only)";
-                      } else {
-                        triggerDetailText = `Triggers: ${step.delay_hours}h after broadcast sent`;
-                        windowDetailText = isWindowOpen 
-                          ? `replied leads: open (${24 - step.delay_hours}h left) | non-replied: template only`
-                          : "session window expired (template only)";
-                      }
-                    } else {
-                      triggerDetailText = `Triggers: ${step.delay_hours}h after last inbound message`;
-                      windowDetailText = isWindowOpen 
-                        ? `session window: open (${24 - step.delay_hours}h left)`
-                        : "session window expired (template only)";
-                    }
-
-                    return (
-                      <div key={step.id}>
-                        {/* Boundary Line Marker */}
-                        {((idx === 0 && step.delay_hours >= 24) || (idx > 0 && sortedSteps[idx - 1].delay_hours < 24 && step.delay_hours >= 24)) && (
-                          <div className="relative my-6 -ml-6 mr-2 flex items-center justify-center">
-                            <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                              <div className="w-full border-t border-dashed border-red-300" />
-                            </div>
-                            <div className="relative flex justify-center">
-                              <span className="bg-red-50 text-red-700 px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full border border-red-200 shadow-sm flex items-center gap-1">
-                                <Clock size={10} />
-                                24-Hour WhatsApp Session Window Ends Here
-                              </span>
-                            </div>
-                          </div>
-                        )}
-                        
-                        <div className="relative group mt-3">
-                          {/* Timeline dot */}
-                          <div className={cn(
-                            "absolute -left-[31px] top-1.5 w-2.5 h-2.5 rounded-full ring-4 ring-white",
-                            isWindowOpen ? "bg-emerald-500" : "bg-red-500"
-                          )} />
-                          
-                          <div className="bg-surface-low border border-surface-mid/60 rounded-xl p-4 flex items-center justify-between hover:shadow-sm transition-all">
-                            <div className="space-y-1.5">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="font-display text-[10px] font-bold text-tertiary px-2 py-0.5 bg-tertiary/10 rounded-md">
-                                  {stepIndexLabel}
-                                </span>
-                                <span className="font-display text-sm font-bold text-on-surface">
-                                  {step.delay_hours} Hours Delay
-                                </span>
-                                <span className="px-2 py-0.5 rounded-md bg-surface border border-surface-mid font-label text-[10px] font-bold text-on-surface-muted">
-                                  Targets: {segLabels}
-                                </span>
-                              </div>
-                              <p className="font-body text-xs text-on-surface mt-1">
-                                {step.message_type === "freeform" ? (
-                                  <span className="italic">Freeform: &quot;{step.message_content}&quot;</span>
-                                ) : (
-                                  <span>Template: <strong className="font-semibold text-zinc-900">{step.template_name}</strong></span>
-                                )}
-                              </p>
-                              
-                              <div className="flex flex-wrap items-center gap-2 mt-1.5 font-mono text-[10px]">
-                                <span className="text-on-surface-muted font-semibold">{triggerDetailText}</span>
-                                <span className={cn(
-                                  "font-bold px-1.5 py-0.5 rounded border text-[9px] uppercase",
-                                  isWindowOpen 
-                                    ? "bg-emerald-50 text-emerald-600 border-emerald-100" 
-                                    : "bg-red-50 text-red-600 border-red-100"
-                                )}>
-                                  {windowDetailText}
-                                </span>
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => handleDeleteStep(step.id)}
-                              className="p-1.5 text-on-surface-muted hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  });
-                })()}
-              </div>
-            )}
-          </div>
-        )}
 
         <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15 mb-6">
           <div className="flex items-center justify-between mb-3">
@@ -1242,6 +682,7 @@ export default function LeadsPage() {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }

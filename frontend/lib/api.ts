@@ -150,6 +150,14 @@ export interface BroadcastResult {
   skipped_window: number;
 }
 
+export interface WabaTemplate {
+  id: string;
+  name: string;
+  category: string;
+  status: string;
+  body_text?: string | null;
+}
+
 export interface ReengagementStep {
   id: string;
   tenant_id: string;
@@ -161,6 +169,8 @@ export interface ReengagementStep {
   message_content?: string | null;
   template_name?: string | null;
   template_variables?: string[] | null;
+  fallback_template_name?: string | null;
+  fallback_template_variables?: string[] | null;
   created_at: string;
 }
 
@@ -675,6 +685,8 @@ export const api = {
       message_content?: string | null;
       template_name?: string | null;
       template_variables?: string[] | null;
+      fallback_template_name?: string | null;
+      fallback_template_variables?: string[] | null;
     }) =>
       apiFetch<ReengagementStep>(`/api/v1/reengagement/steps`, {
         method: "POST",
