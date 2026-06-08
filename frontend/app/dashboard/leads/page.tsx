@@ -440,6 +440,59 @@ export default function LeadsPage() {
     return `${h}h ${m}m left`;
   }
 
+  function formatIndianTime(dateInput: Date | string | number): string {
+    const date = new Date(dateInput);
+    if (isNaN(date.getTime())) return "Invalid Date";
+    
+    const options: Intl.DateTimeFormatOptions = {
+      timeZone: "Asia/Kolkata",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    };
+    
+    try {
+      const formatter = new Intl.DateTimeFormat("en-IN", options);
+      return formatter.format(date) + " IST";
+    } catch {
+      return date.toLocaleString() + " IST";
+    }
+  }
+
+  function getSimulatedInboundTrigger(delayHours: number): { timeStr: string; windowStr: string; isOpen: boolean } {
+    const mockInbound = new Date();
+    mockInbound.setHours(10, 0, 0, 0); // 10:00 AM Today
+    const triggerTime = new Date(mockInbound.getTime() + delayHours * 60 * 60 * 1000);
+    const isOpen = delayHours < 24;
+    
+    const options: Intl.DateTimeFormatOptions = {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    };
+    
+    let timeStr = "";
+    try {
+      timeStr = new Intl.DateTimeFormat("en-IN", options).format(triggerTime);
+    } catch {
+      timeStr = triggerTime.toLocaleString();
+    }
+    
+    const relativeDay = triggerTime.getDate() === mockInbound.getDate() ? "Today" : "Tomorrow";
+    const formattedTime = `${relativeDay}, ${timeStr.split(",")[1]?.trim() || timeStr}`;
+    
+    return {
+      timeStr: formattedTime,
+      windowStr: isOpen ? `Open (${24 - delayHours}h left)` : "Expired (Must use Template)",
+      isOpen,
+    };
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-8">
@@ -662,6 +715,98 @@ export default function LeadsPage() {
                   </div>
                 </div>
 
+                {/* Dynamic Timing Assistant & Safety Alert */}
+                {(() => {
+                  const isFreeformOutOfWindow = stepDelayHours >= 24 && stepMessageType === "freeform";
+                  
+                  if (sourceFilter === "BROADCAST") {
+                    const selectedBroadcast = broadcastHistory.find(h => h.broadcast_id === selectedBroadcastId);
+                    if (!selectedBroadcast) {
+                      return (
+                        <div className="bg-surface border border-surface-mid rounded-xl p-4 text-xs font-semibold text-on-surface-muted italic">
+                          💡 Please select a broadcast to view scheduled IST trigger times.
+                        </div>
+                      );
+                    }
+                    
+                    const triggerDate = new Date(new Date(selectedBroadcast.timestamp).getTime() + stepDelayHours * 60 * 60 * 1000);
+                    return (
+                      <div className="bg-surface border border-surface-mid rounded-xl p-4 space-y-3 shadow-sm ring-1 ring-black/5 animate-slide-up">
+                        <div className="text-xs font-bold text-on-surface-muted uppercase tracking-wider">
+                          ⏱️ Timing Assistant (India Standard Time)
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-semibold">
+                          <div>
+                            <span className="text-on-surface-muted block">Broadcast Sent:</span>
+                            <span className="text-on-surface font-mono">{formatIndianTime(selectedBroadcast.timestamp)}</span>
+                          </div>
+                          <div>
+                            <span className="text-on-surface-muted block">Scheduled Trigger:</span>
+                            <span className="text-tertiary font-bold font-mono">{formatIndianTime(triggerDate)}</span>
+                          </div>
+                          <div>
+                            <span className="text-on-surface-muted block">24h Session Window:</span>
+                            {stepDelayHours < 24 ? (
+                              <span className="text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 inline-block mt-0.5">
+                                Open ({24 - stepDelayHours}h left)
+                              </span>
+                            ) : (
+                              <span className="text-red-600 font-bold bg-red-50 px-1.5 py-0.5 rounded border border-red-100 inline-block mt-0.5">
+                                Expired (Must use Template)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {isFreeformOutOfWindow && (
+                          <div className="bg-red-50 border border-red-100 rounded-lg p-3 text-xs font-semibold text-red-700">
+                            ⚠️ Error: You have configured a Freeform message at the {stepDelayHours}th hour, which is past the 24-hour WhatsApp session window. Please change the Message Type below to an &quot;Approved Template&quot; or reduce the Trigger Delay to less than 24 hours.
+                          </div>
+                        )}
+                      </div>
+                    );
+                  } else if (sourceFilter === "INBOUND") {
+                    const sim = getSimulatedInboundTrigger(stepDelayHours);
+                    return (
+                      <div className="bg-surface border border-surface-mid rounded-xl p-4 space-y-3 shadow-sm ring-1 ring-black/5 animate-slide-up">
+                        <div className="text-xs font-bold text-on-surface-muted uppercase tracking-wider">
+                          ⏱️ Timing Assistant (India Standard Time)
+                        </div>
+                        <p className="text-[11px] text-on-surface-muted leading-relaxed">
+                          Since Inbound follow-ups run relative to each lead&apos;s last reply, here is a mock scenario:
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-semibold">
+                          <div>
+                            <span className="text-on-surface-muted block">If Lead replies at:</span>
+                            <span className="text-on-surface font-mono">Today, 10:00 AM</span>
+                          </div>
+                          <div>
+                            <span className="text-on-surface-muted block">Expected Trigger:</span>
+                            <span className="text-tertiary font-bold font-mono">{sim.timeStr}</span>
+                          </div>
+                          <div>
+                            <span className="text-on-surface-muted block">24h Session Window:</span>
+                            {sim.isOpen ? (
+                              <span className="text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 inline-block mt-0.5">
+                                Open ({24 - stepDelayHours}h left)
+                              </span>
+                            ) : (
+                              <span className="text-red-600 font-bold bg-red-50 px-1.5 py-0.5 rounded border border-red-100 inline-block mt-0.5">
+                                Expired (Must use Template)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {isFreeformOutOfWindow && (
+                          <div className="bg-red-50 border border-red-100 rounded-lg p-3 text-xs font-semibold text-red-700">
+                            ⚠️ Error: You have configured a Freeform message at the {stepDelayHours}th hour, which is past the 24-hour WhatsApp session window. Please change the Message Type below to an &quot;Approved Template&quot; or reduce the Trigger Delay to less than 24 hours.
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+
                 {/* Message Type */}
                 <div>
                   <label className="block font-label text-xs font-bold text-on-surface-muted uppercase tracking-wider mb-2">
@@ -785,7 +930,8 @@ export default function LeadsPage() {
                   </button>
                   <button
                     onClick={handleAddStep}
-                    className="flex items-center gap-2 px-4 py-2 bg-tertiary text-white rounded-xl font-label text-xs font-semibold hover:bg-tertiary/90 transition-colors"
+                    disabled={stepDelayHours >= 24 && stepMessageType === "freeform"}
+                    className="flex items-center gap-2 px-4 py-2 bg-tertiary text-white rounded-xl font-label text-xs font-semibold hover:bg-tertiary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Save Step
                   </button>
@@ -802,39 +948,104 @@ export default function LeadsPage() {
               </div>
             ) : (
               <div className="relative border-l-2 border-surface-mid ml-3 pl-6 space-y-5 py-2">
-                {reengagementSteps.map((step) => {
-                  const segLabels = (step.target_segments || []).map(s => SEGMENT_LABELS[s] || s).join(", ");
-                  return (
-                    <div key={step.id} className="relative group">
-                      {/* Timeline dot */}
-                      <div className="absolute -left-[31px] top-1.5 w-2.5 h-2.5 rounded-full bg-tertiary ring-4 ring-white" />
-                      
-                      <div className="bg-surface-low border border-surface-mid/60 rounded-xl p-4 flex items-center justify-between hover:shadow-sm transition-all">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-display text-sm font-bold text-tertiary">{step.delay_hours} Hours Delay</span>
-                            <span className="px-2 py-0.5 rounded-md bg-surface border border-surface-mid font-label text-[10px] font-bold text-on-surface-muted">
-                              Targets: {segLabels}
-                            </span>
+                {(() => {
+                  const sortedSteps = [...reengagementSteps].sort((a, b) => a.delay_hours - b.delay_hours);
+                  return sortedSteps.map((step, idx) => {
+                    const segLabels = (step.target_segments || []).map(s => SEGMENT_LABELS[s] || s).join(", ");
+                    const stepIndexLabel = `${idx + 1}${
+                      ["st", "nd", "rd"][((idx + 1) % 100 - 20) % 10] || 
+                      ["st", "nd", "rd"][idx] || 
+                      "th"
+                    } Follow-up`;
+                    
+                    let triggerDetailText = "";
+                    let windowDetailText = "";
+                    const isWindowOpen = step.delay_hours < 24;
+                    
+                    if (step.type === "broadcast" && selectedBroadcastId) {
+                      const selectedBroadcast = broadcastHistory.find(h => h.broadcast_id === selectedBroadcastId);
+                      if (selectedBroadcast) {
+                        const triggerDate = new Date(new Date(selectedBroadcast.timestamp).getTime() + step.delay_hours * 60 * 60 * 1000);
+                        triggerDetailText = `Scheduled: ${formatIndianTime(triggerDate)}`;
+                        windowDetailText = isWindowOpen ? `(${24 - step.delay_hours}h left in window)` : "(Window Expired)";
+                      } else {
+                        triggerDetailText = `Triggers: ${step.delay_hours}h after broadcast sent`;
+                        windowDetailText = isWindowOpen ? `(${24 - step.delay_hours}h left in window)` : "(Window Expired)";
+                      }
+                    } else {
+                      triggerDetailText = `Triggers: ${step.delay_hours}h after last inbound message`;
+                      windowDetailText = isWindowOpen ? `(${24 - step.delay_hours}h left in window)` : "(Window Expired)";
+                    }
+
+                    return (
+                      <div key={step.id}>
+                        {/* Boundary Line Marker */}
+                        {((idx === 0 && step.delay_hours >= 24) || (idx > 0 && sortedSteps[idx - 1].delay_hours < 24 && step.delay_hours >= 24)) && (
+                          <div className="relative my-6 -ml-6 mr-2 flex items-center justify-center">
+                            <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                              <div className="w-full border-t border-dashed border-red-300" />
+                            </div>
+                            <div className="relative flex justify-center">
+                              <span className="bg-red-50 text-red-700 px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full border border-red-200 shadow-sm flex items-center gap-1">
+                                <Clock size={10} />
+                                24-Hour WhatsApp Session Window Ends Here
+                              </span>
+                            </div>
                           </div>
-                          <p className="font-body text-xs text-on-surface mt-1">
-                            {step.message_type === "freeform" ? (
-                              <span className="italic">Freeform: &quot;{step.message_content}&quot;</span>
-                            ) : (
-                              <span>Template: <strong className="font-semibold text-zinc-900">{step.template_name}</strong></span>
-                            )}
-                          </p>
+                        )}
+                        
+                        <div className="relative group mt-3">
+                          {/* Timeline dot */}
+                          <div className={cn(
+                            "absolute -left-[31px] top-1.5 w-2.5 h-2.5 rounded-full ring-4 ring-white",
+                            isWindowOpen ? "bg-emerald-500" : "bg-red-500"
+                          )} />
+                          
+                          <div className="bg-surface-low border border-surface-mid/60 rounded-xl p-4 flex items-center justify-between hover:shadow-sm transition-all">
+                            <div className="space-y-1.5">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-display text-[10px] font-bold text-tertiary px-2 py-0.5 bg-tertiary/10 rounded-md">
+                                  {stepIndexLabel}
+                                </span>
+                                <span className="font-display text-sm font-bold text-on-surface">
+                                  {step.delay_hours} Hours Delay
+                                </span>
+                                <span className="px-2 py-0.5 rounded-md bg-surface border border-surface-mid font-label text-[10px] font-bold text-on-surface-muted">
+                                  Targets: {segLabels}
+                                </span>
+                              </div>
+                              <p className="font-body text-xs text-on-surface mt-1">
+                                {step.message_type === "freeform" ? (
+                                  <span className="italic">Freeform: &quot;{step.message_content}&quot;</span>
+                                ) : (
+                                  <span>Template: <strong className="font-semibold text-zinc-900">{step.template_name}</strong></span>
+                                )}
+                              </p>
+                              
+                              <div className="flex flex-wrap items-center gap-2 mt-1.5 font-mono text-[10px]">
+                                <span className="text-on-surface-muted font-semibold">{triggerDetailText}</span>
+                                <span className={cn(
+                                  "font-bold px-1.5 py-0.5 rounded border text-[9px] uppercase",
+                                  isWindowOpen 
+                                    ? "bg-emerald-50 text-emerald-600 border-emerald-100" 
+                                    : "bg-red-50 text-red-600 border-red-100"
+                                )}>
+                                  {windowDetailText}
+                                </span>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => handleDeleteStep(step.id)}
+                              className="p-1.5 text-on-surface-muted hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </div>
-                        <button
-                          onClick={() => handleDeleteStep(step.id)}
-                          className="p-1.5 text-on-surface-muted hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
-                        >
-                          <Trash2 size={14} />
-                        </button>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  });
+                })()}
               </div>
             )}
           </div>
