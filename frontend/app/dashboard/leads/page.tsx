@@ -584,11 +584,11 @@ export default function LeadsPage() {
           {/* Conditional Campaign Dropdown */}
           {sourceFilter === "META_ADS" && campaigns.length > 0 && (
             <div className="flex items-center gap-2 bg-surface p-2.5 rounded-xl border border-surface-mid/80 shadow-sm animate-slide-up">
-              <span className="font-label text-xs text-on-surface-muted font-bold uppercase tracking-wider">Campaign:</span>
+              <span className="font-label text-xs text-on-surface-muted font-bold uppercase tracking-wider shrink-0">Campaign:</span>
               <select
                 value={selectedCampaignId}
                 onChange={(e) => setSelectedCampaignId(e.target.value)}
-                className="bg-transparent font-body text-xs font-semibold text-tertiary focus:outline-none max-w-[200px] cursor-pointer"
+                className="bg-transparent font-body text-xs font-semibold text-tertiary focus:outline-none max-w-[300px] pr-6 cursor-pointer"
               >
                 <option value="">Select Campaign</option>
                 {campaigns.map((c) => (
@@ -604,11 +604,11 @@ export default function LeadsPage() {
           {sourceFilter === "BROADCAST" && broadcastHistory.length > 0 && (
             <div className="flex flex-wrap items-center gap-3 animate-slide-up">
               <div className="flex items-center gap-2 bg-surface p-2.5 rounded-xl border border-surface-mid/80 shadow-sm">
-                <span className="font-label text-xs text-on-surface-muted font-bold uppercase tracking-wider">Broadcast:</span>
+                <span className="font-label text-xs text-on-surface-muted font-bold uppercase tracking-wider shrink-0">Broadcast:</span>
                 <select
                   value={selectedBroadcastId}
                   onChange={(e) => setSelectedBroadcastId(e.target.value)}
-                  className="bg-transparent font-body text-xs font-semibold text-tertiary focus:outline-none max-w-[220px] cursor-pointer"
+                  className="bg-transparent font-body text-xs font-semibold text-tertiary focus:outline-none max-w-[340px] pr-6 cursor-pointer"
                 >
                   <option value="">Select Broadcast</option>
                   {broadcastHistory.map((h) => (
