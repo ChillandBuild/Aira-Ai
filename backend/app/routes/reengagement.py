@@ -56,6 +56,8 @@ def create_step(
         raise HTTPException(status_code=400, detail="delay_hours must be positive")
     if payload.delay_hours > 24:
         raise HTTPException(status_code=400, detail="delay_hours must be within the 24h window (1-24)")
+    if payload.type == "broadcast" and not payload.broadcast_id:
+        raise HTTPException(status_code=400, detail="broadcast_id is required for broadcast steps")
 
     db = get_supabase()
     row = {
