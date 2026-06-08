@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timezone, timedelta
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id, get_tenant_and_role
@@ -275,6 +275,80 @@ async def get_status_summary(caller_id: UUID, tenant_id: str = Depends(get_tenan
         "scheduled_count": scheduled_count,
     }
 
+
+
+@router.get("/{caller_id}/timeline")
+async def get_caller_timeline(
+    caller_id: UUID,
+    date: str = Query(None),
+    tenant_id: str = Depends(get_tenant_id)
+):
+    """Admin views a caller's exact timeline for a specific day."""
+    db = get_supabase()
+    
+    if not date:
+        date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        
+    try:
+        day_start = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise HTTPException(400, "Invalid date format, use YYYY-MM-DD")
+        
+    day_end = day_start + timedelta(days=1)
+    
+    status_logs = (
+        db.table("caller_status_logs")
+        .select("id,status,started_at,ended_at")
+        .eq("caller_id", str(caller_id))
+        .gte("started_at", day_start.isoformat())
+        .lt("started_at", day_end.isoformat())
+        .order("started_at")
+        .execute()
+    ).data or []
+    
+    calls = (
+        db.table("call_logs")
+        .select("id,created_at,duration_seconds,outcome,lead_id")
+        .eq("caller_id", str(caller_id))
+        .gte("created_at", day_start.isoformat())
+        .lt("created_at", day_end.isoformat())
+        .order("created_at")
+        .execute()
+    ).data or []
+    
+    lead_ids = list({c["lead_id"] for c in calls if c.get("lead_id")})
+    lead_map = {}
+    if lead_ids:
+        leads = db.table("leads").select("id,name,phone").in_("id", lead_ids).execute().data or []
+        lead_map = {l["id"]: l for l in leads}
+        
+    events = []
+    
+    for s in status_logs:
+        events.append({
+            "type": "status",
+            "id": s["id"],
+            "status": s["status"],
+            "started_at": s["started_at"],
+            "ended_at": s["ended_at"],
+            "duration_seconds": None,
+        })
+        
+    for c in calls:
+        lead = lead_map.get(c["lead_id"], {})
+        events.append({
+            "type": "call",
+            "id": c["id"],
+            "started_at": c["created_at"],
+            "duration_seconds": c.get("duration_seconds") or 0,
+            "outcome": c.get("outcome"),
+            "lead_name": lead.get("name") or "Unknown",
+            "lead_phone": lead.get("phone") or "",
+        })
+        
+    events.sort(key=lambda x: x["started_at"])
+    
+    return {"data": events}
 
 # ── CRUD (existing) ──────────────────────────────────────────────────────────
 

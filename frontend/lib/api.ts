@@ -425,6 +425,18 @@ export interface AppNotification {
   created_at: string;
 }
 
+export interface TimelineEvent {
+  type: "status" | "call";
+  id: string;
+  status?: string;
+  outcome?: string;
+  started_at: string;
+  ended_at?: string | null;
+  duration_seconds: number | null;
+  lead_name?: string;
+  lead_phone?: string;
+}
+
 export const api = {
   leads: {
     list: async (params?: {
@@ -605,6 +617,10 @@ export const api = {
         breaks: { started_at: string; ended_at: string | null; duration_minutes: number }[];
         scheduled_count: number;
       }>(`/api/v1/callers/${id}/status-summary`),
+    getTimeline: (id: string, date?: string) => {
+      const q = date ? `?date=${encodeURIComponent(date)}` : "";
+      return apiFetch<{ data: TimelineEvent[] }>(`/api/v1/callers/${id}/timeline${q}`);
+    },
     winners: () =>
       apiFetch<{
         daily: { caller_id: string; name: string; value: number; label: string } | null;

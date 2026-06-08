@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Trash2, UserPlus, Phone, Pencil, Check, X, Loader2 } from "lucide-react";
+import { Trash2, UserPlus, Phone, Pencil, Check, X, Loader2, Activity } from "lucide-react";
+import Link from "next/link";
 import { api, TeamMember } from "@/lib/api";
 import { useAuthRole } from "../contexts/AuthRoleContext";
 import WinnerBanner from "./WinnerBanner";
@@ -264,10 +265,15 @@ export default function TeamPage() {
                       />
                     ) : "—"}
                   </td>
-                  <td className="px-5 py-4">
+                  <td className="px-5 py-4 flex items-center justify-end gap-2">
+                    {m.caller_profile?.id && (
+                      <Link href={`/dashboard/team/${m.caller_profile.id}`} className="p-1.5 rounded-lg hover:bg-surface-subtle text-ink-muted hover:text-primary transition-colors" title="View Timeline">
+                        <Activity size={16} />
+                      </Link>
+                    )}
                     {m.role !== "owner" && (
-                      <button onClick={() => handleRemove(m.user_id)} className="p-1.5 rounded-lg hover:bg-red-50 text-ink-muted hover:text-red-500 transition-colors">
-                        <Trash2 size={14} />
+                      <button onClick={() => handleRemove(m.user_id)} className="p-1.5 rounded-lg hover:bg-red-50 text-ink-muted hover:text-red-500 transition-colors" title="Remove Telecaller">
+                        <Trash2 size={16} />
                       </button>
                     )}
                   </td>
