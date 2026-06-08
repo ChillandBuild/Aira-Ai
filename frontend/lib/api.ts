@@ -155,6 +155,7 @@ export interface WabaTemplate {
   name: string;
   category: string;
   status: string;
+  body_text?: string | null;
 }
 
 export interface ReengagementStep {

@@ -1,12 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api, ReengagementStep, WabaTemplate } from "@/lib/api";
 
 const SEGMENTS = ["A", "B", "C", "D"] as const;
 const SEGMENT_LABELS: Record<string, string> = { A: "Hot", B: "Warm", C: "Cold", D: "Disqualified" };
 const MAX_DELAY = 24;
+
+function placeholderCount(body?: string | null): number {
+  if (!body) return 0;
+  const matches = body.match(/\{\{[^}]+\}\}/g);
+  return matches ? new Set(matches).size : 0;
+}
 
 interface ReengagementBuilderProps {
   type: "broadcast" | "inbound";
@@ -25,6 +31,16 @@ export default function ReengagementBuilder({ type, broadcastId, templates }: Re
   const [content, setContent] = useState("");
   const [templateName, setTemplateName] = useState("");
   const [fallbackTemplate, setFallbackTemplate] = useState("");
+
+  const varCountByName = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const t of templates) m[t.name] = placeholderCount(t.body_text);
+    return m;
+  }, [templates]);
+
+  function varsFor(name: string): string[] {
+    return (varCountByName[name] ?? 0) === 0 ? [] : ["name"];
+  }
 
   const fetchSteps = useCallback(async () => {
     if (type === "broadcast" && !broadcastId) {
@@ -78,6 +94,14 @@ export default function ReengagementBuilder({ type, broadcastId, templates }: Re
       toast.error("Select a template");
       return;
     }
+    if (messageType === "template" && (varCountByName[templateName] ?? 0) >= 2) {
+      toast.error("Multi-variable templates aren't supported as re-engagement messages yet");
+      return;
+    }
+    if (messageType === "freeform" && fallbackTemplate && (varCountByName[fallbackTemplate] ?? 0) >= 2) {
+      toast.error("Multi-variable backup templates aren't supported yet");
+      return;
+    }
     try {
       await api.reengagement.createStep({
         type,
@@ -87,9 +111,9 @@ export default function ReengagementBuilder({ type, broadcastId, templates }: Re
         message_type: messageType,
         message_content: messageType === "freeform" ? content : null,
         template_name: messageType === "template" ? templateName : null,
-        template_variables: messageType === "template" ? ["name"] : null,
+        template_variables: messageType === "template" ? varsFor(templateName) : null,
         fallback_template_name: messageType === "freeform" && fallbackTemplate ? fallbackTemplate : null,
-        fallback_template_variables: messageType === "freeform" && fallbackTemplate ? ["name"] : null,
+        fallback_template_variables: messageType === "freeform" && fallbackTemplate ? varsFor(fallbackTemplate) : null,
       });
       toast.success("Message added to sequence");
       setShowAdd(false);
@@ -263,9 +287,14 @@ export default function ReengagementBuilder({ type, broadcastId, templates }: Re
                   className="mt-1 w-full rounded-xl border border-on-surface/20 px-3 py-2 text-sm"
                 >
                   <option value="">No backup — skip lead if window closed</option>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.name}>{t.name}</option>
-                  ))}
+                  {templates.map((t) => {
+                    const c = varCountByName[t.name] ?? 0;
+                    return (
+                      <option key={t.id} value={t.name} disabled={c >= 2}>
+                        {t.name}{c >= 2 ? " (multi-variable — not supported)" : ""}
+                      </option>
+                    );
+                  })}
                 </select>
               </label>
             </>
@@ -278,9 +307,14 @@ export default function ReengagementBuilder({ type, broadcastId, templates }: Re
                 className="mt-1 w-full rounded-xl border border-on-surface/20 px-3 py-2 text-sm"
               >
                 <option value="">Select a template…</option>
-                {templates.map((t) => (
-                  <option key={t.id} value={t.name}>{t.name}</option>
-                ))}
+                {templates.map((t) => {
+                  const c = varCountByName[t.name] ?? 0;
+                  return (
+                    <option key={t.id} value={t.name} disabled={c >= 2}>
+                      {t.name}{c >= 2 ? " (multi-variable — not supported)" : ""}
+                    </option>
+                  );
+                })}
               </select>
             </label>
           )}
