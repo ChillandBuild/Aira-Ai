@@ -1,0 +1,305 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
+import { api, ReengagementStep, WabaTemplate } from "@/lib/api";
+
+const SEGMENTS = ["A", "B", "C", "D"] as const;
+const SEGMENT_LABELS: Record<string, string> = { A: "Hot", B: "Warm", C: "Cold", D: "Disqualified" };
+const MAX_DELAY = 24;
+
+interface ReengagementBuilderProps {
+  type: "broadcast" | "inbound";
+  broadcastId?: string;
+  templates: WabaTemplate[];
+}
+
+export default function ReengagementBuilder({ type, broadcastId, templates }: ReengagementBuilderProps) {
+  const [steps, setSteps] = useState<ReengagementStep[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+
+  const [delayHours, setDelayHours] = useState(6);
+  const [segments, setSegments] = useState<string[]>(["C"]);
+  const [messageType, setMessageType] = useState<"freeform" | "template">("freeform");
+  const [content, setContent] = useState("");
+  const [templateName, setTemplateName] = useState("");
+  const [fallbackTemplate, setFallbackTemplate] = useState("");
+
+  const fetchSteps = useCallback(async () => {
+    if (type === "broadcast" && !broadcastId) {
+      setSteps([]);
+      return;
+    }
+    setLoading(true);
+    try {
+      const rows = await api.reengagement.listSteps(
+        type === "broadcast" ? { type: "broadcast", broadcast_id: broadcastId } : { type: "inbound" }
+      );
+      setSteps([...rows].sort((a, b) => a.delay_hours - b.delay_hours));
+    } catch {
+      toast.error("Failed to load sequence");
+    } finally {
+      setLoading(false);
+    }
+  }, [type, broadcastId]);
+
+  useEffect(() => {
+    fetchSteps();
+  }, [fetchSteps]);
+
+  function toggleSegment(s: string) {
+    setSegments((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
+  }
+
+  function resetForm() {
+    setDelayHours(6);
+    setSegments(["C"]);
+    setMessageType("freeform");
+    setContent("");
+    setTemplateName("");
+    setFallbackTemplate("");
+  }
+
+  async function addStep() {
+    if (delayHours < 1 || delayHours > MAX_DELAY) {
+      toast.error(`Delay must be between 1 and ${MAX_DELAY} hours`);
+      return;
+    }
+    if (segments.length === 0) {
+      toast.error("Select at least one target segment");
+      return;
+    }
+    if (messageType === "freeform" && !content.trim()) {
+      toast.error("Message content is required");
+      return;
+    }
+    if (messageType === "template" && !templateName) {
+      toast.error("Select a template");
+      return;
+    }
+    try {
+      await api.reengagement.createStep({
+        type,
+        broadcast_id: type === "broadcast" ? broadcastId : null,
+        delay_hours: delayHours,
+        target_segments: segments,
+        message_type: messageType,
+        message_content: messageType === "freeform" ? content : null,
+        template_name: messageType === "template" ? templateName : null,
+        template_variables: messageType === "template" ? ["name"] : null,
+        fallback_template_name: messageType === "freeform" && fallbackTemplate ? fallbackTemplate : null,
+        fallback_template_variables: messageType === "freeform" && fallbackTemplate ? ["name"] : null,
+      });
+      toast.success("Message added to sequence");
+      setShowAdd(false);
+      resetForm();
+      fetchSteps();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to add message");
+    }
+  }
+
+  async function removeStep(id: string) {
+    if (!confirm("Remove this message from the sequence?")) return;
+    try {
+      await api.reengagement.deleteStep(id);
+      toast.success("Message removed");
+      fetchSteps();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove message");
+    }
+  }
+
+  const anchorLabel = type === "broadcast" ? "after the broadcast was sent" : "after the lead replied";
+
+  return (
+    <div className="space-y-6">
+      {/* Clock explainer */}
+      <div className="rounded-2xl border border-on-surface/10 bg-surface/50 p-5">
+        <h3 className="font-label text-xs uppercase tracking-widest text-on-surface-muted">
+          {type === "broadcast" ? "Campaign Follow-up" : "Reply Follow-up"} — how timing works
+        </h3>
+        <p className="mt-2 text-sm text-on-surface">
+          {type === "broadcast" ? (
+            <>Each message fires a set number of hours <strong>after the broadcast is sent</strong>. Per lead, when a
+            message fires: if their 24h WhatsApp window is still open it sends as <strong>freeform</strong>; otherwise
+            your <strong>backup template</strong> is sent instead (or the lead is skipped if no backup is set).</>
+          ) : (
+            <>Each message fires a set number of hours <strong>after the lead replies</strong> — which is the moment
+            their 24h window opens. A message at the Nth hour leaves <strong>24 − N</strong> hours of window.
+            Freeform delivers inside the window; add a backup template to be safe near the edge.</>
+          )}
+        </p>
+      </div>
+
+      {/* 24h timeline */}
+      <div className="rounded-2xl border border-on-surface/10 p-5">
+        <div className="mb-3 flex items-center justify-between">
+          <span className="font-label text-xs uppercase tracking-widest text-on-surface-muted">24-hour window</span>
+          <span className="text-xs text-on-surface-muted">0h → 24h close</span>
+        </div>
+        <div className="relative h-10 rounded-full bg-gradient-to-r from-emerald-100 to-emerald-50">
+          <div className="absolute right-0 top-0 h-full w-px bg-red-300" />
+          {steps.map((s) => {
+            const left = Math.min(100, (s.delay_hours / MAX_DELAY) * 100);
+            return (
+              <div
+                key={s.id}
+                className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
+                style={{ left: `${left}%` }}
+                title={`${s.delay_hours}h · ${s.message_type}`}
+              >
+                <div className={`h-4 w-4 rounded-full border-2 border-white shadow ${s.message_type === "template" ? "bg-indigo-500" : "bg-emerald-600"}`} />
+                <span className="mt-1 block text-[10px] text-on-surface-muted">{s.delay_hours}h</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Step list */}
+      <div className="space-y-3">
+        {loading ? (
+          <p className="text-sm text-on-surface-muted">Loading…</p>
+        ) : steps.length === 0 ? (
+          <p className="text-sm text-on-surface-muted">No messages yet. Add the first one below.</p>
+        ) : (
+          steps.map((s, i) => (
+            <div key={s.id} className="flex items-start justify-between rounded-xl border border-on-surface/10 bg-surface/40 p-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
+                  <span className="rounded bg-on-surface/10 px-2 py-0.5 text-xs">Step {i + 1}</span>
+                  <span>{s.delay_hours}h {anchorLabel}</span>
+                  <span className="text-on-surface-muted">·</span>
+                  <span>{s.target_segments.map((x) => SEGMENT_LABELS[x] || x).join(", ")}</span>
+                </div>
+                <div className="text-xs text-on-surface-muted">
+                  {s.message_type === "template" ? (
+                    <>Template: <span className="font-mono">{s.template_name}</span> · always delivers</>
+                  ) : (
+                    <>Freeform{s.fallback_template_name ? <> → backup template <span className="font-mono">{s.fallback_template_name}</span></> : <> · skipped if window closed</>}</>
+                  )}
+                </div>
+                {s.message_type === "freeform" && s.message_content && (
+                  <p className="max-w-xl truncate text-sm text-on-surface">&ldquo;{s.message_content}&rdquo;</p>
+                )}
+              </div>
+              <button onClick={() => removeStep(s.id)} className="text-xs text-red-500 hover:text-red-700">
+                Remove
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Add form */}
+      {showAdd ? (
+        <div className="space-y-4 rounded-2xl border border-on-surface/15 p-5">
+          <div className="grid grid-cols-2 gap-4">
+            <label className="block">
+              <span className="font-label text-xs uppercase tracking-widest text-on-surface-muted">Delay (hours)</span>
+              <input
+                type="number"
+                min={1}
+                max={MAX_DELAY}
+                value={delayHours}
+                onChange={(e) => setDelayHours(Number(e.target.value))}
+                className="mt-1 w-full rounded-xl border border-on-surface/20 px-3 py-2"
+              />
+            </label>
+            <div>
+              <span className="font-label text-xs uppercase tracking-widest text-on-surface-muted">Target segments</span>
+              <div className="mt-1 flex gap-2">
+                {SEGMENTS.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => toggleSegment(s)}
+                    className={`rounded-full px-3 py-1 text-xs ${segments.includes(s) ? "bg-on-surface text-surface" : "bg-on-surface/10 text-on-surface"}`}
+                  >
+                    {SEGMENT_LABELS[s]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setMessageType("freeform")}
+              className={`rounded-xl px-4 py-2 text-sm ${messageType === "freeform" ? "bg-on-surface text-surface" : "bg-on-surface/10 text-on-surface"}`}
+            >
+              Freeform (window only)
+            </button>
+            <button
+              type="button"
+              onClick={() => setMessageType("template")}
+              className={`rounded-xl px-4 py-2 text-sm ${messageType === "template" ? "bg-on-surface text-surface" : "bg-on-surface/10 text-on-surface"}`}
+            >
+              Approved template (always sent)
+            </button>
+          </div>
+
+          {messageType === "freeform" ? (
+            <>
+              <textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="Hi! We noticed you haven't booked a time yet. Let us know if you have questions!"
+                className="min-h-24 w-full rounded-xl border border-on-surface/20 px-3 py-2 text-sm"
+              />
+              <label className="block">
+                <span className="font-label text-xs uppercase tracking-widest text-on-surface-muted">
+                  Backup template (sent if the lead&apos;s window is closed)
+                </span>
+                <select
+                  value={fallbackTemplate}
+                  onChange={(e) => setFallbackTemplate(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-on-surface/20 px-3 py-2 text-sm"
+                >
+                  <option value="">No backup — skip lead if window closed</option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.name}>{t.name}</option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : (
+            <label className="block">
+              <span className="font-label text-xs uppercase tracking-widest text-on-surface-muted">Template</span>
+              <select
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                className="mt-1 w-full rounded-xl border border-on-surface/20 px-3 py-2 text-sm"
+              >
+                <option value="">Select a template…</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.name}>{t.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <button onClick={() => { setShowAdd(false); resetForm(); }} className="rounded-xl px-4 py-2 text-sm text-on-surface-muted">
+              Cancel
+            </button>
+            <button onClick={addStep} className="rounded-xl bg-on-surface px-5 py-2 text-sm text-surface">
+              Save message
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => setShowAdd(true)}
+          disabled={type === "broadcast" && !broadcastId}
+          className="w-full rounded-xl border-2 border-dashed border-on-surface/20 py-3 text-sm text-on-surface-muted hover:border-on-surface/40 disabled:opacity-40"
+        >
+          + Add message
+        </button>
+      )}
+    </div>
+  );
+}
