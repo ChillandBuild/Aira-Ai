@@ -77,3 +77,9 @@ def require_owner(ctx: dict = Depends(get_tenant_and_role)) -> dict:
         )
     return ctx
 
+
+def get_owner_tenant_id(ctx: dict = Depends(require_owner)) -> str:
+    """Owner-only tenant id. Use for admin-only read endpoints so a caller
+    cannot reach them via a direct API call (the UI already hides them)."""
+    return ctx["tenant_id"]
+

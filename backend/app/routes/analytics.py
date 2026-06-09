@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.db.supabase import get_supabase
-from app.dependencies.tenant import get_tenant_id, require_owner
+from app.dependencies.tenant import get_owner_tenant_id, require_owner
 from app.services.inbound_leads_logic import INBOUND_SOURCES, aggregate_inbound
 from app.services.assignment import get_telecalling_config
 
@@ -66,7 +66,7 @@ def _ist_today_start_utc() -> datetime:
 
 
 @router.get("/whatsapp")
-async def whatsapp_analytics(tenant_id: str = Depends(get_tenant_id)):
+async def whatsapp_analytics(tenant_id: str = Depends(get_owner_tenant_id)):
     db = get_supabase()
     today = _today_start()
 
@@ -95,7 +95,7 @@ async def whatsapp_analytics(tenant_id: str = Depends(get_tenant_id)):
 
 
 @router.get("/template-performance")
-async def template_performance(tenant_id: str = Depends(get_tenant_id)):
+async def template_performance(tenant_id: str = Depends(get_owner_tenant_id)):
     """Per-template broadcast performance: Sent / Read / Replied / Hot leads."""
     db = get_supabase()
     try:
@@ -107,7 +107,7 @@ async def template_performance(tenant_id: str = Depends(get_tenant_id)):
 
 
 @router.get("/telecalling")
-async def telecalling_analytics(tenant_id: str = Depends(get_tenant_id)):
+async def telecalling_analytics(tenant_id: str = Depends(get_owner_tenant_id)):
     db = get_supabase()
     
     # Day bounds must use UTC midnight
@@ -609,7 +609,7 @@ async def export_telecalling(
 
 
 @router.get("/funnel")
-async def funnel_analytics(tenant_id: str = Depends(get_tenant_id)):
+async def funnel_analytics(tenant_id: str = Depends(get_owner_tenant_id)):
     db = get_supabase()
     week = _week_start()
 
@@ -705,7 +705,7 @@ async def funnel_analytics(tenant_id: str = Depends(get_tenant_id)):
 
 @router.get("/overview")
 async def overview_analytics(
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_owner_tenant_id),
     range: str = Query("7d"),
 ):
     """Dashboard root — KPIs and N-day series."""
@@ -839,7 +839,7 @@ async def overview_analytics(
 
 @router.get("/messaging")
 async def messaging_analytics(
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_owner_tenant_id),
     channel: str = Query("all"),
     range: str = Query("7d"),
 ):
@@ -924,7 +924,7 @@ async def messaging_analytics(
 
 
 @router.get("/ad-performance")
-async def ad_performance_summary(tenant_id: str = Depends(get_tenant_id)):
+async def ad_performance_summary(tenant_id: str = Depends(get_owner_tenant_id)):
     db = get_supabase()
     from app.services.growth import build_ad_performance
     return build_ad_performance(tenant_id=tenant_id, db=db)
@@ -933,7 +933,7 @@ async def ad_performance_summary(tenant_id: str = Depends(get_tenant_id)):
 @router.get("/inbound")
 async def inbound_analytics(
     range: str = Query("7d"),
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_owner_tenant_id),
 ):
     """New inbound leads acquired, split organic vs ad. Range: today|7d|30d."""
     db = get_supabase()

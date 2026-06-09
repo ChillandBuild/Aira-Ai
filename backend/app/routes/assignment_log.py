@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
 from app.db.supabase import get_supabase
-from app.dependencies.tenant import get_tenant_id
+from app.dependencies.tenant import get_owner_tenant_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -84,7 +84,7 @@ async def list_assignment_log(
     from_date: str | None = Query(None, description="ISO timestamp lower bound"),
     to_date: str | None = Query(None, description="ISO timestamp upper bound"),
     format: str | None = Query(None),
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_owner_tenant_id),
 ):
     """Proof feed of every auto/manual assignment + reassignment for the tenant."""
     if format == "csv":
@@ -118,7 +118,7 @@ async def list_assignment_log(
 
 
 @router.get("/summary")
-async def assignment_summary(tenant_id: str = Depends(get_tenant_id)):
+async def assignment_summary(tenant_id: str = Depends(get_owner_tenant_id)):
     """Today's assignment counts overall + per caller + per segment."""
     from datetime import datetime, timezone
     db = get_supabase()
