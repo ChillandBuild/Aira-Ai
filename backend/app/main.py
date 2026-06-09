@@ -514,6 +514,10 @@ async def health():
             }
         )
 
+@app.get("/sentry-debug")
+async def trigger_error():
+    division_by_zero = 1 / 0
+
 _auth = [Depends(get_current_user)]
 
 # Webhook routes — no auth (Meta calls directly)
