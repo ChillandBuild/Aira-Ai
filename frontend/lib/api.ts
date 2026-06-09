@@ -174,6 +174,15 @@ export interface ReengagementStep {
   created_at: string;
 }
 
+export interface ReengagementLog {
+  id: string;
+  step_id: string;
+  lead_id: string;
+  status: "sent" | "sent_fallback" | "skipped_window" | "failed";
+  sent_at: string;
+  leads?: { name: string | null; phone: string; segment: string | null } | null;
+}
+
 export interface AIPrompt {
   id: string;
   name: string;
@@ -731,6 +740,11 @@ export const api = {
       apiFetch<{ success: boolean }>(`/api/v1/reengagement/steps/${stepId}`, {
         method: "DELETE",
       }),
+    getLogs: async (stepId?: string) => {
+      const qs = stepId ? `?step_id=${stepId}` : "";
+      const res = await apiFetch<{ data: ReengagementLog[] }>(`/api/v1/reengagement/logs${qs}`);
+      return res.data || [];
+    },
   },
   knowledge: {
     listDocuments: async () => {

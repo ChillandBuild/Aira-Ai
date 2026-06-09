@@ -183,6 +183,12 @@ async def execute_broadcast(row: dict) -> dict:
                     phone_number_id=best_number.get("meta_phone_number_id"),
                     tenant_id=tenant_id,
                 )
+                _meta_msg_id: str | None = None
+                try:
+                    _meta_msg_id = ((_send_resp or {}).get("messages") or [{}])[0].get("id")
+                except Exception:
+                    pass
+
                 sent += 1
                 recipient_rows.append({
                     "tenant_id": tenant_id,
@@ -191,15 +197,11 @@ async def execute_broadcast(row: dict) -> dict:
                     "phone": phone,
                     "name": lead_name,
                     "send_status": "sent",
+                    "meta_message_id": _meta_msg_id,
                     "tag_id": tag_id,
                 })
 
                 if lead_id:
-                    _meta_msg_id: str | None = None
-                    try:
-                        _meta_msg_id = ((_send_resp or {}).get("messages") or [{}])[0].get("id")
-                    except Exception:
-                        pass
                     try:
                         db.table("messages").insert({
                             "lead_id": lead_id,

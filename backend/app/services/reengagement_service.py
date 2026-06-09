@@ -189,6 +189,7 @@ async def _send_step_template(
         "content": f"[Template Broadcast: {template_name}]",
         "is_ai_generated": True,
         "meta_message_id": sid or "",
+        "reply_source": "reengagement",
     }).execute()
 
     db.table("reengagement_logs").insert({
@@ -270,6 +271,7 @@ async def _send_reengagement(db, tenant_id: str, lead: dict, step: dict) -> bool
                 "content": content,
                 "is_ai_generated": True,
                 "meta_message_id": sid,
+                "reply_source": "reengagement",
             }).execute()
 
             db.table("reengagement_logs").insert({

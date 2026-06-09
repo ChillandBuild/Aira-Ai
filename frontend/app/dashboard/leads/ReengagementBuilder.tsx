@@ -2,7 +2,75 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { api, ReengagementStep, WabaTemplate } from "@/lib/api";
+import { api, ReengagementLog, ReengagementStep, WabaTemplate } from "@/lib/api";
+
+const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
+  sent: { label: "Sent", cls: "bg-emerald-100 text-emerald-700" },
+  sent_fallback: { label: "Sent (template)", cls: "bg-indigo-100 text-indigo-700" },
+  skipped_window: { label: "Skipped", cls: "bg-amber-100 text-amber-700" },
+  failed: { label: "Failed", cls: "bg-red-100 text-red-700" },
+};
+
+function StepLogPanel({ stepId }: { stepId: string }) {
+  const [logs, setLogs] = useState<ReengagementLog[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.reengagement.getLogs(stepId).then(setLogs).catch(() => {}).finally(() => setLoading(false));
+  }, [stepId]);
+
+  const counts = logs.reduce<Record<string, number>>((acc, l) => {
+    acc[l.status] = (acc[l.status] || 0) + 1;
+    return acc;
+  }, {});
+
+  if (loading) return <p className="mt-3 text-xs text-on-surface-muted">Loading history…</p>;
+  if (!logs.length) return <p className="mt-3 text-xs text-on-surface-muted">No sends yet for this step.</p>;
+
+  return (
+    <div className="mt-3 space-y-2">
+      <div className="flex flex-wrap gap-2">
+        {Object.entries(counts).map(([status, n]) => {
+          const s = STATUS_LABELS[status] || { label: status, cls: "bg-on-surface/10 text-on-surface" };
+          return (
+            <span key={status} className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.cls}`}>
+              {s.label}: {n}
+            </span>
+          );
+        })}
+      </div>
+      <div className="max-h-48 overflow-y-auto rounded-xl border border-on-surface/10">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-on-surface/10 bg-surface/60 text-on-surface-muted">
+              <th className="px-3 py-2 text-left">Lead</th>
+              <th className="px-3 py-2 text-left">Phone</th>
+              <th className="px-3 py-2 text-left">Status</th>
+              <th className="px-3 py-2 text-left">Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {logs.map((l) => {
+              const s = STATUS_LABELS[l.status] || { label: l.status, cls: "bg-on-surface/10 text-on-surface" };
+              return (
+                <tr key={l.id} className="border-b border-on-surface/5 last:border-0">
+                  <td className="px-3 py-1.5">{l.leads?.name || "—"}</td>
+                  <td className="px-3 py-1.5 font-mono">{l.leads?.phone || l.lead_id.slice(0, 8)}</td>
+                  <td className="px-3 py-1.5">
+                    <span className={`rounded-full px-2 py-0.5 ${s.cls}`}>{s.label}</span>
+                  </td>
+                  <td className="px-3 py-1.5 text-on-surface-muted">
+                    {new Date(l.sent_at).toLocaleString()}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 const SEGMENTS = ["A", "B", "C", "D"] as const;
 const SEGMENT_LABELS: Record<string, string> = { A: "Hot", B: "Warm", C: "Cold", D: "Disqualified" };
@@ -24,6 +92,7 @@ export default function ReengagementBuilder({ type, broadcastId, templates }: Re
   const [steps, setSteps] = useState<ReengagementStep[]>([]);
   const [loading, setLoading] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  const [expandedLog, setExpandedLog] = useState<string | null>(null);
 
   const [delayHours, setDelayHours] = useState(6);
   const [segments, setSegments] = useState<string[]>(["C"]);
@@ -190,28 +259,43 @@ export default function ReengagementBuilder({ type, broadcastId, templates }: Re
           <p className="text-sm text-on-surface-muted">No messages yet. Add the first one below.</p>
         ) : (
           steps.map((s, i) => (
-            <div key={s.id} className="flex items-start justify-between rounded-xl border border-on-surface/10 bg-surface/40 p-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
-                  <span className="rounded bg-on-surface/10 px-2 py-0.5 text-xs">Step {i + 1}</span>
-                  <span>{s.delay_hours}h {anchorLabel}</span>
-                  <span className="text-on-surface-muted">·</span>
-                  <span>{s.target_segments.map((x) => SEGMENT_LABELS[x] || x).join(", ")}</span>
-                </div>
-                <div className="text-xs text-on-surface-muted">
-                  {s.message_type === "template" ? (
-                    <>Template: <span className="font-mono">{s.template_name}</span> · always delivers</>
-                  ) : (
-                    <>Freeform{s.fallback_template_name ? <> → backup template <span className="font-mono">{s.fallback_template_name}</span></> : <> · skipped if window closed</>}</>
+            <div key={s.id} className="rounded-xl border border-on-surface/10 bg-surface/40">
+              <div className="flex items-start justify-between p-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
+                    <span className="rounded bg-on-surface/10 px-2 py-0.5 text-xs">Step {i + 1}</span>
+                    <span>{s.delay_hours}h {anchorLabel}</span>
+                    <span className="text-on-surface-muted">·</span>
+                    <span>{s.target_segments.map((x) => SEGMENT_LABELS[x] || x).join(", ")}</span>
+                  </div>
+                  <div className="text-xs text-on-surface-muted">
+                    {s.message_type === "template" ? (
+                      <>Template: <span className="font-mono">{s.template_name}</span> · always delivers</>
+                    ) : (
+                      <>Freeform{s.fallback_template_name ? <> → backup template <span className="font-mono">{s.fallback_template_name}</span></> : <> · skipped if window closed</>}</>
+                    )}
+                  </div>
+                  {s.message_type === "freeform" && s.message_content && (
+                    <p className="max-w-xl truncate text-sm text-on-surface">&ldquo;{s.message_content}&rdquo;</p>
                   )}
                 </div>
-                {s.message_type === "freeform" && s.message_content && (
-                  <p className="max-w-xl truncate text-sm text-on-surface">&ldquo;{s.message_content}&rdquo;</p>
-                )}
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setExpandedLog(expandedLog === s.id ? null : s.id)}
+                    className="text-xs text-on-surface-muted hover:text-on-surface"
+                  >
+                    {expandedLog === s.id ? "Hide history" : "History"}
+                  </button>
+                  <button onClick={() => removeStep(s.id)} className="text-xs text-red-500 hover:text-red-700">
+                    Remove
+                  </button>
+                </div>
               </div>
-              <button onClick={() => removeStep(s.id)} className="text-xs text-red-500 hover:text-red-700">
-                Remove
-              </button>
+              {expandedLog === s.id && (
+                <div className="border-t border-on-surface/10 px-4 pb-4">
+                  <StepLogPanel stepId={s.id} />
+                </div>
+              )}
             </div>
           ))
         )}

@@ -77,6 +77,25 @@ def create_step(
     return res.data[0] if res.data else {}
 
 
+@router.get("/logs")
+def list_logs(
+    step_id: str | None = None,
+    ctx: dict = Depends(get_tenant_and_role),
+):
+    if ctx["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Only owners can view re-engagement logs")
+    db = get_supabase()
+    q = (
+        db.table("reengagement_logs")
+        .select("id, step_id, lead_id, status, sent_at, leads(name, phone, segment)")
+        .eq("tenant_id", ctx["tenant_id"])
+    )
+    if step_id:
+        q = q.eq("step_id", step_id)
+    rows = q.order("sent_at", desc=True).limit(500).execute()
+    return {"data": rows.data or []}
+
+
 @router.post("/trigger-now")
 async def trigger_now(ctx: dict = Depends(get_tenant_and_role)):
     if ctx["role"] != "owner":
