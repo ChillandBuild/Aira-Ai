@@ -96,6 +96,7 @@ export interface CallLog {
   call_sid: string | null;
   duration_seconds: number | null;
   outcome: "converted" | "callback" | "not_interested" | "no_answer" | null;
+  disposition: string | null;
   recording_url: string | null;
   score: number | null;
   status: string;
@@ -685,6 +686,10 @@ export const api = {
         daily: { caller_id: string; name: string; value: number; label: string } | null;
         monthly: { caller_id: string; name: string; value: number; calls_this_month: number; label: string } | null;
       }>(`/api/v1/callers/winners`),
+    myCallsToday: () =>
+      apiFetch<{ data: CallLog[] }>(`/api/v1/callers/my-calls-today`).then(res => res.data || []),
+    myPerformance: () =>
+      apiFetch<{ target: number; achieved: number }>(`/api/v1/callers/my-performance`),
   },
   calls: {
     initiate: (target: { leadId?: string; phone?: string; callbackJobId?: string }, callerId?: string) =>
@@ -729,6 +734,12 @@ export const api = {
       ),
     deleteLog: (callLogId: string) =>
       apiFetch<{ deleted: boolean }>(`/api/v1/calls/${callLogId}`, { method: "DELETE" }),
+    getLog: (callLogId: string) =>
+      apiFetch<CallLog>(`/api/v1/calls/${callLogId}`),
+    getPendingWrapups: () =>
+      apiFetch<CallLog[]>(`/api/v1/calls/pending-wrapups`),
+    nextLead: (callerId?: string) =>
+      apiFetch<Lead>(`/api/v1/calls/next-lead${callerId ? `?caller_id=${callerId}` : ""}`),
   },
   notes: {
     leadsWithActivity: () =>
@@ -905,6 +916,15 @@ export const api = {
       apiFetch<FollowUpRunResult>(`/api/v1/follow-ups/run?limit=${limit}`, {
         method: "POST",
       }),
+    rescheduleCallback: (jobId: string, scheduledFor: string) =>
+      apiFetch<{ success: boolean; data: unknown }>(`/api/v1/follow-ups/callback/${jobId}/reschedule`, {
+        method: "PATCH",
+        body: JSON.stringify({ scheduled_for: scheduledFor }),
+      }),
+  },
+  settings: {
+    getTelecallingConfig: () =>
+      apiFetch<{ scripts?: Record<string, string> }>(`/api/v1/settings/telecalling-config`),
   },
   upload: {
     leads: async (

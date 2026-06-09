@@ -18,6 +18,8 @@ from app.services.call_summarizer import transcribe_recording, summarize_call, e
 from app.services.growth import record_stage_event, sync_follow_up_jobs
 from app.services.telecmi_client import initiate_click2call
 from app.services.voice_router import get_best_voice_number, increment_voice_call_count
+from app.services.assignment import get_telecalling_config, record_assignment_event
+
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -641,6 +643,159 @@ async def backfill_summaries(background_tasks: BackgroundTasks, limit: int = Que
         background_tasks.add_task(_run_summarization, row["id"], row["recording_url"])
 
     return {"queued": len(rows)}
+
+
+@router.get("/next-lead")
+async def next_lead(
+    caller_id: UUID | None = Query(None),
+    ctx: dict = Depends(get_tenant_and_role)
+):
+    tenant_id = ctx["tenant_id"]
+    resolved_caller_id = str(caller_id) if caller_id else ctx.get("caller_id")
+    if not resolved_caller_id:
+        raise HTTPException(status_code=400, detail="caller_id is required")
+
+    db = get_supabase()
+
+    # 1. Fetch telecalling config segments
+    cfg = get_telecalling_config(tenant_id)
+    segments = cfg.get("segments", ["A"])
+
+    # 2. Pull unassigned hot leads in telecalling_config.segments (default ['A']), not D, not converted, sorted by score desc.
+    unassigned_res = (
+        db.table("leads")
+        .select("*")
+        .eq("tenant_id", tenant_id)
+        .is_("assigned_to", "null")
+        .in_("segment", segments)
+        .neq("segment", "D")
+        .is_("converted_at", "null")
+        .is_("deleted_at", "null")
+        .order("score", desc=True)
+        .limit(5)
+        .execute()
+    )
+
+    if unassigned_res.data:
+        caller_name = None
+        caller_res = db.table("callers").select("name").eq("id", resolved_caller_id).eq("tenant_id", tenant_id).maybe_single().execute()
+        if caller_res and caller_res.data:
+            caller_name = caller_res.data.get("name")
+
+        # Atomic claim: only assign if the lead is STILL unassigned. Guards
+        # against two callers pulling the same lead at the same instant — the
+        # loser's update matches 0 rows, so we try the next candidate.
+        for lead in unassigned_res.data:
+            claim = (
+                db.table("leads")
+                .update({
+                    "assigned_to": resolved_caller_id,
+                    "assigned_at": datetime.now(timezone.utc).isoformat(),
+                })
+                .eq("id", lead["id"])
+                .eq("tenant_id", tenant_id)
+                .is_("assigned_to", "null")
+                .execute()
+            )
+            if claim.data:
+                record_assignment_event(
+                    lead_id=lead["id"],
+                    tenant_id=tenant_id,
+                    segment=lead.get("segment"),
+                    caller_id=resolved_caller_id,
+                    caller_name=caller_name,
+                    reason="call_next",
+                    method="pull",
+                    score=lead.get("score"),
+                    matched_segments=segments,
+                    db=db,
+                )
+                return claim.data[0]
+        # All fetched candidates were claimed by others between fetch and update —
+        # fall through to the caller's own assigned queue.
+
+    # 3. Pull caller's assigned leads (excl D, converted) sorted by least-recently-called (no calls first, then oldest call_log created_at)
+    assigned_res = (
+        db.table("leads")
+        .select("*")
+        .eq("tenant_id", tenant_id)
+        .eq("assigned_to", resolved_caller_id)
+        .neq("segment", "D")
+        .is_("converted_at", "null")
+        .is_("deleted_at", "null")
+        .execute()
+    )
+
+    leads_list = assigned_res.data or []
+    if not leads_list:
+        raise HTTPException(status_code=404, detail="No leads available")
+
+    lead_ids = [lead["id"] for lead in leads_list]
+    logs_res = (
+        db.table("call_logs")
+        .select("lead_id, created_at")
+        .eq("tenant_id", tenant_id)
+        .in_("lead_id", lead_ids)
+        .order("created_at", desc=True)
+        .execute()
+    )
+
+    last_call_map = {}
+    for log in (logs_res.data or []):
+        lid = log["lead_id"]
+        if lid not in last_call_map:
+            last_call_map[lid] = log["created_at"]
+
+    def sort_key(lead):
+        last_call_time = last_call_map.get(lead["id"])
+        if last_call_time is None:
+            return (0, "")
+        return (1, last_call_time)
+
+    leads_list.sort(key=sort_key)
+    return leads_list[0]
+
+
+@router.get("/pending-wrapups")
+async def get_pending_wrapups(ctx: dict = Depends(get_tenant_and_role)):
+    tenant_id = ctx["tenant_id"]
+    caller_id = ctx.get("caller_id")
+    db = get_supabase()
+
+    # Only enforce wrap-up for recent calls. Without this, switching the feature
+    # on at an established tenant would block callers behind a wall of every
+    # historical un-dispositioned call.
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+    q = (
+        db.table("call_logs")
+        .select("*, leads(name, phone)")
+        .eq("tenant_id", tenant_id)
+        .eq("status", "completed")
+        .is_("outcome", "null")
+        .is_("disposition", "null")
+        .gte("created_at", cutoff)
+    )
+    if caller_id:
+        q = q.eq("caller_id", caller_id)
+
+    result = q.execute()
+    return result.data or []
+
+
+@router.get("/{call_log_id}")
+async def get_call_log(call_log_id: UUID, ctx: dict = Depends(get_tenant_and_role)):
+    db = get_supabase()
+    result = (
+        db.table("call_logs")
+        .select("*")
+        .eq("id", str(call_log_id))
+        .eq("tenant_id", ctx["tenant_id"])
+        .maybe_single()
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Call log not found")
+    return result.data
 
 
 @router.delete("/{call_log_id}")

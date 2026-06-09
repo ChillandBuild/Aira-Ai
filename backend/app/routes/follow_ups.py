@@ -1,11 +1,11 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel
 
 from app.db.supabase import get_supabase
-from app.dependencies.tenant import get_tenant_id
+from app.dependencies.tenant import get_tenant_id, get_tenant_and_role
 from app.dependencies.auth import get_current_user
 from app.services.ai_reply import generate_reengagement_message, send_whatsapp
 from app.services.growth import build_follow_up_summary, utcnow
@@ -15,6 +15,11 @@ class CallbackCreate(BaseModel):
     lead_id: str
     scheduled_for: str
     note: str | None = None
+
+
+class CallbackReschedule(BaseModel):
+    scheduled_for: str
+
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -226,6 +231,63 @@ async def mark_callback_done(job_id: str, tenant_id: str = Depends(get_tenant_id
     db = get_supabase()
     db.table("follow_up_jobs").update({"status": "sent"}).eq("id", job_id).eq("tenant_id", tenant_id).execute()
     return {"success": True}
+
+
+@router.patch("/callback/{job_id}/reschedule")
+async def reschedule_callback(
+    job_id: str,
+    payload: CallbackReschedule,
+    ctx: dict = Depends(get_tenant_and_role)
+):
+    tenant_id = ctx["tenant_id"]
+    role = ctx.get("role")
+    caller_id = ctx.get("caller_id")
+
+    db = get_supabase()
+
+    # 1. Verify job belongs to tenant
+    job_res = (
+        db.table("follow_up_jobs")
+        .select("id, lead_id, tenant_id")
+        .eq("id", job_id)
+        .eq("tenant_id", tenant_id)
+        .maybe_single()
+        .execute()
+    )
+    if not job_res or not job_res.data:
+        raise HTTPException(status_code=404, detail="Callback job not found")
+
+    lead_id = job_res.data["lead_id"]
+
+    # 2. If requester role is 'caller', verify that the lead's assigned_to matches the caller's caller_id.
+    if role == "caller":
+        if not caller_id:
+            raise HTTPException(status_code=403, detail="Caller profile not found")
+        # Fetch lead's assigned_to
+        lead_res = (
+            db.table("leads")
+            .select("assigned_to")
+            .eq("id", lead_id)
+            .eq("tenant_id", tenant_id)
+            .maybe_single()
+            .execute()
+        )
+        if not lead_res or not lead_res.data or lead_res.data.get("assigned_to") != caller_id:
+            raise HTTPException(status_code=403, detail="Lead is not assigned to you")
+
+    # 3. Update scheduled_for and reset status to 'pending'
+    update_res = (
+        db.table("follow_up_jobs")
+        .update({
+            "scheduled_for": payload.scheduled_for,
+            "status": "pending"
+        })
+        .eq("id", job_id)
+        .eq("tenant_id", tenant_id)
+        .execute()
+    )
+    return {"success": True, "data": update_res.data[0] if update_res.data else {}}
+
 
 
 @router.get("/callbacks/today-completed")

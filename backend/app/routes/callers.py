@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id, get_tenant_and_role
-from app.services.assignment import is_round_robin_enabled, set_round_robin_enabled, reassign_backlog
+from app.services.assignment import is_round_robin_enabled, set_round_robin_enabled, reassign_backlog, get_telecalling_config
 from app.services.call_coach import coaching_tip
 from app.services.call_scorer import MIN_MONTHLY_CALLS
 
@@ -110,6 +110,64 @@ async def get_my_status(ctx: dict = Depends(get_tenant_and_role)):
         .execute()
     )
     return result.data
+
+
+@router.get("/my-calls-today")
+async def get_my_calls_today(ctx: dict = Depends(get_tenant_and_role)):
+    caller_id = ctx.get("caller_id")
+    if not caller_id:
+        return {"data": []}
+
+    db = get_supabase()
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+    result = (
+        db.table("call_logs")
+        .select("id,lead_id,call_sid,duration_seconds,outcome,recording_url,score,status,ai_summary,transcript,created_at,leads(phone,name)")
+        .eq("caller_id", caller_id)
+        .eq("tenant_id", ctx["tenant_id"])
+        .gte("created_at", today_start)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return {"data": result.data or []}
+
+
+@router.get("/my-performance")
+async def get_my_performance(ctx: dict = Depends(get_tenant_and_role)):
+    caller_id = ctx.get("caller_id")
+    if not caller_id:
+        return {"target": 0, "achieved": 0, "scripts": {}}
+
+    db = get_supabase()
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+    # Fetch achieved calls count today
+    achieved_res = (
+        db.table("call_logs")
+        .select("id", count="exact")
+        .eq("caller_id", caller_id)
+        .eq("tenant_id", ctx["tenant_id"])
+        .gte("created_at", today_start)
+        .execute()
+    )
+    achieved = achieved_res.count or 0
+
+    # Fetch target and scripts from config
+    cfg = get_telecalling_config(ctx["tenant_id"])
+
+    targets = cfg.get("targets") or {}
+    target = targets.get(str(caller_id)) or targets.get(caller_id) or targets.get("daily_calls", 50)
+
+    scripts = cfg.get("scripts") or {}
+
+    return {
+        "achieved": achieved,
+        "target": target,
+        "scripts": scripts,
+    }
 
 
 # ── Caller stats (for profile page) ──────────────────────────────────────────
@@ -562,3 +620,5 @@ async def get_coaching(caller_id: UUID, tenant_id: str = Depends(get_tenant_id))
         raise HTTPException(status_code=404, detail="Caller not found")
     tip = await coaching_tip(str(caller_id))
     return {"caller_id": str(caller_id), "tip": tip}
+
+

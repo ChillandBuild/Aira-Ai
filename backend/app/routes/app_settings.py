@@ -59,6 +59,9 @@ class TelecallingConfigUpdate(BaseModel):
     enabled: bool | None = None
     segments: list[str] | None = None
     channels: list[str] | None = None
+    targets: dict[str, int] | None = None
+    scripts: dict[str, str] | None = None
+
 
 
 def _get_setting_value(db, tenant_id: str, key: str) -> str | None:

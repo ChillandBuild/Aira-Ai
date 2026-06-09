@@ -348,6 +348,8 @@ _TELECALLING_CONFIG_DEFAULT: dict = {
     "enabled": False,
     "segments": ["A"],
     "channels": ["whatsapp"],
+    "targets": {},
+    "scripts": {},
 }
 
 

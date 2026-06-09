@@ -1,8 +1,8 @@
 "use client";
 import { toast } from "sonner";
 import { useEffect, useState, useCallback } from "react";
-import { Phone, RefreshCw, ChevronDown, StickyNote, Check, CheckCheck, Download, Calendar, Tag, Target, Inbox, Copy, User, Sparkles, Search, Clock } from "lucide-react";
-import { api, Caller, Lead } from "@/lib/api";
+import { Phone, RefreshCw, ChevronDown, StickyNote, Check, CheckCheck, Download, Calendar, Tag, Target, Inbox, Copy, User, Sparkles, Search, Clock, AlertCircle } from "lucide-react";
+import { api, Caller, Lead, CallLog, Disposition } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import LiveNotesPane from "./components/live-notes-pane";
 import NotesHistoryModal from "./components/notes-history-modal";
@@ -58,9 +58,94 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   const [historyLead, setHistoryLead] = useState<Lead | null>(null);
   const { activeCall: activeCallCtx, setActiveCall: setActiveCallCtx } = useActiveCall();
 
+  // Accidental-dial Guard
+  const [dialCountdown, setDialCountdown] = useState<number | null>(null);
+  const [dialTarget, setDialTarget] = useState<{ leadId?: string; lead?: Lead; phone?: string } | null>(null);
+
+  // Live Call Card & Polling
+  const [callDuration, setCallDuration] = useState<number>(0);
+  const [callStatus, setCallStatus] = useState<"ringing" | "connected" | "ended" | null>(null);
+
+  // Mandatory Wrap-up Form
+  const [showWrapupModal, setShowWrapupModal] = useState(false);
+  const [wrapupOutcome, setWrapupOutcome] = useState<string>("");
+  const [wrapupNotes, setWrapupNotes] = useState<string>("");
+  const [wrapupCallbackTime, setWrapupCallbackTime] = useState<string>("");
+  const [wrapupSaving, setWrapupSaving] = useState(false);
+
+  // Blocking Pending-Wrapups list
+  const [pendingWrapups, setPendingWrapups] = useState<CallLog[]>([]);
+
+  // Call Next
+  const [dialingNext, setDialingNext] = useState(false);
+
+  // Completed Today Tab Switcher
+  const [activeTab, setActiveTab] = useState<"queue" | "completed">("queue");
+  const [myCallsTodayList, setMyCallsTodayList] = useState<CallLog[]>([]);
+  const [loadingCallsToday, setLoadingCallsToday] = useState(false);
+
+  // Performance Widget
+  const [performance, setPerformance] = useState<{ target: number; achieved: number }>({ target: 50, achieved: 0 });
+
+  // Live Script Panel
+  const [telecallingConfig, setTelecallingConfig] = useState<{ scripts?: Record<string, string> } | null>(null);
+  const [scriptExpanded, setScriptExpanded] = useState(true);
+
+  // snooze action
+  const snoozeCallback = async (jobId: string, minutes: number) => {
+    const now = new Date();
+    const snoozeTime = new Date(now.getTime() + minutes * 60 * 1000);
+    try {
+      await api.followUps.rescheduleCallback(jobId, snoozeTime.toISOString());
+      toast.success(`Callback snoozed for ${minutes === 1440 ? "tomorrow" : minutes + " minutes"}`);
+      loadCallbacks();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to snooze callback");
+    }
+  };
+
   const loadCallbacks = useCallback(() => {
     fetchTodayCallbacks().then(setTodayCallbacks).catch(() => {});
     fetchTodayCompletedCallbacks().then(setCompletedCallbacks).catch(() => {});
+  }, []);
+
+  const loadPerformance = useCallback(async () => {
+    try {
+      const perf = await api.callers.myPerformance();
+      setPerformance(perf);
+    } catch (err) {
+      console.error("Failed to load performance:", err);
+    }
+  }, []);
+
+  const loadPendingWrapups = useCallback(async () => {
+    try {
+      const wrapups = await api.calls.getPendingWrapups();
+      setPendingWrapups(wrapups);
+    } catch (err) {
+      console.error("Failed to load pending wrapups:", err);
+    }
+  }, []);
+
+  const loadMyCallsToday = useCallback(async () => {
+    setLoadingCallsToday(true);
+    try {
+      const list = await api.callers.myCallsToday();
+      setMyCallsTodayList(list);
+    } catch (err) {
+      console.error("Failed to load my calls today:", err);
+    } finally {
+      setLoadingCallsToday(false);
+    }
+  }, []);
+
+  const loadTelecallingConfig = useCallback(async () => {
+    try {
+      const config = await api.settings.getTelecallingConfig();
+      setTelecallingConfig(config);
+    } catch (err) {
+      console.error("Failed to load telecalling config:", err);
+    }
   }, []);
 
   const loadData = useCallback(async () => {
@@ -81,15 +166,89 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       if (ids.length) api.calls.recentByLeads(ids).then(setLastCalledMap).catch(() => {});
 
       loadCallbacks();
+      loadPerformance();
+      loadPendingWrapups();
+      loadTelecallingConfig();
+      if (activeTab === "completed") {
+        loadMyCallsToday();
+      }
     } catch (err) {
       console.error("CallerView load error:", err);
     }
-  }, [callerId, loadCallbacks]);
+  }, [callerId, loadCallbacks, loadPerformance, loadPendingWrapups, loadTelecallingConfig, activeTab, loadMyCallsToday]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
   // auto-refresh callbacks every 5 minutes
   usePolling(loadCallbacks, 5 * 60 * 1000);
+
+  // Accidental-dial countdown effect
+  useEffect(() => {
+    if (dialCountdown === null) return;
+    if (dialCountdown === 0) {
+      if (dialTarget) {
+        if (dialTarget.leadId && dialTarget.lead) {
+          executeDial(dialTarget.leadId, dialTarget.lead);
+        } else if (dialTarget.phone) {
+          executeManualDial(dialTarget.phone);
+        }
+      }
+      setDialCountdown(null);
+      setDialTarget(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setDialCountdown(dialCountdown - 1);
+    }, 1000);
+    return () => clearTimeout(timer);
+    // executeDial/executeManualDial intentionally omitted: the countdown fires
+    // the dial for the dialTarget captured when it started; including them would
+    // reset the timer on unrelated re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dialCountdown, dialTarget]);
+
+  // Active call status polling
+  useEffect(() => {
+    if (!activeCallCtx || !activeCallCtx.callLogId) {
+      setCallStatus(null);
+      setCallDuration(0);
+      return;
+    }
+
+    setCallStatus("ringing");
+    setCallDuration(0);
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const log = await api.calls.getLog(activeCallCtx.callLogId!);
+        if (log.status === "completed") {
+          setCallStatus("ended");
+          setShowWrapupModal(true);
+          clearInterval(pollInterval);
+        } else if (log.status === "no_answer" || log.status === "failed") {
+          setCallStatus("ended");
+          setActiveCallCtx(null);
+          clearInterval(pollInterval);
+          loadData();
+        } else if (log.status === "initiated") {
+          setCallStatus((cur) => (cur === "ringing" ? "connected" : cur));
+        }
+      } catch (err) {
+        console.error("Error polling call log:", err);
+      }
+    }, 3000);
+
+    return () => clearInterval(pollInterval);
+  }, [activeCallCtx, loadData, setActiveCallCtx]);
+
+  // Call duration timer
+  useEffect(() => {
+    if (callStatus !== "connected") return;
+    const timer = setInterval(() => {
+      setCallDuration((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [callStatus]);
 
   // Fetch full details when lead is selected
   useEffect(() => {
@@ -178,19 +337,19 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     } finally { setDialing(null); }
   }
 
-  async function manualDial() {
-    if (!myCaller || !manualPhone.trim()) return;
+  async function executeManualDial(phone: string) {
+    if (!myCaller) return;
     setManualDialing(true);
     try {
-      const res = await api.calls.initiate({ phone: manualPhone.trim() }, myCaller.id);
+      const res = await api.calls.initiate({ phone }, myCaller.id);
       setActiveCallCtx({
         leadId: res.lead_id ?? null,
         name: res.lead_name ?? null,
-        phone: manualPhone.trim(),
+        phone,
         callLogId: res.call_log_id ?? null
       });
       setManualPhone("");
-      toast.success(`Calling ${manualPhone}...`);
+      toast.success(`Calling ${phone}...`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Call failed");
     } finally { setManualDialing(false); }
@@ -264,6 +423,79 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     toast.success(`${label} copied to clipboard`);
   };
 
+  const dialWithGuard = (leadId: string, lead: Lead) => {
+    if (dialCountdown !== null) return;
+    setDialTarget({ leadId, lead });
+    setDialCountdown(3);
+  };
+
+  const manualDialWithGuard = () => {
+    if (dialCountdown !== null || !manualPhone.trim()) return;
+    setDialTarget({ phone: manualPhone.trim() });
+    setDialCountdown(3);
+  };
+
+  const handleCallNext = async () => {
+    if (!myCaller) {
+      toast.error("Caller profile not found");
+      return;
+    }
+    setDialingNext(true);
+    try {
+      const nextLd = await api.calls.nextLead(myCaller.id);
+      toast.success(`Found next lead: ${nextLd.name || nextLd.phone}. Preparing to dial...`);
+      setDialTarget({ leadId: nextLd.id, lead: nextLd });
+      setDialCountdown(3);
+    } catch (err: unknown) {
+      const errorObj = err as { status?: number; message?: string };
+      if (errorObj?.status === 404) {
+        toast.error("No leads available in queue");
+      } else {
+        toast.error(err instanceof Error ? err.message : "Failed to fetch next lead");
+      }
+    } finally {
+      setDialingNext(false);
+    }
+  };
+
+  const handleWrapupSubmit = async () => {
+    if (!activeCallCtx || !activeCallCtx.callLogId) return;
+    if (!wrapupOutcome) {
+      toast.error("Disposition/Outcome is required");
+      return;
+    }
+    setWrapupSaving(true);
+    try {
+      if (wrapupOutcome === "converted") {
+        await api.calls.setOutcome(activeCallCtx.callLogId, "converted");
+        if (activeCallCtx.leadId) {
+          await api.leads.convert(activeCallCtx.leadId, wrapupNotes);
+        }
+      } else if (wrapupOutcome === "not_interested") {
+        await api.calls.setOutcome(activeCallCtx.callLogId, "not_interested");
+        if (activeCallCtx.leadId && wrapupNotes.trim()) {
+          await saveNote(activeCallCtx.leadId, wrapupNotes, false);
+        }
+      } else {
+        await api.calls.setDisposition(activeCallCtx.callLogId, wrapupOutcome as Disposition, {
+          notes: wrapupNotes.trim() || undefined,
+          callbackTime: wrapupCallbackTime ? new Date(wrapupCallbackTime).toISOString() : undefined,
+        });
+      }
+      toast.success("Wrap-up completed");
+      setShowWrapupModal(false);
+      setWrapupOutcome("");
+      setWrapupNotes("");
+      setWrapupCallbackTime("");
+      setActiveCallCtx(null);
+      loadData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to submit wrap-up");
+    } finally {
+      setWrapupSaving(false);
+    }
+  };
+
   const filteredLeads = myLeads.filter((lead) => {
     const query = searchQuery.toLowerCase().trim();
     if (!query) return true;
@@ -311,11 +543,38 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
           </button>
         </div>
       </div>
-
       {/* Main Split Layout */}
       <div className="flex-1 grid grid-cols-12 gap-6 min-h-0 pb-4">
         {/* Left Side: Lead List & Callbacks (5/12 columns) */}
         <div className="col-span-5 flex flex-col gap-5 min-h-0 overflow-y-auto pr-1">
+          {/* Performance Widget */}
+          <div className="p-5 bg-white border border-slate-200/60 rounded-3xl shrink-0 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase flex items-center gap-1.5">
+                <Target size={13} className="text-indigo-600" /> Daily Target Performance
+              </h3>
+              <span className="font-label text-xs font-bold text-slate-500">
+                {performance.achieved} / {performance.target} Calls
+              </span>
+            </div>
+            <div className="w-full bg-slate-100 rounded-full h-3.5 relative overflow-hidden">
+              <div
+                className="bg-gradient-to-r from-indigo-500 to-purple-600 h-full rounded-full transition-all duration-500"
+                style={{ width: `${Math.min(100, performance.target > 0 ? (performance.achieved / performance.target) * 100 : 0)}%` }}
+              />
+            </div>
+            <div className="flex justify-between items-center mt-2.5">
+              <p className="text-[11px] text-slate-400 font-medium">
+                {performance.target > 0 ? Math.round((performance.achieved / performance.target) * 100) : 0}% achieved
+              </p>
+              {performance.achieved >= performance.target && (
+                <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                  🎉 Target Met!
+                </span>
+              )}
+            </div>
+          </div>
+
           {/* Callbacks Card */}
           {(todayCallbacks.length > 0 || completedCallbacks.length > 0) && (
             <div className="p-5 bg-gradient-to-br from-amber-50 to-orange-50/40 border border-amber-100/70 rounded-3xl shrink-0 shadow-sm">
@@ -346,15 +605,41 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                           </p>
                         )}
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleMarkDone(cb.id);
-                        }}
-                        className="ml-3 text-xs px-3.5 py-2 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-xl font-bold hover:shadow-md transition-all shrink-0 hover:scale-[1.02] active:scale-[0.98]"
-                      >
-                        Resolve
-                      </button>
+                      <div className="flex flex-col gap-2 ml-3 shrink-0 items-end">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMarkDone(cb.id);
+                          }}
+                          className="text-xs px-3.5 py-1.5 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-xl font-bold hover:shadow-md transition-all hover:scale-[1.02] active:scale-[0.98]"
+                        >
+                          Resolve
+                        </button>
+                        
+                        <div className="flex gap-1">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); snoozeCallback(cb.id, 15); }}
+                            className="text-[9px] bg-white border border-slate-200 px-1.5 py-1 rounded-md text-slate-650 hover:bg-slate-50 hover:border-indigo-500 font-bold transition-all"
+                            title="Snooze 15 minutes"
+                          >
+                            +15m
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); snoozeCallback(cb.id, 60); }}
+                            className="text-[9px] bg-white border border-slate-200 px-1.5 py-1 rounded-md text-slate-650 hover:bg-slate-50 hover:border-indigo-500 font-bold transition-all"
+                            title="Snooze 1 hour"
+                          >
+                            +1h
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); snoozeCallback(cb.id, 1440); }}
+                            className="text-[9px] bg-white border border-slate-200 px-1.5 py-1 rounded-md text-slate-650 hover:bg-slate-50 hover:border-indigo-500 font-bold transition-all"
+                            title="Snooze to Tomorrow"
+                          >
+                            Tom.
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -391,122 +676,203 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
 
           {/* Lead List Card */}
           <div className="flex-1 bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60 flex flex-col min-h-0">
-            <div className="flex flex-col gap-3 mb-5 shrink-0">
-              <div className="flex items-center justify-between">
-                <h2 className="font-display text-lg font-bold text-slate-800 flex items-center gap-2">
-                  🎯 Assigned Queue
-                  {myLeads.length > 0 && (
-                    <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-600 rounded-full font-label text-xs font-bold">{myLeads.length}</span>
-                  )}
-                </h2>
-              </div>
-              <div className="relative">
-                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search leads by name or phone..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-body focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:border-transparent transition-all shadow-inner"
-                />
-              </div>
+            {/* Tab switcher */}
+            <div className="flex border-b border-slate-100 mb-4 shrink-0">
+              <button
+                onClick={() => setActiveTab("queue")}
+                className={`flex-1 py-2 font-display text-xs font-black tracking-wider uppercase border-b-2 text-center transition-all ${
+                  activeTab === "queue"
+                    ? "border-indigo-600 text-indigo-700 font-bold"
+                    : "border-transparent text-slate-400 hover:text-slate-600"
+                }`}
+              >
+                Queue ({myLeads.length})
+              </button>
+              <button
+                onClick={() => setActiveTab("completed")}
+                className={`flex-1 py-2 font-display text-xs font-black tracking-wider uppercase border-b-2 text-center transition-all ${
+                  activeTab === "completed"
+                    ? "border-indigo-600 text-indigo-700 font-bold"
+                    : "border-transparent text-slate-400 hover:text-slate-600"
+                }`}
+              >
+                Completed Today ({myCallsTodayList.length})
+              </button>
             </div>
 
-            {myLeads.length === 0 ? (
-              <div className="text-center py-12 flex-1 flex flex-col justify-center items-center">
-                <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 border border-slate-100 mb-3">
-                  <Inbox size={18} />
+            {activeTab === "queue" ? (
+              <div className="flex-1 flex flex-col min-h-0">
+                <div className="flex flex-col gap-3 mb-5 shrink-0">
+                  <div className="flex items-center justify-between">
+                    <h2 className="font-display text-lg font-bold text-slate-800 flex items-center gap-2">
+                      🎯 Assigned Queue
+                    </h2>
+                    <button
+                      onClick={handleCallNext}
+                      disabled={dialingNext || myStatus !== "active"}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl font-label text-xs font-bold transition-all shadow-sm hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                      title="Call next hot lead in queue"
+                    >
+                      {dialingNext ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                      Call Next
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search leads by name or phone..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-body focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:border-transparent transition-all shadow-inner"
+                    />
+                  </div>
                 </div>
-                <p className="font-body text-sm font-semibold text-slate-500">No leads assigned to you</p>
-                <p className="font-label text-xs text-slate-400 mt-1">Queue automations will route hot leads as they arrive.</p>
-              </div>
-            ) : filteredLeads.length === 0 ? (
-              <div className="text-center py-12 flex-1 flex flex-col justify-center items-center">
-                <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 border border-slate-100 mb-3">
-                  <Inbox size={18} />
-                </div>
-                <p className="font-body text-sm font-semibold text-slate-500">No matching leads found</p>
-                <p className="font-label text-xs text-slate-400 mt-1">Try adjusting your search query above.</p>
+
+                {myLeads.length === 0 ? (
+                  <div className="text-center py-12 flex-1 flex flex-col justify-center items-center">
+                    <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 border border-slate-100 mb-3">
+                      <Inbox size={18} />
+                    </div>
+                    <p className="font-body text-sm font-semibold text-slate-500">No leads assigned to you</p>
+                    <p className="font-label text-xs text-slate-400 mt-1">Queue automations will route hot leads as they arrive.</p>
+                  </div>
+                ) : filteredLeads.length === 0 ? (
+                  <div className="text-center py-12 flex-1 flex flex-col justify-center items-center">
+                    <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 border border-slate-100 mb-3">
+                      <Inbox size={18} />
+                    </div>
+                    <p className="font-body text-sm font-semibold text-slate-500">No matching leads found</p>
+                    <p className="font-label text-xs text-slate-400 mt-1">Try adjusting your search query above.</p>
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+                    {filteredLeads.map((lead) => {
+                      let borderAccent = "border-l-slate-300";
+                      if (lead.score >= 8) {
+                        borderAccent = "border-l-rose-500";
+                      } else if (lead.score >= 6) {
+                        borderAccent = "border-l-amber-500";
+                      } else if (lead.score >= 4) {
+                        borderAccent = "border-l-indigo-400";
+                      }
+
+                      const isSelected = selectedLeadId === lead.id;
+
+                      return (
+                        <div
+                          key={lead.id}
+                          onClick={() => setSelectedLeadId(lead.id)}
+                          className={`rounded-2xl border-y border-r border-l-4 transition-all duration-200 cursor-pointer p-4 flex items-center justify-between gap-3 ${borderAccent} ${
+                            isSelected
+                              ? "bg-gradient-to-r from-indigo-50/80 to-purple-50/30 border-indigo-200 shadow-[0_4px_15px_rgba(99,102,241,0.08)] ring-1 ring-indigo-500/10 translate-x-1"
+                              : "bg-slate-50/30 border-slate-150 hover:bg-slate-50 hover:shadow-sm hover:-translate-y-0.5"
+                          }`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-body text-sm font-bold text-slate-800 truncate">
+                                {lead.name || formatPhone(lead.phone)}
+                              </p>
+                              {lead.score >= 7 && (
+                                <span className="px-1.5 py-0.5 bg-rose-50 text-rose-600 rounded font-label text-[9px] font-black uppercase tracking-wider">HOT</span>
+                              )}
+                              <span className={`px-1.5 py-0.5 rounded font-label text-[9px] font-black ${
+                                lead.segment === "A" ? "bg-emerald-50 text-emerald-700" :
+                                lead.segment === "B" ? "bg-blue-50 text-blue-700" :
+                                lead.segment === "C" ? "bg-amber-50 text-amber-700" :
+                                "bg-slate-100 text-slate-700"
+                              }`}>
+                                SEG {lead.segment}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <p className="font-label text-xs text-slate-500">
+                                {lead.name ? formatPhone(lead.phone) + " · " : ""}Score {lead.score}
+                              </p>
+                            </div>
+                            {lastCalledMap[lead.id] && (
+                              <div className="flex items-center gap-1 text-[10px] text-slate-400 mt-1">
+                                <Clock size={10} />
+                                <span>Called {timeAgo(lastCalledMap[lead.id])}</span>
+                              </div>
+                            )}
+                          </div>
+                          
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRelease(lead.id);
+                            }}
+                            disabled={releasingLead === lead.id}
+                            title="Release / Mark Lead as Resolved"
+                            className={`p-2 rounded-xl transition-all border shrink-0 hover:shadow-sm ${
+                              confirmRelease === lead.id
+                                ? "bg-red-50 text-red-600 border-red-300 font-bold text-[10px] px-2.5 py-1"
+                                : "hover:bg-white text-slate-400 border-transparent hover:border-slate-200"
+                            }`}
+                          >
+                            {releasingLead === lead.id ? (
+                              <RefreshCw size={13} className="animate-spin text-red-600" />
+                            ) : confirmRelease === lead.id ? (
+                              "Confirm?"
+                            ) : (
+                              <CheckCheck size={14} className="hover:text-emerald-600" />
+                            )}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ) : (
-              <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
-                {filteredLeads.map((lead) => {
-                  // Left border accent logic depending on score/hotness
-                  let borderAccent = "border-l-slate-300";
-                  if (lead.score >= 8) {
-                    borderAccent = "border-l-rose-500";
-                  } else if (lead.score >= 6) {
-                    borderAccent = "border-l-amber-500";
-                  } else if (lead.score >= 4) {
-                    borderAccent = "border-l-indigo-400";
-                  }
-
-                  const isSelected = selectedLeadId === lead.id;
-
-                  return (
-                    <div
-                      key={lead.id}
-                      onClick={() => setSelectedLeadId(lead.id)}
-                      className={`rounded-2xl border-y border-r border-l-4 transition-all duration-200 cursor-pointer p-4 flex items-center justify-between gap-3 ${borderAccent} ${
-                        isSelected
-                          ? "bg-gradient-to-r from-indigo-50/80 to-purple-50/30 border-indigo-200 shadow-[0_4px_15px_rgba(99,102,241,0.08)] ring-1 ring-indigo-500/10 translate-x-1"
-                          : "bg-slate-50/30 border-slate-150 hover:bg-slate-50 hover:shadow-sm hover:-translate-y-0.5"
-                      }`}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-body text-sm font-bold text-slate-800 truncate">
-                            {lead.name || formatPhone(lead.phone)}
-                          </p>
-                          {lead.score >= 7 && (
-                            <span className="px-1.5 py-0.5 bg-rose-50 text-rose-600 rounded font-label text-[9px] font-black uppercase tracking-wider">HOT</span>
-                          )}
-                          <span className={`px-1.5 py-0.5 rounded font-label text-[9px] font-black ${
-                            lead.segment === "A" ? "bg-emerald-50 text-emerald-700" :
-                            lead.segment === "B" ? "bg-blue-50 text-blue-700" :
-                            lead.segment === "C" ? "bg-amber-50 text-amber-700" :
-                            "bg-slate-100 text-slate-700"
-                          }`}>
-                            SEG {lead.segment}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 mt-1.5">
-                          <p className="font-label text-xs text-slate-500">
-                            {lead.name ? formatPhone(lead.phone) + " · " : ""}Score {lead.score}
-                          </p>
-                        </div>
-                        {lastCalledMap[lead.id] && (
-                          <div className="flex items-center gap-1 text-[10px] text-slate-400 mt-1">
-                            <Clock size={10} />
-                            <span>Called {timeAgo(lastCalledMap[lead.id])}</span>
-                          </div>
-                        )}
-                      </div>
-                      
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRelease(lead.id);
-                        }}
-                        disabled={releasingLead === lead.id}
-                        title="Release / Mark Lead as Resolved"
-                        className={`p-2 rounded-xl transition-all border shrink-0 hover:shadow-sm ${
-                          confirmRelease === lead.id
-                            ? "bg-red-50 text-red-600 border-red-300 font-bold text-[10px] px-2.5 py-1"
-                            : "hover:bg-white text-slate-400 border-transparent hover:border-slate-200"
-                        }`}
-                      >
-                        {releasingLead === lead.id ? (
-                          <RefreshCw size={13} className="animate-spin text-red-600" />
-                        ) : confirmRelease === lead.id ? (
-                          "Confirm?"
-                        ) : (
-                          <CheckCheck size={14} className="hover:text-emerald-600" />
-                        )}
-                      </button>
+              // Completed Today list
+              <div className="flex-1 flex flex-col min-h-0">
+                {loadingCallsToday ? (
+                  <div className="text-center py-12 flex-1 flex flex-col justify-center items-center">
+                    <RefreshCw size={18} className="animate-spin text-slate-400 mb-2" />
+                    <p className="font-body text-xs text-slate-400">Loading completed calls...</p>
+                  </div>
+                ) : myCallsTodayList.length === 0 ? (
+                  <div className="text-center py-12 flex-1 flex flex-col justify-center items-center">
+                    <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-slate-450 border border-slate-100 mb-3">
+                      <Phone size={18} />
                     </div>
-                  );
-                })}
+                    <p className="font-body text-sm font-semibold text-slate-500">No calls completed today</p>
+                    <p className="font-label text-xs text-slate-400 mt-1">Completed calls with feedback will list here.</p>
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+                    {myCallsTodayList.map((log) => (
+                      <div
+                        key={log.id}
+                        className="rounded-2xl border border-slate-150 bg-slate-50/20 p-4 flex items-center justify-between gap-3 hover:bg-slate-50"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="font-body text-sm font-bold text-slate-800 truncate">
+                            {log.leads?.name || formatPhone(log.leads?.phone || "")}
+                          </p>
+                          <p className="font-label text-xs text-slate-500 mt-1">
+                            Duration: {log.duration_seconds || 0}s · {new Date(log.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                          <div className="flex gap-2 mt-1.5 flex-wrap">
+                            {log.disposition && (
+                              <span className="px-1.5 py-0.5 bg-slate-100 text-slate-650 border border-slate-200 rounded font-label text-[9px] font-bold">
+                                {log.disposition}
+                              </span>
+                            )}
+                            {log.outcome && (
+                              <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded font-label text-[9px] font-bold">
+                                Outcome: {log.outcome}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -522,13 +888,13 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                 placeholder="e.g. +919942497199"
                 value={manualPhone}
                 onChange={(e) => setManualPhone(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && manualDial()}
+                onKeyDown={(e) => e.key === "Enter" && manualDialWithGuard()}
                 className="flex-1 px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 font-body text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner"
               />
               <button
-                onClick={manualDial}
+                onClick={manualDialWithGuard}
                 disabled={manualDialing || !manualPhone.trim()}
-                className="px-4 py-2.5 bg-indigo-600 text-white rounded-xl font-label text-xs font-bold hover:bg-indigo-700 disabled:opacity-50 transition-all shadow-md shrink-0 hover:scale-[1.01] active:scale-[0.99]"
+                className="px-4 py-2.5 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl font-label text-xs font-bold transition-all shadow-md shrink-0 hover:scale-[1.01] active:scale-[0.99]"
               >
                 {manualDialing ? <RefreshCw size={14} className="animate-spin" /> : "Dial"}
               </button>
@@ -540,6 +906,44 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
         <div className="col-span-7 flex flex-col min-h-0 bg-white rounded-3xl border border-slate-200/60 shadow-sm overflow-hidden">
           {activeCallCtx && (
             <div className="p-4 border-b border-slate-100 shrink-0 bg-slate-50">
+              {/* Custom Live Call Card */}
+              <div className="p-5 border-b border-slate-200 bg-gradient-to-r from-indigo-900 to-slate-900 text-white shrink-0 rounded-2xl mb-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className={`p-3.5 bg-indigo-500/20 text-indigo-300 rounded-2xl ${callStatus === "ringing" ? "animate-pulse" : ""}`}>
+                      <Phone size={20} className={callStatus === "ringing" ? "animate-bounce" : ""} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-display font-bold text-sm tracking-wide uppercase text-indigo-300">
+                          {callStatus === "ringing" ? "Ringing..." : callStatus === "connected" ? "Connected" : "Ended"}
+                        </span>
+                        {callStatus === "connected" && (
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping inline-block" />
+                        )}
+                      </div>
+                      <h4 className="font-display font-extrabold text-lg mt-0.5">
+                        {activeCallCtx.name || "Offline Call"}
+                      </h4>
+                      <p className="font-mono text-xs text-slate-400 mt-0.5">{formatPhone(activeCallCtx.phone || "")}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-4">
+                    {callStatus === "connected" && (
+                      <div className="bg-slate-800/80 px-4 py-2 rounded-xl border border-slate-700/50 font-mono text-sm font-bold text-emerald-400">
+                        {Math.floor(callDuration / 60).toString().padStart(2, '0')}:
+                        {(callDuration % 60).toString().padStart(2, '0')}
+                      </div>
+                    )}
+                    <div className="text-right">
+                      <p className="text-[11px] text-slate-450 italic">
+                        Hint: Reject on your phone to cancel/hang up this call.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
               <LiveNotesPane ctx={activeCallCtx} onClose={() => setActiveCallCtx(null)} />
             </div>
           )}
@@ -621,7 +1025,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                       {confirmRelease === selectedLead.id ? "Release?" : "Release Lead"}
                     </button>
                     <button
-                      onClick={() => executeDial(selectedLead.id, selectedLead)}
+                      onClick={() => dialWithGuard(selectedLead.id, selectedLead)}
                       disabled={dialing === selectedLead.id}
                       className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-2xl font-label text-sm font-extrabold shadow-[0_4px_15px_rgba(16,185,129,0.3)] hover:shadow-[0_6px_20px_rgba(16,185,129,0.45)] transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
                     >
@@ -635,6 +1039,29 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
               {/* Profile Details Body (Scrollable) */}
               <div className="flex-1 overflow-y-auto p-6 space-y-6">
                 
+                {/* Live Pitch Script Card */}
+                {selectedLead && telecallingConfig?.scripts?.[selectedLead.segment] && (
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50/50 border border-blue-150 rounded-3xl p-5 shadow-sm shrink-0">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-display text-xs font-black text-indigo-950 tracking-widest uppercase flex items-center gap-2">
+                        <Sparkles size={14} className="text-indigo-650 animate-pulse" /> Pitch Script (Segment {selectedLead.segment})
+                      </h3>
+                      <button
+                        onClick={() => setScriptExpanded(!scriptExpanded)}
+                        className="text-xs font-bold text-indigo-650 hover:text-indigo-850 transition-colors"
+                      >
+                        {scriptExpanded ? "Collapse" : "Expand"}
+                      </button>
+                    </div>
+                    
+                    {scriptExpanded && (
+                      <div className="mt-3 bg-white border border-blue-100/60 p-4 rounded-2xl text-slate-700 font-body text-sm leading-relaxed whitespace-pre-wrap shadow-inner">
+                        {telecallingConfig.scripts[selectedLead.segment]}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* 1. Assignment Info Widget */}
                 <div className="bg-white border border-slate-200/60 rounded-3xl p-4 shadow-sm flex items-center gap-3.5">
                   <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl shrink-0">
@@ -868,6 +1295,196 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       {/* Notes History Modal */}
       {historyLead && (
         <NotesHistoryModal lead={historyLead} onClose={() => setHistoryLead(null)} />
+      )}
+
+      {/* Accidental-dial Guard countdown overlay */}
+      {dialCountdown !== null && dialTarget && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-3xl p-8 max-w-sm w-full mx-4 shadow-2xl border border-slate-200 text-center animate-in fade-in zoom-in-95">
+            <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
+              <Phone size={24} />
+            </div>
+            <h3 className="font-display text-lg font-bold text-slate-800">Calling in {dialCountdown}s...</h3>
+            <p className="font-body text-sm text-slate-500 mt-1.5">
+              Target: {"lead" in dialTarget ? (dialTarget.lead?.name || dialTarget.lead?.phone) : dialTarget.phone}
+            </p>
+            <button
+              onClick={() => {
+                setDialCountdown(null);
+                setDialTarget(null);
+              }}
+              className="mt-6 w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-label text-sm font-bold rounded-2xl transition-all border border-red-200"
+            >
+              Cancel Dial
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Mandatory Wrap-Up Form modal */}
+      {showWrapupModal && activeCallCtx && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl p-7 max-w-lg w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+            <div className="text-center mb-6">
+              <span className="px-3 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full font-label text-[10px] font-black uppercase tracking-wider">
+                Call Completed
+              </span>
+              <h3 className="font-display text-xl font-bold text-slate-900 mt-2">
+                Mandatory Call Wrap-up
+              </h3>
+              <p className="font-body text-xs text-slate-400 mt-1">
+                Please log feedback for the call with <span className="font-semibold text-slate-700">{activeCallCtx.name || activeCallCtx.phone}</span>.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="font-label text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block mb-2">
+                  Call Outcome / Disposition *
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setWrapupOutcome("answered")}
+                    className={`px-3 py-2.5 rounded-xl font-label text-xs font-bold border transition-all text-center ${
+                      wrapupOutcome === "answered"
+                        ? "bg-indigo-600 border-indigo-600 text-white"
+                        : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
+                    }`}
+                  >
+                    Answered (General)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWrapupOutcome("followup_required")}
+                    className={`px-3 py-2.5 rounded-xl font-label text-xs font-bold border transition-all text-center ${
+                      wrapupOutcome === "followup_required"
+                        ? "bg-indigo-600 border-indigo-600 text-white"
+                        : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
+                    }`}
+                  >
+                    Callback Scheduled
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWrapupOutcome("converted")}
+                    className={`px-3 py-2.5 rounded-xl font-label text-xs font-bold border transition-all text-center ${
+                      wrapupOutcome === "converted"
+                        ? "bg-indigo-600 border-indigo-600 text-white"
+                        : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
+                    }`}
+                  >
+                    Converted Lead
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWrapupOutcome("not_interested")}
+                    className={`px-3 py-2.5 rounded-xl font-label text-xs font-bold border transition-all text-center ${
+                      wrapupOutcome === "not_interested"
+                        ? "bg-indigo-600 border-indigo-600 text-white"
+                        : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
+                    }`}
+                  >
+                    Not Interested
+                  </button>
+                </div>
+              </div>
+
+              {wrapupOutcome === "followup_required" && (
+                <div className="bg-amber-50/50 border border-amber-100 rounded-2xl p-4 space-y-3">
+                  <p className="font-label text-[10px] text-amber-800 uppercase font-black tracking-widest block">
+                    Schedule Next Callback Time
+                  </p>
+                  <input
+                    type="datetime-local"
+                    value={wrapupCallbackTime}
+                    onChange={(e) => setWrapupCallbackTime(e.target.value)}
+                    min={new Date().toISOString().slice(0, 16)}
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-amber-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="font-label text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block mb-1.5">
+                  Interaction Note / Comments
+                </label>
+                <textarea
+                  value={wrapupNotes}
+                  onChange={(e) => setWrapupNotes(e.target.value)}
+                  placeholder="Summarize customer feedback and key discussion points..."
+                  rows={4}
+                  className="w-full px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-indigo-600 resize-none shadow-inner"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={handleWrapupSubmit}
+                disabled={wrapupSaving || !wrapupOutcome}
+                className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-label text-xs font-black shadow-md hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 transition-all flex items-center justify-center gap-1.5"
+              >
+                {wrapupSaving ? (
+                  <RefreshCw size={14} className="animate-spin" />
+                ) : (
+                  <Check size={14} />
+                )}
+                <span>Complete Wrap-up</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Blocking Pending-Wrapups list fullscreen overlay */}
+      {pendingWrapups.length > 0 && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl p-8 max-w-2xl w-full max-h-[80vh] shadow-2xl flex flex-col border border-slate-200">
+            <div className="text-center mb-6 shrink-0">
+              <div className="w-12 h-12 bg-amber-50 border border-amber-200 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                <AlertCircle size={24} />
+              </div>
+              <h2 className="font-display text-xl font-extrabold text-slate-900">
+                Action Required: Pending Call Wrap-ups
+              </h2>
+              <p className="font-body text-xs text-slate-400 mt-1.5">
+                You have {pendingWrapups.length} completed call(s) that require outcome feedback. Please submit feedback to unlock dashboard.
+              </p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3 mb-6 pr-1">
+              {pendingWrapups.map((log) => (
+                <div key={log.id} className="border border-slate-150 rounded-2xl p-4 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="font-body text-sm font-bold text-slate-800 truncate">
+                      {log.leads?.name || "Unnamed Lead"} ({formatPhone(log.leads?.phone || "")})
+                    </p>
+                    <p className="font-label text-xs text-slate-500 mt-1">
+                      Duration: {log.duration_seconds || 0}s · Completed {new Date(log.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setActiveCallCtx({
+                        leadId: log.lead_id,
+                        name: log.leads?.name || null,
+                        phone: log.leads?.phone || null,
+                        callLogId: log.id
+                      });
+                      setCallStatus("ended");
+                      setShowWrapupModal(true);
+                    }}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-label text-xs font-bold transition-all shadow-sm shrink-0"
+                  >
+                    Wrap Up
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
