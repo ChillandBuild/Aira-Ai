@@ -9,6 +9,7 @@ import { api, Caller, Lead } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import LiveNotesPane from "./components/live-notes-pane";
 import AssignmentLog from "./components/assignment-log";
+import PerformanceView from "./components/performance-view";
 import { useActiveCall } from "../contexts/ActiveCallContext";
 import { TelecallingConfigPanel } from "../settings/TelecallingConfigPanel";
 import { fetchNotes } from "./lib/notes-api";
@@ -31,7 +32,7 @@ export default function AdminView() {
   const [callers, setCallers] = useState<Caller[]>([]);
   const [selectedCallerId, setSelectedCallerId] = useState<string | null>(null);
   const [showConfigModal, setShowConfigModal] = useState(false);
-  const [tab, setTab] = useState<"dialer" | "log">("dialer");
+  const [tab, setTab] = useState<"dialer" | "log" | "performance">("dialer");
 
   const [totalCallsToday, setTotalCallsToday] = useState(0);
   const [totalConversionsToday, setTotalConversionsToday] = useState(0);
@@ -148,10 +149,16 @@ export default function AdminView() {
           className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-label text-sm font-semibold transition-colors border ${tab === "log" ? "bg-primary/10 text-primary border-primary/20" : "bg-white text-on-surface-muted border-surface-mid hover:border-primary/30"}`}>
           <ClipboardList size={14} /> Assignment Log
         </button>
+        <button onClick={() => setTab("performance")}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-label text-sm font-semibold transition-colors border ${tab === "performance" ? "bg-primary/10 text-primary border-primary/20" : "bg-white text-on-surface-muted border-surface-mid hover:border-primary/30"}`}>
+          <TrendingUp size={14} /> Performance
+        </button>
       </div>
 
       {tab === "log" ? (
         <AssignmentLog callers={callers} />
+      ) : tab === "performance" ? (
+        <PerformanceView callers={callers} />
       ) : (
       <>
       {/* Header */}

@@ -63,6 +63,7 @@ export interface Caller {
   active: boolean;
   status?: "active" | "break" | "logged_out";
   status_changed_at?: string;
+  target?: number;
 }
 
 export interface CallerStats {
@@ -330,7 +331,29 @@ export interface TelecallingAnalytics {
   calls_this_week: number;
   avg_duration_seconds: number | null;
   outcome_breakdown: { converted: number; callback: number; not_interested: number; no_answer: number };
-  per_caller: { caller_id: string; name: string; calls_today: number; overall_score: number | null }[];
+  per_caller: {
+    caller_id: string;
+    name: string;
+    calls_today: number;
+    overall_score: number | null;
+    connect_rate?: number;
+    avg_talk_seconds?: number | null;
+    talk_minutes_today?: number;
+    idle_minutes_today?: number;
+    avg_gap_seconds?: number | null;
+    longest_idle_seconds?: number | null;
+    bunking_flag?: boolean;
+    speed_to_lead_min?: number | null;
+    quality_avg?: number | null;
+  }[];
+  connect_rate?: number;
+  avg_talk_seconds?: number | null;
+  talk_minutes_today?: number;
+  idle_minutes_today?: number;
+  avg_gap_seconds?: number | null;
+  longest_idle_seconds?: number | null;
+  speed_to_lead_min?: number | null;
+  quality_avg?: number | null;
 }
 
 export interface FunnelAnalytics {
@@ -376,9 +399,26 @@ export interface TelecallingAnalyticsExtended {
     overall_score: number | null;
     total_minutes_today: number;
     conversion_rate: number | null;
+    connect_rate?: number;
+    avg_talk_seconds?: number | null;
+    talk_minutes_today?: number;
+    idle_minutes_today?: number;
+    avg_gap_seconds?: number | null;
+    longest_idle_seconds?: number | null;
+    bunking_flag?: boolean;
+    speed_to_lead_min?: number | null;
+    quality_avg?: number | null;
   }[];
   calls_per_hour: { hour: number; label: string; count: number }[];
   calls_per_slot: { slot: string; count: number; caller_counts: Record<string, number> }[];
+  connect_rate?: number;
+  avg_talk_seconds?: number | null;
+  talk_minutes_today?: number;
+  idle_minutes_today?: number;
+  avg_gap_seconds?: number | null;
+  longest_idle_seconds?: number | null;
+  speed_to_lead_min?: number | null;
+  quality_avg?: number | null;
 }
 
 export interface FunnelAnalyticsExtended {
@@ -599,6 +639,16 @@ export const api = {
       a.remove();
       window.URL.revokeObjectURL(url);
     },
+    assign: (leadId: string, callerId: string | null) =>
+      apiFetch<Lead>(`/api/v1/leads/${leadId}/assign`, {
+        method: "PATCH",
+        body: JSON.stringify({ caller_id: callerId }),
+      }),
+    bulkAssign: (leadIds: string[], callerId: string | null) =>
+      apiFetch<{ success: boolean; updated: number }>(`/api/v1/leads/bulk-assign`, {
+        method: "POST",
+        body: JSON.stringify({ lead_ids: leadIds, caller_id: callerId }),
+      }),
   },
   assignmentLog: {
     list: async (params?: { page?: number; limit?: number; caller_id?: string; segment?: string; from_date?: string; to_date?: string }) => {
@@ -690,6 +740,11 @@ export const api = {
       apiFetch<{ data: CallLog[] }>(`/api/v1/callers/my-calls-today`).then(res => res.data || []),
     myPerformance: () =>
       apiFetch<{ target: number; achieved: number }>(`/api/v1/callers/my-performance`),
+    updateTarget: (callerId: string, target: number) =>
+      apiFetch<Caller>(`/api/v1/callers/${callerId}/target`, {
+        method: "PATCH",
+        body: JSON.stringify({ target }),
+      }),
   },
   calls: {
     initiate: (target: { leadId?: string; phone?: string; callbackJobId?: string }, callerId?: string) =>
@@ -896,6 +951,27 @@ export const api = {
         by_segment: { A: number; B: number; C: number; D: number };
         by_channel: { whatsapp: number; instagram: number; facebook: number; telegram: number };
       }>(`/api/v1/analytics/inbound?range=${range}`),
+    callerTimeline: (callerId: string, date: string) =>
+      apiFetch<{ data: TimelineEvent[] }>(`/api/v1/analytics/caller-timeline?caller_id=${encodeURIComponent(callerId)}&date=${encodeURIComponent(date)}`),
+    qaQueue: (limit: number) =>
+      apiFetch<{ data: CallLog[] }>(`/api/v1/analytics/qa-queue?limit=${limit}`),
+    exportTelecallingCsv: async (since?: string, until?: string) => {
+      const headers = await getAuthHeaders();
+      const qs = new URLSearchParams({ format: "csv" });
+      if (since) qs.set("since", since);
+      if (until) qs.set("until", until);
+      const res = await fetch(`${API_URL}/api/v1/analytics/telecalling/export?${qs.toString()}`, { headers });
+      if (!res.ok) throw new Error(`Export failed: ${res.status} ${res.statusText}`);
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "telecalling_performance.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    },
   },
   insights: {
     whatsapp: (params?: { range?: string; since?: string; until?: string; source?: string }) => {

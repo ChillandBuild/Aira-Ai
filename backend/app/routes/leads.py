@@ -12,6 +12,7 @@ from app.dependencies.tenant import get_tenant_id, get_tenant_and_role
 from app.models.schemas import Lead, LeadUpdate, LeadWithMessages, Message, PaginatedResponse
 from app.services.ai_reply import send_whatsapp, send_instagram, send_facebook, get_last_send_error
 from app.services.growth import record_stage_event, sync_follow_up_jobs
+from app.services.assignment import record_assignment_event
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -30,6 +31,11 @@ class HumanMessage(BaseModel):
 
 
 class AssignPayload(BaseModel):
+    caller_id: str | None = None
+
+
+class BulkAssignPayload(BaseModel):
+    lead_ids: list[UUID]
     caller_id: str | None = None
 
 
@@ -273,10 +279,115 @@ async def assign_lead(
     if ctx["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
     db = get_supabase()
-    db.table("leads").update({"assigned_to": payload.caller_id}).eq(
-        "id", lead_id
-    ).eq("tenant_id", ctx["tenant_id"]).execute()
+    
+    # Fetch current lead info to check previous caller and other meta
+    lead = db.table("leads").select("segment, score, assigned_to").eq("id", lead_id).eq("tenant_id", ctx["tenant_id"]).maybe_single().execute()
+    if not lead.data:
+        raise HTTPException(status_code=404, detail="Lead not found")
+        
+    prev_caller_id = lead.data.get("assigned_to")
+    segment = lead.data.get("segment")
+    score = lead.data.get("score")
+    
+    caller_name = None
+    if payload.caller_id:
+        caller = db.table("callers").select("name").eq("id", payload.caller_id).eq("tenant_id", ctx["tenant_id"]).maybe_single().execute()
+        if caller.data:
+            caller_name = caller.data.get("name")
+            
+    prev_caller_name = None
+    if prev_caller_id:
+        prev_caller = db.table("callers").select("name").eq("id", prev_caller_id).eq("tenant_id", ctx["tenant_id"]).maybe_single().execute()
+        if prev_caller.data:
+            prev_caller_name = prev_caller.data.get("name")
+
+    assigned_at = datetime.now(timezone.utc).isoformat() if payload.caller_id else None
+    db.table("leads").update({
+        "assigned_to": payload.caller_id,
+        "assigned_at": assigned_at
+    }).eq("id", lead_id).eq("tenant_id", ctx["tenant_id"]).execute()
+    
+    if payload.caller_id:
+        event_type = "reassigned" if prev_caller_id and str(prev_caller_id) != str(payload.caller_id) else "assigned"
+        record_assignment_event(
+            lead_id=lead_id,
+            tenant_id=ctx["tenant_id"],
+            segment=segment,
+            caller_id=payload.caller_id,
+            caller_name=caller_name,
+            reason="manual_assign",
+            method="admin",
+            score=score,
+            event_type=event_type,
+            prev_caller_id=prev_caller_id,
+            prev_caller_name=prev_caller_name,
+            db=db
+        )
+        
     return {"success": True}
+
+
+@router.post("/bulk-assign")
+async def bulk_assign(
+    payload: BulkAssignPayload,
+    ctx: dict = Depends(get_tenant_and_role),
+):
+    if ctx["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Owner only")
+    if not payload.lead_ids:
+        return {"success": True, "count": 0}
+        
+    db = get_supabase()
+    tenant_id = ctx["tenant_id"]
+    
+    # Fetch all leads details to be assigned
+    lead_ids_str = [str(lid) for lid in payload.lead_ids]
+    leads = db.table("leads").select("id, segment, score, assigned_to").in_("id", lead_ids_str).eq("tenant_id", tenant_id).execute().data or []
+    
+    caller_name = None
+    if payload.caller_id:
+        caller = db.table("callers").select("name").eq("id", payload.caller_id).eq("tenant_id", tenant_id).maybe_single().execute()
+        if caller.data:
+            caller_name = caller.data.get("name")
+            
+    # Batch query caller names for prev_caller names to avoid N queries
+    prev_caller_ids = list({l["assigned_to"] for l in leads if l.get("assigned_to")})
+    prev_caller_names = {}
+    if prev_caller_ids:
+        callers = db.table("callers").select("id, name").in_("id", prev_caller_ids).eq("tenant_id", tenant_id).execute().data or []
+        prev_caller_names = {c["id"]: c["name"] for c in callers}
+        
+    assigned_at = datetime.now(timezone.utc).isoformat() if payload.caller_id else None
+    
+    for lead in leads:
+        lead_id = lead["id"]
+        prev_caller_id = lead.get("assigned_to")
+        segment = lead.get("segment")
+        score = lead.get("score")
+        
+        db.table("leads").update({
+            "assigned_to": payload.caller_id,
+            "assigned_at": assigned_at
+        }).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
+        
+        if payload.caller_id:
+            event_type = "reassigned" if prev_caller_id and str(prev_caller_id) != str(payload.caller_id) else "assigned"
+            record_assignment_event(
+                lead_id=lead_id,
+                tenant_id=tenant_id,
+                segment=segment,
+                caller_id=payload.caller_id,
+                caller_name=caller_name,
+                reason="bulk_assign",
+                method="admin",
+                score=score,
+                event_type=event_type,
+                prev_caller_id=prev_caller_id,
+                prev_caller_name=prev_caller_names.get(prev_caller_id),
+                db=db
+            )
+            
+    return {"success": True, "count": len(leads)}
 
 @router.get("/export")
 async def export_leads(

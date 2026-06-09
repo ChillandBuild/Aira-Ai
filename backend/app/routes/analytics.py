@@ -2,14 +2,20 @@
 Analytics routes — service metrics for WhatsApp, telecalling, and lead funnel.
 """
 
+import csv
+import io
 import logging
+import statistics
 from datetime import datetime, timedelta, timezone
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi.responses import StreamingResponse
 
 from app.db.supabase import get_supabase
-from app.dependencies.tenant import get_tenant_id
+from app.dependencies.tenant import get_tenant_id, require_owner
 from app.services.inbound_leads_logic import INBOUND_SOURCES, aggregate_inbound
+from app.services.assignment import get_telecalling_config
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -103,15 +109,18 @@ async def template_performance(tenant_id: str = Depends(get_tenant_id)):
 @router.get("/telecalling")
 async def telecalling_analytics(tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
-    ist_today_start_utc = _ist_today_start_utc()
-    ist_today_start_iso = ist_today_start_utc.isoformat()
+    
+    # Day bounds must use UTC midnight
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_iso = today_start.isoformat()
     week = _week_start()
 
     logs_today_res = (
         db.table("call_logs")
-        .select("id,duration_seconds,outcome,caller_id,created_at")
+        .select("id,duration_seconds,outcome,caller_id,created_at,evaluation,lead_id,leads(created_at,assigned_at)")
         .eq("tenant_id", tenant_id)
-        .gte("created_at", ist_today_start_iso)
+        .gte("created_at", today_start_iso)
         .execute()
         .data or []
     )
@@ -129,6 +138,15 @@ async def telecalling_analytics(tenant_id: str = Depends(get_tenant_id)):
         db.table("call_logs")
         .select("id,duration_seconds,outcome,caller_id")
         .eq("tenant_id", tenant_id)
+        .execute()
+        .data or []
+    )
+    
+    status_logs_today = (
+        db.table("caller_status_logs")
+        .select("id,caller_id,status,started_at,ended_at")
+        .eq("tenant_id", tenant_id)
+        .gte("started_at", today_start_iso)
         .execute()
         .data or []
     )
@@ -154,23 +172,6 @@ async def telecalling_analytics(tenant_id: str = Depends(get_tenant_id)):
         .data or []
     )
 
-    today_counts: dict[str, int] = {}
-    today_durations: dict[str, list[int]] = {}
-    for log in logs_today_res:
-        cid = log.get("caller_id")
-        if cid:
-            today_counts[cid] = today_counts.get(cid, 0) + 1
-            dur = log.get("duration_seconds")
-            if dur is not None:
-                today_durations.setdefault(cid, []).append(dur)
-
-    # total_minutes_today (tenant-wide)
-    today_dur_all = [
-        l["duration_seconds"] for l in logs_today_res
-        if l.get("duration_seconds") is not None
-    ]
-    total_minutes_today = round(sum(today_dur_all) / 60, 1) if today_dur_all else 0.0
-
     # calls_per_hour — IST hours 9–18, today's calls
     hour_counts: dict[int, int] = {h: 0 for h in range(9, 19)}
     # calls_per_slot — 30-min slots 09:00–17:30 (18 slots)
@@ -195,7 +196,7 @@ async def telecalling_analytics(tenant_id: str = Depends(get_tenant_id)):
                 slot_counts[slot_key] += 1
                 cid = log.get("caller_id")
                 if cid:
-                    slot_caller_counts[slot_key][cid] = slot_caller_counts[slot_key].get(cid, 0) + 1
+                    slot_caller_counts[slot_key][str(cid)] = slot_caller_counts[slot_key].get(str(cid), 0) + 1
         except Exception:
             pass
 
@@ -220,26 +221,177 @@ async def telecalling_analytics(tenant_id: str = Depends(get_tenant_id)):
         cid = log.get("caller_id")
         if not cid:
             continue
-        caller_total[cid] = caller_total.get(cid, 0) + 1
+        cid_str = str(cid)
+        caller_total[cid_str] = caller_total.get(cid_str, 0) + 1
         if log.get("outcome") == "converted":
-            caller_converted[cid] = caller_converted.get(cid, 0) + 1
+            caller_converted[cid_str] = caller_converted.get(cid_str, 0) + 1
+
+    # Team-wide aggregates
+    team_connected_calls = [l for l in logs_today_res if (l.get("duration_seconds") or 0) > 0 or (l.get("outcome") is not None and l.get("outcome") != "no_answer")]
+    team_connect_rate = round(len(team_connected_calls) / calls_today, 4) if calls_today > 0 else 0.0
+
+    today_dur_all = [l["duration_seconds"] for l in logs_today_res if l.get("duration_seconds") is not None]
+    team_avg_talk_seconds = round(sum(today_dur_all) / len(today_dur_all), 1) if today_dur_all else 0.0
+    team_talk_minutes_today = round(sum(today_dur_all) / 60, 1) if today_dur_all else 0.0
+
+    all_idle_minutes = []
+    all_gaps = []
+    all_longest_idles = []
+    all_bunking_flags = []
+    all_speed_to_leads = []
+    all_quality_scores = []
 
     per_caller = []
     for c in callers_res:
         cid = c["id"]
-        total = caller_total.get(cid, 0)
-        converted = caller_converted.get(cid, 0)
+        cid_str = str(cid)
+
+        caller_calls = [l for l in logs_today_res if str(l.get("caller_id")) == cid_str]
+        c_calls_count = len(caller_calls)
+        c_connected = [l for l in caller_calls if (l.get("duration_seconds") or 0) > 0 or (l.get("outcome") is not None and l.get("outcome") != "no_answer")]
+        c_connect_rate = round(len(c_connected) / c_calls_count, 4) if c_calls_count > 0 else 0.0
+
+        c_talk_durations = [l["duration_seconds"] for l in caller_calls if l.get("duration_seconds") is not None]
+        c_avg_talk_seconds = round(sum(c_talk_durations) / len(c_talk_durations), 1) if c_talk_durations else 0.0
+        c_talk_minutes_today = round(sum(c_talk_durations) / 60, 1) if c_talk_durations else 0.0
+
+        # Status intervals clipping
+        c_status_logs = [log for log in status_logs_today if str(log.get("caller_id")) == cid_str]
+        c_active_intervals = []
+        for log in c_status_logs:
+            s_time = datetime.fromisoformat(log["started_at"].replace("Z", "+00:00"))
+            s_time = max(s_time, today_start)
+            e_time = datetime.fromisoformat(log["ended_at"].replace("Z", "+00:00")) if log.get("ended_at") else now
+            e_time = max(e_time, today_start)
+            if s_time < e_time and log["status"] == "active":
+                c_active_intervals.append((s_time, e_time))
+
+        # Merge active intervals
+        c_active_intervals.sort(key=lambda x: x[0])
+        merged_active = []
+        for start, end in c_active_intervals:
+            if not merged_active:
+                merged_active.append((start, end))
+            else:
+                prev_start, prev_end = merged_active[-1]
+                if start <= prev_end:
+                    merged_active[-1] = (prev_start, max(prev_end, end))
+                else:
+                    merged_active.append((start, end))
+
+        total_active_seconds = sum((end - start).total_seconds() for start, end in merged_active)
+        c_active_minutes_today = total_active_seconds / 60.0
+        c_idle_minutes_today = max(0.0, c_active_minutes_today - c_talk_minutes_today)
+        all_idle_minutes.append(c_idle_minutes_today)
+
+        # Gaps
+        c_gaps = []
+        c_longest_idle = 0.0
+        sorted_calls = sorted(caller_calls, key=lambda x: x["created_at"])
+
+        def get_active_overlap(gs, ge):
+            if gs >= ge:
+                return 0.0
+            overlap = 0.0
+            for as_, ae_ in merged_active:
+                os = max(gs, as_)
+                oe = min(ge, ae_)
+                if os < oe:
+                    overlap += (oe - os).total_seconds()
+            return overlap
+
+        if merged_active:
+            first_active_start = merged_active[0][0]
+            if sorted_calls:
+                first_call_start = datetime.fromisoformat(sorted_calls[0]["created_at"].replace("Z", "+00:00"))
+                gap_before = get_active_overlap(first_active_start, first_call_start)
+                if gap_before > 0:
+                    c_gaps.append(gap_before)
+                for i in range(1, len(sorted_calls)):
+                    prev_call_end = datetime.fromisoformat(sorted_calls[i-1]["created_at"].replace("Z", "+00:00")) + timedelta(seconds=sorted_calls[i-1].get("duration_seconds") or 0)
+                    curr_call_start = datetime.fromisoformat(sorted_calls[i]["created_at"].replace("Z", "+00:00"))
+                    gap = get_active_overlap(prev_call_end, curr_call_start)
+                    if gap > 0:
+                        c_gaps.append(gap)
+                last_call_end = datetime.fromisoformat(sorted_calls[-1]["created_at"].replace("Z", "+00:00")) + timedelta(seconds=sorted_calls[-1].get("duration_seconds") or 0)
+                gap_after = get_active_overlap(last_call_end, now)
+                if gap_after > 0:
+                    c_gaps.append(gap_after)
+            else:
+                c_gaps.append(total_active_seconds)
+
+            c_longest_idle = max(c_gaps) if c_gaps else 0.0
+
+        c_avg_gap_seconds = sum(c_gaps) / len(c_gaps) if c_gaps else 0.0
+        all_gaps.extend(c_gaps)
+        all_longest_idles.append(c_longest_idle)
+
+        # Bunking: idle ≥15 min between calls while the caller was active.
+        c_bunking_flag = c_longest_idle >= 900
+        all_bunking_flags.append(c_bunking_flag)
+
+        # speed_to_lead_min
+        # speed_to_lead: minutes from assignment → the FIRST call per lead, median.
+        first_call_by_lead: dict = {}
+        for log in caller_calls:
+            lid = log.get("lead_id")
+            if not lid:
+                continue
+            if lid not in first_call_by_lead or log["created_at"] < first_call_by_lead[lid]["created_at"]:
+                first_call_by_lead[lid] = log
+        c_speed_to_lead_list = []
+        for log in first_call_by_lead.values():
+            assigned_str = (log.get("leads") or {}).get("assigned_at")
+            if assigned_str:
+                assigned_dt = datetime.fromisoformat(assigned_str.replace("Z", "+00:00"))
+                call_created = datetime.fromisoformat(log["created_at"].replace("Z", "+00:00"))
+                diff = (call_created - assigned_dt).total_seconds() / 60.0
+                if diff >= 0:
+                    c_speed_to_lead_list.append(diff)
+                    all_speed_to_leads.append(diff)
+        c_speed_to_lead_min = round(statistics.median(c_speed_to_lead_list), 1) if c_speed_to_lead_list else None
+
+        # quality_avg
+        c_quality_scores = []
+        for log in caller_calls:
+            eval_data = log.get("evaluation")
+            if isinstance(eval_data, dict) and "overall_score" in eval_data:
+                try:
+                    val = float(eval_data["overall_score"])
+                    c_quality_scores.append(val)
+                    all_quality_scores.append(val)
+                except (ValueError, TypeError):
+                    pass
+        c_quality_avg = round(sum(c_quality_scores) / len(c_quality_scores), 1) if c_quality_scores else None
+
+        total = caller_total.get(cid_str, 0)
+        converted = caller_converted.get(cid_str, 0)
         conv_rate = round(converted / total, 4) if total > 0 else None
-        dur_list = today_durations.get(cid, [])
-        caller_minutes_today = round(sum(dur_list) / 60, 1) if dur_list else 0.0
+
         per_caller.append({
             "caller_id": cid,
             "name": c.get("name"),
-            "calls_today": today_counts.get(cid, 0),
+            "calls_today": c_calls_count,
             "overall_score": c.get("overall_score"),
-            "total_minutes_today": caller_minutes_today,
+            "total_minutes_today": c_talk_minutes_today,
             "conversion_rate": conv_rate,
+            "connect_rate": c_connect_rate,
+            "avg_talk_seconds": c_avg_talk_seconds,
+            "talk_minutes_today": c_talk_minutes_today,
+            "idle_minutes_today": round(c_idle_minutes_today, 1),
+            "avg_gap_seconds": round(c_avg_gap_seconds, 1),
+            "longest_idle_seconds": round(c_longest_idle, 1),
+            "bunking_flag": c_bunking_flag,
+            "speed_to_lead_min": c_speed_to_lead_min,
+            "quality_avg": c_quality_avg,
         })
+
+    team_idle_minutes_today = round(sum(all_idle_minutes), 1) if all_idle_minutes else 0.0
+    team_avg_gap_seconds = round(sum(all_gaps) / len(all_gaps), 1) if all_gaps else 0.0
+    team_longest_idle_seconds = round(max(all_longest_idles), 1) if all_longest_idles else 0.0
+    team_bunking_flag = any(all_bunking_flags) if all_bunking_flags else False
+    team_speed_to_lead_min = round(statistics.median(all_speed_to_leads), 1) if all_speed_to_leads else None
+    team_quality_avg = round(sum(all_quality_scores) / len(all_quality_scores), 1) if all_quality_scores else None
 
     return {
         "calls_today": calls_today,
@@ -247,10 +399,213 @@ async def telecalling_analytics(tenant_id: str = Depends(get_tenant_id)):
         "avg_duration_seconds": avg_duration_seconds,
         "outcome_breakdown": outcome_breakdown,
         "per_caller": per_caller,
-        "total_minutes_today": total_minutes_today,
+        "total_minutes_today": team_talk_minutes_today,
         "calls_per_hour": calls_per_hour,
         "calls_per_slot": calls_per_slot,
+        "connect_rate": team_connect_rate,
+        "avg_talk_seconds": team_avg_talk_seconds,
+        "talk_minutes_today": team_talk_minutes_today,
+        "idle_minutes_today": team_idle_minutes_today,
+        "avg_gap_seconds": team_avg_gap_seconds,
+        "longest_idle_seconds": team_longest_idle_seconds,
+        "bunking_flag": team_bunking_flag,
+        "speed_to_lead_min": team_speed_to_lead_min,
+        "quality_avg": team_quality_avg,
     }
+
+
+@router.get("/caller-timeline")
+async def caller_timeline(
+    caller_id: UUID = Query(...),
+    date: str | None = Query(None),
+    ctx: dict = Depends(require_owner),
+):
+    tenant_id = ctx["tenant_id"]
+    db = get_supabase()
+    
+    if not date:
+        date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        
+    try:
+        day_start = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format, use YYYY-MM-DD")
+        
+    day_end = day_start + timedelta(days=1)
+    day_start_iso = day_start.isoformat()
+    day_end_iso = day_end.isoformat()
+    
+    calls = (
+        db.table("call_logs")
+        .select("id,created_at,duration_seconds,outcome,lead_id,leads(name)")
+        .eq("caller_id", str(caller_id))
+        .eq("tenant_id", tenant_id)
+        .gte("created_at", day_start_iso)
+        .lt("created_at", day_end_iso)
+        .order("created_at")
+        .execute()
+    ).data or []
+    
+    status_logs = (
+        db.table("caller_status_logs")
+        .select("id,status,started_at,ended_at")
+        .eq("caller_id", str(caller_id))
+        .eq("tenant_id", tenant_id)
+        .gte("started_at", day_start_iso)
+        .lt("started_at", day_end_iso)
+        .execute()
+    ).data or []
+    
+    active_intervals = []
+    for log in status_logs:
+        if log["status"] == "active":
+            s_time = datetime.fromisoformat(log["started_at"].replace("Z", "+00:00"))
+            s_time = max(s_time, day_start)
+            e_time = datetime.fromisoformat(log["ended_at"].replace("Z", "+00:00")) if log.get("ended_at") else day_end
+            e_time = min(e_time, day_end)
+            if s_time < e_time:
+                active_intervals.append((s_time, e_time))
+                
+    active_intervals.sort(key=lambda x: x[0])
+    
+    merged_active = []
+    for start, end in active_intervals:
+        if not merged_active:
+            merged_active.append((start, end))
+        else:
+            prev_start, prev_end = merged_active[-1]
+            if start <= prev_end:
+                merged_active[-1] = (prev_start, max(prev_end, end))
+            else:
+                merged_active.append((start, end))
+                
+    def get_active_overlap(gs, ge):
+        if gs >= ge:
+            return 0.0
+        overlap = 0.0
+        for as_, ae_ in merged_active:
+            os = max(gs, as_)
+            oe = min(ge, ae_)
+            if os < oe:
+                overlap += (oe - os).total_seconds()
+        return overlap
+        
+    blocks = []
+    for i, call in enumerate(calls):
+        call_start = datetime.fromisoformat(call["created_at"].replace("Z", "+00:00"))
+        
+        if i == 0:
+            if merged_active:
+                gap = get_active_overlap(merged_active[0][0], call_start)
+            else:
+                gap = 0.0
+        else:
+            prev_call_end = datetime.fromisoformat(calls[i-1]["created_at"].replace("Z", "+00:00")) + timedelta(seconds=calls[i-1].get("duration_seconds") or 0)
+            gap = get_active_overlap(prev_call_end, call_start)
+            
+        blocks.append({
+            "start": call["created_at"],
+            "duration_seconds": call.get("duration_seconds") or 0,
+            "lead_name": (call.get("leads") or {}).get("name") or "Unknown",
+            "outcome": call.get("outcome"),
+            "gap_before_seconds": round(gap)
+        })
+        
+    return {"timeline": blocks}
+
+
+@router.get("/qa-queue")
+async def qa_queue(
+    limit: int = Query(20, ge=1, le=100),
+    ctx: dict = Depends(require_owner),
+):
+    tenant_id = ctx["tenant_id"]
+    db = get_supabase()
+    
+    res = (
+        db.table("call_logs")
+        .select("id,created_at,duration_seconds,outcome,recording_url,transcript,ai_summary,evaluation,lead_id,caller_id,leads(name,phone)")
+        .eq("tenant_id", tenant_id)
+        .not_.is_("evaluation", "null")
+        .order("created_at", desc=True)
+        .limit(200)
+        .execute()
+    ).data or []
+    
+    valid_calls = []
+    for call in res:
+        eval_data = call.get("evaluation")
+        if isinstance(eval_data, dict) and "overall_score" in eval_data:
+            try:
+                call["overall_score"] = float(eval_data["overall_score"])
+                valid_calls.append(call)
+            except (ValueError, TypeError):
+                pass
+                
+    valid_calls.sort(key=lambda x: x["overall_score"])
+    return {"queue": valid_calls[:limit]}
+
+
+@router.get("/telecalling/export")
+async def export_telecalling(
+    ctx: dict = Depends(require_owner)
+):
+    tenant_id = ctx["tenant_id"]
+    db = get_supabase()
+    
+    now = datetime.now(timezone.utc)
+    start_date = (now - timedelta(days=90)).isoformat()
+    
+    rows = (
+        db.table("call_logs")
+        .select("id,created_at,caller_id,lead_id,duration_seconds,outcome,disposition,status,recording_url,score,transcript,ai_summary,evaluation,callers(name),leads(name,phone)")
+        .eq("tenant_id", tenant_id)
+        .gte("created_at", start_date)
+        .order("created_at", desc=True)
+        .limit(5000)
+        .execute()
+    ).data or []
+    
+    output = io.StringIO()
+    fieldnames = [
+        "call_log_id", "created_at", "caller_id", "caller_name",
+        "lead_id", "lead_name", "lead_phone", "duration_seconds",
+        "outcome", "disposition", "status", "recording_url", "score",
+        "overall_score"
+    ]
+    
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    
+    for row in rows:
+        eval_data = row.get("evaluation")
+        overall_score = None
+        if isinstance(eval_data, dict) and "overall_score" in eval_data:
+            overall_score = eval_data.get("overall_score")
+            
+        writer.writerow({
+            "call_log_id": row["id"],
+            "created_at": row["created_at"],
+            "caller_id": row.get("caller_id") or "",
+            "caller_name": (row.get("callers") or {}).get("name") or "",
+            "lead_id": row.get("lead_id") or "",
+            "lead_name": (row.get("leads") or {}).get("name") or "",
+            "lead_phone": (row.get("leads") or {}).get("phone") or "",
+            "duration_seconds": row.get("duration_seconds") or 0,
+            "outcome": row.get("outcome") or "",
+            "disposition": row.get("disposition") or "",
+            "status": row.get("status") or "",
+            "recording_url": row.get("recording_url") or "",
+            "score": row.get("score") or "",
+            "overall_score": overall_score or ""
+        })
+        
+    filename = f"telecalling_calls_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode()),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @router.get("/funnel")

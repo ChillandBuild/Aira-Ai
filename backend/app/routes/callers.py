@@ -4,8 +4,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from app.db.supabase import get_supabase
-from app.dependencies.tenant import get_tenant_id, get_tenant_and_role
-from app.services.assignment import is_round_robin_enabled, set_round_robin_enabled, reassign_backlog, get_telecalling_config
+from app.dependencies.tenant import get_tenant_id, get_tenant_and_role, require_owner
+from app.services.assignment import (
+    is_round_robin_enabled,
+    set_round_robin_enabled,
+    reassign_backlog,
+    get_telecalling_config,
+    save_telecalling_config,
+)
 from app.services.call_coach import coaching_tip
 from app.services.call_scorer import MIN_MONTHLY_CALLS
 
@@ -454,6 +460,41 @@ async def update_caller(caller_id: UUID, payload: UpdateCaller, tenant_id: str =
     return result.data[0]
 
 
+class TargetUpdate(BaseModel):
+    target: int
+
+
+@router.patch("/{caller_id}/target")
+async def update_caller_target(
+    caller_id: UUID,
+    payload: TargetUpdate,
+    ctx: dict = Depends(require_owner)
+):
+    tenant_id = ctx["tenant_id"]
+    db = get_supabase()
+    
+    # Optional: check if caller exists and belongs to tenant
+    caller = (
+        db.table("callers")
+        .select("id")
+        .eq("id", str(caller_id))
+        .eq("tenant_id", tenant_id)
+        .eq("active", True)
+        .maybe_single()
+        .execute()
+    )
+    if not caller.data:
+        raise HTTPException(status_code=404, detail="Caller not found")
+        
+    cfg = get_telecalling_config(tenant_id)
+    if "targets" not in cfg or cfg["targets"] is None:
+        cfg["targets"] = {}
+    cfg["targets"][str(caller_id)] = payload.target
+    save_telecalling_config(tenant_id, cfg)
+    
+    return {"caller_id": caller_id, "target": payload.target}
+
+
 @router.delete("/{caller_id}")
 async def delete_caller(caller_id: UUID, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()
@@ -620,5 +661,65 @@ async def get_coaching(caller_id: UUID, tenant_id: str = Depends(get_tenant_id))
         raise HTTPException(status_code=404, detail="Caller not found")
     tip = await coaching_tip(str(caller_id))
     return {"caller_id": str(caller_id), "tip": tip}
+
+
+@router.get("/my-calls-today")
+async def my_calls_today(
+    ctx: dict = Depends(get_tenant_and_role)
+):
+    tenant_id = ctx["tenant_id"]
+    caller_id = ctx.get("caller_id")
+    if not caller_id:
+        raise HTTPException(status_code=400, detail="Caller profile not found for current user")
+        
+    db = get_supabase()
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    
+    result = (
+        db.table("call_logs")
+        .select("id,lead_id,call_sid,duration_seconds,outcome,recording_url,score,status,ai_summary,transcript,created_at,leads(phone,name)")
+        .eq("caller_id", caller_id)
+        .eq("tenant_id", tenant_id)
+        .gte("created_at", today_start)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return {"data": result.data or []}
+
+
+@router.get("/my-performance")
+async def my_performance(
+    ctx: dict = Depends(get_tenant_and_role)
+):
+    tenant_id = ctx["tenant_id"]
+    caller_id = ctx.get("caller_id")
+    if not caller_id:
+        raise HTTPException(status_code=400, detail="Caller profile not found for current user")
+        
+    db = get_supabase()
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    
+    achieved_res = (
+        db.table("call_logs")
+        .select("id", count="exact")
+        .eq("caller_id", caller_id)
+        .eq("tenant_id", tenant_id)
+        .gte("created_at", today_start)
+        .execute()
+    )
+    achieved = achieved_res.count or 0
+    
+    cfg = get_telecalling_config(tenant_id)
+    targets = cfg.get("targets") or {}
+    target = targets.get(str(caller_id)) or targets.get(caller_id) or 0
+    scripts = cfg.get("scripts") or {}
+    
+    return {
+        "achieved": achieved,
+        "target": target,
+        "scripts": scripts
+    }
 
 
