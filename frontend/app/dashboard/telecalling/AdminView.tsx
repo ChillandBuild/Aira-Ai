@@ -2,10 +2,10 @@
 import { toast } from "sonner";
 import { useEffect, useState, useCallback } from "react";
 import {
-  Phone, ToggleLeft, ToggleRight, RefreshCw, TrendingUp,
+  Phone, RefreshCw, TrendingUp,
   Users, Coffee, ChevronDown, Settings, Eye, X, Calendar, Copy, Tag, Target, StickyNote, Clock, ClipboardList
 } from "lucide-react";
-import { api, Caller, Lead, API_URL, getAuthHeaders } from "@/lib/api";
+import { api, Caller, Lead } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import LiveNotesPane from "./components/live-notes-pane";
 import AssignmentLog from "./components/assignment-log";
@@ -30,8 +30,6 @@ function ScoreBar({ score }: { score: number }) {
 export default function AdminView() {
   const [callers, setCallers] = useState<Caller[]>([]);
   const [selectedCallerId, setSelectedCallerId] = useState<string | null>(null);
-  const [roundRobinEnabled, setRoundRobinEnabled] = useState<boolean | null>(null);
-  const [togglingRR, setTogglingRR] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [tab, setTab] = useState<"dialer" | "log">("dialer");
 
@@ -85,15 +83,12 @@ export default function AdminView() {
 
   const loadData = useCallback(async () => {
     try {
-      const auth = await getAuthHeaders();
-      const [rows, rrRes, leads, stats] = await Promise.all([
+      const [rows, leads, stats] = await Promise.all([
         api.callers.list(),
-        fetch(`${API_URL}/api/v1/callers/round-robin`, { headers: auth }).then(r => r.json()),
         api.leads.list({ limit: 5 }),
         api.calls.statsToday().catch(() => ({ calls_today: 0, conversions_today: 0 })),
       ]);
       setCallers(rows);
-      setRoundRobinEnabled(rrRes.enabled ?? true);
       setTopLeads(leads);
       setTotalCallsToday(stats.calls_today);
       setTotalConversionsToday(stats.conversions_today);
@@ -113,22 +108,6 @@ export default function AdminView() {
       setTimelineData(data);
     } catch { setTimelineData(null); }
     finally { setTimelineLoading(false); }
-  }
-
-  async function toggleRoundRobin() {
-    if (roundRobinEnabled === null) return;
-    setTogglingRR(true);
-    try {
-      const auth = await getAuthHeaders();
-      await fetch(`${API_URL}/api/v1/callers/round-robin`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...auth },
-        body: JSON.stringify({ enabled: !roundRobinEnabled }),
-      });
-      setRoundRobinEnabled(!roundRobinEnabled);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Toggle failed");
-    } finally { setTogglingRR(false); }
   }
 
   async function manualDial() {
@@ -198,22 +177,6 @@ export default function AdminView() {
               <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-muted pointer-events-none" />
             </div>
           </div>
-
-          {/* Auto-assign toggle */}
-          {roundRobinEnabled !== null && (
-            <div>
-              <label className="block font-label text-[10px] text-on-surface-muted uppercase tracking-widest mb-1">Auto-assign</label>
-              <button onClick={toggleRoundRobin} disabled={togglingRR}
-                className={`flex items-center gap-2 px-3 py-2 rounded-xl font-label text-sm font-semibold transition-all border ${
-                  roundRobinEnabled
-                    ? "bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100"
-                    : "bg-gray-100 text-gray-400 border-gray-200 hover:bg-gray-200"
-                } ${togglingRR ? "opacity-60 cursor-not-allowed" : ""}`}>
-                {roundRobinEnabled ? <ToggleRight size={16} className="text-teal-600" /> : <ToggleLeft size={16} className="text-gray-400" />}
-                {roundRobinEnabled ? <span className="text-teal-600">ON</span> : <span className="text-gray-400">OFF</span>}
-              </button>
-            </div>
-          )}
 
           {/* Telecalling routing config */}
           <div>
