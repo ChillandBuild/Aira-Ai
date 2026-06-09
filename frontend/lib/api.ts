@@ -687,10 +687,10 @@ export const api = {
       }>(`/api/v1/callers/winners`),
   },
   calls: {
-    initiate: (target: { leadId?: string; phone?: string }, callerId?: string) =>
+    initiate: (target: { leadId?: string; phone?: string; callbackJobId?: string }, callerId?: string) =>
       apiFetch<{ call_log_id: string; call_sid: string; status: string; lead_id: string | null; lead_name: string | null }>(
         `/api/v1/calls/initiate`,
-        { method: "POST", body: JSON.stringify({ lead_id: target.leadId, phone: target.phone, caller_id: callerId }) }
+        { method: "POST", body: JSON.stringify({ lead_id: target.leadId, phone: target.phone, caller_id: callerId, callback_job_id: target.callbackJobId }) }
       ),
     setOutcome: (callLogId: string, outcome: NonNullable<CallLog["outcome"]>, callbackTime?: string) =>
       apiFetch<{

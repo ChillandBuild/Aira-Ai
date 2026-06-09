@@ -35,6 +35,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [selectedLeadNotes, setSelectedLeadNotes] = useState<NotesResponse | null>(null);
   const [selectedLeadLoading, setSelectedLeadLoading] = useState(false);
+  const [selectedCallbackJobId, setSelectedCallbackJobId] = useState<string | null>(null);
 
   // dialing
   const [dialing, setDialing] = useState<string | null>(null);
@@ -95,6 +96,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     if (!selectedLeadId) {
       setSelectedLead(null);
       setSelectedLeadNotes(null);
+      setSelectedCallbackJobId(null);
       return;
     }
     setSelectedLeadLoading(true);
@@ -115,6 +117,20 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
         setSelectedLeadLoading(false);
       });
   }, [selectedLeadId]);
+
+  // Auto-link pending callback job for selected lead
+  useEffect(() => {
+    if (selectedLeadId && todayCallbacks.length > 0) {
+      const cb = todayCallbacks.find((c) => c.lead.id === selectedLeadId && c.status === "pending");
+      if (cb) {
+        setSelectedCallbackJobId(cb.id);
+      } else {
+        setSelectedCallbackJobId(null);
+      }
+    } else {
+      setSelectedCallbackJobId(null);
+    }
+  }, [selectedLeadId, todayCallbacks]);
 
   // actions
   async function toggleMyStatus() {
@@ -149,7 +165,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     if (!myCaller) { toast.error("Caller profile not found"); return; }
     setDialing(leadId);
     try {
-      const res = await api.calls.initiate({ leadId }, myCaller.id);
+      const res = await api.calls.initiate({ leadId, callbackJobId: selectedCallbackJobId ?? undefined }, myCaller.id);
       setActiveCallCtx({
         leadId: res.lead_id ?? leadId,
         name: res.lead_name ?? lead.name,

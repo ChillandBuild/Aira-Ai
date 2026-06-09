@@ -75,7 +75,7 @@ export default function ScheduledCallsPage() {
       const callers = await api.callers.list();
       const me = callers[0]; // first available
       if (!me) { toast.error("No caller profile found"); return; }
-      const res = await api.calls.initiate({ leadId: cb.lead_id }, me.id);
+      const res = await api.calls.initiate({ leadId: cb.lead_id, callbackJobId: cb.id }, me.id);
       setActiveCallCtx({
         leadId: res.lead_id ?? cb.lead_id,
         name: res.lead_name ?? cb.lead.name ?? null,

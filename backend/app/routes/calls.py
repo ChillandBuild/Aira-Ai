@@ -2,7 +2,7 @@ import asyncio
 import hmac
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Literal
 from uuid import UUID
 import httpx
@@ -42,6 +42,8 @@ class InitiateCall(BaseModel):
     lead_id: UUID | None = None
     phone: str | None = None      # manual dial — provide either lead_id or phone
     caller_id: UUID | None = None
+    callback_job_id: UUID | None = None
+
 
 
 class OutcomeUpdate(BaseModel):
@@ -123,6 +125,7 @@ async def initiate_call(payload: InitiateCall, ctx: dict = Depends(get_tenant_an
         "caller_id": str(payload.caller_id) if payload.caller_id else None,
         "status": "initiated",
         "tenant_id": tenant_id,
+        "follow_up_job_id": str(payload.callback_job_id) if payload.callback_job_id else None,
     }).execute()
     call_log_id = log_insert.data[0]["id"]
 
@@ -447,7 +450,7 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depe
     db = get_supabase()
     log = (
         db.table("call_logs")
-        .select("caller_id,duration_seconds,lead_id")
+        .select("caller_id,duration_seconds,lead_id,follow_up_job_id")
         .eq("id", call_log_id)
         .eq("tenant_id", ctx["tenant_id"])
         .maybe_single()
@@ -540,20 +543,36 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depe
                     lead_data.get("segment") or target_segment, None,
                     reason=f"call_{effective_outcome}",
                 )
-            if effective_outcome == "callback" and payload.callback_time:
-                job = (
-                    db.table("follow_up_jobs")
-                    .select("id")
-                    .eq("lead_id", str(lead_id))
-                    .eq("status", "pending")
-                    .order("scheduled_for")
-                    .limit(1)
-                    .execute()
-                )
-                if job.data:
+            linked_job_id = log.data.get("follow_up_job_id")
+            if effective_outcome == "callback":
+                # Use the caller-specified time, or default to +24h so a callback
+                # is always a real future job — never left overdue, which would
+                # otherwise trip the missed-callback escalation immediately.
+                target_time = (payload.callback_time or (datetime.now(timezone.utc) + timedelta(days=1))).isoformat()
+                target_job_id = linked_job_id
+                if not target_job_id:
+                    # Fallback to the earliest pending job if the call wasn't linked (e.g. manual dial)
+                    job = (
+                        db.table("follow_up_jobs")
+                        .select("id")
+                        .eq("lead_id", str(lead_id))
+                        .eq("status", "pending")
+                        .order("scheduled_for")
+                        .limit(1)
+                        .execute()
+                    )
+                    target_job_id = job.data[0]["id"] if job.data else None
+                if target_job_id:
                     db.table("follow_up_jobs").update({
-                        "scheduled_for": payload.callback_time.isoformat(),
-                    }).eq("id", job.data[0]["id"]).execute()
+                        "scheduled_for": target_time,
+                    }).eq("id", target_job_id).eq("tenant_id", ctx["tenant_id"]).execute()
+            elif effective_outcome is not None:
+                # If outcome is something else (e.g. converted, not_interested, no_answer) and we have a linked job, resolve it!
+                if linked_job_id:
+                    db.table("follow_up_jobs").update({
+                        "status": "sent",
+                        "sent_at": datetime.now(timezone.utc).isoformat(),
+                    }).eq("id", linked_job_id).eq("tenant_id", ctx["tenant_id"]).execute()
 
     return {
         "call_log_id": call_log_id,

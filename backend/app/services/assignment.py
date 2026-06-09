@@ -111,6 +111,7 @@ def auto_assign_lead(
     event_type: str = "assigned",
     prev_caller_id: str | None = None,
     prev_caller_name: str | None = None,
+    exclude_caller_ids: list[str] | None = None,
 ) -> str | None:
     """
     Assign lead to the active caller with the fewest OPEN leads (least-loaded
@@ -143,6 +144,9 @@ def auto_assign_lead(
     )
     if owner_user_id:
         query = query.neq("user_id", owner_user_id)
+    if exclude_caller_ids:
+        for cid in exclude_caller_ids:
+            query = query.neq("id", cid)
     callers = query.execute()
     if not callers.data:
         return None

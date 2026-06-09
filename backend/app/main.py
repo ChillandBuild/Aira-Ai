@@ -205,19 +205,21 @@ async def _sweep_unassigned_leads() -> None:
 
 
 async def _process_callback_reassignments() -> None:
-    """APScheduler job: reassign overdue callbacks from non-active callers."""
+    """APScheduler job: reassign overdue callbacks from non-active callers and handle missed callbacks."""
     try:
         from app.db.supabase import get_supabase
+        from app.services.assignment import auto_assign_lead
         db = get_supabase()
         now = datetime.now(timezone.utc)
-        cutoff = (now - timedelta(minutes=30)).isoformat()
+        cutoff_reassign = (now - timedelta(minutes=30)).isoformat()
+        cutoff_escalate = (now - timedelta(minutes=60)).isoformat()
 
         overdue = (
             db.table("follow_up_jobs")
             .select("id,lead_id,tenant_id,scheduled_for")
             .eq("cadence", "callback")
             .eq("status", "pending")
-            .lte("scheduled_for", cutoff)
+            .lte("scheduled_for", cutoff_reassign)
             .limit(50)
             .execute()
         )
@@ -228,32 +230,105 @@ async def _process_callback_reassignments() -> None:
             try:
                 lead = (
                     db.table("leads")
-                    .select("id,name,assigned_to,tenant_id")
+                    .select("id,name,assigned_to,tenant_id,segment,score")
                     .eq("id", job["lead_id"])
                     .maybe_single()
                     .execute()
                 )
-                if not lead or not lead.data or not lead.data.get("assigned_to"):
+                if not lead or not lead.data:
                     continue
 
-                current_caller_id = lead.data["assigned_to"]
+                current_caller_id = lead.data.get("assigned_to")
                 tid = job["tenant_id"]
                 scheduled_for_str = job["scheduled_for"]
                 lead_name = lead.data.get("name") or "Unknown"
 
-                # Check if the assigned caller is active
-                caller = (
-                    db.table("callers")
-                    .select("id,name,status")
-                    .eq("id", current_caller_id)
-                    .maybe_single()
-                    .execute()
-                )
-                if caller and caller.data and caller.data.get("status") == "active":
-                    continue  # caller is active, no reassignment needed
+                # Check caller details
+                caller = None
+                caller_status = "logged_out"
+                old_caller_name = "Unknown"
+                if current_caller_id:
+                    caller_res = (
+                        db.table("callers")
+                        .select("id,name,status,user_id")
+                        .eq("id", current_caller_id)
+                        .maybe_single()
+                        .execute()
+                    )
+                    if caller_res and caller_res.data:
+                        caller = caller_res
+                        caller_status = caller_res.data.get("status") or "logged_out"
+                        old_caller_name = caller_res.data.get("name") or "Unknown"
 
-                old_caller_name = caller.data.get("name", "Unknown") if caller and caller.data else "Unknown"
+                # Check if the scheduled_for time is overdue by 60 mins
+                is_escalate_overdue = job["scheduled_for"] <= cutoff_escalate
 
+                if caller_status == "active":
+                    # Caller is active. Check if they missed the 60m escalation window
+                    if is_escalate_overdue:
+                        # Skip if currently on a live call
+                        is_on_call = False
+                        if current_caller_id:
+                            live_call_res = (
+                                db.table("call_logs")
+                                .select("id")
+                                .eq("caller_id", current_caller_id)
+                                .in_("status", ["initiated", "in_progress"])
+                                .limit(1)
+                                .execute()
+                            )
+                            if live_call_res and live_call_res.data:
+                                is_on_call = True
+
+                        if is_on_call:
+                            continue  # skip escalation for now
+
+                        # Escalate/flag
+                        db.table("leads").update({
+                            "needs_human_attention": True,
+                            "needs_human_intervention": True,
+                            "escalation_reason": "Callback missed (caller online but did not call)",
+                            "ai_enabled": False,
+                        }).eq("id", job["lead_id"]).eq("tenant_id", tid).execute()
+
+                        db.table("follow_up_jobs").update({
+                            "status": "failed",
+                            "last_error": "Callback missed (caller online but did not call)",
+                        }).eq("id", job["id"]).eq("tenant_id", tid).execute()
+
+                        # Notifications
+                        owner = (
+                            db.table("tenant_users")
+                            .select("user_id")
+                            .eq("tenant_id", tid)
+                            .eq("role", "owner")
+                            .limit(1)
+                            .execute()
+                        )
+                        owner_user_id = (owner.data[0] if owner.data else {}).get("user_id")
+
+                        if caller and caller.data.get("user_id"):
+                            db.table("app_notifications").insert({
+                                "tenant_id": tid,
+                                "user_id": caller.data["user_id"],
+                                "type": "missed_callback",
+                                "title": "Missed Callback",
+                                "message": f"You missed a scheduled callback for '{lead_name}'."
+                            }).execute()
+
+                        if owner_user_id:
+                            db.table("app_notifications").insert({
+                                "tenant_id": tid,
+                                "user_id": owner_user_id,
+                                "type": "missed_callback",
+                                "title": "Missed Callback Alert",
+                                "message": f"Caller {old_caller_name} missed a scheduled callback for '{lead_name}'."
+                            }).execute()
+
+                        logger.info(f"Callback missed escalation: job={job['id']} lead={job['lead_id']} caller={current_caller_id}")
+                    continue
+
+                # Caller is inactive (break/logged_out). Reassign to other active callers.
                 # Fetch all active callers in the same tenant (excluding current)
                 active_callers_res = (
                     db.table("callers")
@@ -266,7 +341,7 @@ async def _process_callback_reassignments() -> None:
                 )
                 active_callers = active_callers_res.data or []
 
-                # Parse scheduled_for to check +/- 30m window
+                # Parse scheduled_for to check ±30m window
                 try:
                     job_time = datetime.fromisoformat(scheduled_for_str.replace("Z", "+00:00"))
                     window_start = (job_time - timedelta(minutes=30)).isoformat()
@@ -302,54 +377,54 @@ async def _process_callback_reassignments() -> None:
                             if lc.get("assigned_to"):
                                 conflicting_caller_ids.add(lc["assigned_to"])
 
-                available_callers = [c for c in active_callers if c["id"] not in conflicting_caller_ids]
-                
-                new_caller = None
-                new_caller_name = "Admin/Owner"
-                if available_callers:
-                    import random
-                    new_caller = random.choice(available_callers)
-                    new_caller_name = new_caller.get("name") or "another caller"
-                else:
-                    # Fallback: assign to tenant owner
-                    owner = (
-                        db.table("tenant_users")
-                        .select("user_id")
-                        .eq("tenant_id", tid)
-                        .eq("role", "owner")
+                exclude_ids = list(conflicting_caller_ids)
+                if current_caller_id and current_caller_id not in exclude_ids:
+                    exclude_ids.append(current_caller_id)
+
+                # Reassign using auto_assign_lead which writes the reassignment event log
+                new_caller_id = auto_assign_lead(
+                    lead_id=job["lead_id"],
+                    tenant_id=tid,
+                    reason="caller_unavailable",
+                    segment=lead.data.get("segment"),
+                    score=lead.data.get("score"),
+                    event_type="reassigned",
+                    prev_caller_id=current_caller_id,
+                    prev_caller_name=old_caller_name,
+                    exclude_caller_ids=exclude_ids,
+                )
+
+                if new_caller_id:
+                    # Restart the callback clock for the new caller: measure the
+                    # 60m missed-callback escalation from reassignment, not the
+                    # original (already-overdue) time, so the new caller gets a
+                    # fair window and the job shows as due-now for them.
+                    db.table("follow_up_jobs").update({
+                        "scheduled_for": now.isoformat(),
+                    }).eq("id", job["id"]).eq("tenant_id", tid).execute()
+
+                    # Reassigned successfully
+                    new_caller = (
+                        db.table("callers")
+                        .select("name,user_id")
+                        .eq("id", new_caller_id)
                         .maybe_single()
                         .execute()
                     )
-                    if owner and owner.data:
-                        owner_caller = (
-                            db.table("callers")
-                            .select("id,user_id")
-                            .eq("user_id", owner.data["user_id"])
-                            .eq("tenant_id", tid)
-                            .maybe_single()
-                            .execute()
-                        )
-                        if owner_caller and owner_caller.data:
-                            new_caller = owner_caller.data
+                    new_caller_name = (new_caller.data or {}).get("name") if new_caller else "another caller"
+                    new_user_id = (new_caller.data or {}).get("user_id") if new_caller else None
 
-                if new_caller and new_caller["id"] != current_caller_id:
-                    # Reassign lead
-                    db.table("leads").update(
-                        {"assigned_to": new_caller["id"]}
-                    ).eq("id", job["lead_id"]).execute()
-                    
-                    # Send notification to the NEW caller (if they have a user account)
-                    if new_caller.get("user_id"):
+                    # Send notifications
+                    if new_user_id:
                         db.table("app_notifications").insert({
                             "tenant_id": tid,
-                            "user_id": new_caller["user_id"],
+                            "user_id": new_user_id,
                             "type": "reassignment",
                             "title": "Lead Reassigned To You",
                             "message": f"Lead '{lead_name}' has been switched to you because '{old_caller_name}' was not available."
                         }).execute()
 
-                    # Send notification to the OLD caller
-                    if caller and caller.data and caller.data.get("user_id"):
+                    if caller and caller.data.get("user_id"):
                         db.table("app_notifications").insert({
                             "tenant_id": tid,
                             "user_id": caller.data["user_id"],
@@ -360,8 +435,43 @@ async def _process_callback_reassignments() -> None:
 
                     logger.info(
                         f"Callback reassignment: job={job['id']} lead={job['lead_id']} "
-                        f"from={current_caller_id} to={new_caller['id']}"
+                        f"from={current_caller_id} to={new_caller_id}"
                     )
+                elif is_escalate_overdue:
+                    # Reassignment failed and >= 60 mins overdue. Escalate!
+                    db.table("leads").update({
+                        "needs_human_attention": True,
+                        "needs_human_intervention": True,
+                        "escalation_reason": "Callback missed (caller unavailable, no active callers for reassignment)",
+                        "ai_enabled": False,
+                    }).eq("id", job["lead_id"]).eq("tenant_id", tid).execute()
+
+                    db.table("follow_up_jobs").update({
+                        "status": "failed",
+                        "last_error": "Callback missed (caller unavailable, no active callers for reassignment)",
+                    }).eq("id", job["id"]).eq("tenant_id", tid).execute()
+
+                    # Find owner to notify
+                    owner = (
+                        db.table("tenant_users")
+                        .select("user_id")
+                        .eq("tenant_id", tid)
+                        .eq("role", "owner")
+                        .limit(1)
+                        .execute()
+                    )
+                    owner_user_id = (owner.data[0] if owner.data else {}).get("user_id")
+                    if owner_user_id:
+                        db.table("app_notifications").insert({
+                            "tenant_id": tid,
+                            "user_id": owner_user_id,
+                            "type": "missed_callback",
+                            "title": "Missed Callback Alert",
+                            "message": f"Callback for '{lead_name}' was missed because '{old_caller_name}' was unavailable, and no other active callers could be reassigned."
+                        }).execute()
+
+                    logger.info(f"Callback missed escalation (no active callers): job={job['id']} lead={job['lead_id']}")
+
             except Exception as e:
                 logger.error(f"Callback reassignment failed for job {job['id']}: {e}")
     except Exception as e:
