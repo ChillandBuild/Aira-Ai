@@ -295,11 +295,15 @@ async def telecmi_cdr(request: Request, background_tasks: BackgroundTasks):
         appid = cdr.get("appid")
         secret = get_setting("telecmi_secret", tenant_id=log_row.data.get("tenant_id")) or settings.telecmi_secret
         if appid and secret:
+            # This play URL embeds the TeleCMI secret token, so it must NOT be
+            # persisted. Pass it only to the background task, which downloads the
+            # file and re-stores it in Supabase Storage, then writes the Supabase
+            # URL to recording_url. On failure recording_url stays null rather
+            # than leaking the secret into the DB / frontend.
             full_url = (
                 f"https://piopiy.telecmi.com/v1/play"
                 f"?appid={appid}&token={secret}&file={recording_filename}"
             )
-            updates["recording_url"] = full_url
             background_tasks.add_task(_process_telecmi_recording, call_log_id, full_url)
 
     if updates:
