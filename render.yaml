@@ -24,5 +24,6 @@ services:
         sync: false
       - key: PUBLIC_BASE_URL
         sync: false
-      - key: REDIS_URL
+      - key: SENTRY_DSN
         sync: false
+
