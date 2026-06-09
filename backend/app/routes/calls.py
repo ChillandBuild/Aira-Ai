@@ -483,7 +483,7 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depe
     if lead_id and effective_outcome is not None:
         lead = (
             db.table("leads")
-            .select("segment,phone,ai_enabled,converted_at,tenant_id")
+            .select("segment,phone,ai_enabled,converted_at,tenant_id,assigned_to")
             .eq("id", str(lead_id))
             .maybe_single()
             .execute()
@@ -530,6 +530,16 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depe
                 tenant_id=lead_data.get("tenant_id"),
                 db=db,
             )
+            # A call can promote an unassigned lead into a qualifying segment
+            # (e.g. owner-dialed lead asks for a callback → B). Converted leads
+            # are closed, so they are never queued for telecalling.
+            if effective_outcome != "converted" and not lead_data.get("assigned_to"):
+                from app.services.assignment import maybe_assign_lead
+                maybe_assign_lead(
+                    str(lead_id), ctx["tenant_id"],
+                    lead_data.get("segment") or target_segment, None,
+                    reason=f"call_{effective_outcome}",
+                )
             if effective_outcome == "callback" and payload.callback_time:
                 job = (
                     db.table("follow_up_jobs")

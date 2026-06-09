@@ -8,7 +8,7 @@ from app.dependencies.auth import get_current_user
 
 import os
 from app.config import settings
-from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team, media, todos, bookings, conversations, operator, chat_handovers, telegram, instagram, facebook, automations, tags, inbound_leads, reengagement, notifications
+from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team, media, todos, bookings, conversations, operator, chat_handovers, telegram, instagram, facebook, automations, tags, inbound_leads, reengagement, notifications, assignment_log
 from app.routes.calls import public_router as calls_public_router
 
 # Configure logging
@@ -192,6 +192,16 @@ async def _process_reengagement_rules() -> None:
             logger.info(f"Re-engagement scheduler: processed {count} re-engagement message(s)")
     except Exception as e:
         logger.error(f"Re-engagement scheduler error: {e}")
+
+
+async def _sweep_unassigned_leads() -> None:
+    """APScheduler job: state-based safety net that assigns any unassigned lead
+    whose current segment qualifies under the tenant's telecalling_config."""
+    try:
+        from app.services.assignment import sweep_unassigned_leads
+        sweep_unassigned_leads()
+    except Exception as e:
+        logger.error(f"Assignment sweep scheduler error: {e}")
 
 
 async def _process_callback_reassignments() -> None:
@@ -410,8 +420,15 @@ async def lifespan(app: FastAPI):
         id="callback-reassignment",
         replace_existing=True,
     )
+    _scheduler.add_job(
+        _sweep_unassigned_leads,
+        trigger="interval",
+        minutes=2,
+        id="assignment-sweep",
+        replace_existing=True,
+    )
     _scheduler.start()
-    logger.info("Schedulers started: automation(5m) + broadcasts(1m) + token-health(24h) + engagement-decay(6h) + reengagement(1m) + callback-reassignment(1m)")
+    logger.info("Schedulers started: automation(5m) + broadcasts(1m) + token-health(24h) + engagement-decay(6h) + reengagement(1m) + callback-reassignment(1m) + assignment-sweep(2m)")
 
     yield
 
@@ -560,5 +577,6 @@ app.include_router(tags.router, prefix="/api/v1/broadcast-tags", tags=["broadcas
 app.include_router(inbound_leads.router, prefix="/api/v1/inbound-leads", tags=["inbound-leads"], dependencies=_auth)
 app.include_router(reengagement.router, prefix="/api/v1/reengagement", tags=["reengagement"], dependencies=_auth)
 app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["notifications"], dependencies=_auth)
+app.include_router(assignment_log.router, prefix="/api/v1/assignment-log", tags=["assignment-log"], dependencies=_auth)
 
 

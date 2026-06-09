@@ -138,8 +138,8 @@ async def instagram_webhook(tenant_id: str, request: Request, background_tasks: 
                     db=db
                 )
                 try:
-                    from app.services.assignment import auto_assign_lead
-                    auto_assign_lead(lead_id, tenant_id)
+                    from app.services.assignment import maybe_assign_lead
+                    maybe_assign_lead(lead_id, tenant_id, "C", "instagram", reason="created")
                 except Exception as e:
                     logger.warning(f"Auto-assign failed for Instagram lead {lead_id}: {e}")
                 fire_trigger(background_tasks, lead_id, tenant_id, "lead_created", db=db)

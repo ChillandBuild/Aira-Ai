@@ -608,15 +608,24 @@ async def _execute_step(
     if step_type == "assign_lead":
         mode = config.get("mode", "round_robin")
         try:
+            from app.services.assignment import auto_assign_lead, record_assignment_event
             if mode == "specific":
                 caller_id = config.get("caller_id")
                 if caller_id:
-                    db.table("leads").update({"assigned_to": caller_id}).eq("id", lead_id).execute()
+                    db.table("leads").update({
+                        "assigned_to": caller_id,
+                        "assigned_at": datetime.now(timezone.utc).isoformat(),
+                    }).eq("id", lead_id).execute()
+                    cn = db.table("callers").select("name").eq("id", caller_id).eq("tenant_id", tenant_id).maybe_single().execute()
+                    record_assignment_event(
+                        lead_id, tenant_id=tenant_id, segment=lead_data.get("segment"),
+                        caller_id=caller_id, caller_name=(cn.data or {}).get("name") if cn else None,
+                        reason="bot_flow", method="specific", db=db,
+                    )
                     return {"status": "ok", "detail": f"assigned to {caller_id}"}
                 return {"status": "error", "detail": "no caller_id for specific mode"}
             else:
-                from app.services.assignment import auto_assign_lead
-                auto_assign_lead(lead_id, tenant_id)
+                auto_assign_lead(lead_id, tenant_id, reason="bot_flow", segment=lead_data.get("segment"))
                 return {"status": "ok", "detail": "round-robin assigned"}
         except Exception as e:
             return {"status": "error", "detail": str(e)}

@@ -479,6 +479,14 @@ async def update_lead(lead_id: UUID, updates: LeadUpdate, tenant_id: str = Depen
             tenant_id=tenant_id,
             db=db,
         )
+        # Manually moving a lead into a qualifying segment should queue it for
+        # telecalling, same as an AI-driven promotion.
+        if not updated.get("assigned_to") and not updated.get("converted_at"):
+            from app.services.assignment import maybe_assign_lead
+            maybe_assign_lead(
+                str(lead_id), tenant_id, updated.get("segment"), None,
+                reason="manual",
+            )
     sync_follow_up_jobs(
         str(lead_id),
         segment=updated.get("segment"),

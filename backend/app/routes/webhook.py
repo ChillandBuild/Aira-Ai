@@ -304,8 +304,8 @@ async def whatsapp_webhook(
                         lead_id = new_lead.data[0]["id"]
                         record_stage_event(lead_id, to_segment="C", event_type="created", metadata={"source": "whatsapp"}, tenant_id=tenant_id, db=db)
                         try:
-                            from app.services.assignment import auto_assign_lead
-                            auto_assign_lead(lead_id, tenant_id)
+                            from app.services.assignment import maybe_assign_lead
+                            maybe_assign_lead(lead_id, tenant_id, "C", "whatsapp", reason="created")
                         except Exception as e:
                             logger.warning(f"Auto-assign failed for lead {lead_id}: {e}")
                         fire_trigger(background_tasks, lead_id, tenant_id, "lead_created", db=db)

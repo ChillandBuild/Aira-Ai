@@ -3,11 +3,12 @@ import { toast } from "sonner";
 import { useEffect, useState, useCallback } from "react";
 import {
   Phone, ToggleLeft, ToggleRight, RefreshCw, TrendingUp,
-  Users, Coffee, ChevronDown, Settings, Eye, X, Calendar, Copy, Tag, Target, StickyNote, Clock
+  Users, Coffee, ChevronDown, Settings, Eye, X, Calendar, Copy, Tag, Target, StickyNote, Clock, ClipboardList
 } from "lucide-react";
 import { api, Caller, Lead, API_URL, getAuthHeaders } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import LiveNotesPane from "./components/live-notes-pane";
+import AssignmentLog from "./components/assignment-log";
 import { useActiveCall } from "../contexts/ActiveCallContext";
 import { TelecallingConfigPanel } from "../settings/TelecallingConfigPanel";
 import { fetchNotes } from "./lib/notes-api";
@@ -32,6 +33,7 @@ export default function AdminView() {
   const [roundRobinEnabled, setRoundRobinEnabled] = useState<boolean | null>(null);
   const [togglingRR, setTogglingRR] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
+  const [tab, setTab] = useState<"dialer" | "log">("dialer");
 
   const [totalCallsToday, setTotalCallsToday] = useState(0);
   const [totalConversionsToday, setTotalConversionsToday] = useState(0);
@@ -157,6 +159,22 @@ export default function AdminView() {
 
   return (
     <div>
+      {/* View tabs */}
+      <div className="mb-6 flex gap-2">
+        <button onClick={() => setTab("dialer")}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-label text-sm font-semibold transition-colors border ${tab === "dialer" ? "bg-primary/10 text-primary border-primary/20" : "bg-white text-on-surface-muted border-surface-mid hover:border-primary/30"}`}>
+          <Phone size={14} /> Dialer
+        </button>
+        <button onClick={() => setTab("log")}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-label text-sm font-semibold transition-colors border ${tab === "log" ? "bg-primary/10 text-primary border-primary/20" : "bg-white text-on-surface-muted border-surface-mid hover:border-primary/30"}`}>
+          <ClipboardList size={14} /> Assignment Log
+        </button>
+      </div>
+
+      {tab === "log" ? (
+        <AssignmentLog callers={callers} />
+      ) : (
+      <>
       {/* Header */}
       <div className="mb-8 flex items-center justify-between gap-4 flex-wrap">
         <div>
@@ -628,6 +646,8 @@ export default function AdminView() {
             )}
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );

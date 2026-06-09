@@ -202,7 +202,7 @@ async def _handle_escalate(db, lead: dict, tenant_id: str, reason: str = "autopi
     try:
         if get_setting("auto_assign_enabled", "false", tenant_id=tenant_id) == "true":
             from app.services.assignment import auto_assign_lead
-            assigned_to = auto_assign_lead(lead_id, tenant_id)
+            assigned_to = auto_assign_lead(lead_id, tenant_id, reason="autopilot", segment=lead.get("segment"))
     except Exception as e:
         logger.warning(f"autopilot auto-assign failed for lead {lead_id}: {e}")
     db.table("leads").update({

@@ -10,6 +10,7 @@ from app.services.segmentation import score_to_segment, parse_thresholds
 from app.services.knowledge_service import get_knowledge_context
 from app.services.assignment import (
     auto_assign_lead,
+    maybe_assign_lead,
     get_inbox_config,
     get_telecalling_config,
     should_escalate_hot_lead,
@@ -430,7 +431,7 @@ def _trigger_chat_escalation(
 
     # Round-robin auto-assign if no one is assigned yet
     if assigned_to is None and auto_assign:
-        assigned_to = auto_assign_lead(lead_id, tenant_id)
+        assigned_to = auto_assign_lead(lead_id, tenant_id, reason="escalation")
 
     db.table("leads").update({
         "needs_human_attention": True,
@@ -810,8 +811,11 @@ async def generate_reply(
                 logger.info(f"Lead {lead_id} unassigned after rejection")
             except Exception:
                 pass
-        if not lead_data.get("assigned_to") and new_segment != old_segment and should_assign_to_telecalling(telecalling_cfg, new_segment, channel):
-            assigned_caller = auto_assign_lead(str(lead_id), tenant_id)
+        if not lead_data.get("assigned_to"):
+            assigned_caller = maybe_assign_lead(
+                str(lead_id), tenant_id, new_segment, channel,
+                reason="scored", score=new_score,
+            )
             if assigned_caller:
                 lead_data["assigned_to"] = assigned_caller
 

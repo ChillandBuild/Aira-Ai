@@ -446,6 +446,23 @@ export interface TimelineEvent {
   lead_phone?: string;
 }
 
+export interface AssignmentLogEntry {
+  id: string;
+  lead_id: string | null;
+  lead_name: string | null;
+  lead_phone: string | null;
+  segment: string | null;
+  event_type: "assigned" | "reassigned";
+  caller_id: string | null;
+  caller_name: string | null;
+  prev_caller_name: string | null;
+  reason: string | null;
+  method: string | null;
+  score: number | null;
+  matched_segments: string[] | null;
+  created_at: string;
+}
+
 export const api = {
   leads: {
     list: async (params?: {
@@ -576,6 +593,39 @@ export const api = {
       const a = document.createElement("a");
       a.href = url;
       a.download = `my_assigned_leads.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    },
+  },
+  assignmentLog: {
+    list: async (params?: { page?: number; limit?: number; caller_id?: string; segment?: string; from_date?: string; to_date?: string }) => {
+      const qs = new URLSearchParams();
+      if (params?.page) qs.set("page", String(params.page));
+      if (params?.limit) qs.set("limit", String(params.limit));
+      if (params?.caller_id) qs.set("caller_id", params.caller_id);
+      if (params?.segment) qs.set("segment", params.segment);
+      if (params?.from_date) qs.set("from_date", params.from_date);
+      if (params?.to_date) qs.set("to_date", params.to_date);
+      return apiFetch<{ data: AssignmentLogEntry[]; meta: { total: number; page: number; limit: number } }>(`/api/v1/assignment-log?${qs.toString()}`);
+    },
+    summary: () =>
+      apiFetch<{ assigned_today: number; by_caller: Record<string, number>; by_segment: Record<string, number> }>(`/api/v1/assignment-log/summary`),
+    exportCsv: async (params?: { caller_id?: string; segment?: string; from_date?: string; to_date?: string }) => {
+      const headers = await getAuthHeaders();
+      const qs = new URLSearchParams({ format: "csv" });
+      if (params?.caller_id) qs.set("caller_id", params.caller_id);
+      if (params?.segment) qs.set("segment", params.segment);
+      if (params?.from_date) qs.set("from_date", params.from_date);
+      if (params?.to_date) qs.set("to_date", params.to_date);
+      const res = await fetch(`${API_URL}/api/v1/assignment-log?${qs.toString()}`, { headers });
+      if (!res.ok) throw new Error(`Export failed: ${res.status} ${res.statusText}`);
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "assignment-log.csv";
       document.body.appendChild(a);
       a.click();
       a.remove();

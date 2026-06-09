@@ -1,0 +1,201 @@
+"use client";
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
+import { Download, RefreshCw, ArrowRight, ClipboardList } from "lucide-react";
+import { api, Caller, AssignmentLogEntry } from "@/lib/api";
+import { formatPhone, timeAgo } from "@/lib/utils";
+
+const SEGMENT_LABEL: Record<string, string> = { A: "Hot", B: "Warm", C: "Cold", D: "Disqualified" };
+const SEGMENT_STYLE: Record<string, string> = {
+  A: "bg-red-50 text-red-600 border-red-200",
+  B: "bg-amber-50 text-amber-600 border-amber-200",
+  C: "bg-sky-50 text-sky-600 border-sky-200",
+  D: "bg-gray-100 text-gray-500 border-gray-200",
+};
+const REASON_LABEL: Record<string, string> = {
+  created: "On entry", scored: "Scored up", manual: "Manual edit",
+  sweep: "Sweep", bot_flow: "Bot flow", ai_agent: "AI agent",
+  autopilot: "Autopilot", call_callback: "Call → callback", call_converted: "Call → won",
+  caller_unavailable: "Caller away", backlog_claim: "Claimed on login",
+  escalation: "Escalation", round_robin: "Round-robin",
+};
+
+const PAGE_SIZE = 50;
+
+export default function AssignmentLog({ callers }: { callers: Caller[] }) {
+  const [entries, setEntries] = useState<AssignmentLogEntry[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  const [summary, setSummary] = useState<{ assigned_today: number; by_caller: Record<string, number>; by_segment: Record<string, number> } | null>(null);
+
+  const [callerFilter, setCallerFilter] = useState("");
+  const [segmentFilter, setSegmentFilter] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.assignmentLog.list({
+        page,
+        limit: PAGE_SIZE,
+        caller_id: callerFilter || undefined,
+        segment: segmentFilter || undefined,
+      });
+      setEntries(res.data || []);
+      setTotal(res.meta?.total || 0);
+    } catch {
+      toast.error("Failed to load assignment log");
+    } finally {
+      setLoading(false);
+    }
+  }, [page, callerFilter, segmentFilter]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { api.assignmentLog.summary().then(setSummary).catch(() => {}); }, []);
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      await api.assignmentLog.exportCsv({ caller_id: callerFilter || undefined, segment: segmentFilter || undefined });
+    } catch {
+      toast.error("Export failed");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  return (
+    <div>
+      {/* Summary cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div className="bg-surface rounded-card p-5 shadow-card ring-1 ring-[#c4c7c7]/15">
+          <div className="p-2 rounded-xl bg-primary/10 w-fit mb-2"><ClipboardList size={16} className="text-primary" /></div>
+          <span className="font-display text-3xl font-bold text-on-surface">{summary?.assigned_today ?? "—"}</span>
+          <span className="block font-label text-xs text-on-surface-muted mt-1">Assigned Today</span>
+        </div>
+        <div className="bg-surface rounded-card p-5 shadow-card ring-1 ring-[#c4c7c7]/15">
+          <span className="block font-label text-[10px] uppercase tracking-widest text-on-surface-muted mb-2">By Caller (today)</span>
+          <div className="space-y-1">
+            {summary && Object.keys(summary.by_caller).length > 0
+              ? Object.entries(summary.by_caller).slice(0, 4).map(([name, n]) => (
+                  <div key={name} className="flex justify-between font-body text-sm">
+                    <span className="text-on-surface truncate">{name}</span>
+                    <span className="font-semibold text-on-surface">{n}</span>
+                  </div>
+                ))
+              : <span className="font-body text-sm text-on-surface-muted">No assignments yet</span>}
+          </div>
+        </div>
+        <div className="bg-surface rounded-card p-5 shadow-card ring-1 ring-[#c4c7c7]/15">
+          <span className="block font-label text-[10px] uppercase tracking-widest text-on-surface-muted mb-2">By Segment (today)</span>
+          <div className="flex flex-wrap gap-2">
+            {summary && Object.keys(summary.by_segment).length > 0
+              ? Object.entries(summary.by_segment).map(([seg, n]) => (
+                  <span key={seg} className={`px-2 py-1 rounded-lg border font-label text-xs font-semibold ${SEGMENT_STYLE[seg] || SEGMENT_STYLE.C}`}>
+                    {SEGMENT_LABEL[seg] || seg}: {n}
+                  </span>
+                ))
+              : <span className="font-body text-sm text-on-surface-muted">No assignments yet</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* Filters + export */}
+      <div className="flex items-end gap-3 flex-wrap mb-4">
+        <div>
+          <label className="block font-label text-[10px] text-on-surface-muted uppercase tracking-widest mb-1">Caller</label>
+          <select value={callerFilter} onChange={(e) => { setPage(1); setCallerFilter(e.target.value); }}
+            className="appearance-none px-3 py-2 rounded-xl bg-surface border border-surface-mid font-body text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer min-w-[140px]">
+            <option value="">All callers</option>
+            {callers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block font-label text-[10px] text-on-surface-muted uppercase tracking-widest mb-1">Segment</label>
+          <select value={segmentFilter} onChange={(e) => { setPage(1); setSegmentFilter(e.target.value); }}
+            className="appearance-none px-3 py-2 rounded-xl bg-surface border border-surface-mid font-body text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer">
+            <option value="">All segments</option>
+            <option value="A">Hot</option>
+            <option value="B">Warm</option>
+            <option value="C">Cold</option>
+          </select>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={load} disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-surface-mid hover:border-primary/40 font-label text-sm font-semibold transition-colors">
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh
+          </button>
+          <button onClick={handleExport} disabled={exporting}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 font-label text-sm font-semibold transition-colors">
+            <Download size={14} /> {exporting ? "Exporting…" : "Export CSV"}
+          </button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-surface rounded-card shadow-card ring-1 ring-[#c4c7c7]/15 overflow-hidden">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="border-b border-surface-mid">
+              {["Lead", "Segment", "Assigned to", "Reason", "When"].map((h) => (
+                <th key={h} className="px-4 py-3 font-label text-[10px] uppercase tracking-widest text-on-surface-muted">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={5} className="px-4 py-10 text-center text-on-surface-muted font-body text-sm">Loading…</td></tr>
+            ) : entries.length === 0 ? (
+              <tr><td colSpan={5} className="px-4 py-10 text-center text-on-surface-muted font-body text-sm">No assignments recorded yet.</td></tr>
+            ) : entries.map((e) => (
+              <tr key={e.id} className="border-b border-surface-mid/50 hover:bg-surface-subtle/40">
+                <td className="px-4 py-3">
+                  <span className="block font-body text-sm font-medium text-on-surface">{e.lead_name || "—"}</span>
+                  <span className="block font-body text-xs text-on-surface-muted">{e.lead_phone ? formatPhone(e.lead_phone) : ""}</span>
+                </td>
+                <td className="px-4 py-3">
+                  <span className={`px-2 py-0.5 rounded-lg border font-label text-xs font-semibold ${SEGMENT_STYLE[e.segment || "C"] || SEGMENT_STYLE.C}`}>
+                    {SEGMENT_LABEL[e.segment || "C"] || e.segment}
+                  </span>
+                  {typeof e.score === "number" && <span className="ml-2 font-body text-xs text-on-surface-muted">score {e.score}</span>}
+                </td>
+                <td className="px-4 py-3 font-body text-sm text-on-surface">
+                  {e.event_type === "reassigned" && e.prev_caller_name ? (
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-on-surface-muted line-through">{e.prev_caller_name}</span>
+                      <ArrowRight size={12} className="text-amber-500" />
+                      <span className="font-medium">{e.caller_name || "—"}</span>
+                    </span>
+                  ) : (
+                    <span className="font-medium">{e.caller_name || "—"}</span>
+                  )}
+                </td>
+                <td className="px-4 py-3 font-body text-xs text-on-surface-muted">
+                  {REASON_LABEL[e.reason || ""] || e.reason || "—"}
+                  <span className="block text-[10px] opacity-70">{e.method}</span>
+                </td>
+                <td className="px-4 py-3 font-body text-xs text-on-surface-muted whitespace-nowrap">{timeAgo(e.created_at)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      {total > PAGE_SIZE && (
+        <div className="flex items-center justify-between mt-4">
+          <span className="font-body text-xs text-on-surface-muted">{total} total · page {page}/{totalPages}</span>
+          <div className="flex gap-2">
+            <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)}
+              className="px-3 py-1.5 rounded-lg border border-surface-mid font-label text-sm disabled:opacity-40 hover:border-primary/40">Prev</button>
+            <button disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}
+              className="px-3 py-1.5 rounded-lg border border-surface-mid font-label text-sm disabled:opacity-40 hover:border-primary/40">Next</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

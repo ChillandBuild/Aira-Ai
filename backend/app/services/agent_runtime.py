@@ -53,7 +53,7 @@ async def _tool_add_note(lead_data, tenant_id, db, args) -> str:
 async def _tool_assign_to_caller(lead_data, tenant_id, db, args) -> str:
     try:
         from app.services.assignment import auto_assign_lead
-        auto_assign_lead(str(lead_data["id"]), tenant_id)
+        auto_assign_lead(str(lead_data["id"]), tenant_id, reason="ai_agent", segment=lead_data.get("segment"))
         return "assigned to a caller (round-robin)"
     except Exception as e:
         return f"error: {e}"
