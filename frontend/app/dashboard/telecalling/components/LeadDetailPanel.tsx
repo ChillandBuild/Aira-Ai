@@ -65,7 +65,7 @@ export default function LeadDetailPanel({
     toast.success(`${label} copied to clipboard`);
   };
 
-  if (selectedLeadLoading) {
+  if (selectedLeadLoading || !selectedLead) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-slate-50/20">
         <RefreshCw size={32} className="animate-spin text-indigo-500 mb-2" />
