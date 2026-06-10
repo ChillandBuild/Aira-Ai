@@ -116,7 +116,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       setMyCaller(me);
       if (me) setMyStatus((me.status as "active" | "break" | "logged_out") || "active");
 
-      const dialable = leads.filter((l: Lead) => l.phone && l.phone.trim() !== "");
+      const dialable = leads.filter((l: Lead) => l != null && l.phone && l.phone.trim() !== "");
       const sorted = dialable.sort((a: Lead, b: Lead) => (b.score ?? 0) - (a.score ?? 0));
       setMyLeads(sorted);
 
@@ -458,6 +458,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   };
 
   const filteredLeads = myLeads.filter((lead) => {
+    if (!lead) return false;
     const query = searchQuery.toLowerCase().trim();
     if (!query) return true;
     const nameMatch = lead.name?.toLowerCase().includes(query) ?? false;
@@ -614,6 +615,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
             ) : (
               <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
                 {activeSubTabLeads.map((lead) => {
+                  if (!lead) return null;
                   const isSelected = selectedLeadId === lead.id;
                   
                   // Left border and circle color matches the status of lead
