@@ -40,7 +40,8 @@ export default function LiveNotesPane({ ctx, onClose }: Props) {
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [showCallbackPicker, setShowCallbackPicker] = useState(false);
-  const [callbackAt, setCallbackAt] = useState("");
+  const [callbackDate, setCallbackDate] = useState("");
+  const [callbackTime, setCallbackTime] = useState("");
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Cleanup timeout on unmount to avoid stale state updates
@@ -52,7 +53,7 @@ export default function LiveNotesPane({ ctx, onClose }: Props) {
 
   const hasNote = content.trim().length > 0 || selectedTags.length > 0;
   const canSave =
-    (!!ctx.callLogId && !!disposition) || (!!ctx.leadId && hasNote);
+    (!!ctx.callLogId && !!disposition) || (!!ctx.leadId && hasNote) || (!!ctx.leadId && !!callbackDate && !!callbackTime);
 
   function toggleTag(tag: string) {
     const isSelected = selectedTags.includes(tag);
@@ -77,14 +78,15 @@ export default function LiveNotesPane({ ctx, onClose }: Props) {
       if (ctx.leadId && hasNote) {
         await saveNote(ctx.leadId, content.trim(), pinned, selectedTags);
       }
-      if (callbackAt && ctx.leadId) {
-        await createCallback(ctx.leadId, new Date(callbackAt).toISOString(), content.trim());
+      if (callbackDate && callbackTime && ctx.leadId) {
+        await createCallback(ctx.leadId, new Date(`${callbackDate}T${callbackTime}`).toISOString(), content.trim());
       }
       setContent("");
       setDisposition(null);
       setSelectedTags([]);
       setPinned(false);
-      setCallbackAt("");
+      setCallbackDate("");
+      setCallbackTime("");
       setShowCallbackPicker(false);
       setSavedFlash(true);
       flashTimerRef.current = setTimeout(() => {
@@ -182,7 +184,7 @@ export default function LiveNotesPane({ ctx, onClose }: Props) {
       <div className="mb-4">
         <button
           type="button"
-          onClick={() => { setShowCallbackPicker((v) => !v); if (showCallbackPicker) setCallbackAt(""); }}
+          onClick={() => { setShowCallbackPicker((v) => !v); if (showCallbackPicker) { setCallbackDate(""); setCallbackTime(""); } }}
           className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${
             showCallbackPicker
               ? "bg-amber-100 text-amber-800 border border-amber-300"
@@ -194,13 +196,27 @@ export default function LiveNotesPane({ ctx, onClose }: Props) {
         </button>
         {showCallbackPicker && (
           <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
-            <input
-              type="datetime-local"
-              value={callbackAt}
-              onChange={(e) => setCallbackAt(e.target.value)}
-              min={new Date().toISOString().slice(0, 16)}
-              className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-            />
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="font-label text-[9px] text-slate-500 uppercase tracking-wider font-bold block mb-1">Date</label>
+                <input
+                  type="date"
+                  value={callbackDate}
+                  onChange={(e) => setCallbackDate(e.target.value)}
+                  min={new Date().toISOString().split("T")[0]}
+                  className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                />
+              </div>
+              <div>
+                <label className="font-label text-[9px] text-slate-500 uppercase tracking-wider font-bold block mb-1">Time</label>
+                <input
+                  type="time"
+                  value={callbackTime}
+                  onChange={(e) => setCallbackTime(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                />
+              </div>
+            </div>
           </div>
         )}
       </div>

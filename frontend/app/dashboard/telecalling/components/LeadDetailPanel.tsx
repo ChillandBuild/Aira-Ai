@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { Sparkles, Phone, StickyNote, Copy, Tag, Target, Calendar, Inbox, User, RefreshCw, Clock, Hash, MessageSquare } from "lucide-react";
+import { Sparkles, Phone, StickyNote, Copy, Tag, Target, Calendar, Inbox, User, RefreshCw, MessageSquare } from "lucide-react";
 import { Lead, Message, CallLog } from "@/lib/api";
 import type { NotesResponse } from "../types";
 import { formatPhone, timeAgo } from "@/lib/utils";
@@ -77,7 +77,7 @@ export default function LeadDetailPanel({
 
   if (selectedLeadLoading || !selectedLead) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-amber-50/30">
+      <div className="py-16 flex flex-col items-center justify-center bg-slate-50 rounded-2xl mx-5 mt-5">
         <RefreshCw size={32} className="animate-spin text-orange-400 mb-2" />
         <p className="font-body text-sm text-amber-700/60 font-medium">Loading lead profile...</p>
       </div>
@@ -131,9 +131,10 @@ export default function LeadDetailPanel({
   const strokeDashoffset = circumference - (score / 10) * circumference;
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-amber-50/20">
+    <div className="flex flex-col bg-white">
+      <div className="sticky top-0 z-20">
       {/* Header */}
-      <div className="bg-gradient-to-br from-[#1a1c3d] via-[#12132e] to-[#0c0d1f] text-white p-6 relative overflow-hidden shrink-0 shadow-md">
+      <div className="bg-gradient-to-br from-[#1a1c3d] via-[#12132e] to-[#0c0d1f] text-white p-6 relative overflow-hidden shadow-md">
         <div className="absolute right-0 bottom-0 top-0 w-1/3 bg-radial-gradient from-orange-500/10 to-transparent pointer-events-none" />
         <div className="flex justify-between items-center gap-4 relative z-10">
           <div className="flex gap-4 items-center min-w-0">
@@ -195,7 +196,7 @@ export default function LeadDetailPanel({
       </div>
 
       {/* Sub-tabs */}
-      <div className="flex border-b border-amber-100 bg-amber-50/60 shrink-0">
+      <div className="flex border-b border-slate-200 bg-white">
         {[
           { id: "overview", label: "Overview" },
           { id: "notes", label: "Notes & Log" },
@@ -214,14 +215,15 @@ export default function LeadDetailPanel({
           </button>
         ))}
       </div>
+      </div>{/* end sticky header+tabs */}
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-4">
+      <div className="p-5 space-y-4">
 
         {(activeProfileTab === "overview" || activeProfileTab === "attribution") && (
           <>
             {/* ── AI Pre-Call Brief ── */}
-            <div className="bg-gradient-to-br from-orange-50 to-amber-50/60 border border-orange-200/70 rounded-2xl p-4 shadow-sm">
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
               <div className="flex items-center justify-between mb-2">
                 <p className="font-label text-[9px] uppercase tracking-widest font-extrabold text-orange-600/80 flex items-center gap-1.5">
                   <Sparkles size={11} className="text-orange-500" /> AI Pre-Call Brief
@@ -238,7 +240,7 @@ export default function LeadDetailPanel({
               {selectedLeadBrief ? (
                 <div className="space-y-2.5">
                   <p className="font-body text-xs text-slate-700 leading-relaxed">{selectedLeadBrief.brief}</p>
-                  <div className="bg-white border border-orange-200/60 rounded-xl px-3 py-2.5">
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5">
                     <p className="font-label text-[9px] text-orange-600 uppercase font-extrabold tracking-wider mb-1">💡 Suggested Opener</p>
                     <p className="font-body text-xs text-slate-800 italic leading-relaxed">&quot;{selectedLeadBrief.opener}&quot;</p>
                   </div>
@@ -251,9 +253,9 @@ export default function LeadDetailPanel({
             </div>
 
             {/* ── Lead Source ── */}
-            <div className="bg-orange-50/70 border border-orange-100 rounded-2xl p-4 shadow-sm flex items-center justify-between gap-4">
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-orange-100/60 text-orange-600 rounded-xl shrink-0">
+                <div className="p-2 bg-slate-100 text-slate-600 rounded-xl shrink-0">
                   <Inbox size={16} />
                 </div>
                 <div>
@@ -267,6 +269,52 @@ export default function LeadDetailPanel({
                 {selectedLead.assigned_at ? timeAgo(selectedLead.assigned_at) : "recent"}
               </span>
             </div>
+
+            {/* ── Campaign Attribution ── */}
+            {(selectedLead.broadcast_id || selectedLead.template_name || selectedLead.ad_campaign_name) && (
+              <div className={`border rounded-2xl p-4 shadow-sm space-y-3 ${
+                selectedLead.broadcast_id || selectedLead.template_name
+                  ? "bg-purple-50/50 border-purple-100"
+                  : "bg-emerald-50/40 border-emerald-100"
+              }`}>
+                <h3 className={`font-display text-xs font-black tracking-widest uppercase flex items-center gap-1.5 ${
+                  selectedLead.broadcast_id ? "text-purple-700" : "text-emerald-700"
+                }`}>
+                  <Target size={12} />
+                  {selectedLead.broadcast_id || selectedLead.template_name ? "Campaign Attribution" : "Inbound Attribution"}
+                </h3>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {selectedLead.broadcast_id && (
+                    <div className="bg-white border border-purple-100/60 rounded-xl p-3 relative">
+                      <span className="font-label text-[9px] text-purple-600/60 uppercase font-extrabold tracking-wider block">Broadcast ID</span>
+                      <p className="font-mono text-[10px] text-slate-800 font-bold mt-1 truncate pr-6">{selectedLead.broadcast_id}</p>
+                      <button onClick={() => copyToClipboard(selectedLead.broadcast_id!, "Broadcast ID")}
+                        className="absolute right-2.5 bottom-2.5 p-1 text-purple-400 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition-all">
+                        <Copy size={10} />
+                      </button>
+                    </div>
+                  )}
+                  {selectedLead.template_name && (
+                    <div className="bg-white border border-purple-100/60 rounded-xl p-3">
+                      <span className="font-label text-[9px] text-purple-600/60 uppercase font-extrabold tracking-wider block">Template</span>
+                      <p className="font-body text-xs text-slate-800 font-extrabold mt-1 truncate">{selectedLead.template_name}</p>
+                    </div>
+                  )}
+                  {selectedLead.ad_campaign_name && (
+                    <div className="bg-white border border-emerald-100/60 rounded-xl p-3">
+                      <span className="font-label text-[9px] text-emerald-600/60 uppercase font-extrabold tracking-wider block">Ad Campaign</span>
+                      <p className="font-body text-xs text-slate-800 font-extrabold mt-1 truncate">{selectedLead.ad_campaign_name}</p>
+                    </div>
+                  )}
+                  {selectedLead.tag_name && (
+                    <div className="bg-white border border-purple-100/60 rounded-xl p-3 flex items-center gap-1.5">
+                      <Tag size={11} className="text-purple-400 shrink-0" />
+                      <p className="font-body text-xs text-purple-700 font-extrabold truncate">{selectedLead.tag_name}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* ── Engagement Signal + Call Trail ── */}
             <div className="grid grid-cols-2 gap-3">
@@ -282,7 +330,7 @@ export default function LeadDetailPanel({
                 </div>
               </div>
 
-              <div className="bg-white border border-amber-100/80 rounded-2xl p-4 shadow-sm">
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
                 <p className="font-label text-[9px] uppercase tracking-widest font-extrabold text-slate-400 mb-2.5">📞 Call History</p>
                 {recentCallLogs.length === 0 ? (
                   <p className="font-body text-xs text-slate-400">No calls yet</p>
@@ -330,7 +378,7 @@ export default function LeadDetailPanel({
 
             {/* ── Quick Note + Call Outcome ── */}
             <div className="grid grid-cols-2 gap-3">
-              <div className="bg-white border border-amber-100 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
                 <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase flex items-center gap-1.5">
                   <StickyNote size={12} className="text-orange-400" /> Quick Note
                 </h3>
@@ -339,7 +387,7 @@ export default function LeadDetailPanel({
                   onChange={(e) => setQuickNoteContent(e.target.value)}
                   placeholder="Outcome summary… e.g. Interested, wants demo tomorrow 5 PM"
                   rows={4}
-                  className="w-full p-3 rounded-xl bg-amber-50/40 border border-amber-100 font-body text-xs focus:outline-none focus:ring-2 focus:ring-orange-300 focus:bg-white transition-all resize-none"
+                  className="w-full p-3 rounded-xl bg-slate-50/40 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-orange-300 focus:bg-white transition-all resize-none"
                 />
                 <div className="flex justify-end">
                   <button
@@ -352,7 +400,7 @@ export default function LeadDetailPanel({
                 </div>
               </div>
 
-              <div className="bg-white border border-amber-100 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
                 <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase flex items-center gap-1.5">
                   <Phone size={12} className="text-orange-400" /> Call Outcome
                 </h3>
@@ -377,113 +425,9 @@ export default function LeadDetailPanel({
               </div>
             </div>
 
-            {/* ── Lead Details ── */}
-            <div className="bg-white border border-amber-100 rounded-2xl p-4 shadow-sm">
-              <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase mb-3 flex items-center gap-1.5">
-                <Target size={12} className="text-orange-400" /> Lead Details
-              </h3>
-              <div className="grid grid-cols-2 gap-2.5">
-                {[
-                  { label: "Score & Status", value: `${selectedLead.call_status || "New"} (${selectedLead.score}/10)`, dot: selectedLead.score >= 8 ? "bg-red-500 animate-pulse" : "bg-indigo-500" },
-                  { label: "Channel", value: selectedLead.channel || selectedLead.source || "N/A" },
-                ].map((item) => (
-                  <div key={item.label} className="bg-amber-50/50 border border-amber-100/60 rounded-xl p-3">
-                    <span className="font-label text-[9px] text-slate-400 uppercase font-extrabold tracking-wider block">{item.label}</span>
-                    <p className="font-body text-xs text-slate-800 font-extrabold mt-1 capitalize flex items-center gap-1.5">
-                      {item.dot && <span className={`w-2 h-2 rounded-full shrink-0 ${item.dot}`} />}
-                      {item.value}
-                    </p>
-                  </div>
-                ))}
-                <div className="bg-amber-50/50 border border-amber-100/60 rounded-xl p-3 flex items-start gap-2">
-                  <Clock size={11} className="text-orange-300 mt-0.5 shrink-0" />
-                  <div>
-                    <span className="font-label text-[9px] text-slate-400 uppercase font-extrabold tracking-wider block">Assigned</span>
-                    <p className="font-body text-xs text-slate-700 font-semibold mt-1">
-                      {selectedLead.assigned_at ? timeAgo(selectedLead.assigned_at) : "Recent"}
-                    </p>
-                  </div>
-                </div>
-                <div className="bg-amber-50/50 border border-amber-100/60 rounded-xl p-3 flex items-start gap-2">
-                  <Hash size={11} className="text-orange-300 mt-0.5 shrink-0" />
-                  <div>
-                    <span className="font-label text-[9px] text-slate-400 uppercase font-extrabold tracking-wider block">Segment</span>
-                    <p className="font-body text-xs text-slate-700 font-extrabold mt-1">SEG {selectedLead.segment}</p>
-                  </div>
-                </div>
-                <div className="bg-amber-50/50 border border-amber-100/60 rounded-xl p-3 flex items-start gap-2 col-span-2">
-                  <Phone size={11} className="text-orange-300 mt-0.5 shrink-0" />
-                  <div>
-                    <span className="font-label text-[9px] text-slate-400 uppercase font-extrabold tracking-wider block">Phone</span>
-                    <button
-                      onClick={() => copyToClipboard(selectedLead.phone || "", "Phone")}
-                      className="font-body text-xs text-orange-600 font-extrabold mt-1 hover:underline"
-                    >
-                      {formatPhone(selectedLead.phone)}
-                    </button>
-                  </div>
-                </div>
-                {selectedLead.tag_name && (
-                  <div className="bg-amber-50/50 border border-amber-100/60 rounded-xl p-3 flex items-start gap-2">
-                    <Tag size={11} className="text-orange-300 mt-0.5 shrink-0" />
-                    <div>
-                      <span className="font-label text-[9px] text-slate-400 uppercase font-extrabold tracking-wider block">Tag</span>
-                      <p className="font-body text-xs text-purple-700 font-extrabold mt-1 truncate">{selectedLead.tag_name}</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* ── Attribution ── */}
-            {(selectedLead.broadcast_id || selectedLead.template_name || selectedLead.ad_campaign_name) && (
-              <div className={`border rounded-2xl p-4 shadow-sm space-y-3 ${
-                selectedLead.broadcast_id || selectedLead.template_name
-                  ? "bg-purple-50/50 border-purple-100"
-                  : "bg-emerald-50/40 border-emerald-100"
-              }`}>
-                <h3 className={`font-display text-xs font-black tracking-widest uppercase flex items-center gap-1.5 ${
-                  selectedLead.broadcast_id ? "text-purple-700" : "text-emerald-700"
-                }`}>
-                  <Target size={12} />
-                  {selectedLead.broadcast_id || selectedLead.template_name ? "Campaign Attribution" : "Inbound Attribution"}
-                </h3>
-                <div className="grid grid-cols-2 gap-2.5">
-                  {selectedLead.broadcast_id && (
-                    <div className="bg-white border border-purple-100/60 rounded-xl p-3 relative">
-                      <span className="font-label text-[9px] text-purple-600/60 uppercase font-extrabold tracking-wider block">Broadcast ID</span>
-                      <p className="font-mono text-[10px] text-slate-800 font-bold mt-1 truncate pr-6">{selectedLead.broadcast_id}</p>
-                      <button onClick={() => copyToClipboard(selectedLead.broadcast_id!, "Broadcast ID")}
-                        className="absolute right-2.5 bottom-2.5 p-1 text-purple-400 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition-all">
-                        <Copy size={10} />
-                      </button>
-                    </div>
-                  )}
-                  {selectedLead.template_name && (
-                    <div className="bg-white border border-purple-100/60 rounded-xl p-3">
-                      <span className="font-label text-[9px] text-purple-600/60 uppercase font-extrabold tracking-wider block">Template</span>
-                      <p className="font-body text-xs text-slate-800 font-extrabold mt-1 truncate">{selectedLead.template_name}</p>
-                    </div>
-                  )}
-                  {selectedLead.ad_campaign_name && (
-                    <div className="bg-white border border-emerald-100/60 rounded-xl p-3">
-                      <span className="font-label text-[9px] text-emerald-600/60 uppercase font-extrabold tracking-wider block">Ad Campaign</span>
-                      <p className="font-body text-xs text-slate-800 font-extrabold mt-1 truncate">{selectedLead.ad_campaign_name}</p>
-                    </div>
-                  )}
-                  {selectedLead.tag_name && (
-                    <div className="bg-white border border-purple-100/60 rounded-xl p-3 flex items-center gap-1.5">
-                      <Tag size={11} className="text-purple-400 shrink-0" />
-                      <p className="font-body text-xs text-purple-700 font-extrabold truncate">{selectedLead.tag_name}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
             {/* ── Recent Interactions ── */}
             {selectedLeadNotes?.notes && selectedLeadNotes.notes.length > 0 && (
-              <div className="bg-white border border-amber-100 rounded-2xl p-4 shadow-sm">
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
                 <div className="flex justify-between items-center mb-3">
                   <h3 className="font-display text-xs font-black text-slate-800 flex items-center gap-1.5 tracking-widest uppercase">
                     <MessageSquare size={12} className="text-orange-400" /> Recent Interactions
@@ -492,12 +436,12 @@ export default function LeadDetailPanel({
                     View all →
                   </button>
                 </div>
-                <div className="relative border-l-2 border-amber-100 pl-4 ml-2 space-y-3">
+                <div className="relative border-l-2 border-slate-200 pl-4 ml-2 space-y-3">
                   {selectedLeadNotes.notes.slice(0, 3).map((n) => (
                     <div key={n.id} className="relative">
                       <span className="absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full bg-orange-400 border-2 border-white" />
                       <span className="block text-[9px] text-slate-400 font-bold mb-1">{timeAgo(n.created_at)}</span>
-                      <div className="font-body text-xs text-slate-600 bg-amber-50/40 border border-amber-100/60 p-3 rounded-xl leading-relaxed">
+                      <div className="font-body text-xs text-slate-600 bg-slate-50/40 border border-slate-200/60 p-3 rounded-xl leading-relaxed">
                         {n.content}
                       </div>
                     </div>
@@ -508,7 +452,7 @@ export default function LeadDetailPanel({
 
             {/* ── Pitch Script ── */}
             {telecallingConfig?.scripts?.[selectedLead.segment] && (
-              <div className="bg-gradient-to-r from-orange-50/60 to-amber-50/40 border border-orange-200/60 rounded-2xl p-4 shadow-sm">
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
                 <div className="flex items-center justify-between">
                   <h3 className="font-display text-xs font-black text-orange-900 tracking-widest uppercase flex items-center gap-1.5">
                     <Sparkles size={12} className="text-orange-500" /> Pitch Script (SEG {selectedLead.segment})
@@ -519,7 +463,7 @@ export default function LeadDetailPanel({
                   </button>
                 </div>
                 {scriptExpanded && (
-                  <div className="mt-2.5 bg-white border border-orange-100 p-3 rounded-xl text-slate-700 font-body text-xs leading-relaxed whitespace-pre-wrap">
+                  <div className="mt-2.5 bg-slate-50 border border-slate-200 p-3 rounded-xl text-slate-700 font-body text-xs leading-relaxed whitespace-pre-wrap">
                     {telecallingConfig.scripts[selectedLead.segment]}
                   </div>
                 )}
@@ -530,7 +474,7 @@ export default function LeadDetailPanel({
 
         {activeProfileTab === "notes" && (
           <div className="space-y-4">
-            <div className="bg-white border border-amber-100 rounded-2xl p-5 shadow-sm">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="font-display text-xs font-black text-slate-800 flex items-center gap-1.5 tracking-widest uppercase">
                   <Inbox size={12} className="text-orange-400" /> Full Interaction Timeline
@@ -540,7 +484,7 @@ export default function LeadDetailPanel({
                 </button>
               </div>
               {selectedLeadNotes?.notes && selectedLeadNotes.notes.length > 0 ? (
-                <div className="relative border-l-2 border-amber-100 pl-4 ml-2 space-y-4">
+                <div className="relative border-l-2 border-slate-200 pl-4 ml-2 space-y-4">
                   {selectedLeadNotes.notes.map((n) => (
                     <div key={n.id} className="relative">
                       <span className="absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full bg-orange-400 border-2 border-white" />
@@ -548,14 +492,14 @@ export default function LeadDetailPanel({
                         <span>{timeAgo(n.created_at)}</span>
                         {n.is_pinned && <span className="text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-full font-black text-[7px]">PINNED</span>}
                       </div>
-                      <div className="font-body text-xs text-slate-600 bg-amber-50/40 border border-amber-100/60 p-3.5 rounded-xl leading-relaxed">
+                      <div className="font-body text-xs text-slate-600 bg-slate-50/40 border border-slate-200/60 p-3.5 rounded-xl leading-relaxed">
                         {n.content}
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="p-6 bg-amber-50/40 border border-amber-100 text-center rounded-xl text-xs text-slate-400 font-medium">
+                <div className="p-6 bg-slate-50/40 border border-slate-200 text-center rounded-xl text-xs text-slate-400 font-medium">
                   No previous interactions logged for this lead.
                 </div>
               )}
@@ -564,7 +508,7 @@ export default function LeadDetailPanel({
         )}
 
         {activeProfileTab === "schedule" && (
-          <div className="bg-white border border-amber-100 rounded-2xl p-5 shadow-sm space-y-4">
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
             <h3 className="font-display text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
               <Calendar size={13} className="text-orange-400" /> Schedule Callback
             </h3>
@@ -574,12 +518,12 @@ export default function LeadDetailPanel({
                   <label className="font-label text-[9px] text-slate-400 uppercase tracking-wider font-bold block mb-1">Date</label>
                   <input type="date" value={schedDate} onChange={(e) => setSchedDate(e.target.value)}
                     min={new Date().toISOString().split("T")[0]}
-                    className="w-full px-3 py-2 rounded-xl bg-amber-50/40 border border-amber-100 font-body text-xs focus:outline-none focus:ring-2 focus:ring-orange-300 focus:bg-white transition-all" />
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50/40 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-orange-300 focus:bg-white transition-all" />
                 </div>
                 <div>
                   <label className="font-label text-[9px] text-slate-400 uppercase tracking-wider font-bold block mb-1">Time</label>
                   <input type="time" value={schedTime} onChange={(e) => setSchedTime(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-amber-50/40 border border-amber-100 font-body text-xs focus:outline-none focus:ring-2 focus:ring-orange-300 focus:bg-white transition-all" />
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50/40 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-orange-300 focus:bg-white transition-all" />
                 </div>
               </div>
               <div className="flex justify-end">

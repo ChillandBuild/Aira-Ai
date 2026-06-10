@@ -276,6 +276,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   async function executeDial(leadId: string, lead: Lead) {
     if (!myCaller) { toast.error("Caller profile not found"); return; }
     setDialing(leadId);
+    setSelectedLeadId(leadId);
     try {
       const res = await api.calls.initiate({ leadId, callbackJobId: selectedCallbackJobId ?? undefined }, myCaller.id);
       setActiveCallCtx({
@@ -284,6 +285,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
         phone: lead.phone,
         callLogId: res.call_log_id ?? null
       });
+      generatePreCallBrief(leadId);
       toast.success(`Calling ${lead.name || lead.phone}...`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Call failed");
@@ -387,6 +389,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     try {
       const nextLd = await api.calls.nextLead(myCaller.id);
       toast.success(`Found next lead: ${nextLd.name || nextLd.phone}. Preparing to dial...`);
+      setSelectedLeadId(nextLd.id);
       setDialTarget({ leadId: nextLd.id, lead: nextLd });
       setDialCountdown(3);
     } catch (err: unknown) {
@@ -503,10 +506,10 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-transparent">
       {/* Main Split Layout */}
       <div className="flex-1 grid grid-cols-12 gap-6 min-h-0 pb-4">
-        {/* Left Side: Lead List (4/12 columns) */}
-        <div className="col-span-4 flex flex-col gap-5 min-h-0 pr-1">
+        {/* Left Side: Lead List (5/12 columns) */}
+        <div className="col-span-5 flex flex-col gap-5 min-h-0 pr-1">
           {/* Lead List Card */}
-          <div className="flex-1 bg-gradient-to-b from-amber-50/80 to-orange-50/40 rounded-3xl p-6 shadow-sm border border-amber-100/80 flex flex-col min-h-0">
+          <div className="flex-1 bg-slate-50 rounded-3xl p-6 shadow-sm border border-slate-200 flex flex-col min-h-0">
             {/* Header / Title */}
             <div className="flex items-center justify-between mb-4 shrink-0">
               <div>
@@ -554,7 +557,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
             </div>
 
             {/* Tabs for To Call, Callbacks, In Prog, Closed, Manual Dial */}
-            <div className="flex gap-1.5 p-1 bg-amber-100/60 rounded-2xl shrink-0 mb-4">
+            <div className="flex gap-1.5 p-1 bg-slate-200/60 rounded-2xl shrink-0 mb-4">
               {[
                 { id: "new", label: `To Call (${newLeads.length})` },
                 { id: "callback", label: `Callbacks (${callbackLeads.length})` },
@@ -698,12 +701,11 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
           
         </div>
 
-        {/* Right Side: Detailed Profile Page (8/12 columns) */}
-        <div className="col-span-8 flex flex-col min-h-0 bg-gradient-to-b from-amber-50/60 to-orange-50/20 rounded-3xl border border-amber-100/80 shadow-sm overflow-hidden">
+        {/* Right Side: Detailed Profile Page (7/12 columns) */}
+        <div className="col-span-7 flex flex-col min-h-0 bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+          {/* Sticky call banner */}
           {activeCallCtx && (
-            <div className="flex flex-col border-b border-slate-200 bg-slate-50" style={{ maxHeight: "55%" }}>
-              {/* Live Call Banner — fixed, never scrolls */}
-              <div className="p-4 shrink-0">
+            <div className="shrink-0 p-4 bg-slate-50 border-b border-slate-200">
               <div className="p-5 bg-gradient-to-r from-indigo-900 to-slate-900 text-white rounded-2xl">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="flex items-center gap-4">
@@ -725,7 +727,6 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                       <p className="font-mono text-xs text-slate-400 mt-0.5">{formatPhone(activeCallCtx.phone || "")}</p>
                     </div>
                   </div>
-                  
                   <div className="flex items-center gap-4">
                     {callStatus === "connected" && (
                       <div className="bg-slate-800/80 px-4 py-2 rounded-xl border border-slate-700/50 font-mono text-sm font-bold text-emerald-400">
@@ -741,41 +742,45 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                   </div>
                 </div>
               </div>
-              </div>{/* end banner shrink-0 */}
-              {/* Live Notes — scrollable */}
-              <div className="flex-1 overflow-y-auto px-4 pb-4">
-                <LiveNotesPane ctx={activeCallCtx} onClose={() => setActiveCallCtx(null)} />
-              </div>
             </div>
           )}
 
-          {!selectedLeadId ? (
-            // Empty State
-            <div className="flex-1 flex flex-col items-center justify-center p-12 text-center bg-gradient-to-br from-slate-50/40 to-indigo-50/10">
-              <div className="relative mb-6">
-                <div className="absolute inset-0 bg-indigo-400/5 blur-2xl rounded-full scale-150 animate-pulse" />
-                <div className="relative p-6 rounded-3xl bg-white border border-slate-150 shadow-md text-indigo-500">
-                  <Sparkles size={38} className="text-indigo-500" />
+          {/* Single scrollable area — LiveNotesPane + profile */}
+          <div className="flex-1 overflow-y-auto">
+            {activeCallCtx && (
+              <div className="border-b border-slate-200 bg-slate-50">
+                <div className="p-4">
+                  <LiveNotesPane ctx={activeCallCtx} onClose={() => setActiveCallCtx(null)} />
                 </div>
               </div>
-              <h3 className="font-display text-xl font-extrabold text-slate-900 tracking-tight">Lead Profile Workspace</h3>
-              <p className="font-body text-sm text-slate-500 max-w-md mt-2 leading-relaxed">
-                Choose a lead from your active queue on the left to review campaign source attribution details, previous calls history, and log feedback notes.
-              </p>
-              
-              <div className="grid grid-cols-2 gap-4 mt-8 w-full max-w-xs">
-                <div className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm text-left">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Queue</span>
-                  <span className="text-xl font-bold text-slate-800 mt-1 block">{myLeads.length}</span>
+            )}
+
+            {!selectedLeadId ? (
+              // Empty State
+              <div className="min-h-full flex flex-col items-center justify-center p-12 text-center bg-gradient-to-br from-slate-50/40 to-indigo-50/10">
+                <div className="relative mb-6">
+                  <div className="absolute inset-0 bg-indigo-400/5 blur-2xl rounded-full scale-150 animate-pulse" />
+                  <div className="relative p-6 rounded-3xl bg-white border border-slate-150 shadow-md text-indigo-500">
+                    <Sparkles size={38} className="text-indigo-500" />
+                  </div>
                 </div>
-                <div className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm text-left">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Today Callbacks</span>
-                  <span className="text-xl font-bold text-slate-800 mt-1 block">{todayCallbacks.length}</span>
+                <h3 className="font-display text-xl font-extrabold text-slate-900 tracking-tight">Lead Profile Workspace</h3>
+                <p className="font-body text-sm text-slate-500 max-w-md mt-2 leading-relaxed">
+                  Choose a lead from your active queue on the left to review campaign source attribution details, previous calls history, and log feedback notes.
+                </p>
+                <div className="grid grid-cols-2 gap-4 mt-8 w-full max-w-xs">
+                  <div className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm text-left">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Queue</span>
+                    <span className="text-xl font-bold text-slate-800 mt-1 block">{myLeads.length}</span>
+                  </div>
+                  <div className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm text-left">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Today Callbacks</span>
+                    <span className="text-xl font-bold text-slate-800 mt-1 block">{todayCallbacks.length}</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : (
-            <LeadDetailPanel
+            ) : (
+              <LeadDetailPanel
               selectedLead={selectedLead!}
               selectedLeadNotes={selectedLeadNotes}
               selectedLeadMessages={selectedLeadMessages}
@@ -806,7 +811,8 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
               handleScheduleCallback={handleScheduleCallback}
               setHistoryLead={setHistoryLead}
             />
-          )}
+            )}
+          </div>
         </div>
       </div>
 
@@ -931,7 +937,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
               </div>
 
               {wrapupOutcome === "callback" && (
-                <div className="bg-amber-50/50 border border-amber-100 rounded-2xl p-4 space-y-3">
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
                   <p className="font-label text-[10px] text-amber-800 uppercase font-black tracking-widest block">
                     Schedule Next Callback Time
                   </p>
