@@ -465,19 +465,85 @@ async def _process_callback_reassignments() -> None:
                         f"Callback reassignment: job={job['id']} lead={job['lead_id']} "
                         f"from={current_caller_id} to={new_caller_id}"
                     )
-                elif is_escalate_overdue:
-                    # Reassignment failed and >= 60 mins overdue. Escalate!
-                    db.table("leads").update({
-                        "needs_human_attention": True,
-                        "needs_human_intervention": True,
-                        "escalation_reason": "Callback missed (caller unavailable, no active callers for reassignment)",
-                        "ai_enabled": False,
-                    }).eq("id", job["lead_id"]).eq("tenant_id", tid).execute()
+                else:
+                    # Fallback to Admin if no telecallers are available
+                    owner = (
+                        db.table("tenant_users")
+                        .select("user_id")
+                        .eq("tenant_id", tid)
+                        .eq("role", "owner")
+                        .limit(1)
+                        .execute()
+                    )
+                    owner_user_id = (owner.data[0] if owner.data else {}).get("user_id")
+                    owner_caller_id = None
+                    new_caller_name = "Admin"
+                    if owner_user_id:
+                        owner_caller = db.table("callers").select("id,name").eq("user_id", owner_user_id).eq("tenant_id", tid).maybe_single().execute()
+                        if owner_caller and owner_caller.data:
+                            owner_caller_id = owner_caller.data["id"]
+                            new_caller_name = owner_caller.data["name"] or "Admin"
+                            
+                    if owner_caller_id and owner_caller_id != current_caller_id:
+                        db.table("leads").update({
+                            "assigned_to": owner_caller_id,
+                            "assigned_at": datetime.now(timezone.utc).isoformat(),
+                        }).eq("id", job["lead_id"]).eq("tenant_id", tid).execute()
+                        
+                        record_assignment_event(
+                            job["lead_id"],
+                            tenant_id=tid,
+                            segment=lead.data.get("segment"),
+                            caller_id=owner_caller_id,
+                            caller_name=new_caller_name,
+                            reason="fallback_to_admin",
+                            method="round-robin",
+                            score=lead.data.get("score"),
+                            event_type="reassigned",
+                            prev_caller_id=current_caller_id,
+                            prev_caller_name=old_caller_name,
+                            db=db,
+                        )
+                        
+                        db.table("follow_up_jobs").update({
+                            "scheduled_for": now.isoformat(),
+                        }).eq("id", job["id"]).eq("tenant_id", tid).execute()
+                        
+                        if owner_user_id:
+                            db.table("app_notifications").insert({
+                                "tenant_id": tid,
+                                "user_id": owner_user_id,
+                                "type": "reassignment",
+                                "title": "Lead Escalated To You",
+                                "message": f"Lead '{lead_name}' has been escalated to you because '{old_caller_name}' and all other telecallers were not available."
+                            }).execute()
 
-                    db.table("follow_up_jobs").update({
-                        "status": "failed",
-                        "last_error": "Callback missed (caller unavailable, no active callers for reassignment)",
-                    }).eq("id", job["id"]).eq("tenant_id", tid).execute()
+                        if caller and caller.data.get("user_id"):
+                            db.table("app_notifications").insert({
+                                "tenant_id": tid,
+                                "user_id": caller.data["user_id"],
+                                "type": "reassignment",
+                                "title": "Lead Reassigned",
+                                "message": f"Lead '{lead_name}' has been switched to {new_caller_name} because you were not available."
+                            }).execute()
+
+                        logger.info(
+                            f"Callback reassignment (Admin Fallback): job={job['id']} lead={job['lead_id']} "
+                            f"from={current_caller_id} to={owner_caller_id}"
+                        )
+                    elif is_escalate_overdue:
+                        # Reassignment failed and >= 60 mins overdue. Escalate!
+                        db.table("leads").update({
+                            "needs_human_attention": True,
+                            "needs_human_intervention": True,
+                            "escalation_reason": "Callback missed (caller unavailable, no active callers for reassignment)",
+                            "ai_enabled": False,
+                        }).eq("id", job["lead_id"]).eq("tenant_id", tid).execute()
+
+                        db.table("follow_up_jobs").update({
+                            "status": "failed",
+                            "last_error": "Callback missed (caller unavailable, no active callers for reassignment)",
+                        }).eq("id", job["id"]).eq("tenant_id", tid).execute()
 
                     # Find owner to notify
                     owner = (
