@@ -181,8 +181,6 @@ export default function AdminView() {
         </div>
       </div>
 
-      </div>
-
       {/* Top Leads + Manual Dial */}
       <div className="grid grid-cols-3 gap-6">
         {/* Top 5 leads by score */}
@@ -457,8 +455,6 @@ export default function AdminView() {
               </div>
             ) : null}
           </div>
-        </div>
-      )}
         </div>
       )}
     </div>
