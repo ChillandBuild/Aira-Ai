@@ -1,5 +1,7 @@
 # Graphify knowledge graph (generated)
-graphify-out/
+graphify-out/*
+# ...but commit the human/agent-readable wiki so a fresh clone has the architecture map
+!graphify-out/wiki/
 
 # Environment variables
 .env
