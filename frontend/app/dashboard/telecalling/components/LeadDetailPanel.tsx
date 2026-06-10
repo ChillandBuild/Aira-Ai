@@ -240,7 +240,7 @@ export default function LeadDetailPanel({
                   <p className="font-body text-xs text-slate-700 leading-relaxed">{selectedLeadBrief.brief}</p>
                   <div className="bg-white border border-orange-200/60 rounded-xl px-3 py-2.5">
                     <p className="font-label text-[9px] text-orange-600 uppercase font-extrabold tracking-wider mb-1">💡 Suggested Opener</p>
-                    <p className="font-body text-xs text-slate-800 italic leading-relaxed">"{selectedLeadBrief.opener}"</p>
+                    <p className="font-body text-xs text-slate-800 italic leading-relaxed">&quot;{selectedLeadBrief.opener}&quot;</p>
                   </div>
                 </div>
               ) : (

@@ -327,7 +327,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     try {
       const res = await api.leads.preCallBrief(leadId);
       setSelectedLeadBrief(res);
-    } catch (err) {
+    } catch {
       toast.error("Failed to generate brief");
     } finally { setBriefLoading(false); }
   }
