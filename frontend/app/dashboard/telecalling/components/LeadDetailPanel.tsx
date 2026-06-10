@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
-import { Sparkles, Phone, StickyNote, Copy, Tag, Target, Calendar, Inbox, User, RefreshCw } from "lucide-react";
-import { Lead } from "@/lib/api";
+import { Sparkles, Phone, StickyNote, Copy, Tag, Target, Calendar, Inbox, User, RefreshCw, Clock, Hash, MessageSquare } from "lucide-react";
+import { Lead, Message, CallLog } from "@/lib/api";
 import type { NotesResponse } from "../types";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import { toast } from "sonner";
@@ -9,6 +9,8 @@ import { toast } from "sonner";
 interface LeadDetailPanelProps {
   selectedLead: Lead;
   selectedLeadNotes: NotesResponse | null;
+  selectedLeadMessages: Message[];
+  selectedLeadCallLogs: CallLog[];
   selectedLeadLoading: boolean;
   activeProfileTab: "overview" | "notes" | "attribution" | "schedule";
   setActiveProfileTab: (tab: "overview" | "notes" | "attribution" | "schedule") => void;
@@ -36,6 +38,8 @@ interface LeadDetailPanelProps {
 export default function LeadDetailPanel({
   selectedLead,
   selectedLeadNotes,
+  selectedLeadMessages,
+  selectedLeadCallLogs,
   selectedLeadLoading,
   activeProfileTab,
   setActiveProfileTab,
@@ -73,6 +77,38 @@ export default function LeadDetailPanel({
       </div>
     );
   }
+
+  // Live engagement signal
+  const lastInbound = selectedLead.last_inbound_at ? new Date(selectedLead.last_inbound_at) : null;
+  const hoursSinceInbound = lastInbound ? (Date.now() - lastInbound.getTime()) / 36e5 : Infinity;
+  const engagementSignal =
+    hoursSinceInbound < 24 ? { label: "Active today", color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200", dot: "bg-emerald-500 animate-pulse" } :
+    hoursSinceInbound < 168 ? { label: "Active this week", color: "text-amber-600", bg: "bg-amber-50 border-amber-200", dot: "bg-amber-400" } :
+    { label: "Gone cold", color: "text-slate-400", bg: "bg-slate-50 border-slate-200", dot: "bg-slate-300" };
+
+  // Call attempt trail
+  const outcomeStyle: Record<string, string> = {
+    converted: "bg-emerald-500",
+    callback: "bg-amber-400",
+    not_interested: "bg-slate-400",
+    no_answer: "bg-rose-400",
+    do_not_call: "bg-red-600",
+    do_not_contact: "bg-red-600",
+    unreachable: "bg-orange-400",
+  };
+  const outcomeLabel: Record<string, string> = {
+    converted: "Converted",
+    callback: "Callback",
+    not_interested: "Not Interested",
+    no_answer: "No Answer",
+    do_not_call: "DNC",
+    do_not_contact: "DNC",
+    unreachable: "Unreachable",
+  };
+  const recentCallLogs = selectedLeadCallLogs.slice(0, 6);
+
+  // WhatsApp context (last 4 messages, any direction)
+  const recentMessages = selectedLeadMessages.slice(-4);
 
   const score = selectedLead.score ?? 0;
   const ringColor =
@@ -214,39 +250,216 @@ export default function LeadDetailPanel({
               </span>
             </div>
 
-            {/* Assignment Info Card */}
-            <div className="bg-white border border-slate-200/60 rounded-3xl p-5 shadow-sm space-y-3">
-              <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase mb-1.5 flex items-center gap-1.5">
-                <Target size={13} className="text-slate-505" /> Lead Details
-              </h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 shadow-sm">
-                  <span className="font-label text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Score & Status</span>
-                  <p className="font-body text-sm text-slate-800 font-extrabold mt-1.5 capitalize flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full inline-block ${selectedLead.score >= 8 ? "bg-red-500 animate-pulse" : "bg-indigo-500"}`} />
-                    {selectedLead.call_status || "New"} ({selectedLead.score}/10)
+            {/* Live Engagement Signal + Call Attempt Trail */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* Engagement Signal */}
+              <div className={`border rounded-2xl p-4 flex items-center gap-3 shadow-sm ${engagementSignal.bg}`}>
+                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${engagementSignal.dot}`} />
+                <div>
+                  <p className="font-label text-[9px] uppercase tracking-widest font-extrabold text-slate-400">WhatsApp Activity</p>
+                  <p className={`font-body text-sm font-extrabold mt-0.5 ${engagementSignal.color}`}>
+                    {engagementSignal.label}
                   </p>
+                  {lastInbound && (
+                    <p className="font-label text-[9px] text-slate-400 mt-0.5">{timeAgo(selectedLead.last_inbound_at!)}</p>
+                  )}
                 </div>
+              </div>
 
-                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 shadow-sm">
-                  <span className="font-label text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Acquisition Channel</span>
-                  <p className="font-body text-sm text-slate-800 font-extrabold mt-1.5 capitalize">
-                    {selectedLead.channel || selectedLead.source || "N/A"}
-                  </p>
+              {/* Call Attempt Trail */}
+              <div className="bg-white border border-slate-200/60 rounded-2xl p-4 shadow-sm">
+                <p className="font-label text-[9px] uppercase tracking-widest font-extrabold text-slate-400 mb-2.5">Call History</p>
+                {recentCallLogs.length === 0 ? (
+                  <p className="font-body text-xs text-slate-400">No calls yet</p>
+                ) : (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {recentCallLogs.map((log) => (
+                      <div key={log.id} className="group relative">
+                        <div className={`w-5 h-5 rounded-full ${outcomeStyle[log.outcome || ""] ?? "bg-slate-200"} cursor-default`} />
+                        <div className="absolute bottom-7 left-1/2 -translate-x-1/2 hidden group-hover:block z-10 bg-slate-800 text-white text-[9px] font-bold px-2 py-1 rounded-lg whitespace-nowrap shadow-lg">
+                          {outcomeLabel[log.outcome || ""] ?? "Unknown"} · {timeAgo(log.created_at)}
+                        </div>
+                      </div>
+                    ))}
+                    {selectedLeadCallLogs.length > 6 && (
+                      <span className="font-label text-[9px] text-slate-400 font-bold">+{selectedLeadCallLogs.length - 6} more</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* WhatsApp Context Strip */}
+            {recentMessages.length > 0 && (
+              <div className="bg-gradient-to-br from-[#075e54]/5 to-[#128c7e]/5 border border-[#075e54]/15 rounded-2xl p-4 shadow-sm">
+                <p className="font-label text-[9px] uppercase tracking-widest font-extrabold text-[#075e54]/70 mb-3 flex items-center gap-1.5">
+                  <MessageSquare size={11} className="text-[#075e54]/60" /> Last WhatsApp Conversation
+                </p>
+                <div className="space-y-2">
+                  {recentMessages.map((msg) => (
+                    <div key={msg.id} className={`flex ${msg.direction === "inbound" ? "justify-start" : "justify-end"}`}>
+                      <div className={`max-w-[75%] px-3 py-2 rounded-2xl text-xs font-body leading-relaxed shadow-sm ${
+                        msg.direction === "inbound"
+                          ? "bg-white text-slate-700 rounded-tl-sm"
+                          : "bg-[#dcf8c6] text-slate-800 rounded-tr-sm"
+                      }`}>
+                        <p>{msg.content}</p>
+                        <p className="text-[9px] text-slate-400 mt-0.5 text-right">{timeAgo(msg.created_at)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Quick Note + Call Outcome (primary during-call tools) */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* Quick Note */}
+              <div className="bg-white border border-slate-200/60 rounded-3xl p-5 shadow-sm flex flex-col gap-3">
+                <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase flex items-center gap-1.5">
+                  <StickyNote size={13} className="text-slate-500" /> Quick Note
+                </h3>
+                <textarea
+                  value={quickNoteContent}
+                  onChange={(e) => setQuickNoteContent(e.target.value)}
+                  placeholder="Outcome summary… e.g. Interested, wants demo call tomorrow 5 PM"
+                  rows={4}
+                  className="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all resize-none shadow-inner flex-1"
+                />
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => saveQuickNote(selectedLead.id)}
+                    disabled={quickNoteSaving || !quickNoteContent.trim()}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-label text-xs font-bold disabled:opacity-50 transition-all shadow-sm hover:scale-[1.01] active:scale-[0.99] flex items-center gap-1.5"
+                  >
+                    {quickNoteSaving ? <RefreshCw size={11} className="animate-spin" /> : "Save Note"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Call Outcome */}
+              <div className="bg-white border border-slate-200/60 rounded-3xl p-5 shadow-sm flex flex-col gap-3">
+                <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase flex items-center gap-1.5">
+                  <Phone size={13} className="text-slate-500" /> Call Outcome
+                </h3>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: "converted", label: "✓ Converted", style: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" },
+                    { id: "callback", label: "📅 Callback", style: "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100" },
+                    { id: "not_interested", label: "Not Interested", style: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50" },
+                    { id: "no_answer", label: "No Answer", style: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50" },
+                    { id: "do_not_call", label: "Do Not Call", style: "border-red-200 bg-red-50 text-red-700 hover:bg-red-100" },
+                    { id: "unreachable", label: "Unreachable", style: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50" }
+                  ].map((o) => (
+                    <button
+                      key={o.id}
+                      onClick={() => handleQuickOutcome(o.id)}
+                      className={`py-2 px-2 text-[10px] font-extrabold rounded-xl border transition-all hover:scale-[1.01] active:scale-[0.99] shadow-sm text-center ${o.style}`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
 
-            {/* Live Pitch Script (Collapsed/Expandable inline for help) */}
+            {/* Lead Details + Contact Info */}
+            <div className="bg-white border border-slate-200/60 rounded-3xl p-5 shadow-sm space-y-3">
+              <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase mb-1.5 flex items-center gap-1.5">
+                <Target size={13} className="text-slate-500" /> Lead Details
+              </h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 shadow-sm">
+                  <span className="font-label text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Score & Status</span>
+                  <p className="font-body text-sm text-slate-800 font-extrabold mt-1 capitalize flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full inline-block ${selectedLead.score >= 8 ? "bg-red-500 animate-pulse" : "bg-indigo-500"}`} />
+                    {selectedLead.call_status || "New"} ({selectedLead.score}/10)
+                  </p>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 shadow-sm">
+                  <span className="font-label text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Channel</span>
+                  <p className="font-body text-sm text-slate-800 font-extrabold mt-1 capitalize">
+                    {selectedLead.channel || selectedLead.source || "N/A"}
+                  </p>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 shadow-sm flex items-start gap-2">
+                  <Phone size={12} className="text-slate-400 mt-1 shrink-0" />
+                  <div className="min-w-0">
+                    <span className="font-label text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Phone</span>
+                    <button
+                      onClick={() => copyToClipboard(selectedLead.phone || "", "Phone")}
+                      className="font-body text-sm text-indigo-600 font-extrabold mt-1 hover:underline truncate block"
+                    >
+                      {formatPhone(selectedLead.phone)}
+                    </button>
+                  </div>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 shadow-sm flex items-start gap-2">
+                  <Clock size={12} className="text-slate-400 mt-1 shrink-0" />
+                  <div>
+                    <span className="font-label text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Assigned</span>
+                    <p className="font-body text-xs text-slate-700 font-semibold mt-1">
+                      {selectedLead.assigned_at ? timeAgo(selectedLead.assigned_at) : "Recent"}
+                    </p>
+                  </div>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 shadow-sm flex items-start gap-2">
+                  <Hash size={12} className="text-slate-400 mt-1 shrink-0" />
+                  <div>
+                    <span className="font-label text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Segment</span>
+                    <p className="font-body text-xs text-slate-700 font-extrabold mt-1">SEG {selectedLead.segment}</p>
+                  </div>
+                </div>
+                {selectedLead.tag_name && (
+                  <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 shadow-sm flex items-start gap-2">
+                    <Tag size={12} className="text-slate-400 mt-1 shrink-0" />
+                    <div className="min-w-0">
+                      <span className="font-label text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Tag</span>
+                      <p className="font-body text-xs text-purple-700 font-extrabold mt-1 truncate">{selectedLead.tag_name}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Interaction Timeline (inline, last 3) */}
+            {selectedLeadNotes?.notes && selectedLeadNotes.notes.length > 0 && (
+              <div className="bg-white border border-slate-200/60 rounded-3xl p-5 shadow-sm">
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="font-display text-xs font-black text-slate-800 flex items-center gap-1.5 tracking-widest uppercase">
+                    <MessageSquare size={13} className="text-slate-500" /> Recent Interactions
+                  </h3>
+                  <button
+                    onClick={() => setActiveProfileTab("notes")}
+                    className="text-xs text-indigo-600 font-bold hover:underline"
+                  >
+                    View all →
+                  </button>
+                </div>
+                <div className="relative border-l border-slate-100 pl-4 ml-2 space-y-3">
+                  {selectedLeadNotes.notes.slice(0, 3).map((n) => (
+                    <div key={n.id} className="relative">
+                      <span className="absolute -left-[22px] top-1.5 w-2.5 h-2.5 rounded-full bg-indigo-500 border-2 border-white ring-2 ring-indigo-100" />
+                      <span className="block text-[10px] text-slate-400 font-bold mb-1">{timeAgo(n.created_at)}</span>
+                      <div className="font-body text-xs text-slate-600 bg-slate-50 border border-slate-100/60 p-3 rounded-2xl leading-relaxed">
+                        {n.content}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Live Pitch Script */}
             {telecallingConfig?.scripts?.[selectedLead.segment] && (
-              <div className="bg-gradient-to-r from-blue-50/40 to-indigo-50/20 border border-blue-150 rounded-2xl p-4 shadow-sm">
+              <div className="bg-gradient-to-r from-blue-50/40 to-indigo-50/20 border border-blue-100 rounded-2xl p-4 shadow-sm">
                 <div className="flex items-center justify-between">
                   <h3 className="font-display text-xs font-black text-indigo-950 tracking-widest uppercase flex items-center gap-1.5">
-                    <Sparkles size={13} className="text-indigo-600" /> Pitch Script Helper (SEG {selectedLead.segment})
+                    <Sparkles size={13} className="text-indigo-600" /> Pitch Script (SEG {selectedLead.segment})
                   </h3>
                   <button
                     onClick={() => setScriptExpanded(!scriptExpanded)}
-                    className="text-xs font-bold text-indigo-600 hover:text-indigo-850"
+                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800"
                   >
                     {scriptExpanded ? "Hide" : "Show"}
                   </button>
@@ -263,61 +476,11 @@ export default function LeadDetailPanel({
 
         {activeProfileTab === "notes" && (
           <div className="space-y-6">
-            {/* Call Outcome Quick action row */}
-            <div className="bg-white border border-slate-200/60 rounded-3xl p-5 shadow-sm">
-              <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase mb-3 flex items-center gap-1.5">
-                <Phone size={13} className="text-slate-500" /> Quick Outcome Disposition
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { id: "converted", label: "✓ Converted", style: "border-emerald-250 bg-emerald-50/20 text-emerald-700 hover:bg-emerald-50" },
-                  { id: "callback", label: "📅 Callback", style: "border-amber-250 bg-amber-50/20 text-amber-700 hover:bg-amber-50" },
-                  { id: "not_interested", label: "Not Interested", style: "border-slate-200 bg-white text-slate-700 hover:bg-slate-55" },
-                  { id: "no_answer", label: "No Answer", style: "border-slate-200 bg-white text-slate-700 hover:bg-slate-55" },
-                  { id: "do_not_call", label: "Do Not Call", style: "border-red-250 bg-red-50/20 text-red-700 hover:bg-red-50" },
-                  { id: "unreachable", label: "Unreachable", style: "border-slate-200 bg-white text-slate-700 hover:bg-slate-55" }
-                ].map((o) => (
-                  <button
-                    key={o.id}
-                    onClick={() => handleQuickOutcome(o.id)}
-                    className={`py-2 px-3 text-xs font-extrabold rounded-xl border transition-all hover:scale-[1.01] active:scale-[0.99] shadow-sm flex items-center justify-center ${o.style}`}
-                  >
-                    {o.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Quick Note Card */}
-            <div className="bg-white border border-slate-200/60 rounded-3xl p-5 shadow-sm flex flex-col justify-between min-h-[220px]">
-              <div>
-                <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase mb-3 flex items-center gap-1.5">
-                  <StickyNote size={13} className="text-slate-500" /> Quick Interaction Note
-                </h3>
-                <textarea
-                  value={quickNoteContent}
-                  onChange={(e) => setQuickNoteContent(e.target.value)}
-                  placeholder="Outcome summary... e.g. Interested, wants demo call tomorrow 5 PM"
-                  rows={4}
-                  className="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all resize-none shadow-inner"
-                />
-              </div>
-              <div className="flex justify-end mt-2">
-                <button
-                  onClick={() => saveQuickNote(selectedLead.id)}
-                  disabled={quickNoteSaving || !quickNoteContent.trim()}
-                  className="px-4.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-label text-xs font-bold disabled:opacity-50 transition-all shadow-sm hover:scale-[1.01] active:scale-[0.99]"
-                >
-                  {quickNoteSaving ? <RefreshCw size={12} className="animate-spin" /> : "Save Note"}
-                </button>
-              </div>
-            </div>
-
-            {/* Interaction Timeline box */}
+            {/* Full Interaction Timeline */}
             <div className="bg-white border border-slate-200/60 rounded-3xl p-6 shadow-sm">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="font-display text-xs font-black text-slate-800 flex items-center gap-1.5 tracking-widest uppercase">
-                  <Inbox size={13} className="text-slate-500" /> Interaction Timeline
+                  <Inbox size={13} className="text-slate-500" /> Full Interaction Timeline
                 </h3>
                 <button
                   onClick={() => setHistoryLead(selectedLead)}
@@ -326,7 +489,7 @@ export default function LeadDetailPanel({
                   History Modal
                 </button>
               </div>
-              
+
               {selectedLeadNotes?.notes && selectedLeadNotes.notes.length > 0 ? (
                 <div className="relative border-l border-slate-100 pl-4.5 ml-2.5 space-y-4">
                   {selectedLeadNotes.notes.map((n) => (
@@ -334,9 +497,9 @@ export default function LeadDetailPanel({
                       <span className="absolute -left-[23px] top-1.5 w-2.5 h-2.5 rounded-full bg-indigo-500 border-2 border-white ring-2 ring-indigo-100" />
                       <div className="flex justify-between items-center text-[10px] text-slate-400 font-bold mb-1">
                         <span>{timeAgo(n.created_at)}</span>
-                        {n.is_pinned && <span className="text-indigo-650 bg-indigo-50 px-1.5 py-0.2 rounded-full font-black text-[7px]">PINNED</span>}
+                        {n.is_pinned && <span className="text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-full font-black text-[7px]">PINNED</span>}
                       </div>
-                      <div className="font-body text-xs text-slate-650 bg-slate-55 border border-slate-100/60 p-3.5 rounded-2xl leading-relaxed">
+                      <div className="font-body text-xs text-slate-600 bg-slate-50 border border-slate-100/60 p-3.5 rounded-2xl leading-relaxed">
                         {n.content}
                       </div>
                     </div>

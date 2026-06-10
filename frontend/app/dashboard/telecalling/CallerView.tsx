@@ -2,7 +2,7 @@
 import { toast } from "sonner";
 import { useEffect, useState, useCallback } from "react";
 import { Phone, RefreshCw, Check, Download, Inbox, User, Sparkles, Search, Clock, AlertCircle } from "lucide-react";
-import { api, Caller, Lead, CallLog } from "@/lib/api";
+import { api, Caller, Lead, CallLog, Message } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import LiveNotesPane from "./components/live-notes-pane";
 import NotesHistoryModal from "./components/notes-history-modal";
@@ -33,6 +33,8 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [selectedLeadNotes, setSelectedLeadNotes] = useState<NotesResponse | null>(null);
+  const [selectedLeadMessages, setSelectedLeadMessages] = useState<Message[]>([]);
+  const [selectedLeadCallLogs, setSelectedLeadCallLogs] = useState<CallLog[]>([]);
   const [selectedLeadLoading, setSelectedLeadLoading] = useState(false);
   const [selectedCallbackJobId, setSelectedCallbackJobId] = useState<string | null>(null);
   const [activeProfileTab, setActiveProfileTab] = useState<"overview" | "notes" | "attribution" | "schedule">("overview");
@@ -209,19 +211,25 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     if (!selectedLeadId) {
       setSelectedLead(null);
       setSelectedLeadNotes(null);
+      setSelectedLeadMessages([]);
+      setSelectedLeadCallLogs([]);
       setSelectedCallbackJobId(null);
       return;
     }
     setActiveProfileTab("overview");
     setSelectedLeadLoading(true);
-    
+
     Promise.all([
       api.leads.get(selectedLeadId),
-      fetchNotes(selectedLeadId).catch(() => ({ pinned: [], notes: [] }))
+      fetchNotes(selectedLeadId).catch(() => ({ pinned: [], notes: [] })),
+      api.leads.messages(selectedLeadId).catch(() => []),
+      api.leads.callLogs(selectedLeadId).catch(() => []),
     ])
-      .then(([leadData, notesData]) => {
+      .then(([leadData, notesData, messagesData, callLogsData]) => {
         setSelectedLead(leadData);
         setSelectedLeadNotes(notesData);
+        setSelectedLeadMessages(messagesData);
+        setSelectedLeadCallLogs(callLogsData);
       })
       .catch((err) => {
         toast.error("Failed to load lead profile");
@@ -783,6 +791,8 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
             <LeadDetailPanel
               selectedLead={selectedLead!}
               selectedLeadNotes={selectedLeadNotes}
+              selectedLeadMessages={selectedLeadMessages}
+              selectedLeadCallLogs={selectedLeadCallLogs}
               selectedLeadLoading={selectedLeadLoading}
               activeProfileTab={activeProfileTab}
               setActiveProfileTab={setActiveProfileTab}
