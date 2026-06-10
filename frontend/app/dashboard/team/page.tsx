@@ -1,10 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Trash2, UserPlus, Phone, Pencil, Check, X, Loader2, Activity } from "lucide-react";
+import { Trash2, UserPlus, Phone, Pencil, Check, X, Loader2, Activity, Users, TrendingUp, ClipboardList } from "lucide-react";
 import Link from "next/link";
-import { api, TeamMember } from "@/lib/api";
+import { api, TeamMember, Caller } from "@/lib/api";
 import { useAuthRole } from "../contexts/AuthRoleContext";
 import WinnerBanner from "./WinnerBanner";
+import AssignmentLog from "../telecalling/components/assignment-log";
+import PerformanceView from "../telecalling/components/performance-view";
 
 function InlineEditCell({
   callerId,
@@ -73,7 +75,9 @@ function InlineEditCell({
 export default function TeamPage() {
   const { role, loading: roleLoading } = useAuthRole();
   const [members, setMembers] = useState<TeamMember[]>([]);
+  const [callers, setCallers] = useState<Caller[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<"members" | "log" | "performance">("members");
   const [showInvite, setShowInvite] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -86,8 +90,12 @@ export default function TeamPage() {
   async function load() {
     setLoading(true);
     try {
-      const res = await api.team.list();
-      setMembers(res.data);
+      const [teamRes, callersRes] = await Promise.all([
+        api.team.list(),
+        api.callers.list().catch(() => [])
+      ]);
+      setMembers(teamRes.data);
+      setCallers(callersRes);
     } finally {
       setLoading(false);
     }
@@ -153,6 +161,28 @@ export default function TeamPage() {
 
       <WinnerBanner />
 
+      {/* View tabs */}
+      <div className="mb-6 flex gap-2">
+        <button onClick={() => setTab("members")}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-label text-sm font-semibold transition-colors border ${tab === "members" ? "bg-primary/10 text-primary border-primary/20" : "bg-white text-on-surface-muted border-surface-mid hover:border-primary/30"}`}>
+          <Users size={14} /> Team Members
+        </button>
+        <button onClick={() => setTab("log")}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-label text-sm font-semibold transition-colors border ${tab === "log" ? "bg-primary/10 text-primary border-primary/20" : "bg-white text-on-surface-muted border-surface-mid hover:border-primary/30"}`}>
+          <ClipboardList size={14} /> Assignment Log
+        </button>
+        <button onClick={() => setTab("performance")}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-label text-sm font-semibold transition-colors border ${tab === "performance" ? "bg-primary/10 text-primary border-primary/20" : "bg-white text-on-surface-muted border-surface-mid hover:border-primary/30"}`}>
+          <TrendingUp size={14} /> Performance
+        </button>
+      </div>
+
+      {tab === "log" ? (
+        <AssignmentLog callers={callers} />
+      ) : tab === "performance" ? (
+        <PerformanceView callers={callers} />
+      ) : (
+      <>
       {showInvite && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-card-hover w-full max-w-md p-6">
@@ -283,6 +313,8 @@ export default function TeamPage() {
           </table>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }
