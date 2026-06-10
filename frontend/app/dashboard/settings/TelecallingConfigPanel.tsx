@@ -27,9 +27,6 @@ const SEGMENT_LABELS: Record<string, string> = {
 
 const CHANNEL_LABELS: Record<string, string> = {
   whatsapp: "WhatsApp",
-  instagram: "Instagram",
-  facebook: "Facebook",
-  telegram: "Telegram",
 };
 
 function toggle<T>(arr: T[], item: T): T[] {
@@ -48,8 +45,12 @@ export function TelecallingConfigPanel() {
       const res = await fetch(`${API_URL}/api/v1/settings/telecalling-config`, { headers: auth });
       if (res.ok) {
         const data = await res.json();
-        setConfig(data);
-        setDraft(data);
+        const sanitizedData = {
+          ...data,
+          channels: data.channels ? data.channels.filter((c: string) => c === "whatsapp") : ["whatsapp"]
+        };
+        setConfig(sanitizedData);
+        setDraft(sanitizedData);
       }
     } catch { /* non-critical */ }
   }, []);
@@ -162,19 +163,6 @@ export function TelecallingConfigPanel() {
             </div>
           </div>
 
-          {/* Max Call Attempts */}
-          <div>
-            <div className="font-label text-sm font-semibold text-ink mb-1">Max Call Attempts</div>
-            <div className="font-body text-xs text-ink-muted mb-2">Maximum unanswered call attempts before marking a lead as unreachable (default 4)</div>
-            <input
-              type="number"
-              min="1"
-              max="20"
-              value={draft.max_call_attempts ?? 4}
-              onChange={(e) => setDraft({ ...draft, max_call_attempts: parseInt(e.target.value) || 4 })}
-              className="px-3 py-2 rounded-xl border border-border bg-surface font-body text-sm w-32 focus:outline-none focus:ring-2 focus:ring-amber-500"
-            />
-          </div>
 
           {/* Assignment Mode */}
           <div>

@@ -47,6 +47,18 @@ export default function AdminView() {
   const [viewingLeadNotes, setViewingLeadNotes] = useState<NotesResponse | null>(null);
   const [viewingLeadLoading, setViewingLeadLoading] = useState(false);
 
+  // Lock body scroll when modals are open to prevent double scrollbars
+  useEffect(() => {
+    if (showConfigModal || viewingLeadId) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [showConfigModal, viewingLeadId]);
+
   // Fetch full details for the viewing lead
   useEffect(() => {
     if (!viewingLeadId) {
