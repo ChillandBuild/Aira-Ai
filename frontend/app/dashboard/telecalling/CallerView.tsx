@@ -587,7 +587,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
 
             {/* Lead Cards List or Numpad Dialer */}
             {queueSubTab === "dialer" ? (
-              <div className="flex-1 flex flex-col justify-center items-center py-4 bg-slate-50/20 border border-dashed border-slate-200 rounded-3xl overflow-y-auto min-h-[400px]">
+              <div className="flex-1 overflow-y-auto flex flex-col items-center pt-4 pb-2">
                 <NumpadDialer
                   value={manualPhone}
                   onChange={setManualPhone}
@@ -704,29 +704,6 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
             )}
           </div>
           
-          {/* Dial Offline Widget */}
-          <div className="bg-white rounded-3xl p-5 border border-slate-200/60 shadow-sm shrink-0">
-            <h3 className="font-display text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
-              <Phone size={14} className="text-indigo-500" /> Quick Dial Offline
-            </h3>
-            <div className="flex gap-2">
-              <input
-                type="tel"
-                placeholder="e.g. +919942497199"
-                value={manualPhone}
-                onChange={(e) => setManualPhone(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && manualDialWithGuard()}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 font-body text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner"
-              />
-              <button
-                onClick={manualDialWithGuard}
-                disabled={manualDialing || !manualPhone.trim()}
-                className="px-4 py-2.5 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl font-label text-xs font-bold transition-all shadow-md shrink-0 hover:scale-[1.01] active:scale-[0.99]"
-              >
-                {manualDialing ? <RefreshCw size={14} className="animate-spin" /> : "Dial"}
-              </button>
-            </div>
-          </div>
         </div>
 
         {/* Right Side: Detailed Profile Page (7/12 columns) */}
