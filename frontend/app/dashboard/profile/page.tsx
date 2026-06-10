@@ -21,6 +21,7 @@ export default function ProfilePage() {
   const [tip, setTip] = useState<string | null>(null);
   const [tipLoading, setTipLoading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [performance, setPerformance] = useState<{ target: number; achieved: number }>({ target: 50, achieved: 0 });
 
   const loadProfile = useCallback(async () => {
     try {
@@ -29,6 +30,12 @@ export default function ProfilePage() {
       if (s.caller_id) {
         const logsRes = await api.callers.logs(s.caller_id);
         setLogs(logsRes);
+      }
+      try {
+        const perf = await api.callers.myPerformance();
+        setPerformance(perf);
+      } catch (err) {
+        console.error("Failed to load performance metrics:", err);
       }
     } catch (err) {
       console.error("Failed to load profile:", err);
@@ -254,6 +261,46 @@ export default function ProfilePage() {
             <span className="font-label text-xs text-on-surface-muted mt-1">
               Calls This Week
             </span>
+          </div>
+
+          <div className="bg-surface rounded-card p-5 shadow-card ring-1 ring-[#c4c7c7]/15 flex flex-col col-span-2 justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-indigo-50">
+                    <Target size={16} className="text-indigo-600" />
+                  </div>
+                  <span className="font-label text-xs text-on-surface-muted font-bold tracking-wider uppercase">
+                    Daily Target
+                  </span>
+                </div>
+                <span className="font-label text-xs font-bold text-on-surface">
+                  {performance.achieved} / {performance.target} Calls
+                </span>
+              </div>
+              
+              <div className="w-full bg-surface-mid rounded-full h-2.5 relative overflow-hidden mt-3">
+                <div
+                  className="bg-gradient-to-r from-indigo-500 to-indigo-600 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min(100, performance.target > 0 ? (performance.achieved / performance.target) * 100 : 0)}%` }}
+                />
+              </div>
+            </div>
+            
+            <div className="flex justify-between items-center mt-3 pt-2 border-t border-surface-low">
+              <span className="text-[11px] text-on-surface-muted font-medium">
+                {performance.target > 0 ? Math.round((performance.achieved / performance.target) * 100) : 0}% achieved
+              </span>
+              {performance.achieved >= performance.target ? (
+                <span className="text-[10px] text-green-600 font-bold bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full animate-pulse">
+                  🎉 Target Met!
+                </span>
+              ) : (
+                <span className="text-[10px] text-amber-600 font-semibold bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">
+                  In Progress
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -1,12 +1,12 @@
 "use client";
 import { toast } from "sonner";
 import { useEffect, useState, useCallback } from "react";
-import { Phone, RefreshCw, ChevronDown, StickyNote, Check, CheckCheck, Download, Calendar, Tag, Target, Inbox, Copy, User, Sparkles, Search, Clock, AlertCircle } from "lucide-react";
+import { Phone, RefreshCw, StickyNote, Check, Download, Calendar, Tag, Target, Inbox, Copy, User, Sparkles, Search, Clock, AlertCircle } from "lucide-react";
 import { api, Caller, Lead, CallLog } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import LiveNotesPane from "./components/live-notes-pane";
 import NotesHistoryModal from "./components/notes-history-modal";
-import { fetchNotes, fetchTodayCallbacks, fetchTodayCompletedCallbacks, markCallbackDone, saveNote, createCallback } from "./lib/notes-api";
+import { fetchNotes, fetchTodayCallbacks, saveNote, createCallback } from "./lib/notes-api";
 import type { CallbackJob, NotesResponse } from "./types";
 import { usePolling } from "@/hooks/usePolling";
 import { useActiveCall } from "../contexts/ActiveCallContext";
@@ -27,8 +27,6 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
 
   // callbacks
   const [todayCallbacks, setTodayCallbacks] = useState<CallbackJob[]>([]);
-  const [completedCallbacks, setCompletedCallbacks] = useState<CallbackJob[]>([]);
-  const [showCompleted, setShowCompleted] = useState(false);
 
   // Selected Lead Profile
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
@@ -36,10 +34,10 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   const [selectedLeadNotes, setSelectedLeadNotes] = useState<NotesResponse | null>(null);
   const [selectedLeadLoading, setSelectedLeadLoading] = useState(false);
   const [selectedCallbackJobId, setSelectedCallbackJobId] = useState<string | null>(null);
+  const [activeProfileTab, setActiveProfileTab] = useState<"overview" | "notes" | "attribution" | "schedule">("overview");
 
   // dialing
   const [dialing, setDialing] = useState<string | null>(null);
-  const [releasingLead, setReleasingLead] = useState<string | null>(null);
   const [confirmRelease, setConfirmRelease] = useState<string | null>(null);
   const [manualPhone, setManualPhone] = useState("");
   const [manualDialing, setManualDialing] = useState(false);
@@ -51,7 +49,6 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   // scheduling
   const [schedDate, setSchedDate] = useState("");
   const [schedTime, setSchedTime] = useState("");
-  const [schedReminder, setSchedReminder] = useState(false);
   const [scheduleSaving, setScheduleSaving] = useState(false);
 
   // modals
@@ -76,51 +73,18 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   // Blocking Pending-Wrapups list
   const [pendingWrapups, setPendingWrapups] = useState<CallLog[]>([]);
 
-  // Assignment Mode
-  const [assignmentMode, setAssignmentMode] = useState<"push" | "pull" | null>(null);
-  const [assignmentModeEnabled, setAssignmentModeEnabled] = useState(false);
-
   // Call Next
   const [dialingNext, setDialingNext] = useState(false);
 
-  // Completed Today Tab Switcher
-  const [activeTab, setActiveTab] = useState<"queue" | "completed">("queue");
+  // Queue status sub-tabs
   const [queueSubTab, setQueueSubTab] = useState<"new" | "callback" | "in_progress" | "closed">("new");
-  const [myCallsTodayList, setMyCallsTodayList] = useState<CallLog[]>([]);
-  const [loadingCallsToday, setLoadingCallsToday] = useState(false);
-
-  // Performance Widget
-  const [performance, setPerformance] = useState<{ target: number; achieved: number }>({ target: 50, achieved: 0 });
 
   // Live Script Panel
   const [telecallingConfig, setTelecallingConfig] = useState<{ scripts?: Record<string, string> } | null>(null);
   const [scriptExpanded, setScriptExpanded] = useState(true);
 
-  // snooze action
-  const snoozeCallback = async (jobId: string, minutes: number) => {
-    const now = new Date();
-    const snoozeTime = new Date(now.getTime() + minutes * 60 * 1000);
-    try {
-      await api.followUps.rescheduleCallback(jobId, snoozeTime.toISOString());
-      toast.success(`Callback snoozed for ${minutes === 1440 ? "tomorrow" : minutes + " minutes"}`);
-      loadCallbacks();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to snooze callback");
-    }
-  };
-
   const loadCallbacks = useCallback(() => {
     fetchTodayCallbacks().then(setTodayCallbacks).catch(() => {});
-    fetchTodayCompletedCallbacks().then(setCompletedCallbacks).catch(() => {});
-  }, []);
-
-  const loadPerformance = useCallback(async () => {
-    try {
-      const perf = await api.callers.myPerformance();
-      setPerformance(perf);
-    } catch (err) {
-      console.error("Failed to load performance:", err);
-    }
   }, []);
 
   const loadPendingWrapups = useCallback(async () => {
@@ -132,34 +96,12 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     }
   }, []);
 
-  const loadMyCallsToday = useCallback(async () => {
-    setLoadingCallsToday(true);
-    try {
-      const list = await api.callers.myCallsToday();
-      setMyCallsTodayList(list);
-    } catch (err) {
-      console.error("Failed to load my calls today:", err);
-    } finally {
-      setLoadingCallsToday(false);
-    }
-  }, []);
-
   const loadTelecallingConfig = useCallback(async () => {
     try {
       const config = await api.settings.getTelecallingConfig();
       setTelecallingConfig(config);
     } catch (err) {
       console.error("Failed to load telecalling config:", err);
-    }
-  }, []);
-
-  const loadAssignmentMode = useCallback(async () => {
-    try {
-      const res = await api.calls.assignmentMode();
-      setAssignmentMode(res.mode);
-      setAssignmentModeEnabled(res.enabled);
-    } catch (err) {
-      console.error("Failed to load assignment mode:", err);
     }
   }, []);
 
@@ -181,17 +123,12 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       if (ids.length) api.calls.recentByLeads(ids).then(setLastCalledMap).catch(() => {});
 
       loadCallbacks();
-      loadPerformance();
       loadPendingWrapups();
       loadTelecallingConfig();
-      loadAssignmentMode();
-      if (activeTab === "completed") {
-        loadMyCallsToday();
-      }
     } catch (err) {
       console.error("CallerView load error:", err);
     }
-  }, [callerId, loadCallbacks, loadPerformance, loadPendingWrapups, loadTelecallingConfig, activeTab, loadMyCallsToday, loadAssignmentMode]);
+  }, [callerId, loadCallbacks, loadPendingWrapups, loadTelecallingConfig]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -274,6 +211,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       setSelectedCallbackJobId(null);
       return;
     }
+    setActiveProfileTab("overview");
     setSelectedLeadLoading(true);
     
     Promise.all([
@@ -329,7 +267,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       const iso = new Date(`${schedDate}T${schedTime}`).toISOString();
       await createCallback(leadId, iso, quickNoteContent.trim() || undefined);
       toast.success("Callback scheduled!");
-      setSchedDate(""); setSchedTime(""); setSchedReminder(false);
+      setSchedDate(""); setSchedTime("");
       loadCallbacks();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to schedule");
@@ -385,20 +323,6 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     } finally { setQuickNoteSaving(false); }
   }
 
-  async function handleMarkDone(jobId: string) {
-    try {
-      await markCallbackDone(jobId);
-      const cb = todayCallbacks.find((c) => c.id === jobId);
-      if (cb) {
-        setTodayCallbacks((prev) => prev.filter((c) => c.id !== jobId));
-        setCompletedCallbacks((prev) => [{ ...cb, status: "sent" }, ...prev]);
-      }
-      toast.success("Callback marked as completed");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to mark done");
-    }
-  }
-
   async function handleRelease(leadId: string) {
     if (confirmRelease !== leadId) {
       setConfirmRelease(leadId);
@@ -406,7 +330,6 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       return;
     }
     setConfirmRelease(null);
-    setReleasingLead(leadId);
     try {
       await api.leads.release(leadId);
       setMyLeads((prev) => prev.filter((l) => l.id !== leadId));
@@ -416,8 +339,6 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       toast.success("Lead released successfully");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to release lead");
-    } finally {
-      setReleasingLead(null);
     }
   }
 
@@ -515,6 +436,42 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     }
   };
 
+  const handleQuickOutcome = async (outcome: string) => {
+    if (!selectedLead) return;
+    if (outcome === "callback") {
+      setActiveProfileTab("schedule");
+      toast.info("Please select date and time for the callback");
+      return;
+    }
+    
+    if (!activeCallCtx?.callLogId) {
+      toast.error("Please call the lead first to log an outcome.");
+      return;
+    }
+
+    setQuickNoteSaving(true);
+    try {
+      await api.calls.setOutcome(
+        activeCallCtx.callLogId,
+        outcome as NonNullable<CallLog["outcome"]>,
+        { notes: quickNoteContent.trim() || undefined }
+      );
+      if (outcome === "converted") {
+        await api.leads.convert(selectedLead.id, quickNoteContent.trim());
+      } else if (quickNoteContent.trim()) {
+        await saveNote(selectedLead.id, quickNoteContent.trim(), false);
+      }
+      setActiveCallCtx(null);
+      toast.success(`Outcome "${outcome.replace('_', ' ')}" logged successfully`);
+      setQuickNoteContent("");
+      loadData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save outcome");
+    } finally {
+      setQuickNoteSaving(false);
+    }
+  };
+
   const filteredLeads = myLeads.filter((lead) => {
     const query = searchQuery.toLowerCase().trim();
     if (!query) return true;
@@ -575,390 +532,195 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       </div>
       {/* Main Split Layout */}
       <div className="flex-1 grid grid-cols-12 gap-6 min-h-0 pb-4">
-        {/* Left Side: Lead List & Callbacks (5/12 columns) */}
-        <div className="col-span-5 flex flex-col gap-5 min-h-0 overflow-y-auto pr-1">
-          {/* Performance Widget */}
-          <div className="p-5 bg-white border border-slate-200/60 rounded-3xl shrink-0 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase flex items-center gap-1.5">
-                <Target size={13} className="text-indigo-600" /> Daily Target Performance
-              </h3>
-              <span className="font-label text-xs font-bold text-slate-500">
-                {performance.achieved} / {performance.target} Calls
-              </span>
-            </div>
-            <div className="w-full bg-slate-100 rounded-full h-3.5 relative overflow-hidden">
-              <div
-                className="bg-gradient-to-r from-indigo-500 to-purple-600 h-full rounded-full transition-all duration-500"
-                style={{ width: `${Math.min(100, performance.target > 0 ? (performance.achieved / performance.target) * 100 : 0)}%` }}
-              />
-            </div>
-            <div className="flex justify-between items-center mt-2.5">
-              <p className="text-[11px] text-slate-400 font-medium">
-                {performance.target > 0 ? Math.round((performance.achieved / performance.target) * 100) : 0}% achieved
-              </p>
-              {performance.achieved >= performance.target && (
-                <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
-                  🎉 Target Met!
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Callbacks Card */}
-          {(todayCallbacks.length > 0 || completedCallbacks.length > 0) && (
-            <div className="p-5 bg-gradient-to-br from-amber-50 to-orange-50/40 border border-amber-100/70 rounded-3xl shrink-0 shadow-sm">
-              <h2 className="font-display text-xs font-black text-amber-800 mb-3 flex items-center gap-2 tracking-widest uppercase">
-                <Clock size={13} className="text-amber-600 animate-pulse" /> Today&apos;s Scheduled Callbacks ({todayCallbacks.length})
-              </h2>
-              {todayCallbacks.length > 0 && (
-                <div className="space-y-2 mb-3">
-                  {todayCallbacks.map((cb) => (
-                    <div
-                      key={cb.id}
-                      onClick={() => setSelectedLeadId(cb.lead.id)}
-                      className={`flex items-center justify-between bg-white rounded-2xl px-4 py-3 shadow-sm border transition-all cursor-pointer hover:border-amber-400 ${
-                        selectedLeadId === cb.lead.id ? "ring-2 ring-amber-400 border-transparent shadow-md" : "border-slate-100"
-                      }`}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="font-semibold text-sm text-slate-800 truncate">{cb.lead.name ?? "Unnamed"}</p>
-                          <span className="text-[10px] bg-amber-50 text-amber-800 border border-amber-100 font-bold px-2 py-0.5 rounded-full">
-                            {new Date(cb.scheduled_for).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-500 mt-1">{cb.lead.phone}</p>
-                        {cb.message_preview && (
-                          <p className="text-[11px] text-amber-900 line-clamp-1 mt-1.5 bg-amber-50/60 border border-amber-100/50 px-2.5 py-1 rounded-lg">
-                            {cb.message_preview}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex flex-col gap-2 ml-3 shrink-0 items-end">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMarkDone(cb.id);
-                          }}
-                          className="text-xs px-3.5 py-1.5 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-xl font-bold hover:shadow-md transition-all hover:scale-[1.02] active:scale-[0.98]"
-                        >
-                          Resolve
-                        </button>
-                        
-                        <div className="flex gap-1">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); snoozeCallback(cb.id, 15); }}
-                            className="text-[9px] bg-white border border-slate-200 px-1.5 py-1 rounded-md text-slate-650 hover:bg-slate-50 hover:border-indigo-500 font-bold transition-all"
-                            title="Snooze 15 minutes"
-                          >
-                            +15m
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); snoozeCallback(cb.id, 60); }}
-                            className="text-[9px] bg-white border border-slate-200 px-1.5 py-1 rounded-md text-slate-650 hover:bg-slate-50 hover:border-indigo-500 font-bold transition-all"
-                            title="Snooze 1 hour"
-                          >
-                            +1h
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); snoozeCallback(cb.id, 1440); }}
-                            className="text-[9px] bg-white border border-slate-200 px-1.5 py-1 rounded-md text-slate-650 hover:bg-slate-50 hover:border-indigo-500 font-bold transition-all"
-                            title="Snooze to Tomorrow"
-                          >
-                            Tom.
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {/* Completed Section */}
-              {completedCallbacks.length > 0 && (
-                <div className="border-t border-amber-100/60 pt-3 mt-3">
-                  <button
-                    onClick={() => setShowCompleted((v) => !v)}
-                    className="flex items-center gap-1.5 text-xs text-amber-800 font-bold hover:text-amber-950 transition-colors"
-                  >
-                    <ChevronDown size={12} className={`transition-transform duration-200 ${showCompleted ? "rotate-180" : ""}`} />
-                    Completed Today ({completedCallbacks.length})
-                  </button>
-                  {showCompleted && (
-                    <div className="space-y-2 mt-2.5">
-                      {completedCallbacks.map((cb) => (
-                        <div key={cb.id} className="flex items-center justify-between bg-white/50 backdrop-blur-sm rounded-2xl px-4 py-2.5 opacity-80 border border-emerald-100/80">
-                          <div>
-                            <p className="font-semibold text-sm line-through text-slate-500">{cb.lead.name ?? "Unnamed"}</p>
-                            <p className="text-xs text-slate-400">
-                              {cb.lead.phone} · {new Date(cb.scheduled_for).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                            </p>
-                          </div>
-                          <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">✓ Done</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
+        {/* Left Side: Lead List (5/12 columns) */}
+        <div className="col-span-5 flex flex-col gap-5 min-h-0 pr-1">
           {/* Lead List Card */}
           <div className="flex-1 bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60 flex flex-col min-h-0">
-            {/* Tab switcher */}
-            <div className="flex border-b border-slate-100 mb-4 shrink-0">
+            {/* Header / Title */}
+            <div className="flex items-center justify-between mb-4 shrink-0">
+              <div>
+                <h2 className="font-display text-xl font-extrabold text-slate-900 tracking-tight">
+                  Lead Queue
+                </h2>
+                <p className="font-body text-xs text-slate-500 mt-0.5">
+                  {myLeads.length} leads assigned
+                </p>
+              </div>
               <button
-                onClick={() => setActiveTab("queue")}
-                className={`flex-1 py-2 font-display text-xs font-black tracking-wider uppercase border-b-2 text-center transition-all ${
-                  activeTab === "queue"
-                    ? "border-indigo-600 text-indigo-700 font-bold"
-                    : "border-transparent text-slate-400 hover:text-slate-600"
-                }`}
+                onClick={handleCallNext}
+                disabled={dialingNext || myStatus !== "active"}
+                className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-indigo-600 to-indigo-755 text-white rounded-2xl font-label text-xs font-bold transition-all shadow-sm hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                title="Call next hot lead in queue"
               >
-                Queue ({myLeads.filter((l) => !l.call_status || !["converted", "not_interested", "dnc", "unreachable"].includes(l.call_status)).length})
-              </button>
-              <button
-                onClick={() => setActiveTab("completed")}
-                className={`flex-1 py-2 font-display text-xs font-black tracking-wider uppercase border-b-2 text-center transition-all ${
-                  activeTab === "completed"
-                    ? "border-indigo-600 text-indigo-700 font-bold"
-                    : "border-transparent text-slate-400 hover:text-slate-600"
-                }`}
-              >
-                Completed Today ({myCallsTodayList.length})
+                {dialingNext ? <RefreshCw size={12} className="animate-spin mr-1" /> : <Sparkles size={12} className="mr-1 fill-white text-white" />}
+                Call Next
               </button>
             </div>
 
-            {activeTab === "queue" ? (
-              <div className="flex-1 flex flex-col min-h-0">
-                <div className="flex flex-col gap-3 mb-5 shrink-0">
-                  <div className="flex items-center justify-between">
-                    <h2 className="font-display text-lg font-bold text-slate-800 flex items-center gap-2">
-                      🎯 Assigned Queue
-                    </h2>
-                    {assignmentModeEnabled && assignmentMode === "pull" && (
-                      <button
-                        onClick={handleCallNext}
-                        disabled={dialingNext || myStatus !== "active"}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl font-label text-xs font-bold transition-all shadow-sm hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
-                        title="Call next hot lead in queue"
-                      >
-                        {dialingNext ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                        Call Next
-                      </button>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="Search leads by name or phone..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-body focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:border-transparent transition-all shadow-inner"
-                    />
-                  </div>
-                  {/* Secondary calling status sub-tabs */}
-                  <div className="flex gap-1.5 p-1 bg-slate-100/80 rounded-2xl shrink-0 mt-2">
-                    <button
-                      onClick={() => setQueueSubTab("new")}
-                      className={`flex-1 py-1.5 px-2 rounded-xl font-label text-[10px] font-bold text-center transition-all ${
-                        queueSubTab === "new"
-                          ? "bg-white text-indigo-700 shadow-sm font-semibold"
-                          : "text-slate-500 hover:text-slate-800"
-                      }`}
-                    >
-                      To Call ({newLeads.length})
-                    </button>
-                    <button
-                      onClick={() => setQueueSubTab("callback")}
-                      className={`flex-1 py-1.5 px-2 rounded-xl font-label text-[10px] font-bold text-center transition-all ${
-                        queueSubTab === "callback"
-                          ? "bg-white text-indigo-700 shadow-sm font-semibold"
-                          : "text-slate-500 hover:text-slate-800"
-                      }`}
-                    >
-                      Callbacks ({callbackLeads.length})
-                    </button>
-                    <button
-                      onClick={() => setQueueSubTab("in_progress")}
-                      className={`flex-1 py-1.5 px-2 rounded-xl font-label text-[10px] font-bold text-center transition-all ${
-                        queueSubTab === "in_progress"
-                          ? "bg-white text-indigo-700 shadow-sm font-semibold"
-                          : "text-slate-500 hover:text-slate-800"
-                      }`}
-                    >
-                      In Progress ({inProgressLeads.length})
-                    </button>
-                    <button
-                      onClick={() => setQueueSubTab("closed")}
-                      className={`flex-1 py-1.5 px-2 rounded-xl font-label text-[10px] font-bold text-center transition-all ${
-                        queueSubTab === "closed"
-                          ? "bg-white text-indigo-700 shadow-sm font-semibold"
-                          : "text-slate-500 hover:text-slate-800"
-                      }`}
-                    >
-                      Closed ({closedLeads.length})
-                    </button>
-                  </div>
+            {/* Search leads */}
+            <div className="mb-4 shrink-0">
+              <div className="relative">
+                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search by name or phone..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-body focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all shadow-inner"
+                />
+              </div>
+            </div>
+
+            {/* Tabs for To Call, Callbacks, In Prog, Closed */}
+            <div className="flex gap-1.5 p-1 bg-slate-100/80 rounded-2xl shrink-0 mb-4">
+              <button
+                onClick={() => setQueueSubTab("new")}
+                className={`flex-1 py-1.5 px-1 rounded-xl font-label text-[10px] font-extrabold text-center transition-all ${
+                  queueSubTab === "new"
+                    ? "bg-white text-indigo-700 shadow-sm"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                To Call ({newLeads.length})
+              </button>
+              <button
+                onClick={() => setQueueSubTab("callback")}
+                className={`flex-1 py-1.5 px-1 rounded-xl font-label text-[10px] font-extrabold text-center transition-all ${
+                  queueSubTab === "callback"
+                    ? "bg-white text-indigo-700 shadow-sm"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Callbacks ({callbackLeads.length})
+              </button>
+              <button
+                onClick={() => setQueueSubTab("in_progress")}
+                className={`flex-1 py-1.5 px-1 rounded-xl font-label text-[10px] font-extrabold text-center transition-all ${
+                  queueSubTab === "in_progress"
+                    ? "bg-white text-indigo-700 shadow-sm"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                In Prog ({inProgressLeads.length})
+              </button>
+              <button
+                onClick={() => setQueueSubTab("closed")}
+                className={`flex-1 py-1.5 px-1 rounded-xl font-label text-[10px] font-extrabold text-center transition-all ${
+                  queueSubTab === "closed"
+                    ? "bg-white text-indigo-700 shadow-sm"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Closed ({closedLeads.length})
+              </button>
+            </div>
+
+            {/* Lead Cards List */}
+            {myLeads.length === 0 ? (
+              <div className="text-center py-12 flex-1 flex flex-col justify-center items-center">
+                <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 border border-slate-100 mb-3">
+                  <Inbox size={18} />
                 </div>
-
-                {myLeads.length === 0 ? (
-                  <div className="text-center py-12 flex-1 flex flex-col justify-center items-center">
-                    <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 border border-slate-100 mb-3">
-                      <Inbox size={18} />
-                    </div>
-                    <p className="font-body text-sm font-semibold text-slate-500">No leads assigned to you</p>
-                    <p className="font-label text-xs text-slate-400 mt-1">Queue automations will route hot leads as they arrive.</p>
-                  </div>
-                ) : activeSubTabLeads.length === 0 ? (
-                  <div className="text-center py-12 flex-1 flex flex-col justify-center items-center">
-                    <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 border border-slate-100 mb-3">
-                      <Inbox size={18} />
-                    </div>
-                    <p className="font-body text-sm font-semibold text-slate-500">No matching leads found</p>
-                    <p className="font-label text-xs text-slate-400 mt-1">Try switching tabs or adjusting your search query.</p>
-                  </div>
-                ) : (
-                  <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
-                    {activeSubTabLeads.map((lead) => {
-                      let borderAccent = "border-l-slate-300";
-                      if (lead.score >= 8) {
-                        borderAccent = "border-l-rose-500";
-                      } else if (lead.score >= 6) {
-                        borderAccent = "border-l-amber-500";
-                      } else if (lead.score >= 4) {
-                        borderAccent = "border-l-indigo-400";
-                      }
-
-                      const isSelected = selectedLeadId === lead.id;
-
-                      return (
-                        <div
-                          key={lead.id}
-                          onClick={() => setSelectedLeadId(lead.id)}
-                          className={`rounded-2xl border-y border-r border-l-4 transition-all duration-200 cursor-pointer p-4 flex items-center justify-between gap-3 ${borderAccent} ${
-                            isSelected
-                              ? "bg-gradient-to-r from-indigo-50/80 to-purple-50/30 border-indigo-200 shadow-[0_4px_15px_rgba(99,102,241,0.08)] ring-1 ring-indigo-500/10 translate-x-1"
-                              : "bg-slate-50/30 border-slate-150 hover:bg-slate-50 hover:shadow-sm hover:-translate-y-0.5"
-                          }`}
-                        >
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="font-body text-sm font-bold text-slate-800 truncate">
-                                {lead.name || formatPhone(lead.phone)}
-                              </p>
-                              {lead.score >= 7 && (
-                                <span className="px-1.5 py-0.5 bg-rose-50 text-rose-600 rounded font-label text-[9px] font-black uppercase tracking-wider">HOT</span>
-                              )}
-                              <span className={`px-1.5 py-0.5 rounded font-label text-[9px] font-black ${
-                                lead.segment === "A" ? "bg-emerald-50 text-emerald-700" :
-                                lead.segment === "B" ? "bg-blue-50 text-blue-700" :
-                                lead.segment === "C" ? "bg-amber-50 text-amber-700" :
-                                "bg-slate-100 text-slate-700"
-                              }`}>
-                                SEG {lead.segment}
-                              </span>
-                              {lead.call_status && lead.call_status !== "new" && (
-                                <span className={`px-1.5 py-0.5 rounded font-label text-[9px] font-black uppercase ${
-                                  lead.call_status === "converted" ? "bg-emerald-100 text-emerald-800" :
-                                  lead.call_status === "dnc" ? "bg-red-100 text-red-800" :
-                                  lead.call_status === "unreachable" ? "bg-rose-100 text-rose-800" :
-                                  lead.call_status === "callback" ? "bg-amber-100 text-amber-800" :
-                                  "bg-indigo-100 text-indigo-850"
-                                }`}>
-                                  {lead.call_status}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2 mt-1.5">
-                              <p className="font-label text-xs text-slate-500">
-                                {lead.name ? formatPhone(lead.phone) + " · " : ""}Score {lead.score}
-                              </p>
-                            </div>
-                            {lastCalledMap[lead.id] && (
-                              <div className="flex items-center gap-1 text-[10px] text-slate-400 mt-1">
-                                <Clock size={10} />
-                                <span>Called {timeAgo(lastCalledMap[lead.id])}</span>
-                              </div>
-                            )}
-                          </div>
-                          
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRelease(lead.id);
-                            }}
-                            disabled={releasingLead === lead.id}
-                            title="Release / Mark Lead as Resolved"
-                            className={`p-2 rounded-xl transition-all border shrink-0 hover:shadow-sm ${
-                              confirmRelease === lead.id
-                                ? "bg-red-50 text-red-600 border-red-300 font-bold text-[10px] px-2.5 py-1"
-                                : "hover:bg-white text-slate-400 border-transparent hover:border-slate-200"
-                            }`}
-                          >
-                            {releasingLead === lead.id ? (
-                              <RefreshCw size={13} className="animate-spin text-red-600" />
-                            ) : confirmRelease === lead.id ? (
-                              "Confirm?"
-                            ) : (
-                              <CheckCheck size={14} className="hover:text-emerald-600" />
-                            )}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                <p className="font-body text-sm font-semibold text-slate-500">No leads assigned to you</p>
+                <p className="font-label text-xs text-slate-400 mt-1">Queue automations will route hot leads as they arrive.</p>
+              </div>
+            ) : activeSubTabLeads.length === 0 ? (
+              <div className="text-center py-12 flex-1 flex flex-col justify-center items-center">
+                <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 border border-slate-100 mb-3">
+                  <Inbox size={18} />
+                </div>
+                <p className="font-body text-sm font-semibold text-slate-500">No matching leads found</p>
+                <p className="font-label text-xs text-slate-400 mt-1">Try switching tabs or adjusting your search query.</p>
               </div>
             ) : (
-              // Completed Today list
-              <div className="flex-1 flex flex-col min-h-0">
-                {loadingCallsToday ? (
-                  <div className="text-center py-12 flex-1 flex flex-col justify-center items-center">
-                    <RefreshCw size={18} className="animate-spin text-slate-400 mb-2" />
-                    <p className="font-body text-xs text-slate-400">Loading completed calls...</p>
-                  </div>
-                ) : myCallsTodayList.length === 0 ? (
-                  <div className="text-center py-12 flex-1 flex flex-col justify-center items-center">
-                    <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-slate-450 border border-slate-100 mb-3">
-                      <Phone size={18} />
-                    </div>
-                    <p className="font-body text-sm font-semibold text-slate-500">No calls completed today</p>
-                    <p className="font-label text-xs text-slate-400 mt-1">Completed calls with feedback will list here.</p>
-                  </div>
-                ) : (
-                  <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
-                    {myCallsTodayList.map((log) => (
-                      <div
-                        key={log.id}
-                        className="rounded-2xl border border-slate-150 bg-slate-50/20 p-4 flex items-center justify-between gap-3 hover:bg-slate-50"
-                      >
+              <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+                {activeSubTabLeads.map((lead) => {
+                  const isSelected = selectedLeadId === lead.id;
+                  
+                  // Left border and circle color matches the status of lead
+                  let borderAccent = "border-l-indigo-400";
+                  let avatarBg = "bg-indigo-500";
+                  let callBtnBg = "bg-emerald-500 hover:bg-emerald-600";
+                  
+                  if (lead.score >= 8) {
+                    borderAccent = "border-l-red-500";
+                    avatarBg = "bg-red-500";
+                    callBtnBg = "bg-red-550 hover:bg-red-600";
+                  } else if (lead.call_status === "callback") {
+                    borderAccent = "border-l-amber-500";
+                    avatarBg = "bg-amber-500";
+                    callBtnBg = "bg-emerald-500 hover:bg-emerald-600";
+                  } else if (lead.call_status && ["converted", "not_interested", "dnc", "unreachable"].includes(lead.call_status)) {
+                    borderAccent = "border-l-slate-350";
+                    avatarBg = "bg-slate-400";
+                    callBtnBg = "bg-slate-450 hover:bg-slate-500";
+                  }
+
+                  return (
+                    <div
+                      key={lead.id}
+                      onClick={() => setSelectedLeadId(lead.id)}
+                      className={`rounded-2xl border-y border-r border-l-[6px] transition-all duration-200 cursor-pointer p-4 flex items-center justify-between gap-3 ${borderAccent} ${
+                        isSelected
+                          ? "bg-gradient-to-r from-indigo-50/70 to-purple-50/20 border-indigo-200 shadow-[0_4px_15px_rgba(99,102,241,0.06)] ring-1 ring-indigo-500/10 translate-x-1"
+                          : "bg-slate-50/30 border-slate-100 hover:bg-slate-50 hover:shadow-sm"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        {/* Initial Circle Avatar */}
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-display text-sm font-bold text-white shrink-0 ${avatarBg}`}>
+                          {lead.name ? lead.name.charAt(0).toUpperCase() : <User size={14} />}
+                        </div>
+
                         <div className="min-w-0 flex-1">
-                          <p className="font-body text-sm font-bold text-slate-800 truncate">
-                            {log.leads?.name || formatPhone(log.leads?.phone || "")}
-                          </p>
-                          <p className="font-label text-xs text-slate-500 mt-1">
-                            Duration: {log.duration_seconds || 0}s · {new Date(log.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                          </p>
-                          <div className="flex gap-2 mt-1.5 flex-wrap">
-                            {log.disposition && (
-                              <span className="px-1.5 py-0.5 bg-slate-100 text-slate-650 border border-slate-200 rounded font-label text-[9px] font-bold">
-                                {log.disposition}
-                              </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="font-body text-sm font-bold text-slate-800 truncate">
+                              {lead.name || formatPhone(lead.phone)}
+                            </p>
+                            {lead.score >= 7 && (
+                              <span className="px-1.5 py-0.5 bg-rose-100 text-rose-600 rounded font-label text-[8px] font-black uppercase tracking-wider">HOT</span>
                             )}
-                            {log.outcome && (
-                              <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded font-label text-[9px] font-bold">
-                                Outcome: {log.outcome}
-                              </span>
+                            <span className="px-1.5 py-0.5 bg-indigo-55 text-indigo-700 rounded font-label text-[8px] font-black uppercase">
+                              SEG {lead.segment}
+                            </span>
+                            {lead.call_status === "callback" && (
+                              <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded font-label text-[8px] font-black uppercase">CALLBACK</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <p className="font-label text-xs text-slate-500">
+                              {lead.name ? formatPhone(lead.phone) + " · " : ""}Score {lead.score}/10
+                            </p>
+                          </div>
+                          
+                          {/* Third line showing action status/time */}
+                          <div className="flex items-center gap-1 text-[10px] text-slate-400 mt-1">
+                            <Clock size={10} />
+                            {lead.call_status === "callback" ? (
+                              <span>Scheduled callback</span>
+                            ) : lastCalledMap[lead.id] ? (
+                              <span>Called {timeAgo(lastCalledMap[lead.id])}</span>
+                            ) : (
+                              <span>Not called yet</span>
                             )}
                           </div>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
+                      
+                      {/* Direct phone call button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          dialWithGuard(lead.id, lead);
+                        }}
+                        disabled={dialing === lead.id}
+                        className={`p-2.5 rounded-xl transition-all shadow-sm shrink-0 flex items-center justify-center text-white ${callBtnBg}`}
+                      >
+                        <Phone size={14} className="fill-white" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1069,12 +831,16 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
             // Lead Profile View
             <div className="flex-1 flex flex-col min-h-0 bg-slate-50/20">
               {/* Premium Gradient Header Card */}
-              <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 text-white p-6 relative overflow-hidden shrink-0 shadow-md">
+              <div className="bg-gradient-to-br from-[#1a1c3d] via-[#12132e] to-[#0c0d1f] text-white p-6 relative overflow-hidden shrink-0 shadow-md">
                 <div className="absolute right-0 bottom-0 top-0 w-1/3 bg-radial-gradient from-indigo-500/10 to-transparent pointer-events-none" />
                 
                 <div className="flex justify-between items-center gap-4 relative z-10">
                   <div className="flex gap-4 items-center min-w-0">
-                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center font-display text-2xl font-bold text-white shadow-inner shrink-0">
+                    <div className={`w-14 h-14 rounded-full flex items-center justify-center font-display text-2xl font-bold text-white shadow-inner shrink-0 ${
+                      selectedLead.score >= 8 ? "bg-red-500" :
+                      selectedLead.call_status === "callback" ? "bg-amber-500" :
+                      "bg-indigo-500"
+                    }`}>
                       {selectedLead.name ? selectedLead.name.charAt(0).toUpperCase() : <User size={22} />}
                     </div>
                     
@@ -1091,10 +857,14 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                         </span>
                       </div>
                       
-                      <p className="text-slate-300 font-label text-sm mt-1.5 tracking-wide flex items-center gap-1.5">
+                      <p className="text-slate-300 font-label text-sm mt-1.5 tracking-wide flex flex-wrap items-center gap-1.5">
                         <span className="font-bold text-white">{formatPhone(selectedLead.phone)}</span>
                         <span className="text-slate-500">•</span>
                         <span>Score: {selectedLead.score}/10</span>
+                        <span className="text-slate-500">•</span>
+                        <span>{selectedLead.channel || selectedLead.source || "Direct"}</span>
+                        <span className="text-slate-500">•</span>
+                        <span>Assigned {selectedLead.assigned_at ? timeAgo(selectedLead.assigned_at) : "recent"}</span>
                       </p>
                     </div>
                   </div>
@@ -1104,8 +874,8 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                       onClick={() => handleRelease(selectedLead.id)}
                       className={`px-4 py-2.5 rounded-2xl border font-label text-xs font-bold transition-all text-slate-300 hover:text-white ${
                         confirmRelease === selectedLead.id
-                          ? "bg-red-600 border-red-500 text-white font-bold animate-pulse"
-                          : "border-slate-700/60 bg-slate-900/60 hover:bg-slate-900"
+                          ? "bg-red-650 border-red-500 text-white font-bold animate-pulse"
+                          : "border-slate-700/60 bg-slate-900/40 hover:bg-slate-900"
                       }`}
                     >
                       {confirmRelease === selectedLead.id ? "Release?" : "Release Lead"}
@@ -1122,255 +892,318 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                 </div>
               </div>
 
+              {/* Sub-tabs Row */}
+              <div className="flex border-b border-slate-200 bg-white shrink-0">
+                {[
+                  { id: "overview", label: "Overview" },
+                  { id: "notes", label: "Notes & Log" },
+                  { id: "attribution", label: "Attribution" },
+                  { id: "schedule", label: "Schedule" }
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setActiveProfileTab(t.id as "overview" | "notes" | "attribution" | "schedule")}
+                    className={`px-6 py-4 font-display text-xs font-black tracking-wider uppercase border-b-2 text-center transition-all ${
+                      activeProfileTab === t.id
+                        ? "border-indigo-600 text-indigo-700 font-bold"
+                        : "border-transparent text-slate-400 hover:text-slate-650"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
               {/* Profile Details Body (Scrollable) */}
               <div className="flex-1 overflow-y-auto p-6 space-y-6">
                 
-                {/* Live Pitch Script Card */}
-                {selectedLead && telecallingConfig?.scripts?.[selectedLead.segment] && (
-                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50/50 border border-blue-150 rounded-3xl p-5 shadow-sm shrink-0">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-display text-xs font-black text-indigo-950 tracking-widest uppercase flex items-center gap-2">
-                        <Sparkles size={14} className="text-indigo-650 animate-pulse" /> Pitch Script (Segment {selectedLead.segment})
-                      </h3>
-                      <button
-                        onClick={() => setScriptExpanded(!scriptExpanded)}
-                        className="text-xs font-bold text-indigo-650 hover:text-indigo-850 transition-colors"
-                      >
-                        {scriptExpanded ? "Collapse" : "Expand"}
-                      </button>
-                    </div>
-                    
-                    {scriptExpanded && (
-                      <div className="mt-3 bg-white border border-blue-100/60 p-4 rounded-2xl text-slate-700 font-body text-sm leading-relaxed whitespace-pre-wrap shadow-inner">
-                        {telecallingConfig.scripts[selectedLead.segment]}
+                {activeProfileTab === "overview" && (
+                  <>
+                    {/* Lead Source banner */}
+                    <div className="bg-blue-50/60 border border-blue-100 rounded-2xl p-4 shadow-sm flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-blue-100/50 text-blue-600 rounded-xl shrink-0">
+                          <Inbox size={16} />
+                        </div>
+                        <div>
+                          <p className="font-label text-[9px] text-slate-400 uppercase tracking-wider font-extrabold">Lead Source</p>
+                          <p className="font-body text-sm font-semibold text-slate-800 mt-0.5">
+                            {selectedLead.channel || selectedLead.source || "Organic Inbound"} — {selectedLead.ad_campaign_name || selectedLead.template_name || "Organic Traffic"}
+                          </p>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                )}
+                      <span className="font-label text-xs text-slate-400 font-medium whitespace-nowrap">
+                        {selectedLead.assigned_at ? timeAgo(selectedLead.assigned_at) : "recent"}
+                      </span>
+                    </div>
 
-                {/* 1. Assignment Info Widget */}
-                <div className="bg-white border border-slate-200/60 rounded-3xl p-4 shadow-sm flex items-center gap-3.5">
-                  <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl shrink-0">
-                    <Calendar size={18} />
-                  </div>
-                  <div>
-                    <p className="font-label text-[10px] text-slate-400 uppercase tracking-widest font-extrabold">Telecaller Queue Assignment Time</p>
-                    <p className="font-body text-sm font-bold text-slate-800 mt-0.5">
-                      {selectedLead.assigned_at 
-                        ? new Date(selectedLead.assigned_at).toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' })
-                        : "Prior to tracking (unmarked)"}
-                    </p>
-                  </div>
-                </div>
-
-                {/* 2. Marketing Attribution Grid (Outbound vs Inbound Visual Cues) */}
-                {selectedLead.broadcast_id || selectedLead.template_name ? (
-                  // Outbound Lead Card
-                  <div className="bg-gradient-to-br from-purple-50/50 to-indigo-50/30 border border-purple-100 rounded-3xl p-6 shadow-sm">
-                    <h3 className="font-display text-xs font-black text-purple-800 mb-4 flex items-center gap-2 tracking-widest uppercase">
-                      <Target size={14} className="text-purple-600 animate-pulse" /> Outbound Campaign Attribution
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="bg-white/80 backdrop-blur-sm border border-purple-100/60 rounded-2xl p-4 relative shadow-sm hover:shadow-md transition-shadow">
-                        <span className="font-label text-[10px] text-purple-700/60 uppercase font-extrabold tracking-wider block">Broadcast Campaign ID</span>
-                        <p className="font-mono text-xs text-slate-800 font-bold mt-1.5 truncate pr-8 select-all">
-                          {selectedLead.broadcast_id || "None"}
-                        </p>
-                        {selectedLead.broadcast_id && (
-                          <button 
-                            onClick={() => copyToClipboard(selectedLead.broadcast_id || "", "Broadcast ID")}
-                            className="absolute right-3.5 bottom-3.5 p-1.5 text-purple-400 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition-all"
-                            title="Copy Broadcast ID"
+                    {/* Live Pitch Script (Collapsed/Expandable inline for help) */}
+                    {telecallingConfig?.scripts?.[selectedLead.segment] && (
+                      <div className="bg-gradient-to-r from-blue-50/40 to-indigo-50/20 border border-blue-150 rounded-2xl p-4 shadow-sm">
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-display text-xs font-black text-indigo-950 tracking-widest uppercase flex items-center gap-1.5">
+                            <Sparkles size={13} className="text-indigo-600" /> Pitch Script Helper (SEG {selectedLead.segment})
+                          </h3>
+                          <button
+                            onClick={() => setScriptExpanded(!scriptExpanded)}
+                            className="text-xs font-bold text-indigo-600 hover:text-indigo-850"
                           >
-                            <Copy size={12} />
+                            {scriptExpanded ? "Hide" : "Show"}
                           </button>
+                        </div>
+                        {scriptExpanded && (
+                          <div className="mt-2.5 bg-white border border-blue-100 p-3 rounded-xl text-slate-700 font-body text-xs leading-relaxed whitespace-pre-wrap">
+                            {telecallingConfig.scripts[selectedLead.segment]}
+                          </div>
                         )}
                       </div>
+                    )}
 
-                      <div className="bg-white/80 backdrop-blur-sm border border-purple-100/60 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow">
-                        <span className="font-label text-[10px] text-purple-700/60 uppercase font-extrabold tracking-wider block">Message Template</span>
-                        <p className="font-body text-sm text-slate-800 font-extrabold mt-1.5 truncate">
-                          {selectedLead.template_name || "N/A"}
-                        </p>
-                      </div>
-                    </div>
-
-                    {selectedLead.tag_name && (
-                      <div className="mt-4 bg-white/80 backdrop-blur-sm border border-purple-100/60 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                    {/* Side-by-side: Quick Note + Call Outcome */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      {/* Quick Note Card */}
+                      <div className="bg-white border border-slate-200/60 rounded-3xl p-5 shadow-sm flex flex-col justify-between min-h-[220px]">
                         <div>
-                          <span className="font-label text-[10px] text-purple-700/60 uppercase font-extrabold tracking-wider block">Campaign Tag</span>
-                          <span className="flex items-center gap-1.5 mt-1.5 text-sm font-extrabold text-purple-700">
-                            <Tag size={12} className="text-purple-500" />
-                            {selectedLead.tag_name}
-                          </span>
+                          <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase mb-3 flex items-center gap-1.5">
+                            <StickyNote size={13} className="text-slate-500" /> Quick Note
+                          </h3>
+                          <textarea
+                            value={quickNoteContent}
+                            onChange={(e) => setQuickNoteContent(e.target.value)}
+                            placeholder="Outcome summary... e.g. Interested, wants demo call tomorrow 5 PM"
+                            rows={4}
+                            className="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all resize-none shadow-inner"
+                          />
                         </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  // Inbound Lead Card
-                  <div className="bg-gradient-to-br from-emerald-50/50 to-teal-50/30 border border-emerald-100 rounded-3xl p-6 shadow-sm">
-                    <h3 className="font-display text-xs font-black text-emerald-800 mb-4 flex items-center gap-2 tracking-widest uppercase">
-                      <Target size={14} className="text-emerald-600 animate-pulse" /> Inbound Lead Attribution
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="bg-white/80 backdrop-blur-sm border border-emerald-100/60 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow">
-                        <span className="font-label text-[10px] text-emerald-700/60 uppercase font-extrabold tracking-wider block">Paid Ad Campaign</span>
-                        <p className="font-body text-sm text-slate-800 font-extrabold mt-1.5 truncate">
-                          {selectedLead.ad_campaign_name || "Organic Traffic"}
-                        </p>
-                      </div>
-
-                      <div className="bg-white/80 backdrop-blur-sm border border-emerald-100/60 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow">
-                        <span className="font-label text-[10px] text-emerald-700/60 uppercase font-extrabold tracking-wider block">Lead Source Channel</span>
-                        <p className="font-body text-sm text-slate-800 font-extrabold mt-1.5 capitalize flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-ping" />
-                          {selectedLead.channel || selectedLead.source || "N/A"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 3. Notes & Facts History (Timeline Style) */}
-                <div className="bg-white border border-slate-200/60 rounded-3xl p-6 shadow-sm">
-                  <div className="flex items-center justify-between mb-5">
-                    <h3 className="font-display text-xs font-black text-slate-800 flex items-center gap-2 tracking-widest uppercase">
-                      <StickyNote size={14} className="text-indigo-500" /> Interaction Logs & History
-                    </h3>
-                    {selectedLeadNotes?.notes && selectedLeadNotes.notes.length > 0 && (
-                      <button
-                        onClick={() => setHistoryLead(selectedLead)}
-                        className="text-xs text-indigo-600 font-bold hover:underline"
-                      >
-                        See All ({selectedLeadNotes.notes.length})
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Pinned Facts card */}
-                  {selectedLeadNotes?.pinned && selectedLeadNotes.pinned.length > 0 && (
-                    <div className="mb-5 space-y-2">
-                      <p className="font-label text-[9px] text-slate-400 uppercase tracking-widest font-extrabold">📌 Pinned Core Facts</p>
-                      <div className="grid grid-cols-1 gap-2">
-                        {selectedLeadNotes.pinned.map((n) => (
-                          <div key={n.id} className="p-4 bg-indigo-50/50 border border-indigo-100/50 rounded-2xl">
-                            <p className="font-body text-xs text-slate-700 leading-relaxed font-semibold">{n.content}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Notes timeline list */}
-                  <div className="space-y-4">
-                    <p className="font-label text-[9px] text-slate-400 uppercase tracking-widest font-extrabold">📅 Recent Timeline</p>
-                    {selectedLeadNotes?.notes && selectedLeadNotes.notes.length > 0 ? (
-                      <div className="relative border-l border-slate-100 pl-4.5 ml-2.5 space-y-5">
-                        {selectedLeadNotes.notes.slice(0, 3).map((n) => (
-                          <div key={n.id} className="relative">
-                            {/* Dot icon */}
-                            <span className="absolute -left-[23.5px] top-1 w-2.5 h-2.5 rounded-full bg-indigo-400 border-2 border-white ring-4 ring-white" />
-                            
-                            <div className="flex justify-between items-center text-[10px] text-slate-400 font-bold mb-1">
-                              <span>{timeAgo(n.created_at)}</span>
-                              {n.is_pinned && <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full font-black text-[8px]">PINNED</span>}
-                            </div>
-                            <p className="font-body text-xs text-slate-650 bg-slate-50/80 border border-slate-100 p-3.5 rounded-2xl leading-relaxed">
-                              {n.content}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="p-6 bg-slate-50/60 border border-slate-100 text-center rounded-2xl text-xs text-slate-400">
-                        No previous interactions logged for this lead.
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* 4. Notes & Schedule */}
-                <div className="bg-white border border-slate-200/60 rounded-3xl p-6 shadow-sm">
-                  <h3 className="font-display text-xs font-black text-slate-800 mb-3 uppercase tracking-widest flex items-center gap-2">
-                    <StickyNote size={14} className="text-indigo-500" /> Notes &amp; Schedule
-                  </h3>
-                  <div className="flex flex-col gap-3">
-                    <textarea
-                      value={quickNoteContent}
-                      onChange={(e) => setQuickNoteContent(e.target.value)}
-                      placeholder="Write brief outcome summary of the call (e.g. Call connected, wants a callback tomorrow at 5 PM)..."
-                      rows={3}
-                      className="w-full px-4 py-3.5 rounded-2xl bg-slate-50 border border-slate-200 font-body text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:border-transparent transition-all resize-none shadow-inner"
-                    />
-
-                    {/* Schedule Callback Section */}
-                    <div className="border-t border-slate-100 pt-3">
-                      <button
-                        onClick={() => setSchedReminder((v) => !v)}
-                        className={`flex items-center gap-2 text-xs font-bold transition-colors ${
-                          schedReminder ? "text-indigo-600" : "text-slate-500 hover:text-slate-700"
-                        }`}
-                      >
-                        <div className={`w-8 h-[18px] rounded-full relative transition-colors ${
-                          schedReminder ? "bg-indigo-600" : "bg-slate-200"
-                        }`}>
-                          <div className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow-sm transition-all ${
-                            schedReminder ? "left-[15px]" : "left-[2px]"
-                          }`} />
-                        </div>
-                        <Calendar size={12} />
-                        Set Callback Reminder
-                      </button>
-
-                      {schedReminder && (
-                        <div className="mt-3 flex items-end gap-2">
-                          <div className="flex-1">
-                            <label className="font-label text-[10px] text-slate-400 uppercase tracking-wider font-bold block mb-1">Date</label>
-                            <input
-                              type="date"
-                              value={schedDate}
-                              onChange={(e) => setSchedDate(e.target.value)}
-                              min={new Date().toISOString().split("T")[0]}
-                              className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <label className="font-label text-[10px] text-slate-400 uppercase tracking-wider font-bold block mb-1">Time</label>
-                            <input
-                              type="time"
-                              value={schedTime}
-                              onChange={(e) => setSchedTime(e.target.value)}
-                              className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
-                            />
-                          </div>
+                        <div className="flex justify-end mt-2">
                           <button
-                            onClick={() => handleScheduleCallback(selectedLead.id)}
-                            disabled={scheduleSaving || !schedDate || !schedTime}
-                            className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-label text-xs font-bold hover:from-amber-600 hover:to-orange-600 disabled:opacity-50 transition-all shadow-sm hover:scale-[1.01] active:scale-[0.99] shrink-0"
+                            onClick={() => saveQuickNote(selectedLead.id)}
+                            disabled={quickNoteSaving || !quickNoteContent.trim()}
+                            className="px-4.5 py-2 bg-indigo-600 hover:bg-indigo-755 text-white rounded-xl font-label text-xs font-bold disabled:opacity-50 transition-all shadow-sm hover:scale-[1.01] active:scale-[0.99]"
                           >
-                            {scheduleSaving ? <RefreshCw size={12} className="animate-spin" /> : "Schedule"}
+                            {quickNoteSaving ? <RefreshCw size={12} className="animate-spin" /> : "Save Note"}
                           </button>
+                        </div>
+                      </div>
+
+                      {/* Call Outcome Grid Card */}
+                      <div className="bg-white border border-slate-200/60 rounded-3xl p-5 shadow-sm">
+                        <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase mb-3 flex items-center gap-1.5">
+                          <Phone size={13} className="text-slate-500" /> Call Outcome
+                        </h3>
+                        <div className="grid grid-cols-2 gap-2.5">
+                          {[
+                            { id: "converted", label: "✓ Converted", style: "border-emerald-200 bg-emerald-50/20 text-emerald-700 hover:bg-emerald-50" },
+                            { id: "callback", label: "📅 Callback", style: "border-amber-200 bg-amber-50/20 text-amber-700 hover:bg-amber-50" },
+                            { id: "not_interested", label: "Not Interested", style: "border-slate-200 bg-white text-slate-700 hover:bg-slate-50" },
+                            { id: "no_answer", label: "No Answer", style: "border-slate-200 bg-white text-slate-700 hover:bg-slate-50" },
+                            { id: "do_not_call", label: "Do Not Call", style: "border-red-200 bg-red-50/20 text-red-700 hover:bg-red-55" },
+                            { id: "unreachable", label: "Unreachable", style: "border-slate-200 bg-white text-slate-700 hover:bg-slate-50" }
+                          ].map((o) => (
+                            <button
+                              key={o.id}
+                              onClick={() => handleQuickOutcome(o.id)}
+                              disabled={quickNoteSaving}
+                              className={`py-3 px-1.5 text-center text-xs font-extrabold rounded-xl border transition-all hover:scale-[1.01] active:scale-[0.99] shadow-sm flex items-center justify-center ${o.style}`}
+                            >
+                              {o.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Interaction Timeline box */}
+                    <div className="bg-white border border-slate-200/60 rounded-3xl p-6 shadow-sm">
+                      <h3 className="font-display text-xs font-black text-slate-800 mb-4 flex items-center gap-1.5 tracking-widest uppercase">
+                        <Inbox size={13} className="text-slate-500" /> Interaction Timeline
+                      </h3>
+                      {selectedLeadNotes?.notes && selectedLeadNotes.notes.length > 0 ? (
+                        <div className="relative border-l border-slate-100 pl-4.5 ml-2.5 space-y-4">
+                          {selectedLeadNotes.notes.slice(0, 3).map((n) => (
+                            <div key={n.id} className="relative">
+                              <span className="absolute -left-[23px] top-1.5 w-2.5 h-2.5 rounded-full bg-indigo-500 border-2 border-white ring-2 ring-indigo-100" />
+                              <div className="flex justify-between items-center text-[10px] text-slate-400 font-bold mb-1">
+                                <span>{timeAgo(n.created_at)}</span>
+                                {n.is_pinned && <span className="text-indigo-650 bg-indigo-50 px-1.5 py-0.2 rounded-full font-black text-[7px]">PINNED</span>}
+                              </div>
+                              <div className="font-body text-xs text-slate-650 bg-slate-55 border border-slate-100/60 p-3.5 rounded-2xl leading-relaxed">
+                                {n.content}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="p-6 bg-slate-50/60 border border-slate-100 text-center rounded-2xl text-xs text-slate-400 font-medium">
+                          No previous interactions logged for this lead.
                         </div>
                       )}
                     </div>
+                  </>
+                )}
 
-                    <div className="flex justify-end">
-                      <button
-                        onClick={() => saveQuickNote(selectedLead.id)}
-                        disabled={quickNoteSaving || !quickNoteContent.trim()}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-label text-xs font-bold hover:bg-indigo-700 disabled:opacity-50 transition-all hover:scale-[1.01] active:scale-[0.99] shadow-md hover:shadow-indigo-500/10"
-                      >
-                        {quickNoteSaving ? (
-                          <RefreshCw size={14} className="animate-spin" />
-                        ) : (
-                          <Check size={14} />
-                        )}
-                        <span>Save Interaction Note</span>
-                      </button>
+                {activeProfileTab === "notes" && (
+                  <div className="space-y-6">
+                    {/* Pinned Core Facts card */}
+                    {selectedLeadNotes?.pinned && selectedLeadNotes.pinned.length > 0 && (
+                      <div className="bg-white border border-slate-200/60 rounded-3xl p-5 shadow-sm">
+                        <p className="font-display text-xs font-black text-slate-800 uppercase tracking-widest mb-3">📌 Pinned Core Facts</p>
+                        <div className="space-y-2">
+                          {selectedLeadNotes.pinned.map((n) => (
+                            <div key={n.id} className="p-4 bg-indigo-50/50 border border-indigo-100/50 rounded-2xl">
+                              <p className="font-body text-xs text-slate-705 leading-relaxed font-semibold">{n.content}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Full notes timeline list */}
+                    <div className="bg-white border border-slate-200/60 rounded-3xl p-6 shadow-sm">
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase">Full Notes Timeline</h3>
+                        <button
+                          onClick={() => setHistoryLead(selectedLead)}
+                          className="text-xs text-indigo-600 font-bold hover:underline"
+                        >
+                          Launch History Modal
+                        </button>
+                      </div>
+                      
+                      {selectedLeadNotes?.notes && selectedLeadNotes.notes.length > 0 ? (
+                        <div className="relative border-l border-slate-100 pl-4.5 ml-2.5 space-y-4">
+                          {selectedLeadNotes.notes.map((n) => (
+                            <div key={n.id} className="relative">
+                              <span className="absolute -left-[23px] top-1.5 w-2.5 h-2.5 rounded-full bg-indigo-500 border-2 border-white ring-2 ring-indigo-100" />
+                              <div className="flex justify-between items-center text-[10px] text-slate-400 font-bold mb-1">
+                                <span>{new Date(n.created_at).toLocaleString()}</span>
+                                {n.is_pinned && <span className="text-indigo-650 bg-indigo-50 px-1.5 py-0.2 rounded-full font-black text-[7px]">PINNED</span>}
+                              </div>
+                              <div className="font-body text-xs text-slate-650 bg-slate-55 border border-slate-100/60 p-3.5 rounded-2xl leading-relaxed">
+                                {n.content}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="p-6 bg-slate-50/60 border border-slate-100 text-center rounded-2xl text-xs text-slate-400">
+                          No notes found.
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
+                )}
+
+                {activeProfileTab === "attribution" && (
+                  <div className="space-y-6">
+                    {selectedLead.broadcast_id || selectedLead.template_name ? (
+                      <div className="bg-gradient-to-br from-purple-50/50 to-indigo-50/30 border border-purple-100 rounded-3xl p-6 shadow-sm space-y-4">
+                        <h3 className="font-display text-xs font-black text-purple-800 flex items-center gap-2 tracking-widest uppercase">
+                          <Target size={14} className="text-purple-600" /> Outbound Campaign Attribution
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="bg-white border border-purple-100/60 rounded-2xl p-4 relative shadow-sm">
+                            <span className="font-label text-[10px] text-purple-700/60 uppercase font-extrabold tracking-wider block">Broadcast Campaign ID</span>
+                            <p className="font-mono text-xs text-slate-800 font-bold mt-1.5 truncate pr-8 select-all">
+                              {selectedLead.broadcast_id || "None"}
+                            </p>
+                            {selectedLead.broadcast_id && (
+                              <button 
+                                onClick={() => copyToClipboard(selectedLead.broadcast_id || "", "Broadcast ID")}
+                                className="absolute right-3.5 bottom-3.5 p-1.5 text-purple-400 hover:text-purple-755 hover:bg-purple-50 rounded-lg transition-all"
+                              >
+                                <Copy size={12} />
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="bg-white border border-purple-100/60 rounded-2xl p-4 shadow-sm">
+                            <span className="font-label text-[10px] text-purple-700/60 uppercase font-extrabold tracking-wider block">Message Template</span>
+                            <p className="font-body text-sm text-slate-805 font-extrabold mt-1.5 truncate">
+                              {selectedLead.template_name || "N/A"}
+                            </p>
+                          </div>
+                        </div>
+
+                        {selectedLead.tag_name && (
+                          <div className="bg-white border border-purple-100/60 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                            <div>
+                              <span className="font-label text-[10px] text-purple-700/60 uppercase font-extrabold tracking-wider block">Campaign Tag</span>
+                              <span className="flex items-center gap-1.5 mt-1.5 text-sm font-extrabold text-purple-700">
+                                <Tag size={12} className="text-purple-505" />
+                                {selectedLead.tag_name}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="bg-gradient-to-br from-emerald-50/50 to-teal-50/30 border border-emerald-100 rounded-3xl p-6 shadow-sm space-y-4">
+                        <h3 className="font-display text-xs font-black text-emerald-800 flex items-center gap-2 tracking-widest uppercase">
+                          <Target size={14} className="text-emerald-600" /> Inbound Lead Attribution
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="bg-white border border-emerald-100/60 rounded-2xl p-4 shadow-sm">
+                            <span className="font-label text-[10px] text-emerald-700/60 uppercase font-extrabold tracking-wider block">Paid Ad Campaign</span>
+                            <p className="font-body text-sm text-slate-805 font-extrabold mt-1.5 truncate">
+                              {selectedLead.ad_campaign_name || "Organic Traffic"}
+                            </p>
+                          </div>
+
+                          <div className="bg-white border border-emerald-100/60 rounded-2xl p-4 shadow-sm">
+                            <span className="font-label text-[10px] text-emerald-700/60 uppercase font-extrabold tracking-wider block">Lead Source Channel</span>
+                            <p className="font-body text-sm text-slate-805 font-extrabold mt-1.5 capitalize flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse" />
+                              {selectedLead.channel || selectedLead.source || "N/A"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {activeProfileTab === "schedule" && (
+                  <div className="bg-white border border-slate-200/60 rounded-3xl p-6 shadow-sm space-y-4">
+                    <h3 className="font-display text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                      <Calendar size={14} className="text-slate-500" /> Reschedule Callback
+                    </h3>
+                    
+                    <div className="flex flex-col gap-4">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="font-label text-[10px] text-slate-400 uppercase tracking-wider font-bold block mb-1">Date</label>
+                          <input
+                            type="date"
+                            value={schedDate}
+                            onChange={(e) => setSchedDate(e.target.value)}
+                            min={new Date().toISOString().split("T")[0]}
+                            className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-label text-[10px] text-slate-400 uppercase tracking-wider font-bold block mb-1">Time</label>
+                          <input
+                            type="time"
+                            value={schedTime}
+                            onChange={(e) => setSchedTime(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="flex justify-end">
+                        <button
+                          onClick={() => handleScheduleCallback(selectedLead.id)}
+                          disabled={scheduleSaving || !schedDate || !schedTime}
+                          className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-555 text-white rounded-xl font-label text-xs font-bold hover:from-amber-600 hover:to-orange-600 disabled:opacity-50 transition-all shadow-md hover:scale-[1.01] active:scale-[0.99]"
+                        >
+                          {scheduleSaving ? <RefreshCw size={12} className="animate-spin" /> : "Schedule Callback"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
               </div>
             </div>
