@@ -336,8 +336,23 @@ async def telecmi_live_events(request: Request):
     """Receive live call events from TeleCMI (optional — for real-time UI updates)."""
     _verify_telecmi_webhook_secret(request)
     event = await request.json()
-    logger.info(f"TeleCMI event: status={event.get('status')}, request_id={event.get('request_id')}")
-    # Can be used for real-time call status updates in the future
+    status = event.get("status")
+    request_id = event.get("request_id")
+    logger.info(f"TeleCMI event: status={status}, request_id={request_id}")
+    
+    if request_id:
+        db = get_supabase()
+        log_status = None
+        if status in ("dial", "started", "initiated"):
+            log_status = "initiated"
+        elif status in ("answered", "in_progress"):
+            log_status = "in_progress"
+        elif status in ("hangup", "ended", "completed"):
+            log_status = "completed"
+            
+        if log_status:
+            db.table("call_logs").update({"status": log_status}).eq("call_sid", request_id).execute()
+            
     return {"ok": True}
 
 
@@ -836,10 +851,6 @@ async def get_pending_wrapups(ctx: dict = Depends(get_tenant_and_role)):
     caller_id = ctx.get("caller_id")
     db = get_supabase()
 
-    # Only enforce wrap-up for recent calls. Without this, switching the feature
-    # on at an established tenant would block callers behind a wall of every
-    # historical un-dispositioned call.
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
     q = (
         db.table("call_logs")
         .select("*, leads(name, phone)")
@@ -847,7 +858,6 @@ async def get_pending_wrapups(ctx: dict = Depends(get_tenant_and_role)):
         .eq("status", "completed")
         .is_("outcome", "null")
         .is_("disposition", "null")
-        .gte("created_at", cutoff)
     )
     if caller_id:
         q = q.eq("caller_id", caller_id)

@@ -12,7 +12,7 @@ from app.dependencies.tenant import get_tenant_id, get_tenant_and_role
 from app.models.schemas import Lead, LeadUpdate, LeadWithMessages, Message, PaginatedResponse
 from app.services.ai_reply import send_whatsapp, send_instagram, send_facebook, get_last_send_error
 from app.services.growth import record_stage_event, sync_follow_up_jobs
-from app.services.assignment import record_assignment_event
+from app.services.assignment import record_assignment_event, is_caller_on_call
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -905,3 +905,131 @@ async def release_lead(lead_id: UUID, tenant_id: str = Depends(get_tenant_id)):
     if not result.data:
         raise HTTPException(status_code=404, detail="Lead not found")
     return {"released": True}
+
+
+@router.post("/{lead_id}/takeover")
+async def takeover_lead(lead_id: UUID, ctx: dict = Depends(get_tenant_and_role)):
+    """Allow a telecaller to claim/take over an overdue callback lead from another caller."""
+    tenant_id = ctx["tenant_id"]
+    caller_id = ctx.get("caller_id")
+    if not caller_id:
+        raise HTTPException(status_code=400, detail="Only telecallers can claim/takeover leads")
+
+    db = get_supabase()
+    
+    # 1. Fetch lead and its assigned caller status
+    lead_res = (
+        db.table("leads")
+        .select("id,name,assigned_to,segment,score")
+        .eq("id", str(lead_id))
+        .eq("tenant_id", tenant_id)
+        .maybe_single()
+        .execute()
+    )
+    if not lead_res or not lead_res.data:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    lead_data = lead_res.data
+    assigned_to = lead_data.get("assigned_to")
+    if str(assigned_to) == str(caller_id):
+        raise HTTPException(status_code=400, detail="This lead is already assigned to you")
+
+    # 2. Fetch pending callback details
+    job_res = (
+        db.table("follow_up_jobs")
+        .select("id,scheduled_for")
+        .eq("lead_id", str(lead_id))
+        .eq("tenant_id", tenant_id)
+        .eq("cadence", "callback")
+        .eq("status", "pending")
+        .limit(1)
+        .execute()
+    )
+    if not job_res.data:
+        raise HTTPException(status_code=400, detail="Lead has no pending callback scheduled")
+
+    job_data = job_res.data[0]
+    scheduled_for = datetime.fromisoformat(job_data["scheduled_for"].replace("Z", "+00:00"))
+    now = datetime.now(timezone.utc)
+    
+    # Check if assigned caller is offline
+    is_offline = True
+    prev_caller_name = "Unknown"
+    prev_caller_user_id = None
+    if assigned_to:
+        caller_res = (
+            db.table("callers")
+            .select("name,status,user_id")
+            .eq("id", assigned_to)
+            .maybe_single()
+            .execute()
+        )
+        if caller_res and caller_res.data:
+            is_offline = caller_res.data.get("status") != "active"
+            prev_caller_name = caller_res.data.get("name") or "Unknown"
+            prev_caller_user_id = caller_res.data.get("user_id")
+
+    # Live call shield: an active owner mid-call is never takeover-eligible
+    if assigned_to and not is_offline and is_caller_on_call(db, assigned_to, tenant_id):
+        raise HTTPException(status_code=400, detail="Owner is currently on a call — cannot take over")
+
+    # Overdue threshold: 15 minutes
+    overdue_limit = scheduled_for + timedelta(minutes=15)
+    is_overdue = now >= overdue_limit
+
+    if not is_overdue and not is_offline:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot takeover yet: lead's callback is not overdue by 15 mins and caller is active"
+        )
+
+    # 3. Perform takeover atomically
+    # CAS guard: only succeeds if assigned_to still matches what we read
+    update_query = db.table("leads").update({
+        "assigned_to": caller_id,
+        "assigned_at": now.isoformat(),
+    }).eq("id", str(lead_id)).eq("tenant_id", tenant_id)
+    if assigned_to is None:
+        update_query = update_query.is_("assigned_to", "null")
+    else:
+        update_query = update_query.eq("assigned_to", assigned_to)
+    update_result = update_query.execute()
+    if not update_result.data:
+        raise HTTPException(status_code=409, detail="Lead already claimed by another caller")
+
+    # Update callback scheduled_for to now (so it shows as due now for the claiming caller)
+    db.table("follow_up_jobs").update({
+        "scheduled_for": now.isoformat(),
+    }).eq("id", job_data["id"]).eq("tenant_id", tenant_id).execute()
+
+    # Get claiming caller's name
+    me_res = db.table("callers").select("name").eq("id", caller_id).maybe_single().execute()
+    me_name = me_res.data.get("name") if me_res and me_res.data else "Another Caller"
+
+    # Log assignment event
+    record_assignment_event(
+        lead_id=str(lead_id),
+        tenant_id=tenant_id,
+        segment=lead_data.get("segment"),
+        caller_id=caller_id,
+        caller_name=me_name,
+        reason="caller_unavailable",
+        method="takeover",
+        score=lead_data.get("score"),
+        matched_segments=[lead_data.get("segment")] if lead_data.get("segment") else [],
+        prev_caller_id=assigned_to,
+        prev_caller_name=prev_caller_name,
+        event_type="reassigned",
+        db=db,
+    )
+
+    if prev_caller_user_id:
+        db.table("app_notifications").insert({
+            "tenant_id": tenant_id,
+            "user_id": prev_caller_user_id,
+            "type": "callback_taken_over",
+            "title": "Callback Taken Over",
+            "message": f"{me_name} took over your callback for '{lead_data.get('name') or 'Unknown'}'.",
+        }).execute()
+
+    return {"success": True, "assigned_to": caller_id}

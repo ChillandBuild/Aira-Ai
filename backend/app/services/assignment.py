@@ -481,3 +481,17 @@ def should_assign_to_telecalling(config: dict, segment: str, channel: str) -> bo
     if channel not in config.get("channels", ["whatsapp"]):
         return False
     return True
+
+
+def is_caller_on_call(db, caller_id: str, tenant_id: str) -> bool:
+    """Return True if the caller has an active call log (status in ('initiated', 'in_progress'))."""
+    res = (
+        db.table("call_logs")
+        .select("id")
+        .eq("caller_id", caller_id)
+        .eq("tenant_id", tenant_id)
+        .in_("status", ["initiated", "in_progress"])
+        .limit(1)
+        .execute()
+    )
+    return bool(res.data)

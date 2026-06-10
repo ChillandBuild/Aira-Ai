@@ -226,6 +226,89 @@ async def all_callbacks(tenant_id: str = Depends(get_tenant_id), current_user: d
     return {"data": result}
 
 
+@router.get("/callbacks/board")
+async def callbacks_board(ctx: dict = Depends(get_tenant_and_role)):
+    """Return all pending callback jobs for the tenant, visible to both callers and owners."""
+    tenant_id = ctx["tenant_id"]
+    db = get_supabase()
+
+    jobs = (
+        db.table("follow_up_jobs")
+        .select("id,lead_id,scheduled_for,message_preview,status")
+        .eq("tenant_id", tenant_id)
+        .eq("cadence", "callback")
+        .eq("status", "pending")
+        .order("scheduled_for")
+        .limit(100)
+        .execute()
+    )
+
+    job_rows = jobs.data or []
+    lead_ids = list({job["lead_id"] for job in job_rows})
+
+    leads_by_id: dict = {}
+    if lead_ids:
+        leads_res = (
+            db.table("leads")
+            .select("id,name,phone,segment,assigned_to,score")
+            .in_("id", lead_ids)
+            .eq("tenant_id", tenant_id)
+            .execute()
+        )
+        leads_by_id = {row["id"]: row for row in (leads_res.data or [])}
+
+    caller_ids = list({
+        lead["assigned_to"] for lead in leads_by_id.values() if lead.get("assigned_to")
+    })
+
+    callers_by_id: dict = {}
+    if caller_ids:
+        callers_res = (
+            db.table("callers")
+            .select("id,name,status")
+            .in_("id", caller_ids)
+            .execute()
+        )
+        callers_by_id = {row["id"]: row for row in (callers_res.data or [])}
+
+    on_call_ids: set = set()
+    if caller_ids:
+        on_call_res = (
+            db.table("call_logs")
+            .select("caller_id")
+            .eq("tenant_id", tenant_id)
+            .in_("caller_id", caller_ids)
+            .in_("status", ["initiated", "in_progress"])
+            .execute()
+        )
+        on_call_ids = {row["caller_id"] for row in (on_call_res.data or [])}
+
+    result = []
+    for job in job_rows:
+        lead_data = leads_by_id.get(job["lead_id"])
+        if not lead_data:
+            continue
+
+        assigned_caller = None
+        assigned_to = lead_data.get("assigned_to")
+        if assigned_to and assigned_to in callers_by_id:
+            caller_row = callers_by_id[assigned_to]
+            assigned_caller = {
+                "id": caller_row.get("id"),
+                "name": caller_row.get("name"),
+                "status": caller_row.get("status"),
+                "is_on_call": assigned_to in on_call_ids,
+            }
+
+        result.append({
+            **job,
+            "lead": lead_data,
+            "assigned_caller": assigned_caller,
+        })
+
+    return {"data": result}
+
+
 @router.patch("/callback/{job_id}/done")
 async def mark_callback_done(job_id: str, tenant_id: str = Depends(get_tenant_id)):
     db = get_supabase()

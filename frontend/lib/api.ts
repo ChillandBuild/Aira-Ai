@@ -261,6 +261,28 @@ export interface FollowUpRunResult {
   summary: FollowUpSummary;
 }
 
+export interface CallbackBoardItem {
+  id: string;
+  lead_id: string;
+  scheduled_for: string;
+  message_preview: string | null;
+  status: string;
+  lead: {
+    id: string;
+    name: string | null;
+    phone: string | null;
+    segment: "A" | "B" | "C" | "D" | null;
+    assigned_to: string | null;
+    score: number | null;
+  };
+  assigned_caller: {
+    id: string;
+    name: string;
+    status: "active" | "break" | "logged_out";
+    is_on_call: boolean;
+  } | null;
+}
+
 export interface AdCampaignInsight {
   id: string;
   platform: "instagram" | "facebook" | "google";
@@ -452,7 +474,9 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
         window.location.href = "/login";
       }
       const err = await res.json().catch(() => ({ detail: "Request failed" }));
-      throw new Error(err.detail || "Request failed");
+      const error = new Error(err.detail || "Request failed") as Error & { status?: number };
+      error.status = res.status;
+      throw error;
     }
     return res.json();
   } catch (err) {
@@ -650,6 +674,10 @@ export const api = {
       apiFetch<{ success: boolean; updated: number }>(`/api/v1/leads/bulk-assign`, {
         method: "POST",
         body: JSON.stringify({ lead_ids: leadIds, caller_id: callerId }),
+      }),
+    takeover: (leadId: string) =>
+      apiFetch<{ success: boolean; assigned_to: string }>(`/api/v1/leads/${leadId}/takeover`, {
+        method: "POST",
       }),
   },
   assignmentLog: {
@@ -1009,6 +1037,8 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify({ scheduled_for: scheduledFor }),
       }),
+    callbacksBoard: () =>
+      apiFetch<{ data: CallbackBoardItem[] }>(`/api/v1/follow-ups/callbacks/board`),
   },
   settings: {
     getTelecallingConfig: () =>
