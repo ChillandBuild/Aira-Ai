@@ -127,7 +127,7 @@ export function TelecallingConfigPanel() {
           {/* Segments */}
           <div>
             <div className="font-label text-sm font-semibold text-ink mb-1">Segments to Assign</div>
-            <div className="font-body text-xs text-ink-muted mb-2">Which lead segments get assigned to telecallers when score threshold is crossed</div>
+            <div className="font-body text-xs text-ink-muted mb-2">Which lead segments are worked by telecallers (auto-assigned in Push mode, pooled for Call Next in Pull mode)</div>
             <div className="flex flex-wrap gap-2">
               {Object.entries(SEGMENT_LABELS).map(([seg, label]) => (
                 <label key={seg} className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-surface-subtle cursor-pointer hover:border-amber-300 transition-colors">
