@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { CallerStats, CallLog } from "@/lib/api";
+import { toast } from "sonner";
 
 export default function ProfilePage() {
   const [stats, setStats] = useState<CallerStats | null>(null);
@@ -22,6 +23,23 @@ export default function ProfilePage() {
   const [tipLoading, setTipLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [performance, setPerformance] = useState<{ target: number; achieved: number }>({ target: 50, achieved: 0 });
+  const [togglingStatus, setTogglingStatus] = useState(false);
+
+  const toggleMyStatus = async () => {
+    if (!stats) return;
+    const currentStatus = (stats.status as "active" | "break") || "active";
+    const next = currentStatus === "active" ? "break" : "active";
+    setTogglingStatus(true);
+    try {
+      await api.callers.setMyStatus(next);
+      setStats((prev) => prev ? { ...prev, status: next } : null);
+      toast.success(next === "active" ? "You are now active" : "Break mode enabled");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update status");
+    } finally {
+      setTogglingStatus(false);
+    }
+  };
 
   const loadProfile = useCallback(async () => {
     try {
@@ -159,16 +177,20 @@ export default function ProfilePage() {
               <p className="font-label text-sm text-on-surface-muted">
                 {stats.phone || "—"}
               </p>
-              <div className="flex items-center gap-2 mt-1">
-                <span
-                  className={`px-2 py-0.5 rounded-full font-label text-xs font-semibold ${
+              <div className="flex items-center gap-2 mt-1.5">
+                <button
+                  onClick={toggleMyStatus}
+                  disabled={togglingStatus}
+                  className={`px-3 py-1 rounded-full font-label text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm border ${
                     stats.status === "active"
-                      ? "bg-green-100 text-green-700"
-                      : "bg-amber-100 text-amber-700"
-                  }`}
+                      ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
+                      : "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"
+                  } disabled:opacity-60`}
+                  title="Click to toggle status"
                 >
+                  <span className={`w-1.5 h-1.5 rounded-full ${stats.status === "active" ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`} />
                   {stats.status === "active" ? "🟢 Active" : "🟡 On Break"}
-                </span>
+                </button>
               </div>
             </div>
           </div>
@@ -263,43 +285,73 @@ export default function ProfilePage() {
             </span>
           </div>
 
-          <div className="bg-surface rounded-card p-5 shadow-card ring-1 ring-[#c4c7c7]/15 flex flex-col col-span-2 justify-between">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 rounded-xl bg-indigo-50">
-                    <Target size={16} className="text-indigo-600" />
+          <div className="bg-surface rounded-card p-5 shadow-card ring-1 ring-[#c4c7c7]/15 flex col-span-2 justify-between items-center">
+            <div className="flex-1 flex flex-col justify-between h-full min-h-[90px]">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="p-1.5 rounded-lg bg-indigo-50">
+                    <Target size={14} className="text-indigo-600" />
                   </div>
                   <span className="font-label text-xs text-on-surface-muted font-bold tracking-wider uppercase">
                     Daily Target
                   </span>
                 </div>
-                <span className="font-label text-xs font-bold text-on-surface">
+                <p className="font-display text-lg font-extrabold text-on-surface mt-1">
                   {performance.achieved} / {performance.target} Calls
-                </span>
+                </p>
               </div>
               
-              <div className="w-full bg-surface-mid rounded-full h-2.5 relative overflow-hidden mt-3">
-                <div
-                  className="bg-gradient-to-r from-indigo-500 to-indigo-600 h-full rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, performance.target > 0 ? (performance.achieved / performance.target) * 100 : 0)}%` }}
-                />
+              <div className="flex items-center gap-2 mt-2 pt-2 border-t border-surface-low">
+                {performance.achieved >= performance.target ? (
+                  <span className="text-[10px] text-green-600 font-bold bg-emerald-50 border border-emerald-100 px-2.5 py-0.5 rounded-full animate-pulse">
+                    🎉 Target Met!
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-amber-600 font-semibold bg-amber-50 border border-amber-100 px-2.5 py-0.5 rounded-full">
+                    {performance.target - performance.achieved} calls to go 🎯
+                  </span>
+                )}
               </div>
             </div>
-            
-            <div className="flex justify-between items-center mt-3 pt-2 border-t border-surface-low">
-              <span className="text-[11px] text-on-surface-muted font-medium">
-                {performance.target > 0 ? Math.round((performance.achieved / performance.target) * 100) : 0}% achieved
-              </span>
-              {performance.achieved >= performance.target ? (
-                <span className="text-[10px] text-green-600 font-bold bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full animate-pulse">
-                  🎉 Target Met!
+
+            {/* Circular SVG Progress Ring */}
+            <div className="relative flex items-center justify-center shrink-0 ml-4">
+              <svg height="96" width="96" className="rotate-[-90deg]">
+                <circle
+                  stroke="rgba(226, 232, 240, 0.5)"
+                  fill="transparent"
+                  strokeWidth="8"
+                  r="38"
+                  cx="48"
+                  cy="48"
+                />
+                <circle
+                  stroke="url(#targetRingGradient)"
+                  fill="transparent"
+                  strokeWidth="8"
+                  strokeDasharray="238.76"
+                  strokeDashoffset={238.76 - (Math.min(100, performance.target > 0 ? (performance.achieved / performance.target) * 100 : 0) / 100) * 238.76}
+                  strokeLinecap="round"
+                  r="38"
+                  cx="48"
+                  cy="48"
+                  className="transition-all duration-500"
+                />
+                <defs>
+                  <linearGradient id="targetRingGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#6366f1" />
+                    <stop offset="100%" stopColor="#a855f7" />
+                  </linearGradient>
+                </defs>
+              </svg>
+              <div className="absolute flex flex-col items-center justify-center">
+                <span className="font-display text-sm font-black text-on-surface">
+                  {performance.target > 0 ? Math.round((performance.achieved / performance.target) * 100) : 0}%
                 </span>
-              ) : (
-                <span className="text-[10px] text-amber-600 font-semibold bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">
-                  In Progress
+                <span className="font-label text-[8px] text-on-surface-muted uppercase tracking-wider font-bold">
+                  done
                 </span>
-              )}
+              </div>
             </div>
           </div>
         </div>
