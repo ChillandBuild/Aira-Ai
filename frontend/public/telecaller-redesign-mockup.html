@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Telecaller Dashboard — Redesign Mockup v2</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',sans-serif;background:#f1f5f9;color:#0f172a;overflow:hidden;}
+
+    /* ---- Layout ---- */
+    .app{display:flex;height:100vh;}
+
+    /* ---- LEFT PANEL — My Profile ---- */
+    .p-profile{
+      width:290px;flex-shrink:0;
+      background:linear-gradient(160deg,#0f172a 0%,#1e1b4b 100%);
+      color:white;display:flex;flex-direction:column;
+      padding:20px 18px;gap:14px;overflow-y:auto;
+    }
+
+    /* ---- CENTER PANEL — Lead Queue ---- */
+    .p-queue{
+      width:350px;flex-shrink:0;
+      background:white;border-right:1px solid #e2e8f0;
+      display:flex;flex-direction:column;overflow:hidden;
+    }
+
+    /* ---- RIGHT PANEL — Lead Detail ---- */
+    .p-detail{flex:1;background:#f8fafc;display:flex;flex-direction:column;overflow:hidden;}
+
+    /* ==============================
+       MY PROFILE PANEL
+    ============================== */
+    .avatar-wrap{
+      width:62px;height:62px;border-radius:18px;
+      background:linear-gradient(135deg,#6366f1,#8b5cf6);
+      display:flex;align-items:center;justify-content:center;
+      font-size:26px;font-weight:800;color:white;flex-shrink:0;
+    }
+    .status-pill{
+      display:inline-flex;align-items:center;gap:7px;
+      background:linear-gradient(135deg,#10b981,#059669);
+      border-radius:50px;padding:7px 14px;
+      font-size:11px;font-weight:700;color:white;cursor:pointer;
+      width:fit-content;margin-top:6px;
+    }
+    .s-dot{width:7px;height:7px;border-radius:50%;background:white;animation:pulse 1.5s infinite;}
+
+    /* Ring Progress */
+    .ring-card{
+      background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);
+      border-radius:18px;padding:16px;
+      display:flex;align-items:center;gap:14px;
+    }
+    .ring-wrap{position:relative;display:inline-flex;align-items:center;justify-content:center;}
+    .ring-center{position:absolute;text-align:center;}
+
+    /* Stats */
+    .stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+    .stat-box{
+      background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);
+      border-radius:14px;padding:12px 10px;
+    }
+    .stat-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.9px;color:rgba(255,255,255,0.4);}
+    .stat-val{font-size:22px;font-weight:800;color:white;line-height:1;margin-top:4px;}
+    .stat-sub{font-size:10px;color:rgba(255,255,255,0.38);margin-top:2px;}
+
+    /* Badge row */
+    .badge-row{display:flex;gap:7px;flex-wrap:wrap;}
+    .b-streak{
+      background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.3);
+      border-radius:10px;padding:5px 10px;
+      font-size:11px;font-weight:700;color:#fbbf24;
+    }
+    .b-conv{
+      background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.25);
+      border-radius:10px;padding:5px 10px;
+      font-size:11px;font-weight:700;color:#34d399;
+    }
+
+    /* Numpad */
+    .numpad-wrap{
+      background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);
+      border-radius:18px;padding:14px;
+    }
+    .nd-input{
+      width:100%;background:rgba(255,255,255,0.09);border:1px solid rgba(255,255,255,0.15);
+      border-radius:12px;padding:10px 14px;color:white;
+      font-size:17px;font-weight:700;text-align:center;letter-spacing:2px;
+      margin-bottom:11px;outline:none;
+    }
+    .nd-input::placeholder{color:rgba(255,255,255,0.22);font-size:12px;letter-spacing:0;font-weight:400;}
+    .nd-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+    .nd-btn{
+      background:rgba(255,255,255,0.09);border:1px solid rgba(255,255,255,0.11);
+      border-radius:12px;padding:10px 6px;text-align:center;cursor:pointer;
+    }
+    .nd-btn:hover{background:rgba(255,255,255,0.18);}
+    .nd-d{font-size:17px;font-weight:700;color:white;line-height:1;}
+    .nd-s{font-size:7px;font-weight:600;color:rgba(255,255,255,0.3);letter-spacing:1.4px;text-transform:uppercase;margin-top:2px;}
+    .nd-call{
+      grid-column:span 3;
+      background:linear-gradient(135deg,#10b981,#059669);
+      border-radius:13px;padding:13px;
+      display:flex;align-items:center;justify-content:center;gap:8px;
+      font-size:13px;font-weight:800;color:white;cursor:pointer;
+      box-shadow:0 4px 15px rgba(16,185,129,.35);
+    }
+
+    .sec-lbl{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:1.3px;color:rgba(255,255,255,0.35);margin-bottom:5px;}
+
+    /* ==============================
+       QUEUE PANEL
+    ============================== */
+    .q-header{padding:18px 18px 14px;border-bottom:1px solid #f1f5f9;}
+    .q-search{position:relative;}
+    .q-search input{
+      width:100%;padding:9px 12px 9px 34px;border:1px solid #e2e8f0;
+      border-radius:12px;font-size:12px;background:#f8fafc;outline:none;color:#0f172a;
+    }
+    .q-si{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:15px;}
+    .subtabs{
+      display:flex;gap:4px;background:#f1f5f9;border-radius:13px;padding:3px;margin-top:11px;
+    }
+    .stab{
+      flex:1;padding:6px 3px;border-radius:10px;text-align:center;
+      font-size:9.5px;font-weight:700;color:#64748b;cursor:pointer;white-space:nowrap;
+    }
+    .stab.on{background:white;color:#4f46e5;box-shadow:0 1px 4px rgba(0,0,0,.07);}
+
+    /* Lead List */
+    .lead-list{flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:7px;}
+    .lc{
+      border:1px solid #e2e8f0;border-left-width:4px;
+      border-radius:14px;padding:11px 12px;cursor:pointer;
+      transition:all .15s;background:white;
+      display:flex;align-items:center;gap:10px;
+    }
+    .lc:hover{box-shadow:0 2px 10px rgba(0,0,0,.06);transform:translateX(2px);}
+    .lc.sel{background:linear-gradient(to right,#eef2ff,#faf5ff);border-color:#6366f1;box-shadow:0 4px 15px rgba(99,102,241,.1);}
+    .lc.hot{border-left-color:#ef4444;}
+    .lc.warm{border-left-color:#f59e0b;}
+    .lc.cool{border-left-color:#6366f1;}
+    .lc.cold{border-left-color:#94a3b8;}
+    .lc-av{
+      width:36px;height:36px;border-radius:10px;
+      display:flex;align-items:center;justify-content:center;
+      font-size:14px;font-weight:800;color:white;flex-shrink:0;
+    }
+    .bdg{padding:2px 6px;border-radius:5px;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;}
+    .b-hot{background:#fef2f2;color:#dc2626;}
+    .b-sa{background:#f0fdf4;color:#16a34a;}
+    .b-sb{background:#eff6ff;color:#2563eb;}
+    .b-new{background:#f0f9ff;color:#0369a1;}
+    .b-cb{background:#fffbeb;color:#92400e;}
+    .dial-ic{
+      width:32px;height:32px;border-radius:10px;
+      background:linear-gradient(135deg,#10b981,#059669);
+      display:flex;align-items:center;justify-content:center;
+      color:white;flex-shrink:0;cursor:pointer;
+      box-shadow:0 2px 8px rgba(16,185,129,.25);
+    }
+    .dial-ic-red{background:linear-gradient(135deg,#ef4444,#dc2626);box-shadow:0 2px 8px rgba(239,68,68,.25);}
+    .dial-ic-grey{background:linear-gradient(135deg,#94a3b8,#64748b);}
+    .call-next-btn{
+      background:#4f46e5;color:white;border:none;border-radius:11px;
+      padding:8px 14px;font-size:10.5px;font-weight:800;cursor:pointer;
+      display:flex;align-items:center;gap:5px;
+    }
+
+    /* ==============================
+       DETAIL PANEL
+    ============================== */
+    .d-header{
+      background:linear-gradient(135deg,#1e1b4b,#312e81);
+      color:white;padding:20px 24px;flex-shrink:0;
+    }
+    .d-tabs{
+      display:flex;border-bottom:1px solid #e2e8f0;
+      padding:0 24px;background:white;flex-shrink:0;
+    }
+    .d-tab{
+      padding:11px 16px;font-size:11px;font-weight:700;
+      color:#64748b;cursor:pointer;border-bottom:2.5px solid transparent;
+    }
+    .d-tab.on{color:#4f46e5;border-bottom-color:#4f46e5;}
+    .d-body{flex:1;overflow-y:auto;padding:18px 24px;display:flex;flex-direction:column;gap:14px;}
+
+    /* Detail sub-cards */
+    .ic{background:white;border:1px solid #e2e8f0;border-radius:18px;padding:16px;}
+    .ic-t{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+    .script-c{background:linear-gradient(to right,#eef2ff,#f5f3ff);border:1px solid #c7d2fe;border-radius:18px;padding:16px;}
+    .n-area{
+      width:100%;background:#f8fafc;border:1px solid #e2e8f0;
+      border-radius:13px;padding:11px;font-size:12px;resize:none;
+      outline:none;color:#0f172a;font-family:inherit;line-height:1.6;
+    }
+    .tl{position:relative;padding-left:20px;border-left:2px solid #e2e8f0;display:flex;flex-direction:column;gap:16px;}
+    .tl-dot{position:absolute;left:-5px;top:4px;width:8px;height:8px;border-radius:50%;background:#6366f1;border:2px solid white;box-shadow:0 0 0 3px #e0e7ff;}
+    .tl-item{position:relative;}
+
+    /* Call button */
+    .call-btn{
+      background:linear-gradient(135deg,#10b981,#059669);
+      color:white;border:none;border-radius:18px;
+      padding:13px 26px;font-size:13px;font-weight:800;cursor:pointer;
+      display:flex;align-items:center;gap:8px;
+      box-shadow:0 6px 20px rgba(16,185,129,.4);
+    }
+    .rel-btn{
+      padding:10px 16px;border:1px solid rgba(255,255,255,.2);
+      border-radius:13px;background:rgba(255,255,255,.06);
+      color:rgba(255,255,255,.7);font-size:11px;font-weight:700;cursor:pointer;
+    }
+
+    /* Outcome chips */
+    .oc-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+    .oc{
+      padding:10px 10px;border:1.5px solid #e2e8f0;
+      border-radius:12px;text-align:center;
+      font-size:11px;font-weight:700;cursor:pointer;color:#475569;
+    }
+    .oc.cv{border-color:#10b981;background:#f0fdf4;color:#065f46;}
+    .oc.cb{border-color:#f59e0b;background:#fffbeb;color:#92400e;}
+    .oc.ni{border-color:#94a3b8;background:#f8fafc;color:#475569;}
+    .oc.na{border-color:#94a3b8;background:#f8fafc;color:#475569;}
+
+    /* Info row */
+    .info-row{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:13px;}
+    .info-row-icon{width:34px;height:34px;border-radius:10px;background:#eef2ff;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+
+    /* Scroll */
+    ::-webkit-scrollbar{width:4px;}
+    ::-webkit-scrollbar-track{background:transparent;}
+    ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:2px;}
+
+    /* Animations */
+    @keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(.8);}}
+
+    /* Phone SVG inline */
+    .ph{display:inline-block;}
+
+    /* ---- NEW FEATURE CALLOUT CHIPS (for mockup annotation) ---- */
+    .new-chip{
+      position:absolute;background:#f43f5e;color:white;
+      font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;
+      padding:3px 7px;border-radius:6px;box-shadow:0 2px 8px rgba(244,63,94,.4);
+      z-index:10;
+    }
+  </style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ====================================================
+       LEFT: MY PROFILE + NUMPAD
+  ==================================================== -->
+  <div class="p-profile">
+
+    <!-- Profile header -->
+    <div style="display:flex;align-items:center;gap:13px;">
+      <div class="avatar-wrap">H</div>
+      <div>
+        <div style="font-size:15px;font-weight:800;">Harish R.</div>
+        <div style="font-size:10px;color:rgba(255,255,255,.4);font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-top:2px;">Telecaller · ID #C04</div>
+        <div class="status-pill">
+          <div class="s-dot"></div>
+          Active Queue
+        </div>
+      </div>
+    </div>
+
+    <!-- Daily Target Ring -->
+    <div class="ring-card">
+      <div class="ring-wrap">
+        <svg width="76" height="76" viewBox="0 0 76 76">
+          <circle cx="38" cy="38" r="30" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="6"/>
+          <circle cx="38" cy="38" r="30" fill="none" stroke="url(#rg)" stroke-width="6"
+            stroke-dasharray="188.5" stroke-dashoffset="49"
+            stroke-linecap="round" transform="rotate(-90 38 38)"/>
+          <defs>
+            <linearGradient id="rg" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#818cf8"/>
+              <stop offset="100%" stop-color="#a855f7"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <div class="ring-center">
+          <div style="font-size:19px;font-weight:800;color:white;line-height:1;">37</div>
+          <div style="font-size:9px;color:rgba(255,255,255,.4);font-weight:600;">/&nbsp;50</div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:1px;">Daily Target</div>
+        <div style="font-size:14px;font-weight:800;color:white;margin-top:3px;">74% achieved</div>
+        <div style="font-size:11px;color:#a78bfa;margin-top:3px;font-weight:600;">13 calls to go 🎯</div>
+      </div>
+    </div>
+
+    <!-- Stats grid -->
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-lbl">Converted</div>
+        <div class="stat-val" style="color:#34d399;">6</div>
+        <div class="stat-sub">today</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-lbl">Avg Duration</div>
+        <div class="stat-val" style="font-size:19px;">4:32</div>
+        <div class="stat-sub">min / call</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-lbl">Connect Rate</div>
+        <div class="stat-val" style="font-size:19px;color:#60a5fa;">68%</div>
+        <div class="stat-sub">today</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-lbl">Queue Left</div>
+        <div class="stat-val" style="font-size:19px;color:#f9a8d4;">13</div>
+        <div class="stat-sub">leads</div>
+      </div>
+    </div>
+
+    <!-- Badges row -->
+    <div class="badge-row">
+      <div class="b-streak">🔥 5-day streak</div>
+      <div class="b-conv">✓ 16.2% conv.</div>
+    </div>
+
+    <!-- Quick Dial Numpad -->
+    <div>
+      <div class="sec-lbl">Quick Dial — Offline Number</div>
+      <div class="numpad-wrap" style="position:relative;">
+        <input class="nd-input" placeholder="Enter phone number…" value="+91 99424 97199" readonly/>
+        <div class="nd-grid">
+          <div class="nd-btn"><div class="nd-d">1</div><div class="nd-s">&nbsp;</div></div>
+          <div class="nd-btn"><div class="nd-d">2</div><div class="nd-s">ABC</div></div>
+          <div class="nd-btn"><div class="nd-d">3</div><div class="nd-s">DEF</div></div>
+          <div class="nd-btn"><div class="nd-d">4</div><div class="nd-s">GHI</div></div>
+          <div class="nd-btn"><div class="nd-d">5</div><div class="nd-s">JKL</div></div>
+          <div class="nd-btn"><div class="nd-d">6</div><div class="nd-s">MNO</div></div>
+          <div class="nd-btn"><div class="nd-d">7</div><div class="nd-s">PQRS</div></div>
+          <div class="nd-btn"><div class="nd-d">8</div><div class="nd-s">TUV</div></div>
+          <div class="nd-btn"><div class="nd-d">9</div><div class="nd-s">WXYZ</div></div>
+          <div class="nd-btn"><div class="nd-d" style="font-size:14px;">*</div><div class="nd-s">&nbsp;</div></div>
+          <div class="nd-btn"><div class="nd-d">0</div><div class="nd-s">+</div></div>
+          <div class="nd-btn"><div class="nd-d" style="font-size:14px;">#</div><div class="nd-s">&nbsp;</div></div>
+          <div class="nd-call">
+            <!-- phone icon -->
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+            Call Now
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ====================================================
+       CENTER: LEAD QUEUE
+  ==================================================== -->
+  <div class="p-queue">
+
+    <div class="q-header">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div>
+          <div style="font-size:15px;font-weight:800;color:#0f172a;">Lead Queue</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:1px;">32 leads assigned</div>
+        </div>
+        <button class="call-next-btn">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M13 3L4 14h7l-2 7 9-11h-7l2-7z"/></svg>
+          Call Next
+        </button>
+      </div>
+
+      <div class="q-search">
+        <span class="q-si">⌕</span>
+        <input placeholder="Search by name or phone…"/>
+      </div>
+
+      <div class="subtabs">
+        <div class="stab on">To Call (18)</div>
+        <div class="stab">Callbacks (4)</div>
+        <div class="stab">In Prog (6)</div>
+        <div class="stab">Closed (4)</div>
+      </div>
+    </div>
+
+    <div class="lead-list">
+
+      <!-- LEAD 1 — HOT, selected -->
+      <div class="lc hot sel">
+        <div class="lc-av" style="background:linear-gradient(135deg,#ef4444,#dc2626);">P</div>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+            <span style="font-size:13px;font-weight:700;">Priya Sharma</span>
+            <span class="bdg b-hot">HOT</span>
+            <span class="bdg b-sa">Seg A</span>
+          </div>
+          <div style="font-size:11px;color:#64748b;margin-top:3px;">+91 98765 43210 · Score 9/10</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:2px;">⏱ Called 2h ago</div>
+        </div>
+        <div class="dial-ic dial-ic-red">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+        </div>
+      </div>
+
+      <!-- LEAD 2 -->
+      <div class="lc warm">
+        <div class="lc-av" style="background:linear-gradient(135deg,#f59e0b,#d97706);">R</div>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:5px;">
+            <span style="font-size:13px;font-weight:700;">Ravi Kumar</span>
+            <span class="bdg b-sb">Seg B</span>
+          </div>
+          <div style="font-size:11px;color:#64748b;margin-top:3px;">+91 87654 32109 · Score 7/10</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:2px;">⏱ Called 5h ago</div>
+        </div>
+        <div class="dial-ic">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+        </div>
+      </div>
+
+      <!-- LEAD 3 — callback -->
+      <div class="lc warm">
+        <div class="lc-av" style="background:linear-gradient(135deg,#f97316,#ea580c);">K</div>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:5px;">
+            <span style="font-size:13px;font-weight:700;">Kavitha Menon</span>
+            <span class="bdg b-cb">Callback</span>
+          </div>
+          <div style="font-size:11px;color:#64748b;margin-top:3px;">+91 76543 21098 · Score 7/10</div>
+          <div style="font-size:10px;color:#f59e0b;font-weight:600;margin-top:2px;">📅 Scheduled 4:30 PM today</div>
+        </div>
+        <div class="dial-ic">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+        </div>
+      </div>
+
+      <!-- LEAD 4 -->
+      <div class="lc cool">
+        <div class="lc-av">A</div>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:5px;">
+            <span style="font-size:13px;font-weight:700;">Anita Desai</span>
+            <span class="bdg b-new">New</span>
+          </div>
+          <div style="font-size:11px;color:#64748b;margin-top:3px;">+91 65432 10987 · Score 5/10</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:2px;">⏱ Not called yet</div>
+        </div>
+        <div class="dial-ic">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+        </div>
+      </div>
+
+      <!-- LEAD 5 — HOT -->
+      <div class="lc hot">
+        <div class="lc-av" style="background:linear-gradient(135deg,#f43f5e,#e11d48);">S</div>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:5px;">
+            <span style="font-size:13px;font-weight:700;">Sunita Pillai</span>
+            <span class="bdg b-hot">HOT</span>
+          </div>
+          <div style="font-size:11px;color:#64748b;margin-top:3px;">+91 54321 09876 · Score 8/10</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:2px;">⏱ Not called yet</div>
+        </div>
+        <div class="dial-ic dial-ic-red">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+        </div>
+      </div>
+
+      <!-- LEAD 6 -->
+      <div class="lc cold">
+        <div class="lc-av" style="background:linear-gradient(135deg,#94a3b8,#64748b);">M</div>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:5px;">
+            <span style="font-size:13px;font-weight:700;">Mohan Reddy</span>
+          </div>
+          <div style="font-size:11px;color:#64748b;margin-top:3px;">+91 43210 98765 · Score 3/10</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:2px;">⏱ Called yesterday</div>
+        </div>
+        <div class="dial-ic dial-ic-grey">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+        </div>
+      </div>
+
+      <!-- LEAD 7 -->
+      <div class="lc cool">
+        <div class="lc-av" style="background:linear-gradient(135deg,#818cf8,#6366f1);">V</div>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:5px;">
+            <span style="font-size:13px;font-weight:700;">Vijay Narayanan</span>
+            <span class="bdg b-sb">Seg B</span>
+          </div>
+          <div style="font-size:11px;color:#64748b;margin-top:3px;">+91 32109 87654 · Score 6/10</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:2px;">⏱ Called 1 day ago</div>
+        </div>
+        <div class="dial-ic">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ====================================================
+       RIGHT: LEAD PROFILE DETAIL
+  ==================================================== -->
+  <div class="p-detail">
+
+    <!-- Detail header -->
+    <div class="d-header">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
+
+        <!-- Avatar with score ring -->
+        <div style="display:flex;align-items:center;gap:16px;">
+          <div style="position:relative;width:66px;height:66px;flex-shrink:0;">
+            <svg width="66" height="66" viewBox="0 0 66 66" style="position:absolute;top:0;left:0;">
+              <circle cx="33" cy="33" r="29" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="4"/>
+              <circle cx="33" cy="33" r="29" fill="none" stroke="#ef4444" stroke-width="4"
+                stroke-dasharray="182.2" stroke-dashoffset="18.2"
+                stroke-linecap="round" transform="rotate(-90 33 33)"/>
+            </svg>
+            <div style="position:absolute;inset:6px;background:linear-gradient(135deg,#ef4444,#dc2626);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:21px;font-weight:800;color:white;">P</div>
+          </div>
+
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span style="font-size:21px;font-weight:800;">Priya Sharma</span>
+              <span class="bdg b-hot" style="font-size:9px;">HOT</span>
+              <span style="background:rgba(99,102,241,.3);color:#a5b4fc;padding:2px 8px;border-radius:5px;font-size:9px;font-weight:800;">SEG A</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:6px;flex-wrap:wrap;">
+              <span style="font-size:12px;color:#a5b4fc;font-weight:600;">+91 98765 43210</span>
+              <span style="color:rgba(255,255,255,.25);">•</span>
+              <span style="font-size:11px;color:rgba(255,255,255,.5);">Score 9/10</span>
+              <span style="color:rgba(255,255,255,.25);">•</span>
+              <span style="font-size:11px;color:rgba(255,255,255,.5);">Inbound · FB Ad</span>
+              <span style="color:rgba(255,255,255,.25);">•</span>
+              <span style="font-size:11px;color:rgba(255,255,255,.5);">Assigned 3d ago</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
+          <button class="rel-btn">Release Lead</button>
+          <button class="call-btn">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+            Call Lead
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="d-tabs">
+      <div class="d-tab on">Overview</div>
+      <div class="d-tab">Notes &amp; Log</div>
+      <div class="d-tab">Attribution</div>
+      <div class="d-tab">Schedule</div>
+    </div>
+
+    <!-- Detail body -->
+    <div class="d-body">
+
+      <!-- Pitch script -->
+      <div class="script-c">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#4338ca;display:flex;align-items:center;gap:6px;">
+            ✦ Pitch Script · Segment A
+          </div>
+          <span style="font-size:11px;color:#6366f1;font-weight:700;cursor:pointer;">Collapse</span>
+        </div>
+        <div style="background:white;border:1px solid #c7d2fe;border-radius:12px;padding:13px;font-size:12px;color:#374151;line-height:1.7;">
+          "Hi [Name], I'm calling from Aira. I noticed you showed interest in our WhatsApp automation solution. We've helped businesses like yours 3x their lead conversions. Do you have 5 minutes to explore how this can work for you?"
+        </div>
+      </div>
+
+      <!-- Attribution info row -->
+      <div class="info-row">
+        <div class="info-row-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </div>
+        <div style="flex:1;">
+          <div style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.8px;">Lead Source</div>
+          <div style="font-size:12px;font-weight:700;color:#0f172a;margin-top:2px;">Facebook Ad — "Summer Sale 2025" · Organic Inbound</div>
+        </div>
+        <div style="font-size:10px;color:#94a3b8;">3 days ago</div>
+      </div>
+
+      <!-- 2-col row: Quick Note + Outcomes -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+
+        <!-- Quick note -->
+        <div class="ic">
+          <div class="ic-t">📝 Quick Note</div>
+          <textarea class="n-area" rows="4" placeholder="Outcome summary… e.g. Interested, wants demo call tomorrow 5 PM"></textarea>
+          <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+            <button style="background:#4f46e5;color:white;border:none;border-radius:10px;padding:7px 14px;font-size:11px;font-weight:800;cursor:pointer;">Save Note</button>
+          </div>
+        </div>
+
+        <!-- Wrap-up outcomes -->
+        <div class="ic">
+          <div class="ic-t">🎯 Call Outcome</div>
+          <div class="oc-grid">
+            <div class="oc cv">✓ Converted</div>
+            <div class="oc cb">📅 Callback</div>
+            <div class="oc ni">Not Interested</div>
+            <div class="oc na">No Answer</div>
+            <div class="oc" style="border-color:#fca5a5;background:#fef2f2;color:#991b1b;">Do Not Call</div>
+            <div class="oc">Unreachable</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Interaction Timeline -->
+      <div class="ic">
+        <div class="ic-t">📅 Interaction Timeline</div>
+        <div class="tl">
+          <div class="tl-item">
+            <div class="tl-dot"></div>
+            <div style="font-size:10px;color:#94a3b8;font-weight:700;margin-bottom:4px;">2h ago · 3m 42s call</div>
+            <div style="font-size:12px;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;padding:10px 12px;border-radius:12px;line-height:1.5;">Connected. Very interested in pricing plan. Will discuss with management and revert by EOD.</div>
+          </div>
+          <div class="tl-item" style="margin-top:14px;">
+            <div class="tl-dot" style="background:#a855f7;box-shadow:0 0 0 3px #f3e8ff;"></div>
+            <div style="font-size:10px;color:#94a3b8;font-weight:700;margin-bottom:4px;">Yesterday · WhatsApp</div>
+            <div style="font-size:12px;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;padding:10px 12px;border-radius:12px;line-height:1.5;">Sent follow-up template "Summer Offer". Opened but no reply.</div>
+          </div>
+          <div class="tl-item" style="margin-top:14px;">
+            <div class="tl-dot" style="background:#f59e0b;box-shadow:0 0 0 3px #fef3c7;"></div>
+            <div style="font-size:10px;color:#94a3b8;font-weight:700;margin-bottom:4px;">3 days ago · First call · 0m 45s</div>
+            <div style="font-size:12px;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;padding:10px 12px;border-radius:12px;line-height:1.5;">No answer — sent automated WA intro message.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- ============================================================
+     WATERMARK / VERSION NOTE
+============================================================ -->
+<div style="position:fixed;bottom:10px;right:14px;font-size:10px;color:#94a3b8;font-weight:600;pointer-events:none;">
+  Aira.AI Telecaller Redesign — Mockup v2 · 2026
+</div>
+
+</body>
+</html>

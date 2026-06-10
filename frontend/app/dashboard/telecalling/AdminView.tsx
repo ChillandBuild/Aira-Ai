@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { useEffect, useState, useCallback } from "react";
 import {
   Phone, RefreshCw, TrendingUp,
-  Users, Coffee, ChevronDown, Settings, Eye, X, Calendar, Copy, Tag, Target, StickyNote, Clock, ClipboardList
+  Users, Coffee, ChevronDown, Settings, Eye, X, Calendar, Copy, Tag, Target, StickyNote
 } from "lucide-react";
 import { api, Caller, Lead } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
