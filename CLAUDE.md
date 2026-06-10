@@ -73,6 +73,12 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | AI auto-reply toggle (per-bot) | ✅ Built — app_settings.ai_auto_reply, Settings UI |
 | Broadcast negative reply + sentiment | ✅ Built — migrations 077–078, negative_reply + sentiment columns |
 | Caller daily digest | ✅ Built — migration 065, call_evaluator digest job |
+| Telecalling auto-assignment (state-based + sweep) | ✅ Built — services/assignment.py maybe_assign_lead funnel + sweep_unassigned_leads (2-min APScheduler); least-loaded round-robin gated by telecalling_config (enabled+segment+channel) |
+| Assignment Log (proof/audit feed) | ✅ Built — routes/assignment_log.py, lead_stage_events 'assigned'/'reassigned' (migration 099), AdminView tab |
+| Callback reassignment (away-caller resilience) | ✅ Built — main.py _process_callback_reassignments (1-min); migration 100 follow_up_job_id; auto_assign_lead event_type=reassigned + exclude_caller_ids |
+| Telecaller cockpit (wrap-up, Call Next, live call) | ✅ Built — calls.py /pending-wrapups + /next-lead atomic claim; mandatory wrap-up modal; CallerView queue tabs by call_status |
+| Admin telecalling monitoring | ✅ Built — Performance tab; /analytics/telecalling (connect rate, idle/bunking, speed-to-lead, quality); owner-gated caller-timeline/qa-queue/export |
+| Call-status pipeline + DNC + attempt cap | ✅ Built — migration 102; outcomes drive leads.call_status (orthogonal to segment); DNC lead-level (do_not_call, +opted_out for do-not-contact); no_answer ≥ max_call_attempts → unreachable |
 
 ## Hard Invariants — Never Break
 1. Lead score always integer 1–10
@@ -85,6 +91,8 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 8. **Template submission** always uses `meta_waba_id` (NOT `meta_phone_number_id`)
 9. AI model is Groq `llama-3.3-70b-versatile` — do NOT add Gemini/OpenAI imports
 10. WhatsApp webhook verifies X-Hub-Signature-256 before processing — returns 200 but drops invalid
+11. `call_status` (telecalling pipeline) is orthogonal to A/B/C/D `segment` — call outcomes NEVER write segment; segment stays score/chat-owned
+12. DNC is lead-level (`do_not_call`), NOT a `call_logs.outcome` value (that column is CHECK-constrained) — "do not contact" also sets `opted_out`; `opted_out`=WhatsApp/broadcast, `do_not_call`=voice
 
 ## Stack
 | Layer | Tech | Location |
@@ -131,7 +139,8 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 |---|---|
 | WhatsApp, Meta API, provider layer, phone_numbers | backend/app/routes/webhook.py + services/meta_cloud.py + services/outbound_router.py |
 | Telecalling, TeleCMI, call logs, notes, briefing modal | backend/app/routes/calls.py + services/telecmi_client.py + services/call_summarizer.py |
-| Leads, scoring, segments, opt-in | backend/app/routes/leads.py + services/scoring_engine.py (v2) + services/lead_scorer.py (legacy, AI-disabled path) |
+| Telecaller auto-assignment, round-robin, Assignment Log, callback reassignment | backend/app/services/assignment.py + routes/assignment_log.py + main.py (_sweep_unassigned_leads, _process_callback_reassignments) |
+| Leads, scoring, segments, opt-in, call_status pipeline | backend/app/routes/leads.py + services/scoring_engine.py (v2) + services/lead_scorer.py (legacy, AI-disabled path) |
 | Number pool, failover, Numbers page, Incidents page | backend/app/routes/numbers.py + services/failover.py + routes/incidents.py |
 | CSV upload, bulk send, scheduled/drip broadcasts | backend/app/routes/upload.py + services/broadcast_executor.py |
 | Bookings, booking flow, Razorpay payments | backend/app/services/booking_flow.py + routes/bookings.py |
@@ -171,7 +180,7 @@ TelecallingConfigPanel: module on/off, auto-assign, per-segment assignment (A/B/
 | backend/supabase/migrations/ | All schema migrations 001–083 |
 | frontend/app/dashboard/ | All dashboard pages |
 
-## Migration Index (latest = 086)
+## Migration Index (latest = 102)
 | Migration | What |
 |---|---|
 | 051 | Telegram support — tg_user_id on leads |
@@ -216,6 +225,22 @@ TelecallingConfigPanel: module on/off, auto-assign, per-segment assignment (A/B/
 | 086_broadcast_lead_scores_finalized | broadcast_lead_scores.finalized_at — freeze a lead's per-broadcast score slate when the next broadcast sends |
 | 086_lead_tag_opt_outs_lead_fk | lead_tag_opt_outs.lead_id FK → leads + orphan cleanup |
 | 087_knowledge_rag | knowledge_chunks + vector(512) + HNSW; match/insert RPCs — pgvector RAG (Jina v3 embeddings @512-dim) replaces full-text KB injection |
+| 088_knowledge_rag_fix | knowledge RAG RPC/index correctness fix |
+| 088_reengagement_fixes | reengagement flow fixes |
+| 089_security_hardening | RLS / security hardening pass |
+| 090_knowledge_keyword_retrieval | keyword retrieval fallback for KB |
+| 091_knowledge_campaign_scope | KB chunk scoping by campaign |
+| 092_call_disposition | call_logs.disposition (CHECK: answered/no_answer/busy/switched_off/followup_required) |
+| 093_template_performance | template performance metrics |
+| 094_automated_reengagement | automated reengagement engine |
+| 095_autopilot | autopilot tables |
+| 096_leads_assigned_at | leads.assigned_at — assignment timestamp |
+| 097_reengagement_fallback_template | reengagement fallback template |
+| 098_app_notifications | app_notifications table |
+| 099_lead_stage_events_assigned | lead_stage_events event_type 'assigned'/'reassigned' + index + telecalling_config.enabled backfill — powers Assignment Log |
+| 100_add_follow_up_job_id_to_call_logs | call_logs.follow_up_job_id FK + index (callback resilience) |
+| 101_drop_1d_1w_1m_cadences | drop legacy 1d/1w/1m follow-up cadences |
+| 102_call_status_dnc | leads.call_status (new/in_progress/callback/converted/not_interested/dnc/unreachable) + do_not_call + CHECK + idx_leads_call_status — call-status pipeline orthogonal to A/B/C/D segment; DNC is lead-level (not a call outcome) |
 
 ## Bot Flow Builder (replaces Automations UI)
 Visual WhatsApp flow builder at /dashboard/automations (sidebar "Bot Flows"). Backend
