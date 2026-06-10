@@ -35,6 +35,8 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   const [selectedLeadNotes, setSelectedLeadNotes] = useState<NotesResponse | null>(null);
   const [selectedLeadMessages, setSelectedLeadMessages] = useState<Message[]>([]);
   const [selectedLeadCallLogs, setSelectedLeadCallLogs] = useState<CallLog[]>([]);
+  const [selectedLeadBrief, setSelectedLeadBrief] = useState<{ brief: string; opener: string } | null>(null);
+  const [briefLoading, setBriefLoading] = useState(false);
   const [selectedLeadLoading, setSelectedLeadLoading] = useState(false);
   const [selectedCallbackJobId, setSelectedCallbackJobId] = useState<string | null>(null);
   const [activeProfileTab, setActiveProfileTab] = useState<"overview" | "notes" | "attribution" | "schedule">("overview");
@@ -213,6 +215,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       setSelectedLeadNotes(null);
       setSelectedLeadMessages([]);
       setSelectedLeadCallLogs([]);
+      setSelectedLeadBrief(null);
       setSelectedCallbackJobId(null);
       return;
     }
@@ -317,6 +320,16 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save note");
     } finally { setQuickNoteSaving(false); }
+  }
+
+  async function generatePreCallBrief(leadId: string) {
+    setBriefLoading(true);
+    try {
+      const res = await api.leads.preCallBrief(leadId);
+      setSelectedLeadBrief(res);
+    } catch (err) {
+      toast.error("Failed to generate brief");
+    } finally { setBriefLoading(false); }
   }
 
   async function handleRelease(leadId: string) {
@@ -490,10 +503,10 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-transparent">
       {/* Main Split Layout */}
       <div className="flex-1 grid grid-cols-12 gap-6 min-h-0 pb-4">
-        {/* Left Side: Lead List (5/12 columns) */}
-        <div className="col-span-5 flex flex-col gap-5 min-h-0 pr-1">
+        {/* Left Side: Lead List (4/12 columns) */}
+        <div className="col-span-4 flex flex-col gap-5 min-h-0 pr-1">
           {/* Lead List Card */}
-          <div className="flex-1 bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60 flex flex-col min-h-0">
+          <div className="flex-1 bg-gradient-to-b from-amber-50/80 to-orange-50/40 rounded-3xl p-6 shadow-sm border border-amber-100/80 flex flex-col min-h-0">
             {/* Header / Title */}
             <div className="flex items-center justify-between mb-4 shrink-0">
               <div>
@@ -541,57 +554,26 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
             </div>
 
             {/* Tabs for To Call, Callbacks, In Prog, Closed, Manual Dial */}
-            <div className="flex gap-1.5 p-1 bg-slate-100/80 rounded-2xl shrink-0 mb-4">
-              <button
-                onClick={() => setQueueSubTab("new")}
-                className={`flex-1 py-1.5 px-0.5 rounded-xl font-label text-[9.5px] font-extrabold text-center transition-all ${
-                  queueSubTab === "new"
-                    ? "bg-white text-indigo-700 shadow-sm"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                To Call ({newLeads.length})
-              </button>
-              <button
-                onClick={() => setQueueSubTab("callback")}
-                className={`flex-1 py-1.5 px-0.5 rounded-xl font-label text-[9.5px] font-extrabold text-center transition-all ${
-                  queueSubTab === "callback"
-                    ? "bg-white text-indigo-700 shadow-sm"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                Callbacks ({callbackLeads.length})
-              </button>
-              <button
-                onClick={() => setQueueSubTab("in_progress")}
-                className={`flex-1 py-1.5 px-0.5 rounded-xl font-label text-[9.5px] font-extrabold text-center transition-all ${
-                  queueSubTab === "in_progress"
-                    ? "bg-white text-indigo-700 shadow-sm"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                In Prog ({inProgressLeads.length})
-              </button>
-              <button
-                onClick={() => setQueueSubTab("closed")}
-                className={`flex-1 py-1.5 px-0.5 rounded-xl font-label text-[9.5px] font-extrabold text-center transition-all ${
-                  queueSubTab === "closed"
-                    ? "bg-white text-indigo-700 shadow-sm"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                Closed ({closedLeads.length})
-              </button>
-              <button
-                onClick={() => setQueueSubTab("dialer")}
-                className={`flex-1 py-1.5 px-0.5 rounded-xl font-label text-[9.5px] font-extrabold text-center transition-all ${
-                  queueSubTab === "dialer"
-                    ? "bg-white text-indigo-700 shadow-sm"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                Manual Dial
-              </button>
+            <div className="flex gap-1.5 p-1 bg-amber-100/60 rounded-2xl shrink-0 mb-4">
+              {[
+                { id: "new", label: `To Call (${newLeads.length})` },
+                { id: "callback", label: `Callbacks (${callbackLeads.length})` },
+                { id: "in_progress", label: `In Prog (${inProgressLeads.length})` },
+                { id: "closed", label: `Closed (${closedLeads.length})` },
+                { id: "dialer", label: "Manual Dial" },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setQueueSubTab(tab.id as typeof queueSubTab)}
+                  className={`flex-1 py-1.5 px-0.5 rounded-xl font-label text-[9.5px] font-extrabold text-center transition-all ${
+                    queueSubTab === tab.id
+                      ? "bg-white text-orange-600 shadow-sm"
+                      : "text-amber-700/70 hover:text-slate-800"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
 
             {/* Lead Cards List or Numpad Dialer */}
@@ -716,12 +698,13 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
           
         </div>
 
-        {/* Right Side: Detailed Profile Page (7/12 columns) */}
-        <div className="col-span-7 flex flex-col min-h-0 bg-white rounded-3xl border border-slate-200/60 shadow-sm overflow-hidden">
+        {/* Right Side: Detailed Profile Page (8/12 columns) */}
+        <div className="col-span-8 flex flex-col min-h-0 bg-gradient-to-b from-amber-50/60 to-orange-50/20 rounded-3xl border border-amber-100/80 shadow-sm overflow-hidden">
           {activeCallCtx && (
-            <div className="p-4 border-b border-slate-100 shrink-0 bg-slate-50">
-              {/* Custom Live Call Card */}
-              <div className="p-5 border-b border-slate-200 bg-gradient-to-r from-indigo-900 to-slate-900 text-white shrink-0 rounded-2xl mb-4">
+            <div className="flex flex-col border-b border-slate-200 bg-slate-50" style={{ maxHeight: "55%" }}>
+              {/* Live Call Banner — fixed, never scrolls */}
+              <div className="p-4 shrink-0">
+              <div className="p-5 bg-gradient-to-r from-indigo-900 to-slate-900 text-white rounded-2xl">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="flex items-center gap-4">
                     <div className={`p-3.5 bg-indigo-500/20 text-indigo-300 rounded-2xl ${callStatus === "ringing" ? "animate-pulse" : ""}`}>
@@ -758,7 +741,11 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                   </div>
                 </div>
               </div>
-              <LiveNotesPane ctx={activeCallCtx} onClose={() => setActiveCallCtx(null)} />
+              </div>{/* end banner shrink-0 */}
+              {/* Live Notes — scrollable */}
+              <div className="flex-1 overflow-y-auto px-4 pb-4">
+                <LiveNotesPane ctx={activeCallCtx} onClose={() => setActiveCallCtx(null)} />
+              </div>
             </div>
           )}
 
@@ -793,6 +780,9 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
               selectedLeadNotes={selectedLeadNotes}
               selectedLeadMessages={selectedLeadMessages}
               selectedLeadCallLogs={selectedLeadCallLogs}
+              selectedLeadBrief={selectedLeadBrief}
+              briefLoading={briefLoading}
+              generatePreCallBrief={generatePreCallBrief}
               selectedLeadLoading={selectedLeadLoading}
               activeProfileTab={activeProfileTab}
               setActiveProfileTab={setActiveProfileTab}

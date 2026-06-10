@@ -635,6 +635,8 @@ export const api = {
       const res = await apiFetch<{ data: CallLog[] }>(`/api/v1/leads/${leadId}/call-logs`);
       return res.data || [];
     },
+    preCallBrief: async (leadId: string) =>
+      apiFetch<{ brief: string; opener: string }>(`/api/v1/leads/${leadId}/pre-call-brief`, { method: "POST" }),
     exportUrl: (segment?: string) =>
       `${API_URL}/api/v1/leads/export${segment ? `?segment=${segment}` : ""}`,
     exportLeads: async (segment?: string) => {

@@ -1,12 +1,15 @@
 import csv
 import io
+import json
 import logging
 from datetime import datetime, timezone, timedelta
 from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from app.services.automation_triggers import fire_trigger
 from fastapi.responses import StreamingResponse
+from groq import Groq
 from pydantic import BaseModel
+from app.config import settings
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_id, get_tenant_and_role
 from app.models.schemas import Lead, LeadUpdate, LeadWithMessages, Message, PaginatedResponse
@@ -16,6 +19,15 @@ from app.services.assignment import record_assignment_event, is_caller_on_call
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+_groq_client = Groq(api_key=settings.groq_api_key) if settings.groq_api_key else None
+_BRIEF_MODEL = "llama-3.3-70b-versatile"
+
+
+class PreCallBriefResponse(BaseModel):
+    brief: str
+    opener: str
 
 
 class ConvertPayload(BaseModel):
@@ -844,6 +856,119 @@ async def delete_lead(lead_id: UUID, tenant_id: str = Depends(get_tenant_id)):
         raise HTTPException(status_code=404, detail="Lead not found")
     db.table("follow_up_jobs").update({"status": "skipped", "skip_reason": "Lead deleted."}).eq("lead_id", str(lead_id)).eq("status", "pending").execute()
     return {"success": True, "message": "Lead deleted"}
+
+@router.post("/{lead_id}/pre-call-brief", response_model=PreCallBriefResponse)
+async def pre_call_brief(lead_id: UUID, ctx: dict = Depends(get_tenant_and_role)):
+    role = ctx.get("role")
+    if role not in ("caller", "owner"):
+        raise HTTPException(status_code=403, detail="Caller or owner role required")
+
+    tenant_id = ctx["tenant_id"]
+    db = get_supabase()
+
+    lead_res = (
+        db.table("leads")
+        .select("name,score,segment,source,ad_campaign_id,assigned_at")
+        .eq("id", str(lead_id))
+        .eq("tenant_id", tenant_id)
+        .maybe_single()
+        .execute()
+    )
+    if not lead_res.data:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    lead = lead_res.data
+
+    campaign_name = None
+    if lead.get("ad_campaign_id"):
+        camp_res = (
+            db.table("ad_campaigns")
+            .select("campaign_name")
+            .eq("id", lead["ad_campaign_id"])
+            .eq("tenant_id", tenant_id)
+            .maybe_single()
+            .execute()
+        )
+        if camp_res.data:
+            campaign_name = camp_res.data.get("campaign_name")
+
+    msgs_res = (
+        db.table("messages")
+        .select("content,direction,created_at")
+        .eq("lead_id", str(lead_id))
+        .eq("tenant_id", tenant_id)
+        .order("created_at", desc=True)
+        .limit(5)
+        .execute()
+    )
+    messages = list(reversed(msgs_res.data or []))
+
+    calls_res = (
+        db.table("call_logs")
+        .select("outcome,duration_seconds,created_at")
+        .eq("lead_id", str(lead_id))
+        .eq("tenant_id", tenant_id)
+        .order("created_at", desc=True)
+        .limit(3)
+        .execute()
+    )
+    call_logs = calls_res.data or []
+
+    if messages:
+        messages_text = "\n".join(
+            f"[{m['direction']}] {m['content']}" for m in messages
+        )
+    else:
+        messages_text = None
+
+    if call_logs:
+        call_history_text = "\n".join(
+            f"- {c['outcome']} ({c['duration_seconds']}s) on {c['created_at'][:10]}"
+            for c in call_logs
+        )
+    else:
+        call_history_text = None
+
+    name = lead.get("name") or "Unknown"
+    score = lead.get("score") or 5
+    segment = lead.get("segment") or "C"
+    channel = lead.get("source") or "unknown"
+    campaign = campaign_name or "N/A"
+    assigned_at = lead.get("assigned_at") or "N/A"
+
+    prompt = f"""You are a sales coach briefing a telecaller before they dial.
+
+Lead profile:
+- Name: {name}
+- Score: {score}/10 (Segment {segment})
+- Source: {channel} — {campaign}
+- Assigned: {assigned_at}
+
+Recent WhatsApp messages (newest last):
+{messages_text or "No WhatsApp activity"}
+
+Recent call history:
+{call_history_text or "No calls yet"}
+
+Write EXACTLY this JSON (no markdown, no explanation):
+{{"brief": "2-3 sentence summary of who this lead is, where they came from, and what context the caller should know", "opener": "one natural opening line the caller can use to start the conversation"}}"""
+
+    if not _groq_client:
+        raise HTTPException(status_code=500, detail="Brief generation failed")
+
+    try:
+        response = _groq_client.chat.completions.create(
+            model=_BRIEF_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=300,
+        )
+        raw = response.choices[0].message.content.strip()
+        parsed = json.loads(raw)
+        return PreCallBriefResponse(brief=parsed["brief"], opener=parsed["opener"])
+    except Exception as e:
+        logger.error(f"Pre-call brief generation failed for lead {lead_id}: {e}")
+        raise HTTPException(status_code=500, detail="Brief generation failed")
+
 
 @router.get("/{lead_id}/call-logs")
 async def get_lead_call_logs(lead_id: UUID, tenant_id: str = Depends(get_tenant_id)):
