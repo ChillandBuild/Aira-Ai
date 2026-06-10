@@ -6,7 +6,7 @@ import { api, Caller, Lead, CallLog, Message } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import LiveNotesPane from "./components/live-notes-pane";
 import NotesHistoryModal from "./components/notes-history-modal";
-import { fetchNotes, fetchTodayCallbacks, saveNote, createCallback } from "./lib/notes-api";
+import { fetchNotes, fetchTodayCallbacks, saveNote } from "./lib/notes-api";
 import type { CallbackJob, NotesResponse } from "./types";
 import { usePolling } from "@/hooks/usePolling";
 import { useActiveCall } from "../contexts/ActiveCallContext";
@@ -39,7 +39,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   const [briefLoading, setBriefLoading] = useState(false);
   const [selectedLeadLoading, setSelectedLeadLoading] = useState(false);
   const [selectedCallbackJobId, setSelectedCallbackJobId] = useState<string | null>(null);
-  const [activeProfileTab, setActiveProfileTab] = useState<"overview" | "notes" | "attribution" | "schedule">("overview");
+  const [activeProfileTab, setActiveProfileTab] = useState<"overview" | "notes" | "attribution">("overview");
 
   // dialing
   const [dialing, setDialing] = useState<string | null>(null);
@@ -50,11 +50,6 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   // quick-note on selected lead
   const [quickNoteContent, setQuickNoteContent] = useState("");
   const [quickNoteSaving, setQuickNoteSaving] = useState(false);
-
-  // scheduling
-  const [schedDate, setSchedDate] = useState("");
-  const [schedTime, setSchedTime] = useState("");
-  const [scheduleSaving, setScheduleSaving] = useState(false);
 
   // modals
   const [historyLead, setHistoryLead] = useState<Lead | null>(null);
@@ -259,20 +254,6 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
 
   // actions
 
-  async function handleScheduleCallback(leadId: string) {
-    if (!schedDate || !schedTime) { toast.error("Pick a date & time"); return; }
-    setScheduleSaving(true);
-    try {
-      const iso = new Date(`${schedDate}T${schedTime}`).toISOString();
-      await createCallback(leadId, iso, quickNoteContent.trim() || undefined);
-      toast.success("Callback scheduled!");
-      setSchedDate(""); setSchedTime("");
-      loadCallbacks();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to schedule");
-    } finally { setScheduleSaving(false); }
-  }
-
   async function executeDial(leadId: string, lead: Lead) {
     if (!myCaller) { toast.error("Caller profile not found"); return; }
     setDialing(leadId);
@@ -447,12 +428,6 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
 
   const handleQuickOutcome = async (outcome: string) => {
     if (!selectedLead) return;
-    if (outcome === "callback") {
-      setActiveProfileTab("schedule");
-      toast.info("Please select date and time for the callback");
-      return;
-    }
-    
     if (!activeCallCtx?.callLogId) {
       toast.error("Please call the lead first to log an outcome.");
       return;
@@ -702,7 +677,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
         </div>
 
         {/* Right Side: Detailed Profile Page (7/12 columns) */}
-        <div className="col-span-7 flex flex-col min-h-0 bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="col-span-7 flex flex-col min-h-0 bg-slate-50 rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
           {/* Sticky call banner */}
           {activeCallCtx && (
             <div className="shrink-0 p-4 bg-slate-50 border-b border-slate-200">
@@ -803,12 +778,6 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
               telecallingConfig={telecallingConfig}
               scriptExpanded={scriptExpanded}
               setScriptExpanded={setScriptExpanded}
-              schedDate={schedDate}
-              setSchedDate={setSchedDate}
-              schedTime={schedTime}
-              setSchedTime={setSchedTime}
-              scheduleSaving={scheduleSaving}
-              handleScheduleCallback={handleScheduleCallback}
               setHistoryLead={setHistoryLead}
             />
             )}

@@ -1,6 +1,6 @@
 "use client";
-import React from "react";
-import { Sparkles, Phone, StickyNote, Copy, Tag, Target, Calendar, Inbox, User, RefreshCw, MessageSquare } from "lucide-react";
+import React, { useState } from "react";
+import { Sparkles, Phone, StickyNote, Copy, Tag, Target, Inbox, User, RefreshCw, MessageSquare } from "lucide-react";
 import { Lead, Message, CallLog } from "@/lib/api";
 import type { NotesResponse } from "../types";
 import { formatPhone, timeAgo } from "@/lib/utils";
@@ -15,8 +15,8 @@ interface LeadDetailPanelProps {
   briefLoading: boolean;
   generatePreCallBrief: (leadId: string) => void;
   selectedLeadLoading: boolean;
-  activeProfileTab: "overview" | "notes" | "attribution" | "schedule";
-  setActiveProfileTab: (tab: "overview" | "notes" | "attribution" | "schedule") => void;
+  activeProfileTab: "overview" | "notes" | "attribution";
+  setActiveProfileTab: (tab: "overview" | "notes" | "attribution") => void;
   quickNoteContent: string;
   setQuickNoteContent: (val: string) => void;
   quickNoteSaving: boolean;
@@ -29,12 +29,6 @@ interface LeadDetailPanelProps {
   telecallingConfig: { scripts?: Record<string, string> } | null;
   scriptExpanded: boolean;
   setScriptExpanded: (val: boolean) => void;
-  schedDate: string;
-  setSchedDate: (val: string) => void;
-  schedTime: string;
-  setSchedTime: (val: string) => void;
-  scheduleSaving: boolean;
-  handleScheduleCallback: (leadId: string) => void;
   setHistoryLead: (lead: Lead | null) => void;
 }
 
@@ -61,14 +55,10 @@ export default function LeadDetailPanel({
   telecallingConfig,
   scriptExpanded,
   setScriptExpanded,
-  schedDate,
-  setSchedDate,
-  schedTime,
-  setSchedTime,
-  scheduleSaving,
-  handleScheduleCallback,
   setHistoryLead
 }: LeadDetailPanelProps) {
+
+  const [noteFilter, setNoteFilter] = useState<"all" | "notes" | "calls" | "whatsapp">("all");
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -116,6 +106,18 @@ export default function LeadDetailPanel({
   const recentCallLogs = selectedLeadCallLogs.slice(0, 7);
   const recentMessages = selectedLeadMessages.slice(-4);
 
+  // Pipeline & call stats
+  const assignedAt = selectedLead.assigned_at ? new Date(selectedLead.assigned_at) : null;
+  const daysInPipeline = assignedAt ? Math.floor((Date.now() - assignedAt.getTime()) / 864e5) : null;
+  const lastCallLog = selectedLeadCallLogs.length > 0 ? selectedLeadCallLogs[0] : null;
+  const daysSinceLastContact = lastCallLog
+    ? Math.floor((Date.now() - new Date(lastCallLog.created_at).getTime()) / 864e5)
+    : null;
+  const totalCalls = selectedLeadCallLogs.length;
+  const connectedCalls = selectedLeadCallLogs.filter(l => (l.duration_seconds ?? 0) > 0).length;
+  const totalDuration = selectedLeadCallLogs.reduce((sum, l) => sum + (l.duration_seconds ?? 0), 0);
+  const avgDurationSecs = totalCalls > 0 ? Math.round(totalDuration / totalCalls) : 0;
+
   const score = selectedLead.score ?? 0;
   const ringColor =
     score >= 8 ? "#f43f5e" :
@@ -130,8 +132,24 @@ export default function LeadDetailPanel({
   const circumference = 2 * Math.PI * 28;
   const strokeDashoffset = circumference - (score / 10) * circumference;
 
+  // Unified timeline for "all" filter — sorted newest-first
+  const timelineItems = [
+    ...(selectedLeadNotes?.notes ?? []).map(n => ({
+      type: "note" as const, id: n.id, created_at: n.created_at,
+      content: n.content, is_pinned: n.is_pinned,
+    })),
+    ...selectedLeadCallLogs.map(l => ({
+      type: "call" as const, id: l.id, created_at: l.created_at,
+      outcome: l.outcome, duration_seconds: l.duration_seconds,
+    })),
+    ...selectedLeadMessages.map(m => ({
+      type: "message" as const, id: m.id, created_at: m.created_at,
+      content: m.content, direction: m.direction,
+    })),
+  ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
   return (
-    <div className="flex flex-col bg-white">
+    <div className="flex flex-col bg-slate-50">
       <div className="sticky top-0 z-20">
       {/* Header */}
       <div className="bg-gradient-to-br from-[#1a1c3d] via-[#12132e] to-[#0c0d1f] text-white p-6 relative overflow-hidden shadow-md">
@@ -200,11 +218,10 @@ export default function LeadDetailPanel({
         {[
           { id: "overview", label: "Overview" },
           { id: "notes", label: "Notes & Log" },
-          { id: "schedule", label: "Schedule" },
         ].map((t) => (
           <button
             key={t.id}
-            onClick={() => setActiveProfileTab(t.id as "overview" | "notes" | "attribution" | "schedule")}
+            onClick={() => setActiveProfileTab(t.id as "overview" | "notes" | "attribution")}
             className={`px-6 py-4 font-display text-xs font-black tracking-wider uppercase border-b-2 text-center transition-all ${
               activeProfileTab === t.id
                 ? "border-orange-500 text-orange-700"
@@ -268,6 +285,30 @@ export default function LeadDetailPanel({
               <span className="font-label text-xs text-slate-400 font-medium whitespace-nowrap">
                 {selectedLead.assigned_at ? timeAgo(selectedLead.assigned_at) : "recent"}
               </span>
+            </div>
+
+            {/* ── Pipeline Stats ── */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                <p className="font-label text-[9px] uppercase tracking-widest font-extrabold text-slate-400 mb-1.5">Days in Pipeline</p>
+                <p className="font-display text-3xl font-extrabold text-slate-800">
+                  {daysInPipeline !== null ? daysInPipeline : "—"}
+                </p>
+                <p className="font-label text-[10px] text-slate-400 mt-1">
+                  {assignedAt
+                    ? `assigned ${assignedAt.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`
+                    : "no assignment date"}
+                </p>
+              </div>
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                <p className="font-label text-[9px] uppercase tracking-widest font-extrabold text-slate-400 mb-1.5">Last Contact</p>
+                <p className="font-display text-3xl font-extrabold text-slate-800">
+                  {daysSinceLastContact !== null ? `${daysSinceLastContact}d` : "—"}
+                </p>
+                <p className="font-label text-[10px] text-slate-400 mt-1">
+                  {lastCallLog ? timeAgo(lastCallLog.created_at) : "No calls yet"}
+                </p>
+              </div>
             </div>
 
             {/* ── Campaign Attribution ── */}
@@ -474,67 +515,196 @@ export default function LeadDetailPanel({
 
         {activeProfileTab === "notes" && (
           <div className="space-y-4">
+            {/* ── Call Stats Strip ── */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+              <div className="grid grid-cols-4 divide-x divide-slate-100 text-center">
+                <div className="px-3">
+                  <p className="font-display text-2xl font-extrabold text-slate-800">{totalCalls}</p>
+                  <p className="font-label text-[9px] text-slate-400 uppercase tracking-wider font-bold mt-0.5">Total Calls</p>
+                </div>
+                <div className="px-3">
+                  <p className="font-display text-2xl font-extrabold text-emerald-600">{connectedCalls}</p>
+                  <p className="font-label text-[9px] text-slate-400 uppercase tracking-wider font-bold mt-0.5">Connected</p>
+                </div>
+                <div className="px-3">
+                  <p className="font-display text-xl font-extrabold text-slate-800">
+                    {avgDurationSecs > 0
+                      ? `${Math.floor(avgDurationSecs / 60)}m${avgDurationSecs % 60 > 0 ? ` ${avgDurationSecs % 60}s` : ""}`
+                      : "—"}
+                  </p>
+                  <p className="font-label text-[9px] text-slate-400 uppercase tracking-wider font-bold mt-0.5">Avg Duration</p>
+                </div>
+                <div className="px-3">
+                  <p className="font-display text-xl font-extrabold text-slate-800 leading-tight">
+                    {lastCallLog ? timeAgo(lastCallLog.created_at) : "—"}
+                  </p>
+                  <p className="font-label text-[9px] text-slate-400 uppercase tracking-wider font-bold mt-0.5">Last Contact</p>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Filter Pills ── */}
+            <div className="flex gap-2">
+              {(["all", "notes", "calls", "whatsapp"] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setNoteFilter(f)}
+                  className={`px-3 py-1.5 rounded-lg font-label text-xs font-bold transition-colors ${
+                    noteFilter === f
+                      ? "bg-orange-500 text-white shadow-sm"
+                      : "bg-white border border-slate-200 text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  {f === "all" ? "All" : f === "notes" ? "Notes" : f === "calls" ? "Calls" : "WhatsApp"}
+                </button>
+              ))}
+            </div>
+
+            {/* ── Timeline ── */}
             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="font-display text-xs font-black text-slate-800 flex items-center gap-1.5 tracking-widest uppercase">
-                  <Inbox size={12} className="text-orange-400" /> Full Interaction Timeline
+                  <Inbox size={12} className="text-orange-400" /> Interaction Timeline
                 </h3>
                 <button onClick={() => setHistoryLead(selectedLead)} className="text-xs text-orange-500 font-bold hover:underline">
                   History Modal
                 </button>
               </div>
-              {selectedLeadNotes?.notes && selectedLeadNotes.notes.length > 0 ? (
+
+              {noteFilter === "all" && timelineItems.length === 0 && (
+                <div className="p-6 bg-slate-50/40 border border-slate-200 text-center rounded-xl text-xs text-slate-400 font-medium">
+                  No interactions logged for this lead.
+                </div>
+              )}
+
+              {/* All — merged chronological */}
+              {noteFilter === "all" && timelineItems.length > 0 && (
                 <div className="relative border-l-2 border-slate-200 pl-4 ml-2 space-y-4">
-                  {selectedLeadNotes.notes.map((n) => (
-                    <div key={n.id} className="relative">
-                      <span className="absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full bg-orange-400 border-2 border-white" />
-                      <div className="flex justify-between items-center text-[9px] text-slate-400 font-bold mb-1">
-                        <span>{timeAgo(n.created_at)}</span>
-                        {n.is_pinned && <span className="text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-full font-black text-[7px]">PINNED</span>}
+                  {timelineItems.map((item) => (
+                    <div key={`${item.type}-${item.id}`} className="relative">
+                      <span className={`absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
+                        item.type === "note" ? "bg-orange-400" : item.type === "call" ? "bg-indigo-400" : "bg-teal-400"
+                      }`} />
+                      <div className="text-[9px] text-slate-400 font-bold mb-1 flex items-center gap-1">
+                        {item.type === "note" && <><StickyNote size={9} className="text-orange-400" /> Note · {timeAgo(item.created_at)}</>}
+                        {item.type === "call" && <><Phone size={9} className="text-indigo-400" /> Call · {timeAgo(item.created_at)}</>}
+                        {item.type === "message" && <><MessageSquare size={9} className="text-teal-500" /> WhatsApp · {timeAgo(item.created_at)}</>}
                       </div>
-                      <div className="font-body text-xs text-slate-600 bg-slate-50/40 border border-slate-200/60 p-3.5 rounded-xl leading-relaxed">
-                        {n.content}
-                      </div>
+                      {item.type === "note" && (
+                        <div className="flex flex-col gap-1">
+                          {item.is_pinned && (
+                            <span className="self-start text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-full font-black text-[7px]">PINNED</span>
+                          )}
+                          <div className="font-body text-xs text-slate-600 bg-slate-50/40 border border-slate-200/60 p-3.5 rounded-xl leading-relaxed">
+                            {item.content}
+                          </div>
+                        </div>
+                      )}
+                      {item.type === "call" && (
+                        <div className="bg-indigo-50/40 border border-indigo-100 p-3 rounded-xl flex items-center justify-between">
+                          <span className="font-label text-xs font-bold text-slate-700">
+                            {outcomeLabel[item.outcome ?? ""] ?? "Call logged"}
+                          </span>
+                          {(item.duration_seconds ?? 0) > 0 && (
+                            <span className="font-mono text-[10px] text-slate-400">
+                              {Math.floor((item.duration_seconds ?? 0) / 60)}m {(item.duration_seconds ?? 0) % 60}s
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {item.type === "message" && (
+                        <div className={`flex ${item.direction === "inbound" ? "justify-start" : "justify-end"}`}>
+                          <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-xs font-body leading-relaxed shadow-sm ${
+                            item.direction === "inbound"
+                              ? "bg-white border border-slate-200 text-slate-700 rounded-tl-sm"
+                              : "bg-[#dcf8c6] text-slate-800 rounded-tr-sm"
+                          }`}>
+                            {item.content}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
-              ) : (
-                <div className="p-6 bg-slate-50/40 border border-slate-200 text-center rounded-xl text-xs text-slate-400 font-medium">
-                  No previous interactions logged for this lead.
-                </div>
               )}
-            </div>
-          </div>
-        )}
 
-        {activeProfileTab === "schedule" && (
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
-            <h3 className="font-display text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
-              <Calendar size={13} className="text-orange-400" /> Schedule Callback
-            </h3>
-            <div className="flex flex-col gap-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-label text-[9px] text-slate-400 uppercase tracking-wider font-bold block mb-1">Date</label>
-                  <input type="date" value={schedDate} onChange={(e) => setSchedDate(e.target.value)}
-                    min={new Date().toISOString().split("T")[0]}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50/40 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-orange-300 focus:bg-white transition-all" />
-                </div>
-                <div>
-                  <label className="font-label text-[9px] text-slate-400 uppercase tracking-wider font-bold block mb-1">Time</label>
-                  <input type="time" value={schedTime} onChange={(e) => setSchedTime(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50/40 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-orange-300 focus:bg-white transition-all" />
-                </div>
-              </div>
-              <div className="flex justify-end">
-                <button
-                  onClick={() => handleScheduleCallback(selectedLead.id)}
-                  disabled={scheduleSaving || !schedDate || !schedTime}
-                  className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-label text-xs font-bold hover:from-amber-600 hover:to-orange-600 disabled:opacity-50 transition-all shadow-md"
-                >
-                  {scheduleSaving ? <RefreshCw size={12} className="animate-spin" /> : "Schedule Callback"}
-                </button>
-              </div>
+              {/* Notes only */}
+              {noteFilter === "notes" && (
+                selectedLeadNotes?.notes && selectedLeadNotes.notes.length > 0 ? (
+                  <div className="relative border-l-2 border-orange-100 pl-4 ml-2 space-y-4">
+                    {selectedLeadNotes.notes.map((n) => (
+                      <div key={n.id} className="relative">
+                        <span className="absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full bg-orange-400 border-2 border-white" />
+                        <div className="flex justify-between items-center text-[9px] text-slate-400 font-bold mb-1">
+                          <span className="flex items-center gap-1"><StickyNote size={9} className="text-orange-400" /> {timeAgo(n.created_at)}</span>
+                          {n.is_pinned && <span className="text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-full font-black text-[7px]">PINNED</span>}
+                        </div>
+                        <div className="font-body text-xs text-slate-600 bg-slate-50/40 border border-slate-200/60 p-3.5 rounded-xl leading-relaxed">
+                          {n.content}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-6 bg-slate-50/40 border border-slate-200 text-center rounded-xl text-xs text-slate-400 font-medium">
+                    No notes logged for this lead.
+                  </div>
+                )
+              )}
+
+              {/* Calls only */}
+              {noteFilter === "calls" && (
+                selectedLeadCallLogs.length > 0 ? (
+                  <div className="relative border-l-2 border-indigo-100 pl-4 ml-2 space-y-3">
+                    {selectedLeadCallLogs.map((log) => (
+                      <div key={log.id} className="relative">
+                        <span className="absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full bg-indigo-400 border-2 border-white" />
+                        <div className="text-[9px] text-slate-400 font-bold mb-1 flex items-center gap-1">
+                          <Phone size={9} className="text-indigo-400" /> {timeAgo(log.created_at)}
+                        </div>
+                        <div className="bg-indigo-50/40 border border-indigo-100 p-3 rounded-xl flex items-center justify-between">
+                          <span className="font-label text-xs font-bold text-slate-700">
+                            {outcomeLabel[log.outcome ?? ""] ?? "Call logged"}
+                          </span>
+                          {(log.duration_seconds ?? 0) > 0 && (
+                            <span className="font-mono text-[10px] text-slate-400">
+                              {Math.floor((log.duration_seconds ?? 0) / 60)}m {(log.duration_seconds ?? 0) % 60}s
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-6 bg-slate-50/40 border border-slate-200 text-center rounded-xl text-xs text-slate-400 font-medium">
+                    No call logs found for this lead.
+                  </div>
+                )
+              )}
+
+              {/* WhatsApp only */}
+              {noteFilter === "whatsapp" && (
+                selectedLeadMessages.length > 0 ? (
+                  <div className="space-y-2">
+                    {selectedLeadMessages.map((msg) => (
+                      <div key={msg.id} className={`flex ${msg.direction === "inbound" ? "justify-start" : "justify-end"}`}>
+                        <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-xs font-body leading-relaxed shadow-sm ${
+                          msg.direction === "inbound"
+                            ? "bg-white border border-slate-200 text-slate-700 rounded-tl-sm"
+                            : "bg-[#dcf8c6] text-slate-800 rounded-tr-sm"
+                        }`}>
+                          <p>{msg.content}</p>
+                          <p className="text-[9px] text-slate-400 mt-0.5 text-right">{timeAgo(msg.created_at)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-6 bg-slate-50/40 border border-slate-200 text-center rounded-xl text-xs text-slate-400 font-medium">
+                    No WhatsApp messages found.
+                  </div>
+                )
+              )}
             </div>
           </div>
         )}
