@@ -48,7 +48,8 @@ Solo dev. Terse. Code over prose. No trailing summaries. No explanations unless 
 | Reply source badge (Knowledge Base / AI / Automation) | ✅ Built — messages.reply_source |
 | Callback scheduler & reminders | ✅ Built — follow_up_jobs cadence=callback, in-app due reminders + 60s polling |
 | Telecaller multi-tenancy + role-based access | ✅ Built — migration 025 |
-| Hot lead alert system (score ≥7, 5-min escalation) | ⛔ Removed — replaced by segment-driven chat_handover escalation |
+| Hot lead alert system (score ≥7, 5-min escalation) | ⛔ Removed — superseded by trigger-only chat_handover escalation (no score/segment escalation) |
+| Chat escalation (trigger-only, shared pool) | ✅ Built — fires on behavioral triggers A/B/C/D/F only (no segment/score, no auto-assign); handover lands UNASSIGNED in a shared pool visible to admin + every telecaller (caller scope = assigned OR needs_human_attention) |
 | Lead assignment (manual + round-robin auto) | ✅ Built |
 | Team management page | ✅ Built — dashboard/team/, routes/team.py |
 | Onboarding flow | ✅ Built — dashboard/onboarding/, routes/onboarding.py |
@@ -153,7 +154,7 @@ Parallel pattern: schema + API route + frontend page → all 3 in one message.
 
 ## Settings Page — Fully Configurable
 All channel credentials (WhatsApp/Instagram/Facebook/Telegram/TeleCMI/Groq) editable in Settings UI.
-InboxConfigPanel: escalation on/off, auto-assign, per-trigger (A–F), per-segment (A/B/C/D).
+InboxConfigPanel: escalation on/off, per-trigger (A/B/C/D/F). Chat escalation is trigger-only — segment/score escalation and auto-assign-to-telecaller were removed; handovers are a shared pool any telecaller or admin can resolve. (Trigger E "score-hot" dropped.)
 TelecallingConfigPanel: module on/off, auto-assign, per-segment assignment (A/B/C/D), channels.
 
 ## Known Tech Debt
