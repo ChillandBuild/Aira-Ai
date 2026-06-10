@@ -61,6 +61,7 @@ class TelecallingConfigUpdate(BaseModel):
     channels: list[str] | None = None
     targets: dict[str, int] | None = None
     scripts: dict[str, str] | None = None
+    max_call_attempts: int | None = None
 
 
 
@@ -433,6 +434,8 @@ async def patch_telecalling_config(payload: TelecallingConfigUpdate, ctx: dict =
         bad = [c for c in patch["channels"] if c not in valid_ch]
         if bad:
             raise HTTPException(status_code=400, detail=f"Invalid channels: {bad}")
+    if "max_call_attempts" in patch:
+        patch["max_call_attempts"] = max(1, min(int(patch["max_call_attempts"]), 20))
     merged = {**current, **patch}
     save_telecalling_config(tenant_id, merged)
     return merged

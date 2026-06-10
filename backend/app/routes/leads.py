@@ -626,7 +626,7 @@ async def mark_converted(lead_id: UUID, payload: ConvertPayload | None = None, t
     notes = (payload.notes if payload else None) or None
     update = {
         "converted_at": datetime.now(timezone.utc).isoformat(),
-        "segment": "A",
+        "call_status": "converted",
     }
     if notes:
         update["conversion_notes"] = notes
@@ -637,7 +637,7 @@ async def mark_converted(lead_id: UUID, payload: ConvertPayload | None = None, t
     record_stage_event(
         str(lead_id),
         from_segment=existing.data.get("segment"),
-        to_segment="A",
+        to_segment=existing.data.get("segment"),
         event_type="converted",
         metadata={"notes": notes} if notes else {},
         tenant_id=tenant_id,
@@ -645,7 +645,7 @@ async def mark_converted(lead_id: UUID, payload: ConvertPayload | None = None, t
     )
     sync_follow_up_jobs(
         str(lead_id),
-        segment="A",
+        segment=existing.data.get("segment"),
         phone=updated.get("phone") or existing.data.get("phone"),
         converted_at=updated.get("converted_at"),
         ai_enabled=updated.get("ai_enabled", existing.data.get("ai_enabled", True)),

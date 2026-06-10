@@ -7,12 +7,14 @@ type TelecallingConfig = {
   enabled: boolean;
   segments: string[];
   channels: string[];
+  max_call_attempts?: number;
 };
 
 const DEFAULT: TelecallingConfig = {
   enabled: false,
   segments: ["A"],
   channels: ["whatsapp"],
+  max_call_attempts: 4,
 };
 
 const SEGMENT_LABELS: Record<string, string> = {
@@ -156,6 +158,20 @@ export function TelecallingConfigPanel() {
                 </label>
               ))}
             </div>
+          </div>
+
+          {/* Max Call Attempts */}
+          <div>
+            <div className="font-label text-sm font-semibold text-ink mb-1">Max Call Attempts</div>
+            <div className="font-body text-xs text-ink-muted mb-2">Maximum unanswered call attempts before marking a lead as unreachable (default 4)</div>
+            <input
+              type="number"
+              min="1"
+              max="20"
+              value={draft.max_call_attempts ?? 4}
+              onChange={(e) => setDraft({ ...draft, max_call_attempts: parseInt(e.target.value) || 4 })}
+              className="px-3 py-2 rounded-xl border border-border bg-surface font-body text-sm w-32 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
           </div>
 
           {/* Save */}

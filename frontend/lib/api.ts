@@ -37,6 +37,8 @@ export interface Lead {
   tag_name?: string | null;
   ad_campaign_name?: string | null;
   channel?: string | null;
+  call_status?: "new" | "in_progress" | "callback" | "converted" | "not_interested" | "dnc" | "unreachable" | null;
+  do_not_call?: boolean;
 }
 
 export interface Message {
@@ -96,7 +98,7 @@ export interface CallLog {
   lead_id: string | null;
   call_sid: string | null;
   duration_seconds: number | null;
-  outcome: "converted" | "callback" | "not_interested" | "no_answer" | null;
+  outcome: "converted" | "callback" | "not_interested" | "no_answer" | "do_not_call" | "do_not_contact" | null;
   disposition: string | null;
   recording_url: string | null;
   score: number | null;
@@ -752,7 +754,11 @@ export const api = {
         `/api/v1/calls/initiate`,
         { method: "POST", body: JSON.stringify({ lead_id: target.leadId, phone: target.phone, caller_id: callerId, callback_job_id: target.callbackJobId }) }
       ),
-    setOutcome: (callLogId: string, outcome: NonNullable<CallLog["outcome"]>, callbackTime?: string) =>
+    setOutcome: (
+      callLogId: string,
+      outcome: NonNullable<CallLog["outcome"]>,
+      opts?: { callbackTime?: string; notes?: string }
+    ) =>
       apiFetch<{
         call_log_id: string;
         outcome: string;
@@ -760,7 +766,11 @@ export const api = {
         caller_overall_score: number | null;
       }>(`/api/v1/calls/${callLogId}/outcome`, {
         method: "PATCH",
-        body: JSON.stringify({ outcome, callback_time: callbackTime ?? null }),
+        body: JSON.stringify({
+          outcome,
+          callback_time: opts?.callbackTime ?? null,
+          notes: opts?.notes ?? null,
+        }),
       }),
     setDisposition: (
       callLogId: string,

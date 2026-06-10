@@ -45,8 +45,7 @@ def get_caller_id_for_user(user_id: str, tenant_id: str) -> str | None:
 def _open_lead_count(db, tenant_id: str, caller_id: str) -> int:
     """Active workload for a caller = assigned leads that are still open.
 
-    Excludes Disqualified (D) and Converted leads so a closer is never punished
-    for closing and a disqualified pile never blocks fresh work.
+    Excludes Disqualified (D), Converted, DNC, and Unreachable leads.
     """
     res = (
         db.table("leads")
@@ -55,6 +54,10 @@ def _open_lead_count(db, tenant_id: str, caller_id: str) -> int:
         .eq("assigned_to", caller_id)
         .neq("segment", "D")
         .is_("converted_at", "null")
+        .neq("do_not_call", True)
+        .neq("call_status", "converted")
+        .neq("call_status", "dnc")
+        .neq("call_status", "unreachable")
         .execute()
     )
     return res.count or 0
@@ -123,6 +126,14 @@ def auto_assign_lead(
         return None
 
     db = get_supabase()
+
+    # Safety check: do not assign dead/DNC leads
+    lead_check = db.table("leads").select("do_not_call,call_status,converted_at").eq("id", lead_id).eq("tenant_id", tenant_id).maybe_single().execute()
+    if lead_check and lead_check.data:
+        ld = lead_check.data
+        if ld.get("do_not_call") or ld.get("call_status") in ("converted", "dnc", "unreachable") or ld.get("converted_at"):
+            logger.info(f"Skipping auto-assign for lead {lead_id} — lead is dead/DNC/converted")
+            return None
 
     # Exclude the owner's caller record — matches list_callers exclusion logic
     owner = (
@@ -258,6 +269,10 @@ def sweep_unassigned_leads(limit_per_tenant: int = 200) -> int:
             .is_("assigned_to", "null")
             .is_("converted_at", "null")
             .is_("deleted_at", "null")
+            .neq("do_not_call", True)
+            .neq("call_status", "converted")
+            .neq("call_status", "dnc")
+            .neq("call_status", "unreachable")
             .in_("segment", segments)
             .limit(limit_per_tenant)
             .execute()
@@ -350,6 +365,7 @@ _TELECALLING_CONFIG_DEFAULT: dict = {
     "channels": ["whatsapp"],
     "targets": {},
     "scripts": {},
+    "max_call_attempts": 4,
 }
 
 

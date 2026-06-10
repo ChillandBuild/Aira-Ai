@@ -2,7 +2,7 @@
 import { toast } from "sonner";
 import { useEffect, useState, useCallback } from "react";
 import { Phone, RefreshCw, ChevronDown, StickyNote, Check, CheckCheck, Download, Calendar, Tag, Target, Inbox, Copy, User, Sparkles, Search, Clock, AlertCircle } from "lucide-react";
-import { api, Caller, Lead, CallLog, Disposition } from "@/lib/api";
+import { api, Caller, Lead, CallLog } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import LiveNotesPane from "./components/live-notes-pane";
 import NotesHistoryModal from "./components/notes-history-modal";
@@ -81,6 +81,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
 
   // Completed Today Tab Switcher
   const [activeTab, setActiveTab] = useState<"queue" | "completed">("queue");
+  const [queueSubTab, setQueueSubTab] = useState<"new" | "callback" | "in_progress" | "closed">("new");
   const [myCallsTodayList, setMyCallsTodayList] = useState<CallLog[]>([]);
   const [loadingCallsToday, setLoadingCallsToday] = useState(false);
 
@@ -461,27 +462,30 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   const handleWrapupSubmit = async () => {
     if (!activeCallCtx || !activeCallCtx.callLogId) return;
     if (!wrapupOutcome) {
-      toast.error("Disposition/Outcome is required");
+      toast.error("Outcome is required");
+      return;
+    }
+    if (wrapupOutcome === "callback" && !wrapupCallbackTime) {
+      toast.error("Callback time is required");
       return;
     }
     setWrapupSaving(true);
     try {
-      if (wrapupOutcome === "converted") {
-        await api.calls.setOutcome(activeCallCtx.callLogId, "converted");
-        if (activeCallCtx.leadId) {
-          await api.leads.convert(activeCallCtx.leadId, wrapupNotes);
-        }
-      } else if (wrapupOutcome === "not_interested") {
-        await api.calls.setOutcome(activeCallCtx.callLogId, "not_interested");
-        if (activeCallCtx.leadId && wrapupNotes.trim()) {
-          await saveNote(activeCallCtx.leadId, wrapupNotes, false);
-        }
-      } else {
-        await api.calls.setDisposition(activeCallCtx.callLogId, wrapupOutcome as Disposition, {
-          notes: wrapupNotes.trim() || undefined,
+      await api.calls.setOutcome(
+        activeCallCtx.callLogId,
+        wrapupOutcome as NonNullable<CallLog["outcome"]>,
+        {
           callbackTime: wrapupCallbackTime ? new Date(wrapupCallbackTime).toISOString() : undefined,
-        });
+          notes: wrapupNotes.trim() || undefined,
+        }
+      );
+
+      if (wrapupOutcome === "converted" && activeCallCtx.leadId) {
+        await api.leads.convert(activeCallCtx.leadId, wrapupNotes);
+      } else if (wrapupOutcome !== "converted" && activeCallCtx.leadId && wrapupNotes.trim()) {
+        await saveNote(activeCallCtx.leadId, wrapupNotes, false);
       }
+
       toast.success("Wrap-up completed");
       setShowWrapupModal(false);
       setWrapupOutcome("");
@@ -503,6 +507,17 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     const phoneMatch = lead.phone?.toLowerCase().includes(query) ?? false;
     return nameMatch || phoneMatch;
   });
+
+  const newLeads = filteredLeads.filter((l) => !l.call_status || l.call_status === "new");
+  const callbackLeads = filteredLeads.filter((l) => l.call_status === "callback");
+  const inProgressLeads = filteredLeads.filter((l) => l.call_status === "in_progress");
+  const closedLeads = filteredLeads.filter((l) => l.call_status && ["converted", "not_interested", "dnc", "unreachable"].includes(l.call_status));
+
+  const activeSubTabLeads =
+    queueSubTab === "new" ? newLeads :
+    queueSubTab === "callback" ? callbackLeads :
+    queueSubTab === "in_progress" ? inProgressLeads :
+    closedLeads;
 
   return (
     <div className="flex flex-col h-[calc(100vh-5rem)] bg-transparent">
@@ -686,7 +701,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                     : "border-transparent text-slate-400 hover:text-slate-600"
                 }`}
               >
-                Queue ({myLeads.length})
+                Queue ({myLeads.filter((l) => !l.call_status || !["converted", "not_interested", "dnc", "unreachable"].includes(l.call_status)).length})
               </button>
               <button
                 onClick={() => setActiveTab("completed")}
@@ -727,6 +742,49 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                       className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-body focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:border-transparent transition-all shadow-inner"
                     />
                   </div>
+                  {/* Secondary calling status sub-tabs */}
+                  <div className="flex gap-1.5 p-1 bg-slate-100/80 rounded-2xl shrink-0 mt-2">
+                    <button
+                      onClick={() => setQueueSubTab("new")}
+                      className={`flex-1 py-1.5 px-2 rounded-xl font-label text-[10px] font-bold text-center transition-all ${
+                        queueSubTab === "new"
+                          ? "bg-white text-indigo-700 shadow-sm font-semibold"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      To Call ({newLeads.length})
+                    </button>
+                    <button
+                      onClick={() => setQueueSubTab("callback")}
+                      className={`flex-1 py-1.5 px-2 rounded-xl font-label text-[10px] font-bold text-center transition-all ${
+                        queueSubTab === "callback"
+                          ? "bg-white text-indigo-700 shadow-sm font-semibold"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      Callbacks ({callbackLeads.length})
+                    </button>
+                    <button
+                      onClick={() => setQueueSubTab("in_progress")}
+                      className={`flex-1 py-1.5 px-2 rounded-xl font-label text-[10px] font-bold text-center transition-all ${
+                        queueSubTab === "in_progress"
+                          ? "bg-white text-indigo-700 shadow-sm font-semibold"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      In Progress ({inProgressLeads.length})
+                    </button>
+                    <button
+                      onClick={() => setQueueSubTab("closed")}
+                      className={`flex-1 py-1.5 px-2 rounded-xl font-label text-[10px] font-bold text-center transition-all ${
+                        queueSubTab === "closed"
+                          ? "bg-white text-indigo-700 shadow-sm font-semibold"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      Closed ({closedLeads.length})
+                    </button>
+                  </div>
                 </div>
 
                 {myLeads.length === 0 ? (
@@ -737,17 +795,17 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                     <p className="font-body text-sm font-semibold text-slate-500">No leads assigned to you</p>
                     <p className="font-label text-xs text-slate-400 mt-1">Queue automations will route hot leads as they arrive.</p>
                   </div>
-                ) : filteredLeads.length === 0 ? (
+                ) : activeSubTabLeads.length === 0 ? (
                   <div className="text-center py-12 flex-1 flex flex-col justify-center items-center">
                     <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 border border-slate-100 mb-3">
                       <Inbox size={18} />
                     </div>
                     <p className="font-body text-sm font-semibold text-slate-500">No matching leads found</p>
-                    <p className="font-label text-xs text-slate-400 mt-1">Try adjusting your search query above.</p>
+                    <p className="font-label text-xs text-slate-400 mt-1">Try switching tabs or adjusting your search query.</p>
                   </div>
                 ) : (
                   <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
-                    {filteredLeads.map((lead) => {
+                    {activeSubTabLeads.map((lead) => {
                       let borderAccent = "border-l-slate-300";
                       if (lead.score >= 8) {
                         borderAccent = "border-l-rose-500";
@@ -785,6 +843,17 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                               }`}>
                                 SEG {lead.segment}
                               </span>
+                              {lead.call_status && lead.call_status !== "new" && (
+                                <span className={`px-1.5 py-0.5 rounded font-label text-[9px] font-black uppercase ${
+                                  lead.call_status === "converted" ? "bg-emerald-100 text-emerald-800" :
+                                  lead.call_status === "dnc" ? "bg-red-100 text-red-800" :
+                                  lead.call_status === "unreachable" ? "bg-rose-100 text-rose-800" :
+                                  lead.call_status === "callback" ? "bg-amber-100 text-amber-800" :
+                                  "bg-indigo-100 text-indigo-850"
+                                }`}>
+                                  {lead.call_status}
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-2 mt-1.5">
                               <p className="font-label text-xs text-slate-500">
@@ -1345,20 +1414,20 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setWrapupOutcome("answered")}
+                    onClick={() => setWrapupOutcome("converted")}
                     className={`px-3 py-2.5 rounded-xl font-label text-xs font-bold border transition-all text-center ${
-                      wrapupOutcome === "answered"
+                      wrapupOutcome === "converted"
                         ? "bg-indigo-600 border-indigo-600 text-white"
                         : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
                     }`}
                   >
-                    Answered (General)
+                    Converted
                   </button>
                   <button
                     type="button"
-                    onClick={() => setWrapupOutcome("followup_required")}
+                    onClick={() => setWrapupOutcome("callback")}
                     className={`px-3 py-2.5 rounded-xl font-label text-xs font-bold border transition-all text-center ${
-                      wrapupOutcome === "followup_required"
+                      wrapupOutcome === "callback"
                         ? "bg-indigo-600 border-indigo-600 text-white"
                         : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
                     }`}
@@ -1367,30 +1436,52 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setWrapupOutcome("converted")}
-                    className={`px-3 py-2.5 rounded-xl font-label text-xs font-bold border transition-all text-center ${
-                      wrapupOutcome === "converted"
-                        ? "bg-indigo-600 border-indigo-600 text-white"
-                        : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
-                    }`}
-                  >
-                    Converted Lead
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => setWrapupOutcome("not_interested")}
                     className={`px-3 py-2.5 rounded-xl font-label text-xs font-bold border transition-all text-center ${
                       wrapupOutcome === "not_interested"
+                        ? "bg-indigo-650 border-indigo-650 text-white"
+                        : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
+                    }`}
+                  >
+                    Not Interested (Nurture)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWrapupOutcome("no_answer")}
+                    className={`px-3 py-2.5 rounded-xl font-label text-xs font-bold border transition-all text-center ${
+                      wrapupOutcome === "no_answer"
                         ? "bg-indigo-600 border-indigo-600 text-white"
                         : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
                     }`}
                   >
-                    Not Interested
+                    No Answer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWrapupOutcome("do_not_call")}
+                    className={`px-3 py-2.5 rounded-xl font-label text-xs font-bold border transition-all text-center ${
+                      wrapupOutcome === "do_not_call"
+                        ? "bg-red-650 border-red-650 text-white"
+                        : "bg-slate-50 hover:bg-red-50 text-red-700 border-red-200"
+                    }`}
+                  >
+                    Do Not Call
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWrapupOutcome("do_not_contact")}
+                    className={`px-3 py-2.5 rounded-xl font-label text-xs font-bold border transition-all text-center ${
+                      wrapupOutcome === "do_not_contact"
+                        ? "bg-red-700 border-red-700 text-white"
+                        : "bg-slate-50 hover:bg-red-50 text-red-800 border-red-200"
+                    }`}
+                  >
+                    Do Not Contact at All
                   </button>
                 </div>
               </div>
 
-              {wrapupOutcome === "followup_required" && (
+              {wrapupOutcome === "callback" && (
                 <div className="bg-amber-50/50 border border-amber-100 rounded-2xl p-4 space-y-3">
                   <p className="font-label text-[10px] text-amber-800 uppercase font-black tracking-widest block">
                     Schedule Next Callback Time

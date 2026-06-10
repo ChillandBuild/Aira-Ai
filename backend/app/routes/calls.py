@@ -49,7 +49,7 @@ class InitiateCall(BaseModel):
 
 
 class OutcomeUpdate(BaseModel):
-    outcome: Outcome | None = None
+    outcome: str | None = None
     disposition: Disposition | None = None
     notes: str | None = None
     callback_time: datetime | None = None
@@ -73,17 +73,21 @@ async def initiate_call(payload: InitiateCall, ctx: dict = Depends(get_tenant_an
     matched_lead_name: str | None = None
 
     if payload.lead_id:
-        lead = db.table("leads").select("phone,name").eq("id", str(payload.lead_id)).eq("tenant_id", tenant_id).maybe_single().execute()
+        lead = db.table("leads").select("phone,name,do_not_call").eq("id", str(payload.lead_id)).eq("tenant_id", tenant_id).maybe_single().execute()
         if not lead.data:
             raise HTTPException(status_code=404, detail="Lead not found")
+        if lead.data.get("do_not_call"):
+            raise HTTPException(status_code=400, detail="Lead is on Do Not Call")
         lead_phone = lead.data["phone"]
         matched_lead_id = str(payload.lead_id)
         matched_lead_name = lead.data.get("name")
     else:
         lead_phone = payload.phone
         # try to find a lead by phone so live notes can be linked
-        match = db.table("leads").select("id,name").eq("phone", lead_phone).eq("tenant_id", tenant_id).maybe_single().execute()
+        match = db.table("leads").select("id,name,do_not_call").eq("phone", lead_phone).eq("tenant_id", tenant_id).maybe_single().execute()
         if match and match.data:
+            if match.data.get("do_not_call"):
+                raise HTTPException(status_code=400, detail="Lead is on Do Not Call")
             matched_lead_id = match.data["id"]
             matched_lead_name = match.data.get("name")
         else:
@@ -95,6 +99,7 @@ async def initiate_call(payload: InitiateCall, ctx: dict = Depends(get_tenant_an
                     "score": 5,
                     "segment": "C",
                     "tenant_id": tenant_id,
+                    "call_status": "in_progress",
                 }).execute()
                 if new_lead.data:
                     matched_lead_id = new_lead.data[0]["id"]
@@ -263,6 +268,7 @@ async def telecmi_cdr(request: Request, background_tasks: BackgroundTasks):
                     new_lead = db.table("leads").insert({
                         "phone": dialed, "source": "manual", "score": 5,
                         "segment": "C", "tenant_id": tenant_id,
+                        "call_status": "in_progress",
                     }).execute()
                     resolved_lead_id = new_lead.data[0]["id"] if new_lead.data else None
                 except Exception as e:
@@ -468,6 +474,16 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depe
     if not payload.outcome and not payload.disposition:
         raise HTTPException(status_code=400, detail="Provide an outcome or a disposition")
 
+    if payload.outcome not in ("converted", "callback", "not_interested", "no_answer", "do_not_call", "do_not_contact", None):
+        raise HTTPException(status_code=400, detail="Invalid outcome value")
+
+    # Intercept DNC outcomes to handle them as lead-level actions
+    dnc_outcome = None
+    if payload.outcome in ("do_not_call", "do_not_contact"):
+        dnc_outcome = payload.outcome
+        payload.outcome = None
+        payload.disposition = "answered"
+
     # A disposition implies a business outcome for scoring; an explicit outcome wins.
     effective_outcome = payload.outcome or _DISPOSITION_TO_OUTCOME.get(payload.disposition or "")
 
@@ -489,7 +505,7 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depe
         new_caller_score = recompute_caller_score(log.data["caller_id"], db)
 
     lead_id = log.data.get("lead_id")
-    if lead_id and effective_outcome is not None:
+    if lead_id and (effective_outcome is not None or dnc_outcome is not None):
         lead = (
             db.table("leads")
             .select("segment,phone,ai_enabled,converted_at,tenant_id,assigned_to")
@@ -499,65 +515,104 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depe
         )
         lead_data = lead.data or {}
         if lead_data:
-            lead_updates: dict[str, str | None] = {}
-            target_segment = lead_data.get("segment")
+            lead_updates: dict = {}
             event_type = "call_outcome"
-            if effective_outcome == "converted":
-                target_segment = "A"
-                lead_updates["segment"] = "A"
+            
+            if dnc_outcome == "do_not_call":
+                lead_updates["do_not_call"] = True
+                lead_updates["call_status"] = "dnc"
+            elif dnc_outcome == "do_not_contact":
+                lead_updates["do_not_call"] = True
+                lead_updates["opted_out"] = True
+                lead_updates["call_status"] = "dnc"
+            elif effective_outcome == "converted":
+                lead_updates["call_status"] = "converted"
                 lead_updates["converted_at"] = datetime.now(timezone.utc).isoformat()
                 event_type = "converted"
             elif effective_outcome == "callback":
-                if (lead_data.get("segment") or "D") not in {"A", "B"}:
-                    target_segment = "B"
-                    lead_updates["segment"] = "B"
+                lead_updates["call_status"] = "callback"
             elif effective_outcome == "not_interested":
-                target_segment = "D"
-                lead_updates["segment"] = "D"
+                lead_updates["call_status"] = "not_interested"
+            elif effective_outcome == "no_answer":
+                # count this lead's no-answer/missed/failed calls in call_logs
+                cfg = get_telecalling_config(ctx["tenant_id"])
+                max_attempts = cfg.get("max_call_attempts", 4)
+                
+                # Fetch all logs for this lead to count attempts
+                logs_res = db.table("call_logs").select("id, status, outcome").eq("lead_id", str(lead_id)).eq("tenant_id", ctx["tenant_id"]).execute()
+                logs = logs_res.data or []
+                
+                no_answer_count = 0
+                for lg in logs:
+                    if lg["id"] == call_log_id:
+                        # This is the current call, count it as no_answer since effective_outcome == "no_answer"
+                        no_answer_count += 1
+                    elif lg.get("status") in ("no_answer", "missed", "failed") or lg.get("outcome") == "no_answer":
+                        no_answer_count += 1
+                
+                if no_answer_count >= max_attempts:
+                    lead_updates["call_status"] = "unreachable"
+                else:
+                    lead_updates["call_status"] = "in_progress"
+            else:
+                # Any other answered-with-no-business-outcome (e.g. None or anything else)
+                lead_updates["call_status"] = "in_progress"
 
             if lead_updates:
                 updated_lead = db.table("leads").update(lead_updates).eq("id", str(lead_id)).eq("tenant_id", ctx["tenant_id"]).execute()
                 if updated_lead.data:
                     lead_data = updated_lead.data[0]
-            if target_segment and target_segment != lead.data.get("segment"):
-                record_stage_event(
-                    str(lead_id),
-                    from_segment=lead.data.get("segment"),
-                    to_segment=target_segment,
-                    event_type=event_type,
-                    metadata={"outcome": effective_outcome, "disposition": payload.disposition},
-                    tenant_id=lead_data.get("tenant_id"),
-                    db=db,
-                )
-            sync_follow_up_jobs(
+
+            record_stage_event(
                 str(lead_id),
-                segment=lead_data.get("segment") or target_segment,
-                phone=lead_data.get("phone"),
-                converted_at=lead_data.get("converted_at"),
-                ai_enabled=lead_data.get("ai_enabled", True),
-                reason=f"call_{effective_outcome}",
+                from_segment=lead.data.get("segment"),
+                to_segment=lead_data.get("segment"),
+                event_type=event_type,
+                metadata={
+                    "outcome": dnc_outcome or effective_outcome,
+                    "disposition": payload.disposition,
+                    "call_status": lead_updates.get("call_status"),
+                },
                 tenant_id=lead_data.get("tenant_id"),
                 db=db,
             )
-            # A call can promote an unassigned lead into a qualifying segment
-            # (e.g. owner-dialed lead asks for a callback → B). Converted leads
-            # are closed, so they are never queued for telecalling.
-            if effective_outcome != "converted" and not lead_data.get("assigned_to"):
+
+            if dnc_outcome is not None:
+                # Explicitly cancel all pending follow-up jobs
+                db.table("follow_up_jobs").update({
+                    "status": "canceled",
+                    "skip_reason": f"dnc_{dnc_outcome}",
+                }).eq("lead_id", str(lead_id)).eq("status", "pending").execute()
+            else:
+                sync_follow_up_jobs(
+                    str(lead_id),
+                    segment=lead_data.get("segment"),
+                    phone=lead_data.get("phone"),
+                    converted_at=lead_data.get("converted_at"),
+                    ai_enabled=lead_data.get("ai_enabled", True),
+                    reason=f"call_{effective_outcome}",
+                    tenant_id=lead_data.get("tenant_id"),
+                    db=db,
+                )
+
+            if (
+                effective_outcome not in ("converted",)
+                and dnc_outcome is None
+                and lead_updates.get("call_status") != "unreachable"
+                and not lead_data.get("assigned_to")
+            ):
                 from app.services.assignment import maybe_assign_lead
                 maybe_assign_lead(
                     str(lead_id), ctx["tenant_id"],
-                    lead_data.get("segment") or target_segment, None,
+                    lead_data.get("segment"), None,
                     reason=f"call_{effective_outcome}",
                 )
+
             linked_job_id = log.data.get("follow_up_job_id")
             if effective_outcome == "callback":
-                # Use the caller-specified time, or default to +24h so a callback
-                # is always a real future job — never left overdue, which would
-                # otherwise trip the missed-callback escalation immediately.
                 target_time = (payload.callback_time or (datetime.now(timezone.utc) + timedelta(days=1))).isoformat()
                 target_job_id = linked_job_id
                 if not target_job_id:
-                    # Fallback to the earliest pending job if the call wasn't linked (e.g. manual dial)
                     job = (
                         db.table("follow_up_jobs")
                         .select("id")
@@ -572,13 +627,12 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depe
                     db.table("follow_up_jobs").update({
                         "scheduled_for": target_time,
                     }).eq("id", target_job_id).eq("tenant_id", ctx["tenant_id"]).execute()
-            elif effective_outcome is not None:
-                # If outcome is something else (e.g. converted, not_interested, no_answer) and we have a linked job, resolve it!
-                if linked_job_id:
-                    db.table("follow_up_jobs").update({
-                        "status": "sent",
-                        "sent_at": datetime.now(timezone.utc).isoformat(),
-                    }).eq("id", linked_job_id).eq("tenant_id", ctx["tenant_id"]).execute()
+            elif (effective_outcome is not None or dnc_outcome is not None) and linked_job_id:
+                db.table("follow_up_jobs").update({
+                    "status": "sent" if dnc_outcome is None else "canceled",
+                    "sent_at": datetime.now(timezone.utc).isoformat() if dnc_outcome is None else None,
+                    "skip_reason": f"dnc_{dnc_outcome}" if dnc_outcome is not None else None,
+                }).eq("id", linked_job_id).eq("tenant_id", ctx["tenant_id"]).execute()
 
     return {
         "call_log_id": call_log_id,
@@ -671,6 +725,11 @@ async def next_lead(
         .neq("segment", "D")
         .is_("converted_at", "null")
         .is_("deleted_at", "null")
+        .neq("do_not_call", True)
+        .neq("call_status", "converted")
+        .neq("call_status", "not_interested")
+        .neq("call_status", "dnc")
+        .neq("call_status", "unreachable")
         .order("score", desc=True)
         .limit(5)
         .execute()
@@ -723,6 +782,10 @@ async def next_lead(
         .neq("segment", "D")
         .is_("converted_at", "null")
         .is_("deleted_at", "null")
+        .neq("do_not_call", True)
+        .neq("call_status", "converted")
+        .neq("call_status", "dnc")
+        .neq("call_status", "unreachable")
         .execute()
     )
 

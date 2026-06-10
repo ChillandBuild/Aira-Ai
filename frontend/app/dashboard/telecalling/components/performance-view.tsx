@@ -808,6 +808,7 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
                     <th className="py-2.5 px-2">Lead</th>
                     <th className="py-2.5 px-2">Phone</th>
                     <th className="py-2.5 px-2">Seg</th>
+                    <th className="py-2.5 px-2">Status</th>
                     <th className="py-2.5 px-2">Assigned To</th>
                   </tr>
                 </thead>
@@ -829,6 +830,17 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
                         <td className="py-2 px-2 text-slate-500 font-medium">{formatPhone(lead.phone)}</td>
                         <td className="py-2 px-2">
                           <span className="bg-slate-100 px-1 py-0.5 rounded font-black text-[9px] uppercase">{lead.segment || "—"}</span>
+                        </td>
+                        <td className="py-2 px-2">
+                          <span className={`px-1.5 py-0.5 rounded font-label text-[9px] font-black uppercase ${
+                            lead.call_status === "converted" ? "bg-emerald-100 text-emerald-800" :
+                            lead.call_status === "dnc" ? "bg-red-100 text-red-800" :
+                            lead.call_status === "unreachable" ? "bg-rose-100 text-rose-800" :
+                            "bg-slate-100 text-slate-650"
+                          }`}>
+                            {lead.call_status || "new"}
+                            {lead.do_not_call ? " (DNC)" : ""}
+                          </span>
                         </td>
                         <td className="py-2 px-2 text-slate-500 font-semibold truncate">
                           {assignedCaller ? assignedCaller.name : <span className="text-amber-500">Unassigned</span>}
@@ -914,6 +926,22 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
                           }`}>
                             Seg {viewingLead.segment}
                           </span>
+                          {viewingLead.call_status && (
+                            <span className={`px-2 py-0.5 rounded font-label text-[9px] font-black uppercase ${
+                              viewingLead.call_status === "converted" ? "bg-emerald-100 text-emerald-800 border border-emerald-250" :
+                              viewingLead.call_status === "dnc" ? "bg-red-100 text-red-800 border border-red-200" :
+                              viewingLead.call_status === "unreachable" ? "bg-rose-100 text-rose-800 border border-rose-250" :
+                              viewingLead.call_status === "callback" ? "bg-amber-100 text-amber-800 border border-amber-250" :
+                              "bg-indigo-100 text-indigo-800 border border-indigo-200"
+                            }`}>
+                              {viewingLead.call_status}
+                            </span>
+                          )}
+                          {viewingLead.do_not_call && (
+                            <span className="px-2 py-0.5 bg-red-650 text-white rounded font-label text-[9px] font-black uppercase">
+                              DNC
+                            </span>
+                          )}
                         </div>
                         <p className="font-label text-xs text-slate-500 mt-1 select-all">
                           {formatPhone(viewingLead.phone)} · Score {viewingLead.score}/10
