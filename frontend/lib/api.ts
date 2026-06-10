@@ -805,6 +805,8 @@ export const api = {
       apiFetch<CallLog[]>(`/api/v1/calls/pending-wrapups`),
     nextLead: (callerId?: string) =>
       apiFetch<Lead>(`/api/v1/calls/next-lead${callerId ? `?caller_id=${callerId}` : ""}`),
+    assignmentMode: () =>
+      apiFetch<{ mode: "push" | "pull"; enabled: boolean }>(`/api/v1/calls/assignment-mode`),
   },
   notes: {
     leadsWithActivity: () =>

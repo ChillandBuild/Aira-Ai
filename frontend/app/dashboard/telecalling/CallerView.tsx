@@ -76,6 +76,10 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   // Blocking Pending-Wrapups list
   const [pendingWrapups, setPendingWrapups] = useState<CallLog[]>([]);
 
+  // Assignment Mode
+  const [assignmentMode, setAssignmentMode] = useState<"push" | "pull" | null>(null);
+  const [assignmentModeEnabled, setAssignmentModeEnabled] = useState(false);
+
   // Call Next
   const [dialingNext, setDialingNext] = useState(false);
 
@@ -149,6 +153,16 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     }
   }, []);
 
+  const loadAssignmentMode = useCallback(async () => {
+    try {
+      const res = await api.calls.assignmentMode();
+      setAssignmentMode(res.mode);
+      setAssignmentModeEnabled(res.enabled);
+    } catch (err) {
+      console.error("Failed to load assignment mode:", err);
+    }
+  }, []);
+
   const loadData = useCallback(async () => {
     try {
       const [callers, leads] = await Promise.all([
@@ -170,13 +184,14 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       loadPerformance();
       loadPendingWrapups();
       loadTelecallingConfig();
+      loadAssignmentMode();
       if (activeTab === "completed") {
         loadMyCallsToday();
       }
     } catch (err) {
       console.error("CallerView load error:", err);
     }
-  }, [callerId, loadCallbacks, loadPerformance, loadPendingWrapups, loadTelecallingConfig, activeTab, loadMyCallsToday]);
+  }, [callerId, loadCallbacks, loadPerformance, loadPendingWrapups, loadTelecallingConfig, activeTab, loadMyCallsToday, loadAssignmentMode]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -722,15 +737,17 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                     <h2 className="font-display text-lg font-bold text-slate-800 flex items-center gap-2">
                       🎯 Assigned Queue
                     </h2>
-                    <button
-                      onClick={handleCallNext}
-                      disabled={dialingNext || myStatus !== "active"}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl font-label text-xs font-bold transition-all shadow-sm hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
-                      title="Call next hot lead in queue"
-                    >
-                      {dialingNext ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                      Call Next
-                    </button>
+                    {assignmentModeEnabled && assignmentMode === "pull" && (
+                      <button
+                        onClick={handleCallNext}
+                        disabled={dialingNext || myStatus !== "active"}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl font-label text-xs font-bold transition-all shadow-sm hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                        title="Call next hot lead in queue"
+                      >
+                        {dialingNext ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                        Call Next
+                      </button>
+                    )}
                   </div>
                   <div className="relative">
                     <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />

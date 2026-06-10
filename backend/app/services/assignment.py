@@ -218,6 +218,8 @@ def maybe_assign_lead(
     enabled + segment gates still apply.
     """
     cfg = get_telecalling_config(tenant_id)
+    if cfg.get("assignment_mode") == "pull":
+        return None
     if not cfg.get("enabled"):
         return None
     if (segment or "") not in cfg.get("segments", ["A"]):
@@ -258,6 +260,8 @@ def sweep_unassigned_leads(limit_per_tenant: int = 200) -> int:
         except Exception:
             continue
         if not tenant_id or not cfg.get("enabled"):
+            continue
+        if cfg.get("assignment_mode") == "pull":
             continue
         segments = cfg.get("segments") or []
         if not segments:
@@ -300,8 +304,11 @@ def reassign_backlog(caller_id: str, tenant_id: str) -> None:
     """
     Check for any unassigned Hot leads or flagged leads and assign them
     to this caller when they come online (up to 20 total).
+
+    No-op in PULL mode — leads must stay in the shared pool for Call Next.
     """
-    if not is_round_robin_enabled(tenant_id):
+    cfg = get_telecalling_config(tenant_id)
+    if not cfg.get("enabled") or cfg.get("assignment_mode") == "pull":
         return
 
     db = get_supabase()
@@ -366,6 +373,7 @@ _TELECALLING_CONFIG_DEFAULT: dict = {
     "targets": {},
     "scripts": {},
     "max_call_attempts": 4,
+    "assignment_mode": "push",
 }
 
 

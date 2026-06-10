@@ -8,6 +8,7 @@ type TelecallingConfig = {
   segments: string[];
   channels: string[];
   max_call_attempts?: number;
+  assignment_mode?: "push" | "pull";
 };
 
 const DEFAULT: TelecallingConfig = {
@@ -15,6 +16,7 @@ const DEFAULT: TelecallingConfig = {
   segments: ["A"],
   channels: ["whatsapp"],
   max_call_attempts: 4,
+  assignment_mode: "push",
 };
 
 const SEGMENT_LABELS: Record<string, string> = {
@@ -172,6 +174,43 @@ export function TelecallingConfigPanel() {
               onChange={(e) => setDraft({ ...draft, max_call_attempts: parseInt(e.target.value) || 4 })}
               className="px-3 py-2 rounded-xl border border-border bg-surface font-body text-sm w-32 focus:outline-none focus:ring-2 focus:ring-amber-500"
             />
+          </div>
+
+          {/* Assignment Mode */}
+          <div>
+            <div className="font-label text-sm font-semibold text-ink mb-1">Assignment Mode</div>
+            <div className="font-body text-xs text-ink-muted mb-2">Choose how leads are distributed to telecallers</div>
+            <div className="flex gap-2 p-1 bg-surface-subtle border border-border rounded-xl w-fit">
+              <button
+                type="button"
+                onClick={() => setDraft({ ...draft, assignment_mode: "push" })}
+                className={`px-4 py-2 rounded-lg font-label text-xs font-bold transition-all ${
+                  (draft.assignment_mode ?? "push") === "push"
+                    ? "bg-white text-ink shadow-sm border border-border/50"
+                    : "text-ink-muted hover:text-ink"
+                }`}
+              >
+                Push (Auto-Assign)
+              </button>
+              <button
+                type="button"
+                onClick={() => setDraft({ ...draft, assignment_mode: "pull" })}
+                className={`px-4 py-2 rounded-lg font-label text-xs font-bold transition-all ${
+                  draft.assignment_mode === "pull"
+                    ? "bg-white text-ink shadow-sm border border-border/50"
+                    : "text-ink-muted hover:text-ink"
+                }`}
+              >
+                Pull (Shark Tank)
+              </button>
+            </div>
+            <p className="font-body text-[11px] text-ink-muted mt-2 max-w-md">
+              {(draft.assignment_mode ?? "push") === "push" ? (
+                <span><strong>Push</strong> — leads auto-assign to callers by round-robin.</span>
+              ) : (
+                <span><strong>Pull</strong> — leads wait in a shared pool; callers grab the next one with &quot;Call Next&quot;.</span>
+              )}
+            </p>
           </div>
 
           {/* Save */}

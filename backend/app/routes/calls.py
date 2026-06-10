@@ -713,6 +713,8 @@ async def next_lead(
 
     # 1. Fetch telecalling config segments
     cfg = get_telecalling_config(tenant_id)
+    if not cfg.get("enabled"):
+        raise HTTPException(status_code=404, detail="Telecalling is not enabled")
     segments = cfg.get("segments", ["A"])
 
     # 2. Pull unassigned hot leads in telecalling_config.segments (default ['A']), not D, not converted, sorted by score desc.
@@ -817,6 +819,15 @@ async def next_lead(
 
     leads_list.sort(key=sort_key)
     return leads_list[0]
+
+
+@router.get("/assignment-mode")
+async def get_assignment_mode(ctx: dict = Depends(get_tenant_and_role)):
+    cfg = get_telecalling_config(ctx["tenant_id"])
+    return {
+        "mode": cfg.get("assignment_mode", "push"),
+        "enabled": cfg.get("enabled", False),
+    }
 
 
 @router.get("/pending-wrapups")

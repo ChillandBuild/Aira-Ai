@@ -208,7 +208,7 @@ async def _process_callback_reassignments() -> None:
     """APScheduler job: reassign overdue callbacks from non-active callers and handle missed callbacks."""
     try:
         from app.db.supabase import get_supabase
-        from app.services.assignment import auto_assign_lead
+        from app.services.assignment import auto_assign_lead, get_telecalling_config, record_assignment_event
         db = get_supabase()
         now = datetime.now(timezone.utc)
         cutoff_reassign = (now - timedelta(minutes=30)).isoformat()
@@ -328,7 +328,35 @@ async def _process_callback_reassignments() -> None:
                         logger.info(f"Callback missed escalation: job={job['id']} lead={job['lead_id']} caller={current_caller_id}")
                     continue
 
-                # Caller is inactive (break/logged_out). Reassign to other active callers.
+                # Caller is inactive (break/logged_out). Reassign to other active callers or release in PULL mode.
+                cfg = get_telecalling_config(tid)
+                if cfg.get("assignment_mode") == "pull":
+                    # Release the overdue away-caller callback back to the pool
+                    db.table("leads").update({
+                        "assigned_to": None,
+                    }).eq("id", job["lead_id"]).eq("tenant_id", tid).execute()
+
+                    record_assignment_event(
+                        lead_id=job["lead_id"],
+                        tenant_id=tid,
+                        segment=lead.data.get("segment"),
+                        caller_id=None,
+                        caller_name=None,
+                        reason="caller_unavailable",
+                        method="pull_release",
+                        score=lead.data.get("score"),
+                        matched_segments=cfg.get("segments", ["A"]),
+                        prev_caller_id=current_caller_id,
+                        prev_caller_name=old_caller_name,
+                        event_type="reassigned",
+                        db=db,
+                    )
+                    logger.info(
+                        f"Callback reassignment (PULL release): job={job['id']} lead={job['lead_id']} "
+                        f"from={current_caller_id}"
+                    )
+                    continue
+
                 # Fetch all active callers in the same tenant (excluding current)
                 active_callers_res = (
                     db.table("callers")

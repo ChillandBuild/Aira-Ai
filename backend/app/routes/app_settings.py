@@ -1,4 +1,5 @@
 import logging
+from typing import Literal
 import secrets
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -62,6 +63,7 @@ class TelecallingConfigUpdate(BaseModel):
     targets: dict[str, int] | None = None
     scripts: dict[str, str] | None = None
     max_call_attempts: int | None = None
+    assignment_mode: Literal["push", "pull"] | None = None
 
 
 
@@ -436,6 +438,9 @@ async def patch_telecalling_config(payload: TelecallingConfigUpdate, ctx: dict =
             raise HTTPException(status_code=400, detail=f"Invalid channels: {bad}")
     if "max_call_attempts" in patch:
         patch["max_call_attempts"] = max(1, min(int(patch["max_call_attempts"]), 20))
+    if "assignment_mode" in patch:
+        if patch["assignment_mode"] not in ("push", "pull"):
+            raise HTTPException(status_code=400, detail="Invalid assignment mode")
     merged = {**current, **patch}
     save_telecalling_config(tenant_id, merged)
     return merged
