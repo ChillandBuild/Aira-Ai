@@ -9,13 +9,10 @@ from app.services.growth import record_stage_event, sync_follow_up_jobs
 from app.services.segmentation import score_to_segment, parse_thresholds
 from app.services.knowledge_service import get_knowledge_context
 from app.services.assignment import (
-    auto_assign_lead,
     maybe_assign_lead,
     get_inbox_config,
-    get_telecalling_config,
     should_escalate_hot_lead,
     should_escalate_to_inbox,
-    should_assign_to_telecalling,
 )
 
 logger = logging.getLogger(__name__)
@@ -389,14 +386,13 @@ _GENERIC_FALLBACK_MARKERS = [
     "team will get back to you",
 ]
 
-_TRIGGER_PRIORITY = ["C", "B", "A", "D", "F", "E"]
+_TRIGGER_PRIORITY = ["C", "B", "A", "D", "F"]
 _TRIGGER_REASONS: dict[str, str] = {
     "C": "User requested a human agent",
     "B": "AI failed to generate a response",
     "A": "AI gave a generic fallback reply",
     "D": "User repeated the same question",
     "F": "AI indicated team will follow up",
-    "E": "Lead score crossed hot threshold",
 }
 
 
@@ -416,8 +412,13 @@ def _is_generic_fallback(text: str) -> bool:
 
 def _trigger_chat_escalation(
     lead_id: str, reason: str, tenant_id: str, assigned_to: str | None, db,
-    auto_assign: bool = False,
 ) -> None:
+    """Create a pending chat handover into the shared escalation pool.
+
+    The handover is NOT auto-assigned to a telecaller — it lands unassigned and
+    is visible to the admin inbox + every telecaller inbox, so whoever is free
+    picks it up. `assigned_to` only carries the lead's existing owner, if any.
+    """
     existing = (
         db.table("chat_handovers")
         .select("id")
@@ -428,10 +429,6 @@ def _trigger_chat_escalation(
     )
     if existing and existing.data:
         return  # already has an open handover
-
-    # Round-robin auto-assign if no one is assigned yet
-    if assigned_to is None and auto_assign:
-        assigned_to = auto_assign_lead(lead_id, tenant_id, reason="escalation")
 
     db.table("leads").update({
         "needs_human_attention": True,
@@ -494,7 +491,6 @@ async def generate_reply(
         return
 
     inbox_cfg = get_inbox_config(tenant_id)
-    telecalling_cfg = get_telecalling_config(tenant_id)
     escalation_flags: set[str] = set()
 
     # Trigger C: user explicitly asked for human (always fires, not config-gated)
@@ -758,7 +754,6 @@ async def generate_reply(
                             tenant_id=tenant_id,
                             assigned_to=lead_data.get("assigned_to"),
                             db=db,
-                            auto_assign=_inbox.get("auto_assign_enabled", False),
                         )
                 except Exception as _ae:
                     logger.warning(f"Telecaller notify failed for lead {lead_id}: {_ae}")
@@ -803,7 +798,6 @@ async def generate_reply(
                 tenant_id=tenant_id,
                 db=db,
             )
-        old_segment = lead_data.get("segment") or "C"
         if score_result.get("intent_reason") == "rejection" and lead_data.get("assigned_to"):
             try:
                 db.table("leads").update({"assigned_to": None}).eq("id", str(lead_id)).execute()
@@ -818,25 +812,6 @@ async def generate_reply(
             )
             if assigned_caller:
                 lead_data["assigned_to"] = assigned_caller
-
-        if new_segment != old_segment and new_segment in inbox_cfg.get("segments", []):
-            # Segment-transition escalation. Replaces the old hardcoded "score >= 7"
-            # + hot_lead_alerts path. Single gate: inbox_cfg.enabled + segment match
-            # + channel match. Fires once per segment transition, respecting the
-            # tenant's per-segment scoring thresholds (A/B/C/D).
-            if should_escalate_hot_lead(inbox_cfg, new_segment, channel):
-                try:
-                    _trigger_chat_escalation(
-                        lead_id=str(lead_id),
-                        reason=f"Lead entered {new_segment} segment (score {new_score})",
-                        tenant_id=tenant_id,
-                        assigned_to=lead_data.get("assigned_to"),
-                        db=db,
-                        auto_assign=inbox_cfg.get("auto_assign_enabled", False) and should_assign_to_telecalling(telecalling_cfg, new_segment, channel) is False,
-                    )
-                    trigger_escalated = True
-                except Exception as esc_err:
-                    logger.error(f"Segment-transition escalation failed for lead {lead_id}: {esc_err}")
     except Exception as e:
         logger.error(f"Scoring update failed for lead {lead_id}: {e}")
 
@@ -851,12 +826,12 @@ async def generate_reply(
         db=db,
     )
 
-    # Step 6: Fire inbox escalation — trigger-based, no segment gate
+    # Step 6: Fire inbox escalation — trigger-based only (A/B/C/D/F), no segment gate.
+    # Creates an UNASSIGNED pending handover → shared pool (admin + any telecaller).
     active_triggers = [
         t for t in _TRIGGER_PRIORITY
         if t in escalation_flags and should_escalate_to_inbox(inbox_cfg, t, channel)
     ]
-    trigger_escalated = False
     if active_triggers:
         primary = active_triggers[0]
         try:
@@ -866,30 +841,7 @@ async def generate_reply(
                 tenant_id=tenant_id,
                 assigned_to=lead_data.get("assigned_to"),
                 db=db,
-                auto_assign=inbox_cfg.get("auto_assign_enabled", False),
             )
-            trigger_escalated = True
             logger.info(f"Inbox escalation fired for lead {lead_id} — trigger {primary}")
         except Exception as e:
             logger.error(f"Inbox escalation failed for lead {lead_id}: {e}")
-
-    # Segment-transition escalation — only fires if no trigger-based handover was created.
-    # Uses pre-scoring segment (`segment`) vs post-scoring segment (`new_segment`).
-    # auto_assign_enabled=ON routes to telecaller; OFF leaves handover unassigned for admin.
-    if (
-        not trigger_escalated
-        and inbox_cfg.get("enabled")
-        and new_segment != segment
-        and new_segment in inbox_cfg.get("segments", [])
-    ):
-        try:
-            _trigger_chat_escalation(
-                lead_id=str(lead_id),
-                reason=f"Lead entered {new_segment} segment",
-                tenant_id=tenant_id,
-                assigned_to=lead_data.get("assigned_to"),
-                db=db,
-                auto_assign=inbox_cfg.get("auto_assign_enabled", False),
-            )
-        except Exception as seg_err:
-            logger.error(f"Inbox segment-transition escalation failed for lead {lead_id}: {seg_err}")

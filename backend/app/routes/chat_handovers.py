@@ -20,8 +20,8 @@ def list_handovers(ctx: dict = Depends(get_tenant_and_role)):
         .order("opened_at", desc=True)
         .limit(50)
     )
-    if ctx["role"] == "caller" and ctx.get("caller_id"):
-        query = query.eq("assigned_to", ctx["caller_id"])
+    # Shared escalation pool: all tenant users (admin + every telecaller) see all
+    # pending handovers, so whoever is free can pick one up and resolve it.
     try:
         rows = query.execute()
     except Exception as e:
@@ -57,8 +57,8 @@ def handover_count(ctx: dict = Depends(get_tenant_and_role)):
         .eq("tenant_id", ctx["tenant_id"])
         .eq("status", "pending")
     )
-    if ctx["role"] == "caller" and ctx.get("caller_id"):
-        query = query.eq("assigned_to", ctx["caller_id"])
+    # Shared escalation pool: all tenant users (admin + every telecaller) see all
+    # pending handovers, so whoever is free can pick one up and resolve it.
     try:
         result = query.execute()
     except Exception as e:

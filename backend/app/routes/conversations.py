@@ -45,9 +45,12 @@ async def list_conversations(
         .is_("deleted_at", "null")
     )
 
-    # Callers only see conversations for their assigned leads
+    # Callers see their assigned leads PLUS any lead in the shared escalation
+    # pool (a pending handover sets needs_human_attention) so they can resolve it.
     if ctx.get("role") == "caller" and ctx.get("caller_id"):
-        lead_query = lead_query.eq("assigned_to", ctx["caller_id"])
+        lead_query = lead_query.or_(
+            f"assigned_to.eq.{ctx['caller_id']},needs_human_attention.eq.true"
+        )
 
     lead_rows = lead_query.execute()
 
