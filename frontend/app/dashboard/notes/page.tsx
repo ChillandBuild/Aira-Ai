@@ -333,7 +333,7 @@ export default function NotesPage() {
       ) : (
         <div className="grid grid-cols-12 gap-4">
           {/* Left: lead list */}
-          <div className="col-span-4 bg-slate-50 rounded-3xl p-5 shadow-sm border border-slate-200 flex flex-col" style={{ maxHeight: "calc(100vh - 220px)" }}>
+          <div className="col-span-4 bg-slate-50 rounded-3xl p-5 shadow-sm border border-slate-200 flex flex-col" style={{ maxHeight: "calc(100vh - 160px)" }}>
             <div className="relative mb-4 shrink-0">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -381,7 +381,7 @@ export default function NotesPage() {
           </div>
 
           {/* Right: lead notes */}
-          <div className="col-span-8 space-y-4 overflow-y-auto" style={{ maxHeight: "calc(100vh - 220px)" }}>
+          <div className="col-span-8 space-y-4 overflow-y-auto" style={{ maxHeight: "calc(100vh - 160px)" }}>
             {!selected ? (
               <div className="flex flex-col items-center justify-center h-64 text-slate-400 bg-slate-50 rounded-3xl border border-slate-200">
                 <StickyNote size={40} className="mb-3 opacity-30" />
