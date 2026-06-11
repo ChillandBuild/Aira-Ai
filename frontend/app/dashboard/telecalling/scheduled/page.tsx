@@ -580,8 +580,11 @@ export default function ScheduledCallsPage() {
                                   AI Evaluation
                                 </span>
                               </div>
-                              {log.ai_summary.course && (
-                                <p className="text-[10px] text-slate-600"><span className="font-semibold text-slate-700">Course Interest:</span> {log.ai_summary.course}</p>
+                              {(log.ai_summary.course || (log.ai_summary as any).product) && (
+                                <p className="text-[10px] text-slate-600"><span className="font-semibold text-slate-700">Course Interest:</span> {log.ai_summary.course || (log.ai_summary as any).product}</p>
+                              )}
+                              {log.ai_summary.brief && (
+                                <p className="text-[10px] text-slate-600"><span className="font-semibold text-slate-700">Brief:</span> {log.ai_summary.brief}</p>
                               )}
                               {log.ai_summary.budget && (
                                 <p className="text-[10px] text-slate-600"><span className="font-semibold text-slate-700">Budget:</span> {log.ai_summary.budget}</p>

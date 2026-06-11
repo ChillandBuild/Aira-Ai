@@ -21,10 +21,10 @@ _SUMMARIZE_SYSTEM = (
 
 _SUMMARIZE_USER = (
     "Transcript:\n{transcript}\n\n"
-    "Extract: product/service interested in, budget mentioned, timeline/deadline, "
-    "recommended next action, overall sentiment (positive/neutral/negative). "
+    "Extract: course/product/service interested in, budget mentioned, timeline/deadline, "
+    "recommended next action, overall sentiment (positive/neutral/negative), and a call brief (a 2-3 sentence overview of what was discussed on the call).\n"
     "Translate any non-English content into English before writing the field values. "
-    "Return valid JSON only with keys: product, budget, timeline, next_action, sentiment."
+    "Return valid JSON only with keys: course, product, budget, timeline, next_action, sentiment, brief."
 )
 
 
@@ -132,11 +132,13 @@ _ANALYZE_USER = (
     "Translate any non-English content into English before writing the field values.\n"
     "Return valid JSON only with ALL of these keys:\n"
     "Summary fields:\n"
-    "- product: product/service the lead was interested in\n"
+    "- course: course/product/service the lead was interested in\n"
+    "- product: same as course (duplicate for compatibility)\n"
     "- budget: budget mentioned (or null)\n"
     "- timeline: timeline/deadline mentioned (or null)\n"
     "- next_action: recommended next action\n"
     "- sentiment: one of 'positive', 'neutral', 'negative'\n"
+    "- brief: a 2-3 sentence overview/summary of what was discussed on the call (e.g. key topics discussed, lead's reaction, customer concerns)\n"
     "Evaluation fields:\n"
     "- talk_ratio: integer 0-100, estimated % of time the caller was speaking\n"
     "- objection_handling: one of 'good', 'average', 'poor'\n"
@@ -145,7 +147,7 @@ _ANALYZE_USER = (
     "- coaching_tip: one specific actionable improvement for the caller (max 50 words)"
 )
 
-_SUMMARY_KEYS = {"product", "budget", "timeline", "next_action", "sentiment"}
+_SUMMARY_KEYS = {"course", "product", "budget", "timeline", "next_action", "sentiment", "brief"}
 _EVAL_KEYS = {"talk_ratio", "objection_handling", "outcome_clarity", "overall_score", "coaching_tip"}
 
 

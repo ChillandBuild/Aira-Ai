@@ -105,10 +105,12 @@ export interface CallLog {
   status: string;
   ai_summary: {
     course?: string;
+    product?: string;
     budget?: string;
     timeline?: string;
     next_action?: string;
     sentiment?: string;
+    brief?: string;
   } | null;
   quality_rating: number | null;
   transcript: string | null;
@@ -124,10 +126,12 @@ export interface NoteWithLead {
   content: string;
   structured: {
     course?: string;
+    product?: string;
     budget?: string;
     timeline?: string;
     next_action?: string;
     sentiment?: string;
+    brief?: string;
   };
   is_pinned: boolean;
   tags?: string[];

@@ -334,7 +334,7 @@ export function AiSummaryCard({
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between gap-2 text-left"
       >
-        <div>
+        <div className="flex-1 min-w-0">
           <p className="font-label text-xs font-semibold text-slate-700">
             {formatDateTime(log.created_at)}
             {log.duration_seconds != null && ` · ${log.duration_seconds}s`}
@@ -351,15 +351,31 @@ export function AiSummaryCard({
               </span>
             )}
           </div>
+          {s.brief && !open && (
+            <p className="font-body text-xs text-slate-500 mt-1.5 truncate max-w-xl">
+              {s.brief}
+            </p>
+          )}
         </div>
         <span className="p-1.5 rounded-lg text-slate-400 shrink-0">
           {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </span>
       </button>
       {open && (
-        <div className="mt-3 space-y-1.5 pt-3 border-t border-slate-100">
+        <div className="mt-3 space-y-2 pt-3 border-t border-slate-100">
+          {s.brief && (
+            <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+              <p className="font-label text-[10px] font-bold text-indigo-600 uppercase tracking-wide mb-1">Call Brief</p>
+              <p className="font-body text-xs text-slate-700 leading-relaxed font-medium">
+                {s.brief}
+              </p>
+            </div>
+          )}
           {(Object.keys(SUMMARY_FIELD_LABELS) as Array<keyof typeof SUMMARY_FIELD_LABELS>).map((k) => {
-            const v = s[k];
+            let v = s[k];
+            if (k === "course" && !v) {
+              v = (s as any).product;
+            }
             if (!v) return null;
             const prev = prevSummary?.[k];
             const changed = !!prev && prev !== v;
