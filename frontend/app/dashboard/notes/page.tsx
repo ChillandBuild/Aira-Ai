@@ -42,6 +42,7 @@ export default function NotesPage() {
   const [callLogs, setCallLogs] = useState<CallLog[]>([]);
   const [notesLoading, setNotesLoading] = useState(false);
   const [filterTag, setFilterTag] = useState<string | null>(null);
+  const [detailTab, setDetailTab] = useState<"notes" | "summary">("notes");
 
   // add note state
   const [addTitle, setAddTitle] = useState("");
@@ -71,6 +72,7 @@ export default function NotesPage() {
   useEffect(() => { loadLeads(); }, []);
 
   useEffect(() => {
+    setDetailTab("notes");
     if (!selected) { setNotes(null); setCallLogs([]); return; }
     setNotesLoading(true);
     Promise.all([fetchNotes(selected.id), api.leads.callLogs(selected.id)])
@@ -359,7 +361,7 @@ export default function NotesPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
-                      <p className="font-body text-sm font-bold text-slate-800 truncate">
+                      <p className="font-body text-sm font-bold text-slate-800 truncate max-w-[110px]">
                         {lead.name || formatPhone(lead.phone)}
                       </p>
                       <span className={`px-1.5 py-0.5 rounded font-label text-[8px] font-black uppercase shrink-0 ${SEGMENT_COLORS[lead.segment]}`}>
@@ -493,7 +495,35 @@ export default function NotesPage() {
                       </div>
                     </div>
 
+                    {/* Section tabs (Call Notes / Call Summaries) */}
+                    <div className="flex border-b border-slate-200 bg-white rounded-t-2xl">
+                      {[
+                        { id: "notes" as const, label: "Call Notes", count: leadNoteItems.length },
+                        { id: "summary" as const, label: "Call Summaries", count: aiLogs.length },
+                      ].map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => setDetailTab(t.id)}
+                          className={`px-6 py-3 font-display text-xs font-black tracking-wider uppercase border-b-2 text-center transition-all flex items-center gap-1.5 ${
+                            detailTab === t.id
+                              ? "border-indigo-500 text-indigo-700"
+                              : "border-transparent text-slate-400 hover:text-slate-600"
+                          }`}
+                        >
+                          {t.label}
+                          {t.count > 0 && (
+                            <span className={`px-1.5 py-0.5 rounded-full font-label text-[10px] normal-case font-bold tracking-normal ${
+                              detailTab === t.id ? "bg-indigo-50 text-indigo-600" : "bg-slate-100 text-slate-400"
+                            }`}>
+                              {t.count}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+
                     {/* Notes section */}
+                    {detailTab === "notes" && (
                     <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4">
                       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                         <h3 className="font-display text-sm font-extrabold text-slate-900 flex items-center gap-2">
@@ -539,8 +569,10 @@ export default function NotesPage() {
                         </div>
                       )}
                     </div>
+                    )}
 
                     {/* Summary (AI call summaries) */}
+                    {detailTab === "summary" && (
                     <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4">
                       <h3 className="font-display text-sm font-extrabold text-slate-900 mb-4 flex items-center gap-2">
                         <span className="w-6 h-6 rounded-lg bg-purple-50 flex items-center justify-center">
@@ -565,6 +597,7 @@ export default function NotesPage() {
                         </div>
                       )}
                     </div>
+                    )}
                   </>
                 )}
               </>

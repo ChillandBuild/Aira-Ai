@@ -1,9 +1,10 @@
 "use client";
-import { Pencil, Pin, Trash2, User } from "lucide-react";
-import { formatPhone, timeAgo } from "@/lib/utils";
+import { useState } from "react";
+import { ChevronDown, ChevronUp, Pencil, Pin, Trash2, User } from "lucide-react";
+import { formatPhone, formatDateTime } from "@/lib/utils";
 import type { NoteWithLead } from "@/lib/api";
 import type { Note } from "@/app/dashboard/telecalling/types";
-import { cardBgFor, SEGMENT_COLORS, SEGMENT_LABELS, TagChip, TagSelector } from "./shared";
+import { cardBgFor, splitNoteContent, SEGMENT_COLORS, SEGMENT_LABELS, TagChip, TagSelector } from "./shared";
 
 interface NoteCardProps {
   note: Note | NoteWithLead;
@@ -53,6 +54,8 @@ export default function NoteCard({
 }: NoteCardProps) {
   const cardBg = cardBgFor(note);
   const hasLead = showLead && "leads" in note && note.leads;
+  const { title, body } = splitNoteContent(note.content);
+  const [expanded, setExpanded] = useState(false);
 
   if (isEditing) {
     return (
@@ -94,26 +97,42 @@ export default function NoteCard({
 
   if (view === "list") {
     return (
-      <div className={`rounded-xl border p-3 flex items-center gap-3 transition-all hover:shadow-sm group ${cardBg}`}>
-        {note.is_pinned && <Pin size={12} className="text-amber-500 fill-amber-400 shrink-0" />}
-        {hasLead && (
-          <div className="w-40 shrink-0">
-            <LeadBadge note={note as NoteWithLead} onClick={onLeadClick} />
+      <div className={`rounded-xl border p-3 transition-all hover:shadow-sm group ${cardBg}`}>
+        <div className="flex items-center gap-3">
+          {note.is_pinned && <Pin size={12} className="text-amber-500 fill-amber-400 shrink-0" />}
+          {hasLead && (
+            <div className="w-40 shrink-0">
+              <LeadBadge note={note as NoteWithLead} onClick={onLeadClick} />
+            </div>
+          )}
+          {title ? (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="flex-1 min-w-0 flex items-center gap-1.5 text-left"
+            >
+              <p className="flex-1 min-w-0 font-body text-sm font-bold text-slate-800 truncate">{title}</p>
+              {expanded ? <ChevronUp size={12} className="text-slate-400 shrink-0" /> : <ChevronDown size={12} className="text-slate-400 shrink-0" />}
+            </button>
+          ) : (
+            <p className="flex-1 min-w-0 font-body text-sm text-slate-700 truncate">{note.content}</p>
+          )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {(note.tags ?? []).slice(0, 2).map((t) => <TagChip key={t} label={t} />)}
           </div>
+          <span className="font-label text-[10px] text-slate-400 shrink-0">{formatDateTime(note.created_at)}</span>
+          <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onClick={onStartEdit} className="p-1.5 rounded-lg hover:bg-white transition-colors text-slate-400 hover:text-slate-700">
+              <Pencil size={12} />
+            </button>
+            <button onClick={onDelete} className="p-1.5 rounded-lg hover:bg-red-50 transition-colors text-slate-400 hover:text-red-500">
+              <Trash2 size={12} />
+            </button>
+          </div>
+        </div>
+        {title && expanded && (
+          <p className="mt-2 pt-2 border-t border-black/5 font-body text-xs text-slate-600 whitespace-pre-wrap">{body || "—"}</p>
         )}
-        <p className="flex-1 min-w-0 font-body text-sm text-slate-700 truncate">{note.content}</p>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {(note.tags ?? []).slice(0, 2).map((t) => <TagChip key={t} label={t} />)}
-        </div>
-        <span className="font-label text-[10px] text-slate-400 shrink-0">{timeAgo(note.created_at)}</span>
-        <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={onStartEdit} className="p-1.5 rounded-lg hover:bg-white transition-colors text-slate-400 hover:text-slate-700">
-            <Pencil size={12} />
-          </button>
-          <button onClick={onDelete} className="p-1.5 rounded-lg hover:bg-red-50 transition-colors text-slate-400 hover:text-red-500">
-            <Trash2 size={12} />
-          </button>
-        </div>
       </div>
     );
   }
@@ -125,14 +144,30 @@ export default function NoteCard({
         {hasLead ? <LeadBadge note={note as NoteWithLead} onClick={onLeadClick} /> : <span />}
         {note.is_pinned && <Pin size={12} className="text-amber-500 fill-amber-400 shrink-0" />}
       </div>
-      <p className="font-body text-sm text-slate-700 whitespace-pre-wrap line-clamp-6">{note.content}</p>
+      {title ? (
+        <>
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="flex items-center gap-1.5 w-full text-left"
+          >
+            <p className="flex-1 min-w-0 font-body text-sm font-bold text-slate-800 truncate">{title}</p>
+            {expanded ? <ChevronUp size={12} className="text-slate-400 shrink-0" /> : <ChevronDown size={12} className="text-slate-400 shrink-0" />}
+          </button>
+          {expanded && (
+            <p className="font-body text-sm text-slate-700 whitespace-pre-wrap line-clamp-6 mt-1.5">{body || "—"}</p>
+          )}
+        </>
+      ) : (
+        <p className="font-body text-sm text-slate-700 whitespace-pre-wrap line-clamp-6">{note.content}</p>
+      )}
       {(note.tags ?? []).length > 0 && (
         <div className="flex items-center gap-1.5 mt-3 flex-wrap">
           {(note.tags ?? []).map((t) => <TagChip key={t} label={t} />)}
         </div>
       )}
       <div className="flex items-center justify-between mt-3 pt-2 border-t border-black/5">
-        <span className="font-label text-[10px] text-slate-400">{timeAgo(note.created_at)}</span>
+        <span className="font-label text-[10px] text-slate-400">{formatDateTime(note.created_at)}</span>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button onClick={onStartEdit} className="p-1.5 rounded-lg hover:bg-white transition-colors text-slate-400 hover:text-slate-700">
             <Pencil size={12} />

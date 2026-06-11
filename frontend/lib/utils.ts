@@ -20,6 +20,13 @@ export function timeAgo(dateStr: string) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+export function formatDateTime(dateStr: string): string {
+  const d = new Date(dateStr);
+  const datePart = d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  const timePart = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+  return `${datePart}, ${timePart}`;
+}
+
 export function formatIST(dateStr: string): string {
   return new Date(dateStr).toLocaleTimeString("en-IN", {
     timeZone: "Asia/Kolkata",

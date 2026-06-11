@@ -1,7 +1,7 @@
 "use client";
 import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronUp, Plus, Tag, X } from "lucide-react";
-import { timeAgo } from "@/lib/utils";
+import { formatDateTime } from "@/lib/utils";
 import type { CallLog } from "@/lib/api";
 
 // ─── Tag system ───────────────────────────────────────────────────────────────
@@ -34,6 +34,17 @@ const TAG_CARD_BG: Record<string, string> = {
 };
 const DEFAULT_CARD_BG = "bg-white border-slate-200";
 const PINNED_CARD_BG = "bg-amber-50/60 border-amber-200";
+
+// Notes saved with a Title show "Title\n\nBody" — split them so the title can
+// be shown collapsed and the body revealed on click.
+export function splitNoteContent(content: string): { title: string | null; body: string } {
+  const idx = content.indexOf("\n\n");
+  if (idx === -1) return { title: null, body: content };
+  const title = content.slice(0, idx);
+  const body = content.slice(idx + 2);
+  if (!title.trim() || title.includes("\n")) return { title: null, body: content };
+  return { title, body };
+}
 
 export function cardBgFor(note: { tags?: string[]; is_pinned: boolean }): string {
   if (note.is_pinned) return PINNED_CARD_BG;
@@ -219,7 +230,7 @@ export function AiSummaryCard({ log }: { log: CallLog }) {
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="font-label text-xs font-semibold text-slate-700">
-            {timeAgo(log.created_at)}
+            {formatDateTime(log.created_at)}
             {log.duration_seconds != null && ` · ${log.duration_seconds}s`}
           </p>
           {log.outcome && (
