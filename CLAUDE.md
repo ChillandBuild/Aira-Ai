@@ -160,6 +160,10 @@ TelecallingConfigPanel: module on/off, auto-assign, per-segment assignment (A/B/
 ## Known Tech Debt
 - RLS enabled on all core tables (few untracked tables like bot_flows / reengagement_steps pending review)
 
+## Architecture Map (auto-derived)
+Navigable module wiki at `graphify-out/wiki/index.md` — one article per module (callbacks, assignment, AI reply, webhooks, bot-flow, scoring, etc.) with source files + cross-module links. Plain markdown, no tooling needed to read. Pull it when tracing structure; CLAUDE.md remains the source of truth for invariants/decisions.
+Regenerate after big changes: `/graphify . --update` then rebuild the wiki. Live query: `graphify query "<question>"`.
+
 ## Key File Locations
 | File | Purpose |
 |---|---|

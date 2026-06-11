@@ -342,7 +342,7 @@ async def _process_callback_reassignments() -> None:
                     )
                     continue
 
-                # Caller unavailable and not claimed via the takeover board. Escalate immediately.
+                # Caller unavailable and not claimed via the claim board. Escalate immediately.
                 db.table("leads").update({
                     "needs_human_attention": True,
                     "needs_human_intervention": True,

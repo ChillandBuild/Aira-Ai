@@ -19,7 +19,6 @@ import {
   PhoneCall,
   Activity,
   Award,
-  Info,
   Sparkles
 } from "lucide-react";
 import { api, CallbackBoardItem, CallLog } from "@/lib/api";
@@ -153,7 +152,7 @@ export default function ScheduledCallsPage() {
     try {
       // 1. Perform takeover
       await api.leads.takeover(cb.lead_id);
-      toast.success("Lead taken over successfully!");
+      toast.success("Callback claimed — calling now");
 
       // 2. Initiate call
       const res = await api.calls.initiate({ leadId: cb.lead_id, callbackJobId: cb.id }, callerId);
@@ -175,72 +174,48 @@ export default function ScheduledCallsPage() {
         load();
         return;
       }
-      toast.error(err instanceof Error ? err.message : "Takeover/Call failed");
+      toast.error(err instanceof Error ? err.message : "Claim failed");
     } finally {
       setTakeoverLoading(false);
     }
   }
 
   function checkTakeoverEligible(cb: CallbackBoardItem) {
-    if (role !== "caller") return false;
-    // Don't show takeover if assigned to me
+    // Claimable purely on time: 15 minutes past the scheduled slot, regardless of
+    // anyone's status. Anyone with a caller profile (incl. the admin) can claim.
+    if (!callerId) return false;
     if (cb.lead.assigned_to === callerId) return false;
-    // Live Call Shield: never allow takeover while assigned caller is on a call
-    if (cb.assigned_caller?.is_on_call) return false;
-
     const scheduledTime = new Date(cb.scheduled_for).getTime();
-    const nowTime = Date.now();
     const fifteenMinInMs = 15 * 60 * 1000;
-    const isOverdue15Min = nowTime >= (scheduledTime + fifteenMinInMs);
-
-    const caller = cb.assigned_caller;
-    const isOffline = !caller || caller.status !== "active";
-
-    return isOverdue15Min || isOffline;
+    return Date.now() >= scheduledTime + fifteenMinInMs;
   }
 
   function renderCallerStatus(cb: CallbackBoardItem) {
     const caller = cb.assigned_caller;
     if (!caller) {
       return (
-        <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
-          <User size={10} />
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+          <User size={11} />
           Unassigned
         </span>
       );
     }
 
-    if (caller.is_on_call) {
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-200/60 animate-pulse">
-          <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-          Busy on Call ({caller.name})
-        </span>
-      );
-    }
-
-    if (caller.status === "active") {
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-          Active ({caller.name})
-        </span>
-      );
-    }
-
-    if (caller.status === "break") {
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200/60">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-          On Break ({caller.name})
-        </span>
-      );
-    }
+    // One self-explanatory pill: colored dot + caller name + plain-language state.
+    // active → free · break → stepped away · else → logged out.
+    const variants =
+      caller.status === "active"
+        ? { state: "Active", wrap: "bg-emerald-50 text-emerald-700 border-emerald-200/60", dot: "bg-emerald-500" }
+        : caller.status === "break"
+          ? { state: "On break", wrap: "bg-amber-50 text-amber-700 border-amber-200/60", dot: "bg-amber-500" }
+          : { state: "Logged out", wrap: "bg-slate-100 text-slate-500 border-slate-200", dot: "bg-slate-400" };
 
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium bg-rose-50 text-rose-700 border border-rose-200/60">
-        <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-        Offline ({caller.name})
+      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border ${variants.wrap}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${variants.dot}`} />
+        <span className="font-semibold">{caller.name}</span>
+        <span className="opacity-70">·</span>
+        {variants.state}
       </span>
     );
   }
@@ -274,38 +249,17 @@ export default function ScheduledCallsPage() {
         }
       `}} />
 
-      {/* Header and Summary stats */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-        <div>
-          <h1 className="font-display text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-3">
-            <div className="p-2.5 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl shadow-md">
-              <Calendar size={22} className="text-white" />
-            </div>
-            Scheduled Calls Board
-          </h1>
-          <p className="font-body text-sm text-slate-500 mt-1.5">
-            Real-time callback claim pool. Steal overdue calls when a caller is offline or busy.
-          </p>
-        </div>
-
-        {/* Legend describing status badges */}
-        <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100 flex flex-wrap gap-x-4 gap-y-2 text-[10px] text-slate-500">
-          <div className="font-bold uppercase tracking-wider text-slate-400 mr-1 flex items-center gap-1">
-            <Info size={11} /> Statuses:
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="font-display text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-3">
+          <div className="p-2.5 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl shadow-md">
+            <Calendar size={22} className="text-white" />
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Active
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-purple-500" /> In Call
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> On Break
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
-          </div>
-        </div>
+          Scheduled Calls Board
+        </h1>
+        <p className="font-body text-sm text-slate-500 mt-1.5">
+          Shared callback queue. When a callback&apos;s owner is logged out, on break, or on another call, an overdue call becomes claimable by any teammate.
+        </p>
       </div>
 
       {loading ? (
@@ -340,6 +294,13 @@ export default function ScheduledCallsPage() {
                   {items.map((cb) => {
                     const isTakeoverEligible = checkTakeoverEligible(cb);
                     const isAssignedToMe = cb.lead.assigned_to === callerId;
+                    const actsAsCaller = !!callerId; // owner-with-caller-profile behaves like a telecaller here
+                    const scheduledByMe = !!callerId && cb.scheduled_by?.id === callerId;
+                    // "Claimed" = the callback is owned by a telecaller who isn't the scheduler
+                    // (covers auto-/pre-103 callbacks with no recorded scheduler too).
+                    const isClaimed =
+                      !!cb.lead.assigned_to &&
+                      cb.lead.assigned_to !== cb.scheduled_by?.id;
 
                     return (
                       <div
@@ -370,11 +331,6 @@ export default function ScheduledCallsPage() {
                                 SEG {cb.lead.segment}
                               </span>
                             )}
-                            {isAssignedToMe && (
-                              <span className="px-1.5 py-0.5 rounded font-label text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                Assigned to Me
-                              </span>
-                            )}
                             {isTakeoverEligible && (
                               <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full font-label text-[9px] font-bold uppercase tracking-wider bg-indigo-100 text-indigo-700 border border-indigo-200 shadow-sm animate-pulse">
                                 <Zap size={8} className="fill-indigo-500 text-indigo-500" />
@@ -387,6 +343,22 @@ export default function ScheduledCallsPage() {
                             <span className="font-label text-[10px] text-slate-400 flex items-center gap-1">
                               <Clock size={10} />
                               {new Date(cb.scheduled_for).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}
+                            </span>
+                            <span className={`font-label text-[10px] flex items-center gap-1 px-2 py-0.5 rounded-lg border ${
+                              isAssignedToMe
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200/60"
+                                : isClaimed
+                                  ? "bg-indigo-50 text-indigo-700 border-indigo-200/60"
+                                  : "bg-slate-50 text-slate-500 border-slate-100"
+                            }`}>
+                              {isClaimed ? <Zap size={10} /> : <User size={10} />}
+                              {isClaimed
+                                ? (isAssignedToMe ? "Claimed by you" : `Claimed by ${cb.assigned_caller?.name ?? "telecaller"}`)
+                                : scheduledByMe
+                                  ? "Scheduled by you"
+                                  : cb.scheduled_by?.name
+                                    ? `Scheduled by ${cb.scheduled_by.name}`
+                                    : "Auto-scheduled"}
                             </span>
                             {cb.message_preview && (
                               <span className="font-label text-[10px] text-slate-500 bg-slate-50 border border-slate-100 px-2 py-0.5 rounded-lg truncate max-w-[240px]">
@@ -427,18 +399,18 @@ export default function ScheduledCallsPage() {
                               onClick={() => handleOpenTakeoverHandoff(cb)}
                               className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-label text-[10px] font-bold hover:from-indigo-600 hover:to-purple-700 transition-all shadow-md hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]"
                             >
-                              <Zap size={12} className="fill-white text-white" /> Take Over
+                              <Zap size={12} className="fill-white text-white" /> Claim
                             </button>
                           )}
 
-                          {!isAssignedToMe && !isTakeoverEligible && (
+                          {actsAsCaller && !isAssignedToMe && !isTakeoverEligible && (
                             <div className="flex items-center gap-1 px-3 py-1.5 bg-slate-50 text-slate-400 rounded-xl font-label text-[10px] border border-slate-100">
                               <Shield size={11} />
                               Locked
                             </div>
                           )}
 
-                          {role === "owner" && (
+                          {role === "owner" && !actsAsCaller && (
                             <button
                               onClick={() => handleMarkDone(cb.id)}
                               disabled={markingDone === cb.id}
@@ -471,11 +443,11 @@ export default function ScheduledCallsPage() {
                     <Zap size={18} />
                   </span>
                   <h2 className="font-display text-xl font-bold text-slate-800">
-                    Take Over Callback Lead
+                    Claim Callback
                   </h2>
                 </div>
                 <p className="font-body text-xs text-slate-500 mt-1">
-                  Claim ownership of this callback. Once taken over, the lead will be assigned to you and automatically dialed.
+                  Claim this overdue callback. Once claimed, the lead is assigned to you and dialed automatically.
                 </p>
               </div>
               <button
@@ -658,7 +630,7 @@ export default function ScheduledCallsPage() {
                 ) : (
                   <PhoneCall size={12} className="fill-white text-white" />
                 )}
-                Confirm &amp; Call Lead
+                Claim &amp; Call
               </button>
             </div>
           </div>
