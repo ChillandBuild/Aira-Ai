@@ -1,4 +1,4 @@
-# Leads & Conversations API
+# Leads API
 
 > 34 nodes · cohesion 0.15
 
@@ -35,13 +35,13 @@
 
 - [[Pydantic Schemas]] (26 shared connections)
 - [[Telecaller Assignment Engine]] (20 shared connections)
-- [[Reengagement & Tenant]] (19 shared connections)
+- [[Reengagement API]] (19 shared connections)
 - [[Callers CRUD & Coaching]] (16 shared connections)
 - [[Follow-ups & Callback Scheduling API]] (16 shared connections)
 - [[Calls API (TeleCMI dialer)]] (14 shared connections)
 - [[AI Reply Pipeline (Groq)]] (11 shared connections)
 - [[CSV Upload & Bulk Send]] (10 shared connections)
-- [[Template Submission (Meta)]] (8 shared connections)
+- [[Templates API]] (8 shared connections)
 - [[Automations API]] (6 shared connections)
 - [[Knowledge Base (pgvector RAG)]] (6 shared connections)
 - [[Operator Console & Audit]] (6 shared connections)

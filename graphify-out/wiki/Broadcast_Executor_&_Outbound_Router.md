@@ -22,7 +22,7 @@
 
 ## Relationships
 
-- [[Leads & Conversations API]] (2 shared connections)
+- [[Leads API]] (2 shared connections)
 - [[CSV Upload & Bulk Send]] (2 shared connections)
 - [[App Entry & Schedulers]] (1 shared connections)
 - [[AI Reply Pipeline (Groq)]] (1 shared connections)

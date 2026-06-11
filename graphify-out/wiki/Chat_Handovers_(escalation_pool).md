@@ -16,8 +16,8 @@
 ## Relationships
 
 - [[Settings Page]] (4 shared connections)
-- [[Leads & Conversations API]] (2 shared connections)
-- [[Reengagement & Tenant]] (2 shared connections)
+- [[Leads API]] (2 shared connections)
+- [[Reengagement API]] (2 shared connections)
 - [[App Entry & Schedulers]] (1 shared connections)
 - [[Pydantic Schemas]] (1 shared connections)
 

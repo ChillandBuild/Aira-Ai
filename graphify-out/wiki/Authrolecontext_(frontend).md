@@ -1,4 +1,4 @@
-# Auth Role & Navigation
+# Authrolecontext (frontend)
 
 > 23 nodes · cohesion 0.13
 
@@ -30,17 +30,17 @@
 
 ## Relationships
 
-- [[Telecalling Context & Notes]] (10 shared connections)
-- [[Leads Page & API Client]] (9 shared connections)
-- [[Upload / Broadcast Page]] (8 shared connections)
+- [[Notes Page]] (10 shared connections)
+- [[API Client (frontend)]] (9 shared connections)
+- [[Upload Page]] (8 shared connections)
 - [[Settings Page]] (4 shared connections)
 - [[Operator Console & Audit]] (2 shared connections)
 - [[Route (frontend)]] (1 shared connections)
-- [[Bot Flow Blocks]] (1 shared connections)
+- [[Bot Flow UI: Blockmeta]] (1 shared connections)
 - [[Numbers Page]] (1 shared connections)
-- [[Conversations UI]] (1 shared connections)
+- [[Outbound Leads Page]] (1 shared connections)
 - [[Assignment Log & Leaderboard]] (1 shared connections)
-- [[Reengagement & Tenant]] (1 shared connections)
+- [[Reengagement API]] (1 shared connections)
 
 ## Source Files
 

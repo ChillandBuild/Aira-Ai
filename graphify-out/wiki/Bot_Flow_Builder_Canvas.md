@@ -33,12 +33,11 @@
 
 ## Relationships
 
-- [[Bot Flow UI: Types]] (10 shared connections)
-- [[Bot Flow Legacy Canvas]] (10 shared connections)
-- [[Bot Flow Blocks]] (5 shared connections)
-- [[Bot Flow Types & Hooks]] (5 shared connections)
-- [[Bot Flow Editor]] (1 shared connections)
-- [[Bot Flow Form Components]] (1 shared connections)
+- [[Bot Flow UI: Types]] (15 shared connections)
+- [[Bot Flow UI: Flowcanvas]] (10 shared connections)
+- [[Bot Flow UI: Blockmeta]] (5 shared connections)
+- [[Bot Flow UI: Floweditor]] (1 shared connections)
+- [[Bot Flow UI: Forms]] (1 shared connections)
 
 ## Source Files
 

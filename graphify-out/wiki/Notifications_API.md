@@ -12,8 +12,8 @@
 
 ## Relationships
 
-- [[Leads & Conversations API]] (2 shared connections)
-- [[Telecalling Context & Notes]] (2 shared connections)
+- [[Leads API]] (2 shared connections)
+- [[Notes Page]] (2 shared connections)
 
 ## Source Files
 

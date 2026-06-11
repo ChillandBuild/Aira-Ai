@@ -29,10 +29,10 @@
 ## Relationships
 
 - [[Tests: Scoring Engine]] (18 shared connections)
-- [[Leads & Conversations API]] (1 shared connections)
+- [[Leads API]] (1 shared connections)
 - [[App Entry & Schedulers]] (1 shared connections)
 - [[Instagram Channel]] (1 shared connections)
-- [[Template Submission (Meta)]] (1 shared connections)
+- [[Templates API]] (1 shared connections)
 - [[AI Reply Pipeline (Groq)]] (1 shared connections)
 - [[Bot Flow / Automation Engine]] (1 shared connections)
 - [[Autopilot & AI Agent Runtime]] (1 shared connections)

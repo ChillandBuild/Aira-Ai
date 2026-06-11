@@ -1,4 +1,4 @@
-# Bot Flow Form Components
+# Bot Flow UI: Forms
 
 > 32 nodes · cohesion 0.10
 
@@ -33,13 +33,12 @@
 
 ## Relationships
 
-- [[Bot Flow Types & Hooks]] (10 shared connections)
-- [[Bot Flow Blocks]] (4 shared connections)
-- [[Bot Flow Legacy Canvas]] (4 shared connections)
-- [[Bot Flow UI: Types]] (2 shared connections)
-- [[Leads Page & API Client]] (1 shared connections)
+- [[Bot Flow UI: Types]] (12 shared connections)
+- [[Bot Flow UI: Blockmeta]] (4 shared connections)
+- [[Bot Flow UI: Flowcanvas]] (4 shared connections)
+- [[API Client (frontend)]] (1 shared connections)
 - [[Settings Page]] (1 shared connections)
-- [[Bot Flow Editor]] (1 shared connections)
+- [[Bot Flow UI: Floweditor]] (1 shared connections)
 - [[Bot Flow Builder Canvas]] (1 shared connections)
 
 ## Source Files

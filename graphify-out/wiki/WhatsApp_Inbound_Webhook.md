@@ -23,13 +23,13 @@
 ## Relationships
 
 - [[Quality Failover]] (3 shared connections)
-- [[Leads & Conversations API]] (2 shared connections)
+- [[Leads API]] (2 shared connections)
 - [[Telecaller Assignment Engine]] (2 shared connections)
 - [[Booking Flow]] (2 shared connections)
 - [[Instagram Channel]] (1 shared connections)
 - [[App Entry & Schedulers]] (1 shared connections)
 - [[Meta Cloud API Client]] (1 shared connections)
-- [[Template Submission (Meta)]] (1 shared connections)
+- [[Templates API]] (1 shared connections)
 - [[AI Reply Pipeline (Groq)]] (1 shared connections)
 - [[Telegram Channel]] (1 shared connections)
 - [[Autopilot & AI Agent Runtime]] (1 shared connections)

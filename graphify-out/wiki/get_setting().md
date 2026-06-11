@@ -2,7 +2,7 @@
 
 > God node · 27 connections · `backend/app/config_dynamic.py`
 
-**Community:** [[Template Submission (Meta)]]
+**Community:** [[Templates API]]
 
 ## Connections by Relation
 

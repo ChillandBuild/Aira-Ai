@@ -21,13 +21,13 @@
 
 ## Relationships
 
-- [[Telecalling Context & Notes]] (7 shared connections)
-- [[Upload / Broadcast Page]] (3 shared connections)
+- [[Notes Page]] (7 shared connections)
+- [[Upload Page]] (3 shared connections)
 - [[Pydantic Schemas]] (2 shared connections)
 - [[App Entry & Schedulers]] (1 shared connections)
 - [[Lead Details Panel]] (1 shared connections)
-- [[Leads Page & API Client]] (1 shared connections)
-- [[Leads & Conversations API]] (1 shared connections)
+- [[API Client (frontend)]] (1 shared connections)
+- [[Leads API]] (1 shared connections)
 
 ## Source Files
 

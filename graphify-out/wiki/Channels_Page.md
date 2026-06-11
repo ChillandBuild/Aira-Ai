@@ -28,12 +28,12 @@
 
 ## Relationships
 
-- [[Upload / Broadcast Page]] (3 shared connections)
+- [[Upload Page]] (3 shared connections)
 - [[Settings Page]] (3 shared connections)
-- [[App Settings & Telecalling Config]] (2 shared connections)
-- [[Template Submission (Meta)]] (1 shared connections)
-- [[Leads Page & API Client]] (1 shared connections)
-- [[Telecalling Context & Notes]] (1 shared connections)
+- [[App Settings API]] (2 shared connections)
+- [[Templates API]] (1 shared connections)
+- [[API Client (frontend)]] (1 shared connections)
+- [[Notes Page]] (1 shared connections)
 
 ## Source Files
 

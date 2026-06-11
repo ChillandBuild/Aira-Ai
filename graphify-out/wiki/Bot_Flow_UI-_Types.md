@@ -1,49 +1,51 @@
 # Bot Flow UI: Types
 
-> 16 nodes · cohesion 0.23
+> 22 nodes · cohesion 0.12
 
 ## Key Concepts
 
-- **BlockType** (15 connections) — `frontend/app/dashboard/automations/[id]/flow/types.ts`
-- **TriggerType** (11 connections) — `frontend/app/dashboard/automations/[id]/flow/types.ts`
-- **InsertTarget** (9 connections) — `frontend/app/dashboard/automations/[id]/flow/types.ts`
-- **AddButton.tsx** (8 connections) — `frontend/app/dashboard/automations/[id]/flow/AddButton.tsx`
-- **BlockPicker.tsx** (8 connections) — `frontend/app/dashboard/automations/[id]/flow/BlockPicker.tsx`
-- **TriggerConfig** (8 connections) — `frontend/app/dashboard/automations/[id]/flow/types.ts`
-- **FlowState** (8 connections) — `frontend/app/dashboard/automations/[id]/flow/useFlow.ts`
-- **TriggerCard.tsx** (7 connections) — `frontend/app/dashboard/automations/[id]/flow/TriggerCard.tsx`
-- **CanvasProps** (6 connections) — `frontend/app/dashboard/automations/[id]/flow/Canvas.tsx`
-- **MapNode** (5 connections) — `frontend/app/dashboard/automations/[id]/flow/mapLayout.ts`
-- **AddButtonProps** (3 connections) — `frontend/app/dashboard/automations/[id]/flow/AddButton.tsx`
-- **TriggerCardProps** (3 connections) — `frontend/app/dashboard/automations/[id]/flow/TriggerCard.tsx`
-- **BlockPickerProps** (2 connections) — `frontend/app/dashboard/automations/[id]/flow/BlockPicker.tsx`
-- **PICKER_BLOCKS** (2 connections) — `frontend/app/dashboard/automations/[id]/flow/blockMeta.tsx`
-- **BlockPicker()** (1 connections) — `frontend/app/dashboard/automations/[id]/flow/BlockPicker.tsx`
-- **AddButton()** (1 connections) — `frontend/app/dashboard/automations/[id]/flow/AddButton.tsx`
+- **types.ts** (36 connections) — `frontend/app/dashboard/automations/[id]/flow/types.ts`
+- **useFlow.ts** (32 connections) — `frontend/app/dashboard/automations/[id]/flow/useFlow.ts`
+- **InteractiveButton** (3 connections) — `frontend/app/dashboard/automations/[id]/flow/types.ts`
+- **FlowListItem** (3 connections) — `frontend/app/dashboard/automations/[id]/flow/types.ts`
+- **FlowDetail** (3 connections) — `frontend/app/dashboard/automations/[id]/flow/types.ts`
+- **deepCloneNode()** (3 connections) — `frontend/app/dashboard/automations/[id]/flow/useFlow.ts`
+- **WaitUnit** (2 connections) — `frontend/app/dashboard/automations/[id]/flow/types.ts`
+- **ConditionSubject** (2 connections) — `frontend/app/dashboard/automations/[id]/flow/types.ts`
+- **HttpMethod** (2 connections) — `frontend/app/dashboard/automations/[id]/flow/types.ts`
+- **ListSection** (2 connections) — `frontend/app/dashboard/automations/[id]/flow/types.ts`
+- **ListRow** (2 connections) — `frontend/app/dashboard/automations/[id]/flow/types.ts`
+- **SingleCondition** (2 connections) — `frontend/app/dashboard/automations/[id]/flow/types.ts`
+- **Step** (2 connections) — `frontend/app/dashboard/automations/[id]/flow/types.ts`
+- **StepIn** (2 connections) — `frontend/app/dashboard/automations/[id]/flow/types.ts`
+- **newId()** (2 connections) — `frontend/app/dashboard/automations/[id]/flow/useFlow.ts`
+- **cloneConfig()** (2 connections) — `frontend/app/dashboard/automations/[id]/flow/useFlow.ts`
+- **BRANCHING_TYPES** (1 connections) — `frontend/app/dashboard/automations/[id]/flow/types.ts`
+- **mapBranches()** (1 connections) — `frontend/app/dashboard/automations/[id]/flow/useFlow.ts`
+- **buildTree()** (1 connections) — `frontend/app/dashboard/automations/[id]/flow/useFlow.ts`
+- **recurseBranches()** (1 connections) — `frontend/app/dashboard/automations/[id]/flow/useFlow.ts`
+- **reconcileButtonLanes()** (1 connections) — `frontend/app/dashboard/automations/[id]/flow/useFlow.ts`
+- **reconcileOutcomeLanes()** (1 connections) — `frontend/app/dashboard/automations/[id]/flow/useFlow.ts`
 
 ## Relationships
 
-- [[Bot Flow Types & Hooks]] (12 shared connections)
-- [[Bot Flow Builder Canvas]] (10 shared connections)
-- [[Bot Flow Blocks]] (9 shared connections)
-- [[Bot Flow Legacy Canvas]] (8 shared connections)
-- [[Bot Flow Editor]] (2 shared connections)
-- [[Bot Flow Form Components]] (2 shared connections)
+- [[Bot Flow UI: Types]] (12 shared connections)
+- [[Bot Flow UI: Flowcanvas]] (11 shared connections)
+- [[Bot Flow UI: Forms]] (10 shared connections)
+- [[Bot Flow UI: Blockmeta]] (7 shared connections)
+- [[Bot Flow Builder Canvas]] (5 shared connections)
+- [[Bot Flow UI: Floweditor]] (3 shared connections)
+- [[API Client (frontend)]] (1 shared connections)
+- [[Settings Page]] (1 shared connections)
 
 ## Source Files
 
-- `frontend/app/dashboard/automations/[id]/flow/AddButton.tsx`
-- `frontend/app/dashboard/automations/[id]/flow/BlockPicker.tsx`
-- `frontend/app/dashboard/automations/[id]/flow/Canvas.tsx`
-- `frontend/app/dashboard/automations/[id]/flow/TriggerCard.tsx`
-- `frontend/app/dashboard/automations/[id]/flow/blockMeta.tsx`
-- `frontend/app/dashboard/automations/[id]/flow/mapLayout.ts`
 - `frontend/app/dashboard/automations/[id]/flow/types.ts`
 - `frontend/app/dashboard/automations/[id]/flow/useFlow.ts`
 
 ## Audit Trail
 
-- EXTRACTED: 97 (100%)
+- EXTRACTED: 106 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

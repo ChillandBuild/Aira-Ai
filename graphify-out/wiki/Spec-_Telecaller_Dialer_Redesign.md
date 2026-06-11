@@ -12,7 +12,7 @@
 
 ## Relationships
 
-- [[Telecalling Context & Notes]] (1 shared connections)
+- [[Notes Page]] (1 shared connections)
 
 ## Source Files
 

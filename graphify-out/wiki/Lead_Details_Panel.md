@@ -24,12 +24,12 @@
 
 ## Relationships
 
-- [[Telecalling Context & Notes]] (5 shared connections)
-- [[Upload / Broadcast Page]] (4 shared connections)
-- [[Leads Page & API Client]] (2 shared connections)
+- [[Notes Page]] (5 shared connections)
+- [[Upload Page]] (4 shared connections)
+- [[API Client (frontend)]] (2 shared connections)
 - [[Settings Page]] (2 shared connections)
 - [[Conversation List UI]] (1 shared connections)
-- [[Conversations UI]] (1 shared connections)
+- [[Outbound Leads Page]] (1 shared connections)
 - [[AI Reply Pipeline (Groq)]] (1 shared connections)
 
 ## Source Files

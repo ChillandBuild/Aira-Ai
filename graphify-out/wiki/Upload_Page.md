@@ -1,4 +1,4 @@
-# Upload / Broadcast Page
+# Upload Page
 
 > 59 nodes · cohesion 0.05
 
@@ -33,16 +33,16 @@
 
 ## Relationships
 
-- [[Telecalling Context & Notes]] (27 shared connections)
+- [[Notes Page]] (27 shared connections)
 - [[Settings Page]] (13 shared connections)
-- [[Conversations UI]] (12 shared connections)
-- [[Leads Page & API Client]] (11 shared connections)
-- [[Auth Role & Navigation]] (8 shared connections)
+- [[Outbound Leads Page]] (12 shared connections)
+- [[API Client (frontend)]] (11 shared connections)
+- [[Authrolecontext (frontend)]] (8 shared connections)
 - [[Numbers Page]] (4 shared connections)
 - [[Lead Details Panel]] (4 shared connections)
 - [[Channels Page]] (3 shared connections)
 - [[Conversation List UI]] (3 shared connections)
-- [[Bot Flow Blocks]] (2 shared connections)
+- [[Bot Flow UI: Blockmeta]] (2 shared connections)
 - [[Assignment Log & Leaderboard]] (2 shared connections)
 - [[Inbound Lead Reporting]] (2 shared connections)
 

@@ -26,11 +26,11 @@
 
 ## Relationships
 
-- [[Leads & Conversations API]] (6 shared connections)
-- [[Reengagement & Tenant]] (5 shared connections)
+- [[Leads API]] (6 shared connections)
+- [[Reengagement API]] (5 shared connections)
 - [[Pydantic Schemas]] (3 shared connections)
-- [[Auth Role & Navigation]] (2 shared connections)
-- [[App Settings & Telecalling Config]] (2 shared connections)
+- [[Authrolecontext (frontend)]] (2 shared connections)
+- [[App Settings API]] (2 shared connections)
 - [[App Entry & Schedulers]] (1 shared connections)
 
 ## Source Files

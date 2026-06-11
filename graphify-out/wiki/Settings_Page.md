@@ -33,18 +33,18 @@
 
 ## Relationships
 
-- [[Upload / Broadcast Page]] (13 shared connections)
-- [[Telecalling Context & Notes]] (11 shared connections)
-- [[Leads Page & API Client]] (9 shared connections)
-- [[Auth Role & Navigation]] (4 shared connections)
+- [[Upload Page]] (13 shared connections)
+- [[Notes Page]] (11 shared connections)
+- [[API Client (frontend)]] (9 shared connections)
+- [[Templates Page]] (5 shared connections)
+- [[Authrolecontext (frontend)]] (4 shared connections)
 - [[Chat Handovers (escalation pool)]] (4 shared connections)
-- [[Message Templates Page]] (4 shared connections)
 - [[Channels Page]] (3 shared connections)
-- [[Bot Flow Blocks]] (2 shared connections)
+- [[Bot Flow UI: Blockmeta]] (2 shared connections)
 - [[Lead Details Panel]] (2 shared connections)
 - [[Numbers Page]] (2 shared connections)
-- [[Bot Flow Form Components]] (1 shared connections)
-- [[Bot Flow Types & Hooks]] (1 shared connections)
+- [[Bot Flow UI: Forms]] (1 shared connections)
+- [[Bot Flow UI: Types]] (1 shared connections)
 
 ## Source Files
 

@@ -33,11 +33,11 @@
 
 ## Relationships
 
-- [[Leads & Conversations API]] (3 shared connections)
-- [[Upload / Broadcast Page]] (2 shared connections)
-- [[Analytics (dashboard + API)]] (1 shared connections)
+- [[Leads API]] (3 shared connections)
+- [[Upload Page]] (2 shared connections)
+- [[Analytics Page]] (1 shared connections)
 - [[App Entry & Schedulers]] (1 shared connections)
-- [[Leads Page & API Client]] (1 shared connections)
+- [[API Client (frontend)]] (1 shared connections)
 
 ## Source Files
 

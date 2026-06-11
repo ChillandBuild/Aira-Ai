@@ -33,12 +33,12 @@
 
 ## Relationships
 
-- [[Leads & Conversations API]] (20 shared connections)
-- [[App Settings & Telecalling Config]] (7 shared connections)
+- [[Leads API]] (20 shared connections)
+- [[App Settings API]] (7 shared connections)
 - [[Callers CRUD & Coaching]] (7 shared connections)
 - [[AI Reply Pipeline (Groq)]] (7 shared connections)
 - [[Calls API (TeleCMI dialer)]] (4 shared connections)
-- [[Reengagement & Tenant]] (3 shared connections)
+- [[Reengagement API]] (3 shared connections)
 - [[Facebook / Webhook Verification]] (2 shared connections)
 - [[Instagram Channel]] (2 shared connections)
 - [[Telegram Channel]] (2 shared connections)

@@ -22,8 +22,8 @@
 ## Relationships
 
 - [[CSV Upload & Bulk Send]] (4 shared connections)
-- [[Upload (delivery handling)]] (3 shared connections)
-- [[Leads & Conversations API]] (1 shared connections)
+- [[Upload API]] (3 shared connections)
+- [[Leads API]] (1 shared connections)
 
 ## Source Files
 

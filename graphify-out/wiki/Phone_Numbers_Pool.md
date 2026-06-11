@@ -16,8 +16,8 @@
 
 ## Relationships
 
-- [[Leads & Conversations API]] (5 shared connections)
-- [[Reengagement & Tenant]] (3 shared connections)
+- [[Leads API]] (5 shared connections)
+- [[Reengagement API]] (3 shared connections)
 - [[Pydantic Schemas]] (2 shared connections)
 - [[App Entry & Schedulers]] (1 shared connections)
 - [[Meta Cloud API Client]] (1 shared connections)

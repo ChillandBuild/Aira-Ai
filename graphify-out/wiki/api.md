@@ -2,7 +2,7 @@
 
 > God node · 29 connections · `frontend/lib/api.ts`
 
-**Community:** [[Telecalling Context & Notes]]
+**Community:** [[Notes Page]]
 
 ## Connections by Relation
 

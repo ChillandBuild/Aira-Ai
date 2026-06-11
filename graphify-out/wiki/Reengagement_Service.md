@@ -22,8 +22,8 @@
 ## Relationships
 
 - [[App Entry & Schedulers]] (1 shared connections)
-- [[Leads & Conversations API]] (1 shared connections)
-- [[Reengagement & Tenant]] (1 shared connections)
+- [[Leads API]] (1 shared connections)
+- [[Reengagement API]] (1 shared connections)
 - [[Meta Cloud API Client]] (1 shared connections)
 - [[Booking Flow]] (1 shared connections)
 - [[AI Reply Pipeline (Groq)]] (1 shared connections)

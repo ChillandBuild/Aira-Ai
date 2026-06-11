@@ -2,7 +2,7 @@
 
 > God node · 28 connections · `frontend/app/dashboard/contexts/AuthRoleContext.tsx`
 
-**Community:** [[Upload / Broadcast Page]]
+**Community:** [[Upload Page]]
 
 ## Connections by Relation
 

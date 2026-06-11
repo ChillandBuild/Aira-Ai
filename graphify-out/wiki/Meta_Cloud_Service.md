@@ -1,4 +1,4 @@
-# Carousel Template Submission
+# Meta Cloud Service
 
 > 13 nodes · cohesion 0.21
 
@@ -21,9 +21,9 @@
 ## Relationships
 
 - [[Meta Cloud API Client]] (14 shared connections)
-- [[Template Submission (Meta)]] (7 shared connections)
-- [[Reengagement & Tenant]] (2 shared connections)
-- [[Leads & Conversations API]] (1 shared connections)
+- [[Templates API]] (7 shared connections)
+- [[Reengagement API]] (2 shared connections)
+- [[Leads API]] (1 shared connections)
 - [[Pydantic Schemas]] (1 shared connections)
 
 ## Source Files

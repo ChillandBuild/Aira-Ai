@@ -33,10 +33,10 @@
 
 ## Relationships
 
-- [[Leads & Conversations API]] (14 shared connections)
-- [[Reengagement & Tenant]] (5 shared connections)
+- [[Leads API]] (14 shared connections)
+- [[Reengagement API]] (5 shared connections)
 - [[Telecaller Assignment Engine]] (4 shared connections)
-- [[Template Submission (Meta)]] (3 shared connections)
+- [[Templates API]] (3 shared connections)
 - [[Instagram Channel]] (1 shared connections)
 - [[App Entry & Schedulers]] (1 shared connections)
 - [[Voice Router (TeleCMI)]] (1 shared connections)

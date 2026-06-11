@@ -24,9 +24,9 @@
 ## Relationships
 
 - [[Instagram Channel]] (3 shared connections)
-- [[Template Submission (Meta)]] (3 shared connections)
+- [[Templates API]] (3 shared connections)
 - [[App Entry & Schedulers]] (2 shared connections)
-- [[Leads & Conversations API]] (2 shared connections)
+- [[Leads API]] (2 shared connections)
 - [[Telecaller Assignment Engine]] (2 shared connections)
 - [[Booking Flow]] (2 shared connections)
 - [[Telegram Channel]] (1 shared connections)

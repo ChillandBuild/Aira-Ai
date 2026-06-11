@@ -34,10 +34,10 @@
 ## Relationships
 
 - [[AI Reply Pipeline (Groq)]] (7 shared connections)
-- [[Leads & Conversations API]] (6 shared connections)
+- [[Leads API]] (6 shared connections)
 - [[Tests: Booking Flow]] (6 shared connections)
 - [[Bot Flow / Automation Engine]] (5 shared connections)
-- [[Template Submission (Meta)]] (2 shared connections)
+- [[Templates API]] (2 shared connections)
 - [[Facebook / Webhook Verification]] (2 shared connections)
 - [[Instagram Channel]] (2 shared connections)
 - [[Telegram Channel]] (2 shared connections)

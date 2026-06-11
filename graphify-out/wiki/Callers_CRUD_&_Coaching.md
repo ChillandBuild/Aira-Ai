@@ -33,9 +33,9 @@
 
 ## Relationships
 
-- [[Leads & Conversations API]] (16 shared connections)
+- [[Leads API]] (16 shared connections)
 - [[Telecaller Assignment Engine]] (7 shared connections)
-- [[Reengagement & Tenant]] (7 shared connections)
+- [[Reengagement API]] (7 shared connections)
 - [[Pydantic Schemas]] (5 shared connections)
 - [[App Entry & Schedulers]] (1 shared connections)
 - [[Caller Daily Digest]] (1 shared connections)

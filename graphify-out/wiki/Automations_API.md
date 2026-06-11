@@ -23,8 +23,8 @@
 
 ## Relationships
 
-- [[Leads & Conversations API]] (6 shared connections)
-- [[Reengagement & Tenant]] (5 shared connections)
+- [[Leads API]] (6 shared connections)
+- [[Reengagement API]] (5 shared connections)
 - [[Pydantic Schemas]] (3 shared connections)
 - [[App Entry & Schedulers]] (1 shared connections)
 - [[Bot Flow / Automation Engine]] (1 shared connections)

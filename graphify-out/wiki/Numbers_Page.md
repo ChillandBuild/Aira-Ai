@@ -25,11 +25,11 @@
 
 ## Relationships
 
-- [[Upload / Broadcast Page]] (4 shared connections)
+- [[Upload Page]] (4 shared connections)
 - [[Settings Page]] (2 shared connections)
-- [[Auth Role & Navigation]] (1 shared connections)
-- [[Leads Page & API Client]] (1 shared connections)
-- [[Telecalling Context & Notes]] (1 shared connections)
+- [[Authrolecontext (frontend)]] (1 shared connections)
+- [[API Client (frontend)]] (1 shared connections)
+- [[Notes Page]] (1 shared connections)
 
 ## Source Files
 

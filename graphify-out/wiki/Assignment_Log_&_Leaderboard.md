@@ -31,12 +31,12 @@
 
 ## Relationships
 
-- [[Telecalling Context & Notes]] (9 shared connections)
-- [[Leads Page & API Client]] (6 shared connections)
-- [[Leads & Conversations API]] (3 shared connections)
-- [[Upload / Broadcast Page]] (2 shared connections)
-- [[Bot Flow Blocks]] (1 shared connections)
-- [[Auth Role & Navigation]] (1 shared connections)
+- [[Notes Page]] (9 shared connections)
+- [[API Client (frontend)]] (6 shared connections)
+- [[Leads API]] (3 shared connections)
+- [[Upload Page]] (2 shared connections)
+- [[Bot Flow UI: Blockmeta]] (1 shared connections)
+- [[Authrolecontext (frontend)]] (1 shared connections)
 - [[App Entry & Schedulers]] (1 shared connections)
 
 ## Source Files

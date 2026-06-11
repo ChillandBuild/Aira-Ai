@@ -1,4 +1,4 @@
-# Leads Page & API Client
+# API Client (frontend)
 
 > 39 nodes · cohesion 0.06
 
@@ -33,17 +33,17 @@
 
 ## Relationships
 
-- [[Telecalling Context & Notes]] (33 shared connections)
-- [[Upload / Broadcast Page]] (11 shared connections)
-- [[Auth Role & Navigation]] (9 shared connections)
+- [[Notes Page]] (33 shared connections)
+- [[Upload Page]] (11 shared connections)
+- [[Authrolecontext (frontend)]] (9 shared connections)
 - [[Settings Page]] (9 shared connections)
-- [[Analytics (dashboard + API)]] (9 shared connections)
+- [[Analytics Page]] (9 shared connections)
 - [[Assignment Log & Leaderboard]] (6 shared connections)
-- [[Message Templates Page]] (3 shared connections)
-- [[Conversations UI]] (3 shared connections)
-- [[Bot Flow Blocks]] (2 shared connections)
+- [[Templates Page]] (4 shared connections)
+- [[Outbound Leads Page]] (3 shared connections)
+- [[Bot Flow UI: Blockmeta]] (2 shared connections)
 - [[Lead Details Panel]] (2 shared connections)
-- [[Reengagement & Tenant]] (2 shared connections)
+- [[Reengagement API]] (2 shared connections)
 - [[Conversation List UI]] (1 shared connections)
 
 ## Source Files

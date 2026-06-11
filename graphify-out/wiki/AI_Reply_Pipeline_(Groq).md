@@ -33,16 +33,16 @@
 
 ## Relationships
 
-- [[Leads & Conversations API]] (11 shared connections)
+- [[Leads API]] (11 shared connections)
 - [[Booking Flow]] (7 shared connections)
 - [[Telecaller Assignment Engine]] (7 shared connections)
-- [[Template Submission (Meta)]] (4 shared connections)
+- [[Templates API]] (4 shared connections)
 - [[Bot Flow / Automation Engine]] (4 shared connections)
 - [[Follow-ups & Callback Scheduling API]] (3 shared connections)
 - [[Pydantic Schemas]] (2 shared connections)
 - [[Knowledge Base (pgvector RAG)]] (2 shared connections)
 - [[Autopilot & AI Agent Runtime]] (2 shared connections)
-- [[Reengagement & Tenant]] (1 shared connections)
+- [[Reengagement API]] (1 shared connections)
 - [[Instagram Channel]] (1 shared connections)
 - [[WhatsApp Inbound Webhook]] (1 shared connections)
 

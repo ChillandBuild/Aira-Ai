@@ -33,9 +33,9 @@
 
 ## Relationships
 
-- [[Upload (delivery handling)]] (11 shared connections)
-- [[Leads & Conversations API]] (10 shared connections)
-- [[Reengagement & Tenant]] (6 shared connections)
+- [[Upload API]] (11 shared connections)
+- [[Leads API]] (10 shared connections)
+- [[Reengagement API]] (6 shared connections)
 - [[Pydantic Schemas]] (4 shared connections)
 - [[Delivery Status Tracking]] (4 shared connections)
 - [[Follow-ups & Callback Scheduling API]] (2 shared connections)

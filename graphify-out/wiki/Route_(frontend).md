@@ -15,7 +15,7 @@
 
 ## Relationships
 
-- [[Auth Role & Navigation]] (1 shared connections)
+- [[Authrolecontext (frontend)]] (1 shared connections)
 
 ## Source Files
 

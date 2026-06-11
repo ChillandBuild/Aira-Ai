@@ -1,4 +1,4 @@
-# Reengagement & Tenant
+# Reengagement API
 
 > 15 nodes · cohesion 0.22
 
@@ -22,15 +22,15 @@
 
 ## Relationships
 
-- [[Leads & Conversations API]] (19 shared connections)
+- [[Leads API]] (19 shared connections)
 - [[Meta Cloud API Client]] (13 shared connections)
-- [[Template Submission (Meta)]] (9 shared connections)
+- [[Templates API]] (9 shared connections)
 - [[Callers CRUD & Coaching]] (7 shared connections)
 - [[CSV Upload & Bulk Send]] (6 shared connections)
 - [[Automations API]] (5 shared connections)
 - [[Calls API (TeleCMI dialer)]] (5 shared connections)
 - [[Operator Console & Audit]] (5 shared connections)
-- [[App Settings & Telecalling Config]] (4 shared connections)
+- [[App Settings API]] (4 shared connections)
 - [[Telecaller Assignment Engine]] (3 shared connections)
 - [[Phone Numbers Pool]] (3 shared connections)
 - [[Broadcast Tags]] (3 shared connections)

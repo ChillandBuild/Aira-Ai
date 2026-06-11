@@ -2,7 +2,7 @@
 
 > God node · 178 connections · `backend/app/db/supabase.py`
 
-**Community:** [[Leads & Conversations API]]
+**Community:** [[Leads API]]
 
 ## Connections by Relation
 

@@ -33,9 +33,9 @@
 
 ## Relationships
 
-- [[Carousel Template Submission]] (14 shared connections)
-- [[Reengagement & Tenant]] (13 shared connections)
-- [[Template Submission (Meta)]] (10 shared connections)
+- [[Meta Cloud Service]] (14 shared connections)
+- [[Reengagement API]] (13 shared connections)
+- [[Templates API]] (10 shared connections)
 - [[Bot Flow / Automation Engine]] (7 shared connections)
 - [[App Entry & Schedulers]] (1 shared connections)
 - [[WhatsApp Inbound Webhook]] (1 shared connections)

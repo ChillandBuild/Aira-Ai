@@ -1,4 +1,4 @@
-# Template Submission (Meta)
+# Templates API
 
 > 25 nodes · cohesion 0.14
 
@@ -33,9 +33,9 @@
 ## Relationships
 
 - [[Meta Cloud API Client]] (10 shared connections)
-- [[Reengagement & Tenant]] (9 shared connections)
-- [[Leads & Conversations API]] (8 shared connections)
-- [[Carousel Template Submission]] (7 shared connections)
+- [[Reengagement API]] (9 shared connections)
+- [[Leads API]] (8 shared connections)
+- [[Meta Cloud Service]] (7 shared connections)
 - [[Autopilot & AI Agent Runtime]] (4 shared connections)
 - [[AI Reply Pipeline (Groq)]] (4 shared connections)
 - [[Pydantic Schemas]] (4 shared connections)

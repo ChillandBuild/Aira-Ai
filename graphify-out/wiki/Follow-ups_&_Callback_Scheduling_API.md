@@ -33,8 +33,8 @@
 
 ## Relationships
 
-- [[Leads & Conversations API]] (16 shared connections)
-- [[Telecalling Context & Notes]] (5 shared connections)
+- [[Leads API]] (16 shared connections)
+- [[Notes Page]] (5 shared connections)
 - [[AI Reply Pipeline (Groq)]] (3 shared connections)
 - [[Pydantic Schemas]] (2 shared connections)
 - [[CSV Upload & Bulk Send]] (2 shared connections)

@@ -33,11 +33,11 @@
 
 ## Relationships
 
-- [[Leads & Conversations API]] (26 shared connections)
+- [[Leads API]] (26 shared connections)
 - [[Todos API]] (6 shared connections)
 - [[Callers CRUD & Coaching]] (5 shared connections)
-- [[App Settings & Telecalling Config]] (4 shared connections)
-- [[Template Submission (Meta)]] (4 shared connections)
+- [[App Settings API]] (4 shared connections)
+- [[Templates API]] (4 shared connections)
 - [[CSV Upload & Bulk Send]] (4 shared connections)
 - [[Automations API]] (3 shared connections)
 - [[Operator Console & Audit]] (3 shared connections)

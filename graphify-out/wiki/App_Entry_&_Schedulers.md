@@ -21,9 +21,9 @@
 ## Relationships
 
 - [[Instagram Channel]] (3 shared connections)
-- [[Leads & Conversations API]] (3 shared connections)
+- [[Leads API]] (3 shared connections)
 - [[Telecaller Assignment Engine]] (2 shared connections)
-- [[Reengagement & Tenant]] (2 shared connections)
+- [[Reengagement API]] (2 shared connections)
 - [[Facebook / Webhook Verification]] (2 shared connections)
 - [[Telegram Channel]] (2 shared connections)
 - [[Score Engine v2 & Segmentation]] (1 shared connections)

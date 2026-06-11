@@ -1,4 +1,4 @@
-# App Settings & Telecalling Config
+# App Settings API
 
 > 24 nodes · cohesion 0.14
 
@@ -33,16 +33,16 @@
 
 - [[Telecaller Assignment Engine]] (7 shared connections)
 - [[Pydantic Schemas]] (4 shared connections)
-- [[Leads & Conversations API]] (4 shared connections)
-- [[Reengagement & Tenant]] (4 shared connections)
+- [[Leads API]] (4 shared connections)
+- [[Reengagement API]] (4 shared connections)
 - [[Channels Page]] (2 shared connections)
 - [[Operator Console & Audit]] (2 shared connections)
 - [[Instagram Channel]] (1 shared connections)
 - [[App Entry & Schedulers]] (1 shared connections)
-- [[Template Submission (Meta)]] (1 shared connections)
+- [[Templates API]] (1 shared connections)
 - [[AI Reply Pipeline (Groq)]] (1 shared connections)
 - [[Bot Flow / Automation Engine]] (1 shared connections)
-- [[Leads Page & API Client]] (1 shared connections)
+- [[API Client (frontend)]] (1 shared connections)
 
 ## Source Files
 

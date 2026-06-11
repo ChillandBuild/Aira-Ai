@@ -2,7 +2,7 @@
 
 > God node · 44 connections · `frontend/lib/utils.ts`
 
-**Community:** [[Upload / Broadcast Page]]
+**Community:** [[Upload Page]]
 
 ## Connections by Relation
 

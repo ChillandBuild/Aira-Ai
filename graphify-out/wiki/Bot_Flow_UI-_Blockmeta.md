@@ -1,4 +1,4 @@
-# Bot Flow Blocks
+# Bot Flow UI: Blockmeta
 
 > 22 nodes · cohesion 0.12
 
@@ -29,17 +29,16 @@
 
 ## Relationships
 
-- [[Bot Flow UI: Types]] (9 shared connections)
-- [[Bot Flow Types & Hooks]] (7 shared connections)
+- [[Bot Flow UI: Types]] (16 shared connections)
 - [[Bot Flow Builder Canvas]] (5 shared connections)
-- [[Bot Flow Form Components]] (4 shared connections)
-- [[Bot Flow Legacy Canvas]] (3 shared connections)
-- [[Bot Flow Editor]] (2 shared connections)
-- [[Leads Page & API Client]] (2 shared connections)
+- [[Bot Flow UI: Forms]] (4 shared connections)
+- [[Bot Flow UI: Flowcanvas]] (3 shared connections)
+- [[Bot Flow UI: Floweditor]] (2 shared connections)
+- [[API Client (frontend)]] (2 shared connections)
 - [[Settings Page]] (2 shared connections)
-- [[Upload / Broadcast Page]] (2 shared connections)
+- [[Upload Page]] (2 shared connections)
 - [[Assignment Log & Leaderboard]] (1 shared connections)
-- [[Auth Role & Navigation]] (1 shared connections)
+- [[Authrolecontext (frontend)]] (1 shared connections)
 
 ## Source Files
 

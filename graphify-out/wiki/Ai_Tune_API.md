@@ -1,4 +1,4 @@
-# AI Tune
+# Ai Tune API
 
 > 10 nodes · cohesion 0.20
 

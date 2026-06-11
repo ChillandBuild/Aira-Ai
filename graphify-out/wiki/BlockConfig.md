@@ -2,7 +2,7 @@
 
 > God node · 31 connections · `frontend/app/dashboard/automations/[id]/flow/types.ts`
 
-**Community:** [[Bot Flow Form Components]]
+**Community:** [[Bot Flow UI: Forms]]
 
 ## Connections by Relation
 

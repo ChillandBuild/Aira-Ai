@@ -33,7 +33,7 @@
 
 ## Relationships
 
-- [[Template Submission (Meta)]] (4 shared connections)
+- [[Templates API]] (4 shared connections)
 - [[Telecaller Assignment Engine]] (2 shared connections)
 - [[AI Reply Pipeline (Groq)]] (2 shared connections)
 - [[Knowledge Base (pgvector RAG)]] (2 shared connections)

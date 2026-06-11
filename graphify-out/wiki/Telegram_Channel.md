@@ -19,12 +19,12 @@
 
 ## Relationships
 
-- [[Leads & Conversations API]] (3 shared connections)
-- [[Template Submission (Meta)]] (2 shared connections)
+- [[Leads API]] (3 shared connections)
+- [[Templates API]] (2 shared connections)
 - [[App Entry & Schedulers]] (2 shared connections)
 - [[Telecaller Assignment Engine]] (2 shared connections)
 - [[Booking Flow]] (2 shared connections)
-- [[Reengagement & Tenant]] (1 shared connections)
+- [[Reengagement API]] (1 shared connections)
 - [[Autopilot & AI Agent Runtime]] (1 shared connections)
 - [[Flow Runtime (pause/resume)]] (1 shared connections)
 - [[Facebook / Webhook Verification]] (1 shared connections)

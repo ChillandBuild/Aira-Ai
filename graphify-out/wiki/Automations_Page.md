@@ -15,7 +15,7 @@
 
 ## Relationships
 
-- [[Leads Page & API Client]] (1 shared connections)
+- [[API Client (frontend)]] (1 shared connections)
 - [[Settings Page]] (1 shared connections)
 
 ## Source Files

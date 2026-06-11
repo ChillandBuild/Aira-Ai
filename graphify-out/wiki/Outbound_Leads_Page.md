@@ -1,4 +1,4 @@
-# Conversations UI
+# Outbound Leads Page
 
 > 32 nodes · cohesion 0.07
 
@@ -33,11 +33,11 @@
 
 ## Relationships
 
-- [[Upload / Broadcast Page]] (12 shared connections)
-- [[Telecalling Context & Notes]] (4 shared connections)
-- [[Leads Page & API Client]] (3 shared connections)
+- [[Upload Page]] (12 shared connections)
+- [[Notes Page]] (4 shared connections)
+- [[API Client (frontend)]] (3 shared connections)
 - [[Lead Details Panel]] (1 shared connections)
-- [[Auth Role & Navigation]] (1 shared connections)
+- [[Authrolecontext (frontend)]] (1 shared connections)
 - [[Settings Page]] (1 shared connections)
 
 ## Source Files

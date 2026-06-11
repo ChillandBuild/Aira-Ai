@@ -1,4 +1,4 @@
-# Telecalling Context & Notes
+# Notes Page
 
 > 52 nodes · cohesion 0.11
 
@@ -33,18 +33,18 @@
 
 ## Relationships
 
-- [[Leads Page & API Client]] (33 shared connections)
-- [[Upload / Broadcast Page]] (27 shared connections)
+- [[API Client (frontend)]] (33 shared connections)
+- [[Upload Page]] (27 shared connections)
 - [[Settings Page]] (11 shared connections)
-- [[Auth Role & Navigation]] (10 shared connections)
+- [[Authrolecontext (frontend)]] (10 shared connections)
 - [[Assignment Log & Leaderboard]] (9 shared connections)
 - [[Conversation List UI]] (7 shared connections)
 - [[Follow-ups & Callback Scheduling API]] (5 shared connections)
 - [[Lead Details Panel]] (5 shared connections)
-- [[Conversations UI]] (4 shared connections)
-- [[Analytics (dashboard + API)]] (3 shared connections)
+- [[Outbound Leads Page]] (4 shared connections)
+- [[Analytics Page]] (3 shared connections)
 - [[Notifications API]] (2 shared connections)
-- [[App Settings & Telecalling Config]] (1 shared connections)
+- [[App Settings API]] (1 shared connections)
 
 ## Source Files
 

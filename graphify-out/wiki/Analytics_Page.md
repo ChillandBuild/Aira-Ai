@@ -1,4 +1,4 @@
-# Analytics (dashboard + API)
+# Analytics Page
 
 > 59 nodes · cohesion 0.05
 
@@ -33,13 +33,13 @@
 
 ## Relationships
 
-- [[Leads Page & API Client]] (9 shared connections)
-- [[Leads & Conversations API]] (5 shared connections)
-- [[Telecalling Context & Notes]] (3 shared connections)
-- [[Template Submission (Meta)]] (2 shared connections)
+- [[API Client (frontend)]] (9 shared connections)
+- [[Leads API]] (5 shared connections)
+- [[Notes Page]] (3 shared connections)
+- [[Templates API]] (2 shared connections)
 - [[App Entry & Schedulers]] (1 shared connections)
-- [[Upload / Broadcast Page]] (1 shared connections)
-- [[Reengagement & Tenant]] (1 shared connections)
+- [[Upload Page]] (1 shared connections)
+- [[Reengagement API]] (1 shared connections)
 - [[Inbound Lead Reporting]] (1 shared connections)
 
 ## Source Files

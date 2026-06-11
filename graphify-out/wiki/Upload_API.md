@@ -1,4 +1,4 @@
-# Upload (delivery handling)
+# Upload API
 
 > 13 nodes · cohesion 0.18
 
@@ -21,7 +21,7 @@
 ## Relationships
 
 - [[CSV Upload & Bulk Send]] (11 shared connections)
-- [[Leads & Conversations API]] (3 shared connections)
+- [[Leads API]] (3 shared connections)
 - [[Delivery Status Tracking]] (3 shared connections)
 
 ## Source Files

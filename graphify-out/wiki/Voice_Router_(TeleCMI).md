@@ -19,11 +19,11 @@
 
 ## Relationships
 
-- [[Template Submission (Meta)]] (1 shared connections)
-- [[Leads & Conversations API]] (1 shared connections)
+- [[Templates API]] (1 shared connections)
+- [[Leads API]] (1 shared connections)
 - [[Pydantic Schemas]] (1 shared connections)
 - [[Calls API (TeleCMI dialer)]] (1 shared connections)
-- [[Reengagement & Tenant]] (1 shared connections)
+- [[Reengagement API]] (1 shared connections)
 
 ## Source Files
 

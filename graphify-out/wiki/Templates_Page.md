@@ -1,4 +1,4 @@
-# Message Templates Page
+# Templates Page
 
 > 45 nodes · cohesion 0.07
 
@@ -34,8 +34,8 @@
 ## Relationships
 
 - [[Settings Page]] (4 shared connections)
-- [[Leads Page & API Client]] (3 shared connections)
-- [[Template Submission (Meta)]] (1 shared connections)
+- [[API Client (frontend)]] (3 shared connections)
+- [[Templates API]] (1 shared connections)
 
 ## Source Files
 

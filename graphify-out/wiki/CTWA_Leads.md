@@ -27,10 +27,10 @@
 
 ## Relationships
 
-- [[Leads & Conversations API]] (3 shared connections)
+- [[Leads API]] (3 shared connections)
 - [[App Entry & Schedulers]] (1 shared connections)
-- [[Upload / Broadcast Page]] (1 shared connections)
-- [[Leads Page & API Client]] (1 shared connections)
+- [[Upload Page]] (1 shared connections)
+- [[API Client (frontend)]] (1 shared connections)
 
 ## Source Files
 
