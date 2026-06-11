@@ -1050,7 +1050,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       )}
 
       {/* Blocking Pending-Wrapups list fullscreen overlay */}
-      {pendingWrapups.length > 0 && (
+      {pendingWrapups.length > 0 && !showWrapupModal && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in">
           <div className="bg-white rounded-3xl p-8 max-w-2xl w-full max-h-[80vh] shadow-2xl flex flex-col border border-slate-200">
             <div className="text-center mb-6 shrink-0">
