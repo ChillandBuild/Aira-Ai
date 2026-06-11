@@ -904,6 +904,13 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 tenant_id=tenant_id,
             )
             sent += 1
+
+            meta_msg_id: str | None = None
+            try:
+                meta_msg_id = result.get("messages", [{}])[0].get("id")
+            except Exception:
+                pass
+
             recipient_rows.append({
                 "tenant_id": tenant_id,
                 "broadcast_id": broadcast_id,
@@ -912,13 +919,8 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 "name": lead_name,
                 "send_status": "sent",
                 "tag_id": body.tag_id,
+                "meta_message_id": meta_msg_id,
             })
-
-            meta_msg_id: str | None = None
-            try:
-                meta_msg_id = result.get("messages", [{}])[0].get("id")
-            except Exception:
-                pass
 
             if lead_id:
                 try:
