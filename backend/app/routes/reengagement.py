@@ -14,6 +14,7 @@ class ReengagementStepCreate(BaseModel):
     broadcast_id: str | None = None
     delay_hours: int
     target_segments: list[str]
+    target_sources: list[str] | None = None  # None/empty = all sources
     message_type: str  # 'freeform' or 'template'
     message_content: str | None = None
     template_name: str | None = None
@@ -58,6 +59,9 @@ def create_step(
         raise HTTPException(status_code=400, detail="delay_hours must be within the 24h window (1-24)")
     if payload.type == "broadcast" and not payload.broadcast_id:
         raise HTTPException(status_code=400, detail="broadcast_id is required for broadcast steps")
+    valid_sources = {"organic", "meta_ads", "csv", "telegram", "instagram", "facebook"}
+    if payload.target_sources and not set(payload.target_sources).issubset(valid_sources):
+        raise HTTPException(status_code=400, detail="Invalid source in target_sources")
 
     db = get_supabase()
     row = {
@@ -66,6 +70,7 @@ def create_step(
         "broadcast_id": payload.broadcast_id,
         "delay_hours": payload.delay_hours,
         "target_segments": payload.target_segments,
+        "target_sources": payload.target_sources or None,
         "message_type": payload.message_type,
         "message_content": payload.message_content,
         "template_name": payload.template_name,

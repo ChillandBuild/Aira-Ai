@@ -74,6 +74,15 @@ function StepLogPanel({ stepId }: { stepId: string }) {
 
 const SEGMENTS = ["A", "B", "C", "D"] as const;
 const SEGMENT_LABELS: Record<string, string> = { A: "Hot", B: "Warm", C: "Cold", D: "Disqualified" };
+const SOURCES = ["organic", "meta_ads", "csv", "telegram", "instagram", "facebook"] as const;
+const SOURCE_LABELS: Record<string, string> = {
+  organic: "Organic WhatsApp",
+  meta_ads: "Meta Ads",
+  csv: "CSV Import",
+  telegram: "Telegram",
+  instagram: "Instagram",
+  facebook: "Facebook",
+};
 const MAX_DELAY = 24;
 
 function placeholderCount(body?: string | null): number {
@@ -96,6 +105,7 @@ export default function ReengagementBuilder({ type, broadcastId, templates }: Re
 
   const [delayHours, setDelayHours] = useState(6);
   const [segments, setSegments] = useState<string[]>(["C"]);
+  const [sources, setSources] = useState<string[]>([]);
   const [messageType, setMessageType] = useState<"freeform" | "template">("freeform");
   const [content, setContent] = useState("");
   const [templateName, setTemplateName] = useState("");
@@ -137,9 +147,14 @@ export default function ReengagementBuilder({ type, broadcastId, templates }: Re
     setSegments((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
   }
 
+  function toggleSource(s: string) {
+    setSources((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
+  }
+
   function resetForm() {
     setDelayHours(6);
     setSegments(["C"]);
+    setSources([]);
     setMessageType("freeform");
     setContent("");
     setTemplateName("");
@@ -177,6 +192,7 @@ export default function ReengagementBuilder({ type, broadcastId, templates }: Re
         broadcast_id: type === "broadcast" ? broadcastId : null,
         delay_hours: delayHours,
         target_segments: segments,
+        target_sources: sources.length ? sources : null,
         message_type: messageType,
         message_content: messageType === "freeform" ? content : null,
         template_name: messageType === "template" ? templateName : null,
@@ -267,6 +283,14 @@ export default function ReengagementBuilder({ type, broadcastId, templates }: Re
                     <span>{s.delay_hours}h {anchorLabel}</span>
                     <span className="text-on-surface-muted">·</span>
                     <span>{s.target_segments.map((x) => SEGMENT_LABELS[x] || x).join(", ")}</span>
+                    {s.target_sources && s.target_sources.length > 0 && (
+                      <>
+                        <span className="text-on-surface-muted">·</span>
+                        <span className="text-on-surface-muted">
+                          {s.target_sources.map((x) => SOURCE_LABELS[x] || x).join(", ")}
+                        </span>
+                      </>
+                    )}
                   </div>
                   <div className="text-xs text-on-surface-muted">
                     {s.message_type === "template" ? (
@@ -331,6 +355,28 @@ export default function ReengagementBuilder({ type, broadcastId, templates }: Re
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+
+          <div role="group" aria-labelledby="src-label">
+            <span id="src-label" className="font-label text-xs uppercase tracking-widest text-on-surface-muted">
+              Lead sources
+            </span>
+            <p className="mb-1 mt-0.5 text-xs text-on-surface-muted">
+              Leave all off to include every source.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {SOURCES.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  aria-pressed={sources.includes(s)}
+                  onClick={() => toggleSource(s)}
+                  className={`rounded-full px-3 py-1 text-xs ${sources.includes(s) ? "bg-on-surface text-surface" : "bg-on-surface/10 text-on-surface"}`}
+                >
+                  {SOURCE_LABELS[s]}
+                </button>
+              ))}
             </div>
           </div>
 

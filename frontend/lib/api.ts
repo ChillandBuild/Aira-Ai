@@ -189,6 +189,7 @@ export interface ReengagementStep {
   broadcast_id?: string | null;
   delay_hours: number;
   target_segments: string[];
+  target_sources?: string[] | null;
   message_type: "freeform" | "template";
   message_content?: string | null;
   template_name?: string | null;
@@ -910,6 +911,7 @@ export const api = {
       broadcast_id?: string | null;
       delay_hours: number;
       target_segments: string[];
+      target_sources?: string[] | null;
       message_type: "freeform" | "template";
       message_content?: string | null;
       template_name?: string | null;
