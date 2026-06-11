@@ -33,7 +33,7 @@ export function ClaimBanner() {
   };
 
   return (
-    <div className="sticky top-0 z-30 flex items-center gap-3 px-5 py-2.5 bg-gradient-to-r from-rose-50 to-pink-50 border-b border-rose-200">
+    <div className="sticky top-14 z-30 flex items-center gap-3 px-5 py-2.5 bg-gradient-to-r from-rose-50 to-pink-50 border-b border-rose-200">
       <AlertCircle size={18} className="text-rose-600 shrink-0" />
       <p className="flex-1 text-sm font-bold text-rose-900 truncate">
         Lead &quot;{item.lead_name || "Unknown"}&quot; needs a human — unclaimed.
