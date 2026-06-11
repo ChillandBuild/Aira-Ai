@@ -306,11 +306,11 @@ export default function ScheduledCallsPage() {
                     const isAssignedToMe = cb.lead.assigned_to === callerId;
                     const actsAsCaller = !!callerId; // owner-with-caller-profile behaves like a telecaller here
                     const scheduledByMe = !!callerId && cb.scheduled_by?.id === callerId;
-                    // "Claimed" = a telecaller other than the scheduler now owns the callback.
+                    // "Claimed" = the callback is owned by a telecaller who isn't the scheduler
+                    // (covers auto-/pre-103 callbacks with no recorded scheduler too).
                     const isClaimed =
-                      !!cb.scheduled_by?.id &&
                       !!cb.lead.assigned_to &&
-                      cb.lead.assigned_to !== cb.scheduled_by.id;
+                      cb.lead.assigned_to !== cb.scheduled_by?.id;
 
                     return (
                       <div
