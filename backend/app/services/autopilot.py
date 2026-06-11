@@ -220,6 +220,17 @@ async def _handle_escalate(db, lead: dict, tenant_id: str, reason: str = "autopi
         }).execute()
     except Exception as e:
         logger.warning(f"autopilot handover insert failed for lead {lead_id}: {e}")
+    try:
+        from app.services.notify import notify_pool
+        notify_pool(
+            tenant_id,
+            "handover_new",
+            "New handover in pool",
+            f"Lead '{lead.get('name') or 'Unknown'}' needs a human — unclaimed.",
+            db=db,
+        )
+    except Exception:
+        pass
 
 
 async def _handle_disqualify(db, lead: dict, tenant_id: str) -> None:
