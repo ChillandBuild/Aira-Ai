@@ -81,3 +81,32 @@ def test_notify_never_raises_on_db_error():
     with patch.object(notify, "get_supabase", return_value=db):
         notify.notify_user("t-1", "u-1", "x", "t", "m", db=db)
         notify.notify_pool("t-1", "x", "t", "m", db=db)
+
+
+def test_notify_assigned_caller_of_reply_skips_when_unassigned():
+    from app.services import notify
+    captured = []
+    db = _make_db(captured)
+    db.table("leads").select.return_value.eq.return_value.maybe_single.return_value.execute.return_value.data = {
+        "assigned_to": None, "name": "Asha",
+    }
+    with patch.object(notify, "get_supabase", return_value=db):
+        notify.notify_assigned_caller_of_reply("lead-1", "t-1", db=db)
+    assert captured == []
+
+
+def test_notify_assigned_caller_of_reply_notifies_assigned_caller():
+    from app.services import notify
+    captured = []
+    db = _make_db(captured)
+    db.table("leads").select.return_value.eq.return_value.maybe_single.return_value.execute.return_value.data = {
+        "assigned_to": "caller-1", "name": "Asha",
+    }
+    db.table("callers").select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value.data = {
+        "user_id": "u-caller-1",
+    }
+    with patch.object(notify, "get_supabase", return_value=db):
+        notify.notify_assigned_caller_of_reply("lead-1", "t-1", db=db)
+    assert len(captured) == 1
+    assert captured[0]["user_id"] == "u-caller-1"
+    assert captured[0]["type"] == "lead_replied"

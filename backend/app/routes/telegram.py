@@ -135,6 +135,13 @@ async def telegram_webhook(tenant_id: str, request: Request, background_tasks: B
     }
     db.table("messages").insert(insert_row).execute()
 
+    try:
+        from app.services.notify import notify_assigned_caller_of_reply
+        if lead_id:
+            notify_assigned_caller_of_reply(lead_id, tenant_id, db=db)
+    except Exception:
+        pass
+
     # Bot Flow: a flow run waiting on this lead's reply owns this message — capture it
     # and skip both the trigger fan-out and the AI reply below.
     if text:

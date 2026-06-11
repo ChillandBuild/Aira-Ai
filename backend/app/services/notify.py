@@ -44,6 +44,46 @@ def notify_user(
         logger.warning(f"notify_user failed (type={type} user={user_id}): {e}")
 
 
+def notify_assigned_caller_of_reply(lead_id: str, tenant_id: str, *, db=None) -> None:
+    """Notify the caller who owns this lead that the lead replied. Best-effort."""
+    if not lead_id:
+        return
+    db = db or get_supabase()
+    try:
+        lead = (
+            db.table("leads")
+            .select("assigned_to,name")
+            .eq("id", lead_id)
+            .maybe_single()
+            .execute()
+        )
+        data = lead.data if lead else None
+        if not data or not data.get("assigned_to"):
+            return
+        caller = (
+            db.table("callers")
+            .select("user_id")
+            .eq("id", data["assigned_to"])
+            .eq("tenant_id", tenant_id)
+            .maybe_single()
+            .execute()
+        )
+        user_id = (caller.data or {}).get("user_id") if caller else None
+        if not user_id:
+            return
+        notify_user(
+            tenant_id,
+            user_id,
+            "lead_replied",
+            "Lead replied",
+            f"'{data.get('name') or 'Your lead'}' just replied.",
+            db=db,
+            dedupe_lead_id=lead_id,
+        )
+    except Exception as e:
+        logger.warning(f"notify_assigned_caller_of_reply failed (lead={lead_id}): {e}")
+
+
 def _active_caller_user_ids(db, tenant_id: str) -> list[str]:
     callers = (
         db.table("callers")
