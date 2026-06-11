@@ -181,22 +181,13 @@ export default function ScheduledCallsPage() {
   }
 
   function checkTakeoverEligible(cb: CallbackBoardItem) {
-    // Anyone with a caller profile can claim — including an admin who is also a telecaller.
+    // Claimable purely on time: 15 minutes past the scheduled slot, regardless of
+    // anyone's status. Anyone with a caller profile (incl. the admin) can claim.
     if (!callerId) return false;
-    // Don't show takeover if assigned to me
     if (cb.lead.assigned_to === callerId) return false;
-    // Live Call Shield: never allow takeover while assigned caller is on a call
-    if (cb.assigned_caller?.is_on_call) return false;
-
     const scheduledTime = new Date(cb.scheduled_for).getTime();
-    const nowTime = Date.now();
     const fifteenMinInMs = 15 * 60 * 1000;
-    const isOverdue15Min = nowTime >= (scheduledTime + fifteenMinInMs);
-
-    const caller = cb.assigned_caller;
-    const isOffline = !caller || caller.status !== "active";
-
-    return isOverdue15Min || isOffline;
+    return Date.now() >= scheduledTime + fifteenMinInMs;
   }
 
   function renderCallerStatus(cb: CallbackBoardItem) {

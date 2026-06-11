@@ -15,7 +15,7 @@ from app.dependencies.tenant import get_tenant_id, get_tenant_and_role
 from app.models.schemas import Lead, LeadUpdate, LeadWithMessages, Message, PaginatedResponse
 from app.services.ai_reply import send_whatsapp, send_instagram, send_facebook, get_last_send_error
 from app.services.growth import record_stage_event, sync_follow_up_jobs
-from app.services.assignment import record_assignment_event, is_caller_on_call
+from app.services.assignment import record_assignment_event
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -1077,35 +1077,26 @@ async def takeover_lead(lead_id: UUID, ctx: dict = Depends(get_tenant_and_role))
     scheduled_for = datetime.fromisoformat(job_data["scheduled_for"].replace("Z", "+00:00"))
     now = datetime.now(timezone.utc)
     
-    # Check if assigned caller is offline
-    is_offline = True
+    # Look up the previous owner only to notify them after the claim.
     prev_caller_name = "Unknown"
     prev_caller_user_id = None
     if assigned_to:
         caller_res = (
             db.table("callers")
-            .select("name,status,user_id")
+            .select("name,user_id")
             .eq("id", assigned_to)
             .maybe_single()
             .execute()
         )
         if caller_res and caller_res.data:
-            is_offline = caller_res.data.get("status") != "active"
             prev_caller_name = caller_res.data.get("name") or "Unknown"
             prev_caller_user_id = caller_res.data.get("user_id")
 
-    # Live call shield: a caller who is active and mid-call is never claim-eligible
-    if assigned_to and not is_offline and is_caller_on_call(db, assigned_to, tenant_id):
-        raise HTTPException(status_code=400, detail="Assigned caller is on a call — cannot claim yet")
-
-    # Overdue threshold: 15 minutes
-    overdue_limit = scheduled_for + timedelta(minutes=15)
-    is_overdue = now >= overdue_limit
-
-    if not is_overdue and not is_offline:
+    # Claimable purely on time: 15 minutes past the scheduled slot, regardless of status.
+    if now < scheduled_for + timedelta(minutes=15):
         raise HTTPException(
             status_code=400,
-            detail="Cannot claim yet: callback is not 15 mins overdue and the caller is still active"
+            detail="Cannot claim yet: callback is not 15 minutes overdue",
         )
 
     # 3. Perform takeover atomically
