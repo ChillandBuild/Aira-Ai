@@ -1,6 +1,6 @@
 "use client";
-import { useState, type ReactNode } from "react";
-import { ChevronDown, ChevronUp, Plus, Tag, X } from "lucide-react";
+import { useRef, useState, type ReactNode } from "react";
+import { CalendarClock, ChevronDown, ChevronUp, Plus, Tag, X } from "lucide-react";
 import { formatDateTime } from "@/lib/utils";
 import type { CallLog } from "@/lib/api";
 
@@ -102,6 +102,44 @@ const OUTCOME_BADGE_COLOR: Record<string, string> = {
 
 export function outcomeBadgeColor(outcome?: string | null): string {
   return (outcome && OUTCOME_BADGE_COLOR[outcome]) || "bg-indigo-50 text-indigo-600";
+}
+
+// ─── Sentiment ──────────────────────────────────────────────────────────────────
+const SENTIMENT_CHIP_COLOR: Record<string, string> = {
+  positive: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  neutral: "bg-slate-100 text-slate-600 border-slate-200",
+  negative: "bg-rose-50 text-rose-700 border-rose-200",
+};
+
+export function sentimentChipColor(sentiment?: string | null): string {
+  return (sentiment && SENTIMENT_CHIP_COLOR[sentiment.toLowerCase()]) || "bg-indigo-50 text-indigo-700 border-indigo-200";
+}
+
+const SENTIMENT_DOT_COLOR: Record<string, string> = {
+  positive: "bg-emerald-400",
+  neutral: "bg-slate-300",
+  negative: "bg-rose-400",
+};
+
+export function sentimentDotColor(sentiment?: string | null): string {
+  return (sentiment && SENTIMENT_DOT_COLOR[sentiment.toLowerCase()]) || "bg-slate-200";
+}
+
+// Small dot-row showing sentiment per call, oldest → newest (logs arrive newest-first)
+export function SentimentTrend({ logs }: { logs: CallLog[] }) {
+  const withSentiment = [...logs].filter((l) => l.ai_summary?.sentiment).reverse();
+  if (withSentiment.length < 2) return null;
+  return (
+    <div className="flex items-center gap-1" title="Sentiment trend (oldest → newest)">
+      {withSentiment.map((l) => (
+        <span
+          key={l.id}
+          title={`${formatDateTime(l.created_at)} · ${l.ai_summary?.sentiment}`}
+          className={`w-2.5 h-2.5 rounded-full ${sentimentDotColor(l.ai_summary?.sentiment)}`}
+        />
+      ))}
+    </div>
+  );
 }
 
 // ─── Timeline rail ───────────────────────────────────────────────────────────────
@@ -220,38 +258,122 @@ export function TagSelector({
 }
 
 // ─── AI Call Summary card ───────────────────────────────────────────────────────
-export function AiSummaryCard({ log }: { log: CallLog }) {
+const SUMMARY_FIELD_LABELS: Record<"course" | "budget" | "timeline", string> = {
+  course: "Course",
+  budget: "Budget",
+  timeline: "Timeline",
+};
+const PLAYBACK_RATES = [1, 1.25, 1.5, 2];
+
+export function AiSummaryCard({
+  log,
+  prevSummary,
+  onConvertToCallback,
+}: {
+  log: CallLog;
+  prevSummary?: CallLog["ai_summary"];
+  onConvertToCallback?: (text: string) => void;
+}) {
   const [open, setOpen] = useState(false);
+  const [rate, setRate] = useState(1);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const s = log.ai_summary;
   if (!s) return null;
-  const fields = Object.entries(s).filter(([, v]) => v);
+
+  function setPlaybackRate(r: number) {
+    setRate(r);
+    if (audioRef.current) audioRef.current.playbackRate = r;
+  }
+
   return (
     <div className="p-4 bg-white rounded-2xl border border-slate-200 border-l-4 border-l-indigo-200 shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between gap-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between gap-2 text-left"
+      >
         <div>
           <p className="font-label text-xs font-semibold text-slate-700">
             {formatDateTime(log.created_at)}
             {log.duration_seconds != null && ` · ${log.duration_seconds}s`}
           </p>
-          {log.outcome && (
-            <span className={`inline-block mt-1 px-2 py-0.5 rounded-full font-label text-[10px] font-bold uppercase tracking-wide capitalize ${outcomeBadgeColor(log.outcome)}`}>
-              {log.outcome.replace("_", " ")}
-            </span>
-          )}
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            {log.outcome && (
+              <span className={`px-2 py-0.5 rounded-full font-label text-[10px] font-bold uppercase tracking-wide capitalize ${outcomeBadgeColor(log.outcome)}`}>
+                {log.outcome.replace("_", " ")}
+              </span>
+            )}
+            {log.score != null && (
+              <span className={`px-2 py-0.5 rounded-full font-label text-[10px] font-bold ${scoreBadgeColor(log.score)}`}>
+                Score {log.score}/10
+              </span>
+            )}
+          </div>
         </div>
-        <button onClick={() => setOpen((v) => !v)} className="p-1.5 rounded-lg hover:bg-indigo-50 transition-colors text-slate-400 hover:text-indigo-500 shrink-0">
+        <span className="p-1.5 rounded-lg text-slate-400 shrink-0">
           {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </button>
-      </div>
+        </span>
+      </button>
       {open && (
         <div className="mt-3 space-y-1.5 pt-3 border-t border-slate-100">
-          {fields.map(([k, v]) => (
-            <p key={k} className="font-body text-xs text-slate-600">
-              <span className="font-semibold text-slate-800 capitalize">{k.replace("_", " ")}:</span> {v}
-            </p>
-          ))}
+          {(Object.keys(SUMMARY_FIELD_LABELS) as Array<keyof typeof SUMMARY_FIELD_LABELS>).map((k) => {
+            const v = s[k];
+            if (!v) return null;
+            const prev = prevSummary?.[k];
+            const changed = !!prev && prev !== v;
+            return (
+              <p key={k} className="font-body text-xs text-slate-600">
+                <span className="font-semibold text-slate-800">{SUMMARY_FIELD_LABELS[k]}:</span> {v}
+                {changed && (
+                  <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 font-label text-[9px] font-bold align-middle">
+                    was {prev}
+                  </span>
+                )}
+              </p>
+            );
+          })}
+          {(s.sentiment || s.next_action) && (
+            <div className="flex items-center gap-1.5 flex-wrap pt-1">
+              {s.sentiment && (
+                <span className={`px-2 py-0.5 rounded-full border font-label text-[10px] font-bold uppercase ${sentimentChipColor(s.sentiment)}`}>
+                  {s.sentiment}
+                </span>
+              )}
+              {s.next_action && (
+                <span className="px-2 py-0.5 rounded-full border bg-indigo-50 text-indigo-700 border-indigo-100 font-label text-[10px] font-semibold">
+                  Next: {s.next_action}
+                </span>
+              )}
+              {s.next_action && onConvertToCallback && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onConvertToCallback(s.next_action!); }}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-700 font-label text-[10px] font-bold hover:bg-amber-100 transition-colors"
+                >
+                  <CalendarClock size={10} /> Add Callback
+                </button>
+              )}
+            </div>
+          )}
           {log.recording_url && (
-            <audio controls src={log.recording_url} className="mt-2 w-full h-8" />
+            <div className="mt-2 space-y-1" onClick={(e) => e.stopPropagation()}>
+              <audio ref={audioRef} controls src={log.recording_url} className="w-full h-8" />
+              <div className="flex items-center gap-1">
+                <span className="font-label text-[9px] text-slate-400 uppercase mr-1">Speed</span>
+                {PLAYBACK_RATES.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setPlaybackRate(r)}
+                    className={`px-1.5 py-0.5 rounded font-label text-[9px] font-bold transition-colors ${
+                      rate === r ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                    }`}
+                  >
+                    {r}x
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       )}

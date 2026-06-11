@@ -630,7 +630,7 @@ export default function ScheduledCallsPage() {
                 ) : (
                   <PhoneCall size={12} className="fill-white text-white" />
                 )}
-                Claim &amp; Call
+                Claim
               </button>
             </div>
           </div>

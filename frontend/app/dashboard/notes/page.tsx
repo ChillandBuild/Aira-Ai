@@ -10,7 +10,7 @@ import type { Note, NotesResponse } from "@/app/dashboard/telecalling/types";
 import { fetchNotes, saveNote, createCallback } from "@/app/dashboard/telecalling/lib/notes-api";
 import NoteCard from "./components/NoteCard";
 import {
-  AiSummaryCard, SEGMENT_COLORS, SEGMENT_LABELS, TagChip, TagSelector,
+  AiSummaryCard, SEGMENT_COLORS, SEGMENT_LABELS, SentimentTrend, TagChip, TagSelector,
   dotColorFor, outcomeDotColor, scoreBadgeColor, TimelineItem,
 } from "./components/shared";
 
@@ -168,6 +168,19 @@ export default function NotesPage() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to add note");
     } finally { setAdding(false); }
+  }
+
+  async function handleConvertToCallback(text: string) {
+    if (!selected) return;
+    try {
+      const scheduledFor = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      await createCallback(selected.id, scheduledFor, text);
+      await saveNote(selected.id, `Callback\n\n${text}`, false, ["Callback"]);
+      toast.success("Callback scheduled for tomorrow");
+      await refreshNotes();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to schedule callback");
+    }
   }
 
   function startEdit(note: Note | NoteWithLead) {
@@ -421,80 +434,6 @@ export default function NotesPage() {
                   <p className="font-body text-sm text-slate-400 px-2">Loading…</p>
                 ) : (
                   <>
-                    {/* Add note composer */}
-                    <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3 shadow-sm">
-                      <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase flex items-center gap-1.5">
-                        <span className="w-5 h-5 rounded-lg bg-indigo-50 flex items-center justify-center">
-                          <Plus size={11} className="text-indigo-500" />
-                        </span>
-                        New Note
-                      </h3>
-                      <input
-                        type="text" value={addTitle} onChange={(e) => setAddTitle(e.target.value)}
-                        placeholder="Title (optional)"
-                        className="w-full px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 font-body text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
-                      />
-                      <textarea
-                        value={addContent} onChange={(e) => setAddContent(e.target.value)}
-                        placeholder="Add a new note…" rows={3}
-                        className="w-full px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 font-body text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      />
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <label className="flex items-center gap-2 cursor-pointer select-none">
-                          <input type="checkbox" checked={addPinned} onChange={(e) => setAddPinned(e.target.checked)} className="rounded" />
-                          <span className="font-label text-sm text-slate-500">Pin note</span>
-                        </label>
-                        <TagSelector selected={addTags} onChange={setAddTags} />
-                        <button
-                          type="button"
-                          onClick={() => setShowCallbackPicker((v) => !v)}
-                          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-label text-xs font-semibold border transition-all ${
-                            showCallbackPicker
-                              ? "bg-amber-500 border-amber-500 text-white"
-                              : "bg-white border-amber-200 text-amber-700 hover:border-amber-400"
-                          }`}
-                        >
-                          <CalendarClock size={12} /> Schedule Call
-                        </button>
-                      </div>
-                      {addTags.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {addTags.map((t) => <TagChip key={t} label={t} onRemove={() => setAddTags(addTags.filter((x) => x !== t))} />)}
-                        </div>
-                      )}
-                      {showCallbackPicker && (
-                        <div className="flex flex-col gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
-                          <h4 className="font-display text-[10px] font-black text-amber-700 tracking-widest uppercase flex items-center gap-1.5">
-                            <CalendarClock size={11} /> Schedule Call
-                          </h4>
-                          <div className="flex gap-2">
-                            <input
-                              type="date" value={callbackDate} onChange={(e) => setCallbackDate(e.target.value)}
-                              className="flex-1 px-2 py-1.5 rounded-lg border border-amber-200 bg-white font-body text-xs focus:outline-none focus:ring-2 focus:ring-amber-300"
-                            />
-                            <input
-                              type="time" value={callbackTime} onChange={(e) => setCallbackTime(e.target.value)}
-                              className="flex-1 px-2 py-1.5 rounded-lg border border-amber-200 bg-white font-body text-xs focus:outline-none focus:ring-2 focus:ring-amber-300"
-                            />
-                          </div>
-                        </div>
-                      )}
-                      <div className="flex justify-end">
-                        <button
-                          onClick={addNote}
-                          disabled={
-                            adding ||
-                            (!addContent.trim() && !addTitle.trim() && addTags.length === 0 &&
-                              !(showCallbackPicker && callbackDate && callbackTime))
-                          }
-                          className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-xl font-label text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                          {adding ? <RefreshCw size={13} className="animate-spin" /> : <Plus size={13} />}
-                          {adding ? "Saving…" : showCallbackPicker ? "Schedule Callback" : "Add Note"}
-                        </button>
-                      </div>
-                    </div>
-
                     {/* Section tabs (Call Notes / Call Summaries) */}
                     <div className="flex border-b border-slate-200 bg-white rounded-t-2xl">
                       {[
@@ -574,30 +513,107 @@ export default function NotesPage() {
                     {/* Summary (AI call summaries) */}
                     {detailTab === "summary" && (
                     <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4">
-                      <h3 className="font-display text-sm font-extrabold text-slate-900 mb-4 flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-lg bg-purple-50 flex items-center justify-center">
-                          <Sparkles size={13} className="text-purple-500" />
-                        </span>
-                        Summary
-                        {aiLogs.length > 0 && (
-                          <span className="px-1.5 py-0.5 rounded-full bg-purple-50 font-label text-[10px] text-purple-600">
-                            {aiLogs.length}
+                      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                        <h3 className="font-display text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-lg bg-purple-50 flex items-center justify-center">
+                            <Sparkles size={13} className="text-purple-500" />
                           </span>
-                        )}
-                      </h3>
+                          Summary
+                          {aiLogs.length > 0 && (
+                            <span className="px-1.5 py-0.5 rounded-full bg-purple-50 font-label text-[10px] text-purple-600">
+                              {aiLogs.length}
+                            </span>
+                          )}
+                        </h3>
+                        <SentimentTrend logs={aiLogs} />
+                      </div>
                       {aiLogs.length === 0 ? (
                         <p className="font-body text-sm text-slate-400">No AI summaries yet. They appear after calls are processed.</p>
                       ) : (
                         <div>
                           {aiLogs.map((log, i) => (
                             <TimelineItem key={log.id} color={outcomeDotColor(log.outcome)} isLast={i === aiLogs.length - 1}>
-                              <AiSummaryCard log={log} />
+                              <AiSummaryCard
+                                log={log}
+                                prevSummary={aiLogs[i + 1]?.ai_summary ?? undefined}
+                                onConvertToCallback={(text) => void handleConvertToCallback(text)}
+                              />
                             </TimelineItem>
                           ))}
                         </div>
                       )}
                     </div>
                     )}
+
+                    {/* Add note composer (compact) */}
+                    <div className="bg-white rounded-2xl border border-slate-200 p-3 space-y-2 shadow-sm">
+                      <div className="flex items-center gap-2">
+                        <Plus size={12} className="text-indigo-400 shrink-0" />
+                        <input
+                          type="text" value={addTitle} onChange={(e) => setAddTitle(e.target.value)}
+                          placeholder="Title (optional)"
+                          className="flex-1 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 font-body text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                        />
+                      </div>
+                      <textarea
+                        value={addContent} onChange={(e) => setAddContent(e.target.value)}
+                        placeholder="Add a new note…" rows={2}
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      />
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                          <input type="checkbox" checked={addPinned} onChange={(e) => setAddPinned(e.target.checked)} className="rounded" />
+                          <span className="font-label text-xs text-slate-500">Pin note</span>
+                        </label>
+                        <TagSelector selected={addTags} onChange={setAddTags} />
+                        <button
+                          type="button"
+                          onClick={() => setShowCallbackPicker((v) => !v)}
+                          className={`flex items-center gap-1.5 px-2 py-1 rounded-lg font-label text-[11px] font-semibold border transition-all ${
+                            showCallbackPicker
+                              ? "bg-amber-500 border-amber-500 text-white"
+                              : "bg-white border-amber-200 text-amber-700 hover:border-amber-400"
+                          }`}
+                        >
+                          <CalendarClock size={11} /> Schedule Call
+                        </button>
+                        <div className="flex-1" />
+                        <button
+                          onClick={addNote}
+                          disabled={
+                            adding ||
+                            (!addContent.trim() && !addTitle.trim() && addTags.length === 0 &&
+                              !(showCallbackPicker && callbackDate && callbackTime))
+                          }
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-label text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {adding ? <RefreshCw size={12} className="animate-spin" /> : <Plus size={12} />}
+                          {adding ? "Saving…" : showCallbackPicker ? "Schedule Callback" : "Add Note"}
+                        </button>
+                      </div>
+                      {addTags.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {addTags.map((t) => <TagChip key={t} label={t} onRemove={() => setAddTags(addTags.filter((x) => x !== t))} />)}
+                        </div>
+                      )}
+                      {showCallbackPicker && (
+                        <div className="flex flex-col gap-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200">
+                          <h4 className="font-display text-[10px] font-black text-amber-700 tracking-widest uppercase flex items-center gap-1.5">
+                            <CalendarClock size={11} /> Schedule Call
+                          </h4>
+                          <div className="flex gap-2">
+                            <input
+                              type="date" value={callbackDate} onChange={(e) => setCallbackDate(e.target.value)}
+                              className="flex-1 px-2 py-1.5 rounded-lg border border-amber-200 bg-white font-body text-xs focus:outline-none focus:ring-2 focus:ring-amber-300"
+                            />
+                            <input
+                              type="time" value={callbackTime} onChange={(e) => setCallbackTime(e.target.value)}
+                              className="flex-1 px-2 py-1.5 rounded-lg border border-amber-200 bg-white font-body text-xs focus:outline-none focus:ring-2 focus:ring-amber-300"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </>
                 )}
               </>
