@@ -170,19 +170,6 @@ export default function NotesPage() {
     } finally { setAdding(false); }
   }
 
-  async function handleConvertToCallback(text: string) {
-    if (!selected) return;
-    try {
-      const scheduledFor = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-      await createCallback(selected.id, scheduledFor, text);
-      await saveNote(selected.id, `Callback\n\n${text}`, false, ["Callback"]);
-      toast.success("Callback scheduled for tomorrow");
-      await refreshNotes();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to schedule callback");
-    }
-  }
-
   function startEdit(note: Note | NoteWithLead) {
     setEditingId(note.id);
     setEditContent(note.content);
@@ -536,7 +523,6 @@ export default function NotesPage() {
                               <AiSummaryCard
                                 log={log}
                                 prevSummary={aiLogs[i + 1]?.ai_summary ?? undefined}
-                                onConvertToCallback={(text) => void handleConvertToCallback(text)}
                               />
                             </TimelineItem>
                           ))}
@@ -546,6 +532,7 @@ export default function NotesPage() {
                     )}
 
                     {/* Add note composer (compact) */}
+                    {detailTab === "notes" && (
                     <div className="bg-white rounded-2xl border border-slate-200 p-3 space-y-2 shadow-sm">
                       <div className="flex items-center gap-2">
                         <Plus size={12} className="text-indigo-400 shrink-0" />
@@ -614,6 +601,7 @@ export default function NotesPage() {
                         </div>
                       )}
                     </div>
+                    )}
                   </>
                 )}
               </>

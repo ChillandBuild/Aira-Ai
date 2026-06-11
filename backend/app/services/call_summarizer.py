@@ -12,12 +12,18 @@ _client = AsyncGroq(api_key=settings.groq_api_key) if settings.groq_api_key else
 _TRANSCRIBE_MODEL = "whisper-large-v3-turbo"
 _SUMMARY_MODEL = "llama-3.3-70b-versatile"
 
-_SUMMARIZE_SYSTEM = "You are analyzing a sales call transcript for a B2B sales team."
+_SUMMARIZE_SYSTEM = (
+    "You are analyzing a sales call transcript for a B2B sales team. "
+    "The transcript may be in English, Tamil, Hindi, or a mix of these languages "
+    "(including transliterated/Tanglish text). Read and understand it regardless of "
+    "language, but write all output field values in English."
+)
 
 _SUMMARIZE_USER = (
     "Transcript:\n{transcript}\n\n"
     "Extract: product/service interested in, budget mentioned, timeline/deadline, "
     "recommended next action, overall sentiment (positive/neutral/negative). "
+    "Translate any non-English content into English before writing the field values. "
     "Return valid JSON only with keys: product, budget, timeline, next_action, sentiment."
 )
 
@@ -113,11 +119,17 @@ async def evaluate_call(transcript: str) -> dict:
 
 # ── Single-pass analysis (summary + evaluation in one LLM call) ────────
 
-_ANALYZE_SYSTEM = "You are analyzing a B2B sales call transcript. Extract lead info and evaluate the caller's performance in one pass."
+_ANALYZE_SYSTEM = (
+    "You are analyzing a B2B sales call transcript. Extract lead info and evaluate the "
+    "caller's performance in one pass. The transcript may be in English, Tamil, Hindi, "
+    "or a mix of these languages (including transliterated/Tanglish text). Read and "
+    "understand it regardless of language, but write all output field values in English."
+)
 
 _ANALYZE_USER = (
     "{lead_line}"
     "Transcript:\n{transcript}\n\n"
+    "Translate any non-English content into English before writing the field values.\n"
     "Return valid JSON only with ALL of these keys:\n"
     "Summary fields:\n"
     "- product: product/service the lead was interested in\n"

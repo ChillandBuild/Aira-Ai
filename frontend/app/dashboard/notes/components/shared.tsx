@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useState, type ReactNode } from "react";
-import { CalendarClock, ChevronDown, ChevronUp, Plus, Tag, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, Tag, X } from "lucide-react";
 import { formatDateTime } from "@/lib/utils";
 import type { CallLog } from "@/lib/api";
 
@@ -268,11 +268,9 @@ const PLAYBACK_RATES = [1, 1.25, 1.5, 2];
 export function AiSummaryCard({
   log,
   prevSummary,
-  onConvertToCallback,
 }: {
   log: CallLog;
   prevSummary?: CallLog["ai_summary"];
-  onConvertToCallback?: (text: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [rate, setRate] = useState(1);
@@ -343,15 +341,6 @@ export function AiSummaryCard({
                 <span className="px-2 py-0.5 rounded-full border bg-indigo-50 text-indigo-700 border-indigo-100 font-label text-[10px] font-semibold">
                   Next: {s.next_action}
                 </span>
-              )}
-              {s.next_action && onConvertToCallback && (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onConvertToCallback(s.next_action!); }}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-700 font-label text-[10px] font-bold hover:bg-amber-100 transition-colors"
-                >
-                  <CalendarClock size={10} /> Add Callback
-                </button>
               )}
             </div>
           )}
