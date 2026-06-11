@@ -526,6 +526,15 @@ export interface AppNotification {
   created_at: string;
 }
 
+export interface PoolItem {
+  kind: "handover";
+  id: string;
+  lead_id: string;
+  lead_name: string | null;
+  reason: string | null;
+  created_at: string;
+}
+
 export interface TimelineEvent {
   type: "status" | "call";
   id: string;
@@ -1223,6 +1232,7 @@ export const api = {
   },
   notifications: {
     list: () => apiFetch<{ data: AppNotification[] }>("/api/v1/notifications"),
+    pool: () => apiFetch<{ data: PoolItem[] }>("/api/v1/notifications/pool"),
     markRead: (id: string) =>
       apiFetch<{ success: boolean; data: AppNotification }>(`/api/v1/notifications/${id}/read`, {
         method: "PATCH",
