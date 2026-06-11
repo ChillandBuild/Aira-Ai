@@ -1,17 +1,16 @@
 "use client";
 import { toast } from "sonner";
 import { useEffect, useState, useCallback } from "react";
-import { Phone, RefreshCw, Check, Download, Inbox, User, Sparkles, Search, Clock, AlertCircle } from "lucide-react";
+import { Phone, RefreshCw, Check, Download, Inbox, User, Sparkles, Search, Clock, AlertCircle, Star } from "lucide-react";
 import { api, Caller, Lead, CallLog, Message } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
-import LiveNotesPane from "./components/live-notes-pane";
 import NotesHistoryModal from "./components/notes-history-modal";
-import { fetchNotes, fetchTodayCallbacks, saveNote } from "./lib/notes-api";
+import { fetchNotes, fetchTodayCallbacks, saveNote, createCallback } from "./lib/notes-api";
 import type { CallbackJob, NotesResponse } from "./types";
 import { usePolling } from "@/hooks/usePolling";
 import { useActiveCall } from "../contexts/ActiveCallContext";
 import NumpadDialer from "./components/NumpadDialer";
-import LeadDetailPanel from "./components/LeadDetailPanel";
+import LeadDetailPanel, { QUICK_NOTE_TAGS } from "./components/LeadDetailPanel";
 
 export default function CallerView({ callerId }: { callerId: string | null }) {
   // caller profile
@@ -50,6 +49,11 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   // quick-note on selected lead
   const [quickNoteContent, setQuickNoteContent] = useState("");
   const [quickNoteSaving, setQuickNoteSaving] = useState(false);
+  const [quickNoteTags, setQuickNoteTags] = useState<string[]>([]);
+  const [quickNotePinned, setQuickNotePinned] = useState(false);
+  const [showCallbackPicker, setShowCallbackPicker] = useState(false);
+  const [callbackDate, setCallbackDate] = useState("");
+  const [callbackTime, setCallbackTime] = useState("");
 
   // modals
   const [historyLead, setHistoryLead] = useState<Lead | null>(null);
@@ -69,6 +73,9 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   const [wrapupNotes, setWrapupNotes] = useState<string>("");
   const [wrapupCallbackTime, setWrapupCallbackTime] = useState<string>("");
   const [wrapupSaving, setWrapupSaving] = useState(false);
+  const [wrapupTags, setWrapupTags] = useState<string[]>([]);
+  const [wrapupQualityRating, setWrapupQualityRating] = useState(0);
+  const [wrapupAiSummary, setWrapupAiSummary] = useState<CallLog["ai_summary"] | null>(null);
 
   // Blocking Pending-Wrapups list
   const [pendingWrapups, setPendingWrapups] = useState<CallLog[]>([]);
@@ -194,6 +201,21 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     return () => clearInterval(pollInterval);
   }, [activeCallCtx, loadData, setActiveCallCtx]);
 
+  // Poll for the AI call summary while the wrap-up modal is open — it's generated
+  // by a background task after the recording is processed, so it may not be ready yet.
+  useEffect(() => {
+    if (!showWrapupModal || !activeCallCtx?.callLogId || wrapupAiSummary) return;
+    const interval = setInterval(async () => {
+      try {
+        const log = await api.calls.getLog(activeCallCtx.callLogId!);
+        if (log.ai_summary) setWrapupAiSummary(log.ai_summary);
+      } catch (err) {
+        console.error("Error polling AI summary:", err);
+      }
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [showWrapupModal, activeCallCtx?.callLogId, wrapupAiSummary]);
+
   // Call duration timer
   useEffect(() => {
     if (callStatus !== "connected") return;
@@ -292,11 +314,23 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   }
 
   async function saveQuickNote(leadId: string) {
-    if (!quickNoteContent.trim()) return;
+    const hasNote = quickNoteContent.trim().length > 0 || quickNoteTags.length > 0;
+    const hasCallback = !!callbackDate && !!callbackTime;
+    if (!hasNote && !hasCallback) return;
     setQuickNoteSaving(true);
     try {
-      await saveNote(leadId, quickNoteContent.trim(), false);
+      if (hasNote) {
+        await saveNote(leadId, quickNoteContent.trim(), quickNotePinned, quickNoteTags);
+      }
+      if (hasCallback) {
+        await createCallback(leadId, new Date(`${callbackDate}T${callbackTime}`).toISOString(), quickNoteContent.trim());
+      }
       setQuickNoteContent("");
+      setQuickNoteTags([]);
+      setQuickNotePinned(false);
+      setCallbackDate("");
+      setCallbackTime("");
+      setShowCallbackPicker(false);
       toast.success("Note saved");
       // Refresh notes
       fetchNotes(leadId).then(setSelectedLeadNotes).catch(() => {});
@@ -403,13 +437,14 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
         {
           callbackTime: wrapupCallbackTime ? new Date(wrapupCallbackTime).toISOString() : undefined,
           notes: wrapupNotes.trim() || undefined,
+          qualityRating: wrapupQualityRating || undefined,
         }
       );
 
       if (wrapupOutcome === "converted" && activeCallCtx.leadId) {
         await api.leads.convert(activeCallCtx.leadId, wrapupNotes);
-      } else if (wrapupOutcome !== "converted" && activeCallCtx.leadId && wrapupNotes.trim()) {
-        await saveNote(activeCallCtx.leadId, wrapupNotes, false);
+      } else if (wrapupOutcome !== "converted" && activeCallCtx.leadId && (wrapupNotes.trim() || wrapupTags.length > 0)) {
+        await saveNote(activeCallCtx.leadId, wrapupNotes, false, wrapupTags);
       }
 
       toast.success("Wrap-up completed");
@@ -417,6 +452,9 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       setWrapupOutcome("");
       setWrapupNotes("");
       setWrapupCallbackTime("");
+      setWrapupTags([]);
+      setWrapupQualityRating(0);
+      setWrapupAiSummary(null);
       setActiveCallCtx(null);
       loadData();
     } catch (err) {
@@ -424,6 +462,22 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     } finally {
       setWrapupSaving(false);
     }
+  };
+
+  const toggleWrapupTag = (tag: string) => {
+    setWrapupTags((tags) => (tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag]));
+  };
+
+  const applyAiSummary = () => {
+    if (!wrapupAiSummary) return;
+    const lines = [
+      wrapupAiSummary.sentiment && `Sentiment: ${wrapupAiSummary.sentiment}`,
+      wrapupAiSummary.course && `Course interest: ${wrapupAiSummary.course}`,
+      wrapupAiSummary.budget && `Budget: ${wrapupAiSummary.budget}`,
+      wrapupAiSummary.timeline && `Timeline: ${wrapupAiSummary.timeline}`,
+      wrapupAiSummary.next_action && `Next action: ${wrapupAiSummary.next_action}`,
+    ].filter(Boolean);
+    setWrapupNotes(lines.join("\n"));
   };
 
   const handleQuickOutcome = async (outcome: string) => {
@@ -442,12 +496,17 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       );
       if (outcome === "converted") {
         await api.leads.convert(selectedLead.id, quickNoteContent.trim());
-      } else if (quickNoteContent.trim()) {
-        await saveNote(selectedLead.id, quickNoteContent.trim(), false);
+      } else if (quickNoteContent.trim() || quickNoteTags.length > 0) {
+        await saveNote(selectedLead.id, quickNoteContent.trim(), quickNotePinned, quickNoteTags);
       }
       setActiveCallCtx(null);
       toast.success(`Outcome "${outcome.replace('_', ' ')}" logged successfully`);
       setQuickNoteContent("");
+      setQuickNoteTags([]);
+      setQuickNotePinned(false);
+      setCallbackDate("");
+      setCallbackTime("");
+      setShowCallbackPicker(false);
       loadData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save outcome");
@@ -502,7 +561,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200/80 rounded-xl font-label text-xs font-bold hover:bg-slate-50 transition-all text-slate-700 shadow-sm hover:border-indigo-500 hover:text-indigo-600 disabled:opacity-50 hover:scale-[1.01] active:scale-[0.99]"
                   title="Download CSV of all assigned leads"
                 >
-                  {exporting ? <RefreshCw size={12} className="animate-spin text-indigo-650" /> : <Download size={12} />}
+                  {exporting ? <RefreshCw size={12} className="animate-spin text-indigo-600" /> : <Download size={12} />}
                   Export CSV
                 </button>
                 <button
@@ -589,7 +648,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                   // Left border and circle color matches the status of lead
                   let borderAccent = "border-l-indigo-400";
                   let avatarBg = "bg-indigo-500";
-                  let callBtnBg = "bg-emerald-500 hover:bg-emerald-650";
+                  let callBtnBg = "bg-emerald-500 hover:bg-emerald-600";
                   
                   if (lead.score >= 8) {
                     borderAccent = "border-l-red-500";
@@ -720,16 +779,8 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
             </div>
           )}
 
-          {/* Single scrollable area — LiveNotesPane + profile */}
+          {/* Single scrollable area — profile */}
           <div className="flex-1 overflow-y-auto">
-            {activeCallCtx && (
-              <div className="border-b border-slate-200 bg-slate-50">
-                <div className="p-4">
-                  <LiveNotesPane ctx={activeCallCtx} onClose={() => setActiveCallCtx(null)} />
-                </div>
-              </div>
-            )}
-
             {!selectedLeadId ? (
               // Empty State
               <div className="min-h-full flex flex-col items-center justify-center p-12 text-center bg-gradient-to-br from-slate-50/40 to-indigo-50/10">
@@ -771,6 +822,16 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
               quickNoteSaving={quickNoteSaving}
               saveQuickNote={saveQuickNote}
               handleQuickOutcome={handleQuickOutcome}
+              quickNoteTags={quickNoteTags}
+              setQuickNoteTags={setQuickNoteTags}
+              quickNotePinned={quickNotePinned}
+              setQuickNotePinned={setQuickNotePinned}
+              showCallbackPicker={showCallbackPicker}
+              setShowCallbackPicker={setShowCallbackPicker}
+              callbackDate={callbackDate}
+              setCallbackDate={setCallbackDate}
+              callbackTime={callbackTime}
+              setCallbackTime={setCallbackTime}
               confirmRelease={confirmRelease}
               handleRelease={handleRelease}
               dialWithGuard={dialWithGuard}
@@ -863,7 +924,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                     onClick={() => setWrapupOutcome("not_interested")}
                     className={`px-3 py-2.5 rounded-xl font-label text-xs font-bold border transition-all text-center ${
                       wrapupOutcome === "not_interested"
-                        ? "bg-indigo-650 border-indigo-650 text-white"
+                        ? "bg-indigo-600 border-indigo-600 text-white"
                         : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
                     }`}
                   >
@@ -885,7 +946,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                     onClick={() => setWrapupOutcome("do_not_call")}
                     className={`px-3 py-2.5 rounded-xl font-label text-xs font-bold border transition-all text-center ${
                       wrapupOutcome === "do_not_call"
-                        ? "bg-red-650 border-red-650 text-white"
+                        ? "bg-red-600 border-red-600 text-white"
                         : "bg-slate-50 hover:bg-red-50 text-red-700 border-red-200"
                     }`}
                   >
@@ -920,6 +981,21 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                 </div>
               )}
 
+              {wrapupAiSummary && (
+                <div className="bg-orange-50 border border-orange-200 rounded-2xl p-3 flex items-center justify-between gap-3">
+                  <p className="font-label text-[10px] text-orange-700 font-bold flex items-center gap-1.5">
+                    <Sparkles size={12} className="text-orange-500" /> AI call summary is ready
+                  </p>
+                  <button
+                    type="button"
+                    onClick={applyAiSummary}
+                    className="px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-label text-[10px] font-extrabold transition-all shadow-sm whitespace-nowrap"
+                  >
+                    Use AI Summary
+                  </button>
+                </div>
+              )}
+
               <div>
                 <label className="font-label text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block mb-1.5">
                   Interaction Note / Comments
@@ -931,6 +1007,52 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                   rows={4}
                   className="w-full px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-indigo-600 resize-none shadow-inner"
                 />
+              </div>
+
+              <div>
+                <label className="font-label text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block mb-1.5">
+                  Tags
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {QUICK_NOTE_TAGS.map((tag) => {
+                    const selected = wrapupTags.includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => toggleWrapupTag(tag)}
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all ${
+                          selected
+                            ? "bg-indigo-600 border-indigo-600 text-white"
+                            : "bg-slate-50 border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600"
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="font-label text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block mb-1.5">
+                  How did this call go?
+                </label>
+                <div className="flex gap-1">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setWrapupQualityRating(wrapupQualityRating === n ? 0 : n)}
+                      className="p-1 transition-transform hover:scale-110"
+                    >
+                      <Star
+                        size={20}
+                        className={n <= wrapupQualityRating ? "fill-amber-400 text-amber-400" : "text-slate-300"}
+                      />
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 

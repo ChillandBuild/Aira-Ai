@@ -110,6 +110,7 @@ export interface CallLog {
     next_action?: string;
     sentiment?: string;
   } | null;
+  quality_rating: number | null;
   transcript: string | null;
   created_at: string;
   leads?: { phone: string | null; name: string | null } | null;
@@ -810,7 +811,7 @@ export const api = {
     setOutcome: (
       callLogId: string,
       outcome: NonNullable<CallLog["outcome"]>,
-      opts?: { callbackTime?: string; notes?: string }
+      opts?: { callbackTime?: string; notes?: string; qualityRating?: number }
     ) =>
       apiFetch<{
         call_log_id: string;
@@ -823,6 +824,7 @@ export const api = {
           outcome,
           callback_time: opts?.callbackTime ?? null,
           notes: opts?.notes ?? null,
+          quality_rating: opts?.qualityRating ?? null,
         }),
       }),
     setDisposition: (

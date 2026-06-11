@@ -1,10 +1,23 @@
 "use client";
 import React, { useState } from "react";
-import { Sparkles, Phone, StickyNote, Copy, Tag, Target, Inbox, User, RefreshCw, MessageSquare } from "lucide-react";
+import { Sparkles, Phone, StickyNote, Copy, Tag, Target, Inbox, User, RefreshCw, MessageSquare, CalendarClock } from "lucide-react";
 import { Lead, Message, CallLog } from "@/lib/api";
 import type { NotesResponse } from "../types";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import { toast } from "sonner";
+
+export const QUICK_NOTE_TAGS = [
+  "Meeting scheduled",
+  "Not interested",
+  "Call back later",
+  "Discussed pricing",
+  "Demo planned",
+  "Needs more info",
+  "Send proposal",
+  "Hot lead",
+];
+
+const CALLBACK_TAGS = new Set(["Call back later", "Meeting scheduled"]);
 
 interface LeadDetailPanelProps {
   selectedLead: Lead;
@@ -22,6 +35,16 @@ interface LeadDetailPanelProps {
   quickNoteSaving: boolean;
   saveQuickNote: (leadId: string) => void;
   handleQuickOutcome: (outcome: string) => void;
+  quickNoteTags: string[];
+  setQuickNoteTags: (tags: string[]) => void;
+  quickNotePinned: boolean;
+  setQuickNotePinned: (val: boolean) => void;
+  showCallbackPicker: boolean;
+  setShowCallbackPicker: (val: boolean) => void;
+  callbackDate: string;
+  setCallbackDate: (val: string) => void;
+  callbackTime: string;
+  setCallbackTime: (val: string) => void;
   confirmRelease: string | null;
   handleRelease: (leadId: string) => void;
   dialWithGuard: (leadId: string, lead: Lead) => void;
@@ -48,6 +71,16 @@ export default function LeadDetailPanel({
   quickNoteSaving,
   saveQuickNote,
   handleQuickOutcome,
+  quickNoteTags,
+  setQuickNoteTags,
+  quickNotePinned,
+  setQuickNotePinned,
+  showCallbackPicker,
+  setShowCallbackPicker,
+  callbackDate,
+  setCallbackDate,
+  callbackTime,
+  setCallbackTime,
   confirmRelease,
   handleRelease,
   dialWithGuard,
@@ -59,6 +92,15 @@ export default function LeadDetailPanel({
 }: LeadDetailPanelProps) {
 
   const [noteFilter, setNoteFilter] = useState<"all" | "notes" | "calls" | "whatsapp">("all");
+
+  const toggleQuickNoteTag = (tag: string) => {
+    const isSelected = quickNoteTags.includes(tag);
+    setQuickNoteTags(isSelected ? quickNoteTags.filter((t) => t !== tag) : [...quickNoteTags, tag]);
+    // Only open the callback picker when SELECTING a callback tag, not deselecting
+    if (CALLBACK_TAGS.has(tag) && !isSelected) {
+      setShowCallbackPicker(true);
+    }
+  };
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -239,6 +281,115 @@ export default function LeadDetailPanel({
 
         {(activeProfileTab === "overview" || activeProfileTab === "attribution") && (
           <>
+            {/* ── Quick Note + Call Outcome ── */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
+                <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase flex items-center gap-1.5">
+                  <StickyNote size={12} className="text-orange-400" /> Quick Note
+                </h3>
+                <textarea
+                  value={quickNoteContent}
+                  onChange={(e) => setQuickNoteContent(e.target.value)}
+                  placeholder="Outcome summary… e.g. Interested, wants demo tomorrow 5 PM"
+                  rows={4}
+                  className="w-full p-3 rounded-xl bg-slate-50/40 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-orange-300 focus:bg-white transition-all resize-none"
+                />
+
+                {/* ── Tags ── */}
+                <div className="flex flex-col gap-1.5">
+                  <h4 className="font-display text-[10px] font-black text-slate-700 tracking-widest uppercase">
+                    Tags
+                  </h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {QUICK_NOTE_TAGS.map((tag) => {
+                      const selected = quickNoteTags.includes(tag);
+                      return (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => toggleQuickNoteTag(tag)}
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all ${
+                            selected
+                              ? "bg-orange-500 border-orange-500 text-white"
+                              : "bg-white border-slate-200 text-slate-600 hover:border-orange-300 hover:text-orange-600"
+                          }`}
+                        >
+                          {tag}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* ── Callback scheduler ── */}
+                {showCallbackPicker && (
+                  <div className="flex flex-col gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
+                    <h4 className="font-display text-[10px] font-black text-amber-700 tracking-widest uppercase flex items-center gap-1.5">
+                      <CalendarClock size={11} /> Schedule Callback
+                    </h4>
+                    <div className="flex gap-2">
+                      <input
+                        type="date"
+                        value={callbackDate}
+                        onChange={(e) => setCallbackDate(e.target.value)}
+                        className="flex-1 px-2 py-1.5 rounded-lg border border-amber-200 bg-white font-body text-[11px] focus:outline-none focus:ring-2 focus:ring-amber-300"
+                      />
+                      <input
+                        type="time"
+                        value={callbackTime}
+                        onChange={(e) => setCallbackTime(e.target.value)}
+                        className="flex-1 px-2 py-1.5 rounded-lg border border-amber-200 bg-white font-body text-[11px] focus:outline-none focus:ring-2 focus:ring-amber-300"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Pin + Save ── */}
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-1.5 font-body text-[11px] text-slate-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={quickNotePinned}
+                      onChange={(e) => setQuickNotePinned(e.target.checked)}
+                      className="rounded border-slate-300 text-orange-500 focus:ring-orange-300"
+                    />
+                    Pin this note
+                  </label>
+                  <button
+                    onClick={() => saveQuickNote(selectedLead.id)}
+                    disabled={quickNoteSaving || (!quickNoteContent.trim() && quickNoteTags.length === 0)}
+                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-label text-xs font-bold disabled:opacity-50 transition-all shadow-sm flex items-center gap-1.5"
+                  >
+                    {quickNoteSaving ? <RefreshCw size={11} className="animate-spin" /> : "Save Note"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
+                <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase flex items-center gap-1.5">
+                  <Phone size={12} className="text-orange-400" /> Call Outcome
+                </h3>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: "converted", label: "✓ Converted", style: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" },
+                    { id: "callback", label: "📅 Callback", style: "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100" },
+                    { id: "not_interested", label: "Not Interested", style: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50" },
+                    { id: "no_answer", label: "No Answer", style: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50" },
+                    { id: "do_not_call", label: "Do Not Call", style: "border-red-200 bg-red-50 text-red-700 hover:bg-red-100" },
+                    { id: "unreachable", label: "Unreachable", style: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50" },
+                  ].map((o) => (
+                    <button
+                      key={o.id}
+                      onClick={() => handleQuickOutcome(o.id)}
+                      className={`py-2 px-2 text-[10px] font-extrabold rounded-xl border transition-all hover:scale-[1.01] active:scale-[0.99] shadow-sm text-center ${o.style}`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
             {/* ── AI Pre-Call Brief ── */}
             <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
               <div className="flex items-center justify-between mb-2">
@@ -416,55 +567,6 @@ export default function LeadDetailPanel({
                 </div>
               </div>
             )}
-
-            {/* ── Quick Note + Call Outcome ── */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
-                <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase flex items-center gap-1.5">
-                  <StickyNote size={12} className="text-orange-400" /> Quick Note
-                </h3>
-                <textarea
-                  value={quickNoteContent}
-                  onChange={(e) => setQuickNoteContent(e.target.value)}
-                  placeholder="Outcome summary… e.g. Interested, wants demo tomorrow 5 PM"
-                  rows={4}
-                  className="w-full p-3 rounded-xl bg-slate-50/40 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-orange-300 focus:bg-white transition-all resize-none"
-                />
-                <div className="flex justify-end">
-                  <button
-                    onClick={() => saveQuickNote(selectedLead.id)}
-                    disabled={quickNoteSaving || !quickNoteContent.trim()}
-                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-label text-xs font-bold disabled:opacity-50 transition-all shadow-sm flex items-center gap-1.5"
-                  >
-                    {quickNoteSaving ? <RefreshCw size={11} className="animate-spin" /> : "Save Note"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
-                <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase flex items-center gap-1.5">
-                  <Phone size={12} className="text-orange-400" /> Call Outcome
-                </h3>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { id: "converted", label: "✓ Converted", style: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" },
-                    { id: "callback", label: "📅 Callback", style: "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100" },
-                    { id: "not_interested", label: "Not Interested", style: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50" },
-                    { id: "no_answer", label: "No Answer", style: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50" },
-                    { id: "do_not_call", label: "Do Not Call", style: "border-red-200 bg-red-50 text-red-700 hover:bg-red-100" },
-                    { id: "unreachable", label: "Unreachable", style: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50" },
-                  ].map((o) => (
-                    <button
-                      key={o.id}
-                      onClick={() => handleQuickOutcome(o.id)}
-                      className={`py-2 px-2 text-[10px] font-extrabold rounded-xl border transition-all hover:scale-[1.01] active:scale-[0.99] shadow-sm text-center ${o.style}`}
-                    >
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
 
             {/* ── Recent Interactions ── */}
             {selectedLeadNotes?.notes && selectedLeadNotes.notes.length > 0 && (

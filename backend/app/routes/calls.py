@@ -8,7 +8,7 @@ from uuid import UUID
 import httpx
 from fastapi import Depends, Query
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.config import settings
 from app.config_dynamic import get_setting
 from app.db.supabase import get_supabase
@@ -53,6 +53,7 @@ class OutcomeUpdate(BaseModel):
     disposition: Disposition | None = None
     notes: str | None = None
     callback_time: datetime | None = None
+    quality_rating: int | None = Field(default=None, ge=1, le=5)
 
 
 @router.post("/initiate")
@@ -507,6 +508,8 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depe
         log_updates["disposition"] = payload.disposition
     if payload.notes is not None and payload.notes.strip():
         log_updates["notes"] = payload.notes.strip()
+    if payload.quality_rating is not None:
+        log_updates["quality_rating"] = payload.quality_rating
     score = None
     if effective_outcome is not None:
         score = score_from_outcome(effective_outcome, log.data.get("duration_seconds"))

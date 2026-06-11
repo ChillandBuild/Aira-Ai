@@ -395,7 +395,17 @@ export function Sidebar() {
             {showTc && (
               <div className="space-y-0.5">
                 {tcGroupItems.map((item, idx) => {
-                  const active = pathname === item.href || pathname.startsWith(item.href + "/");
+                  // Pick the most specific (longest href) match so a parent route
+                  // (e.g. Dialer at /dashboard/telecalling) doesn't also light up
+                  // when on a nested route (e.g. /dashboard/telecalling/scheduled).
+                  const matches = tcGroupItems.filter(
+                    (i) => pathname === i.href || pathname.startsWith(i.href + "/")
+                  );
+                  const bestMatch = matches.reduce<NavItem | null>(
+                    (best, i) => (!best || i.href.length > best.href.length ? i : best),
+                    null
+                  );
+                  const active = bestMatch?.href === item.href;
                   const isLast = idx === tcGroupItems.length - 1;
 
                   return (
