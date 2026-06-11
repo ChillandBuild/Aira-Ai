@@ -202,18 +202,17 @@ export default function ScheduledCallsPage() {
     }
 
     // One self-explanatory pill: colored dot + caller name + plain-language state.
-    // active → On shift / free · break → stepped away · in_call → live call (auto) · else → logged out.
-    const variants = caller.is_on_call
-      ? { state: "In call", wrap: "bg-purple-50 text-purple-700 border-purple-200/60", dot: "bg-purple-500", pulse: true }
-      : caller.status === "active"
-        ? { state: "Active", wrap: "bg-emerald-50 text-emerald-700 border-emerald-200/60", dot: "bg-emerald-500", pulse: false }
+    // active → free · break → stepped away · else → logged out.
+    const variants =
+      caller.status === "active"
+        ? { state: "Active", wrap: "bg-emerald-50 text-emerald-700 border-emerald-200/60", dot: "bg-emerald-500" }
         : caller.status === "break"
-          ? { state: "On break", wrap: "bg-amber-50 text-amber-700 border-amber-200/60", dot: "bg-amber-500", pulse: false }
-          : { state: "Logged out", wrap: "bg-slate-100 text-slate-500 border-slate-200", dot: "bg-slate-400", pulse: false };
+          ? { state: "On break", wrap: "bg-amber-50 text-amber-700 border-amber-200/60", dot: "bg-amber-500" }
+          : { state: "Logged out", wrap: "bg-slate-100 text-slate-500 border-slate-200", dot: "bg-slate-400" };
 
     return (
       <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border ${variants.wrap}`}>
-        <span className={`w-1.5 h-1.5 rounded-full ${variants.dot} ${variants.pulse ? "animate-pulse" : ""}`} />
+        <span className={`w-1.5 h-1.5 rounded-full ${variants.dot}`} />
         <span className="font-semibold">{caller.name}</span>
         <span className="opacity-70">·</span>
         {variants.state}
