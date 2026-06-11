@@ -2,14 +2,13 @@
 import React, { useState } from "react";
 import { Sparkles, Phone, StickyNote, Copy, Tag, Target, Inbox, User, RefreshCw, MessageSquare, CalendarClock } from "lucide-react";
 import { Lead, Message, CallLog } from "@/lib/api";
-import type { NotesResponse } from "../types";
+import type { NotesResponse, ActiveCallCtx } from "../types";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import { toast } from "sonner";
 
 export const QUICK_NOTE_TAGS = [
   "Meeting scheduled",
   "Not interested",
-  "Call back later",
   "Discussed pricing",
   "Demo planned",
   "Needs more info",
@@ -17,7 +16,7 @@ export const QUICK_NOTE_TAGS = [
   "Hot lead",
 ];
 
-const CALLBACK_TAGS = new Set(["Call back later", "Meeting scheduled"]);
+const CALLBACK_TAGS = new Set(["Meeting scheduled"]);
 
 interface LeadDetailPanelProps {
   selectedLead: Lead;
@@ -30,6 +29,11 @@ interface LeadDetailPanelProps {
   selectedLeadLoading: boolean;
   activeProfileTab: "overview" | "notes" | "attribution";
   setActiveProfileTab: (tab: "overview" | "notes" | "attribution") => void;
+  activeCallCtx: ActiveCallCtx | null;
+  callStatus: "ringing" | "connected" | "ended" | null;
+  callDuration: number;
+  quickNoteTitle: string;
+  setQuickNoteTitle: (val: string) => void;
   quickNoteContent: string;
   setQuickNoteContent: (val: string) => void;
   quickNoteSaving: boolean;
@@ -66,6 +70,11 @@ export default function LeadDetailPanel({
   selectedLeadLoading,
   activeProfileTab,
   setActiveProfileTab,
+  activeCallCtx,
+  callStatus,
+  callDuration,
+  quickNoteTitle,
+  setQuickNoteTitle,
   quickNoteContent,
   setQuickNoteContent,
   quickNoteSaving,
@@ -92,6 +101,7 @@ export default function LeadDetailPanel({
 }: LeadDetailPanelProps) {
 
   const [noteFilter, setNoteFilter] = useState<"all" | "notes" | "calls" | "whatsapp">("all");
+  const [tagsExpanded, setTagsExpanded] = useState(false);
 
   const toggleQuickNoteTag = (tag: string) => {
     const isSelected = quickNoteTags.includes(tag);
@@ -115,6 +125,9 @@ export default function LeadDetailPanel({
       </div>
     );
   }
+
+  const isCallingThisLead =
+    activeCallCtx?.leadId === selectedLead.id && (callStatus === "ringing" || callStatus === "connected");
 
   // Live engagement signal
   const lastInbound = selectedLead.last_inbound_at ? new Date(selectedLead.last_inbound_at) : null;
@@ -221,37 +234,63 @@ export default function LeadDetailPanel({
                   SEG {selectedLead.segment}
                 </span>
               </div>
-              <p className="text-slate-300 font-label text-sm mt-1.5 tracking-wide flex flex-wrap items-center gap-1.5">
-                <span className="font-bold text-white">{formatPhone(selectedLead.phone)}</span>
-                <span className="text-slate-500">•</span>
-                <span>Score: {selectedLead.score}/10</span>
-                <span className="text-slate-500">•</span>
-                <span>{selectedLead.channel || selectedLead.source || "Direct"}</span>
-                <span className="text-slate-500">•</span>
-                <span>Assigned {selectedLead.assigned_at ? timeAgo(selectedLead.assigned_at) : "recently"}</span>
-              </p>
+              {isCallingThisLead ? (
+                <div className="flex flex-wrap items-center gap-3 mt-1.5">
+                  <span className={`px-2 py-0.5 rounded-md font-label text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
+                    callStatus === "connected"
+                      ? "bg-emerald-500/30 text-emerald-200 border border-emerald-400/30"
+                      : "bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 animate-pulse"
+                  }`}>
+                    {callStatus === "connected" && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                    )}
+                    {callStatus === "ringing" ? "Ringing..." : "Connected"}
+                  </span>
+                  {callStatus === "connected" && (
+                    <span className="font-mono text-sm font-bold text-emerald-400 bg-slate-800/80 px-3 py-1 rounded-lg border border-slate-700/50">
+                      {Math.floor(callDuration / 60).toString().padStart(2, '0')}:
+                      {(callDuration % 60).toString().padStart(2, '0')}
+                    </span>
+                  )}
+                  <p className="text-slate-300 font-label text-xs italic">
+                    Hint: Reject on your phone to cancel/hang up this call.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-slate-300 font-label text-sm mt-1.5 tracking-wide flex flex-wrap items-center gap-1.5">
+                  <span className="font-bold text-white">{formatPhone(selectedLead.phone)}</span>
+                  <span className="text-slate-500">•</span>
+                  <span>Score: {selectedLead.score}/10</span>
+                  <span className="text-slate-500">•</span>
+                  <span>{selectedLead.channel || selectedLead.source || "Direct"}</span>
+                  <span className="text-slate-500">•</span>
+                  <span>Assigned {selectedLead.assigned_at ? timeAgo(selectedLead.assigned_at) : "recently"}</span>
+                </p>
+              )}
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => handleRelease(selectedLead.id)}
-              className={`px-4 py-2.5 rounded-2xl border font-label text-xs font-bold transition-all text-slate-300 hover:text-white ${
-                confirmRelease === selectedLead.id
-                  ? "bg-red-600 border-red-500 text-white animate-pulse"
-                  : "border-slate-700/60 bg-slate-900/40 hover:bg-slate-900"
-              }`}
-            >
-              {confirmRelease === selectedLead.id ? "Release?" : "Release Lead"}
-            </button>
-            <button
-              onClick={() => dialWithGuard(selectedLead.id, selectedLead)}
-              disabled={dialing === selectedLead.id}
-              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-2xl font-label text-sm font-extrabold shadow-[0_4px_15px_rgba(16,185,129,0.3)] hover:shadow-[0_6px_20px_rgba(16,185,129,0.45)] transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
-            >
-              <Phone size={14} className="fill-white" />
-              {dialing === selectedLead.id ? "Dialing…" : "Call Lead"}
-            </button>
-          </div>
+          {!isCallingThisLead && (
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => handleRelease(selectedLead.id)}
+                className={`px-4 py-2.5 rounded-2xl border font-label text-xs font-bold transition-all text-slate-300 hover:text-white ${
+                  confirmRelease === selectedLead.id
+                    ? "bg-red-600 border-red-500 text-white animate-pulse"
+                    : "border-slate-700/60 bg-slate-900/40 hover:bg-slate-900"
+                }`}
+              >
+                {confirmRelease === selectedLead.id ? "Release?" : "Release Lead"}
+              </button>
+              <button
+                onClick={() => dialWithGuard(selectedLead.id, selectedLead)}
+                disabled={dialing === selectedLead.id}
+                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-2xl font-label text-sm font-extrabold shadow-[0_4px_15px_rgba(16,185,129,0.3)] hover:shadow-[0_6px_20px_rgba(16,185,129,0.45)] transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+              >
+                <Phone size={14} className="fill-white" />
+                {dialing === selectedLead.id ? "Dialing…" : "Call Lead"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -287,6 +326,13 @@ export default function LeadDetailPanel({
                 <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase flex items-center gap-1.5">
                   <StickyNote size={12} className="text-orange-400" /> Quick Note
                 </h3>
+                <input
+                  type="text"
+                  value={quickNoteTitle}
+                  onChange={(e) => setQuickNoteTitle(e.target.value)}
+                  placeholder="Title (optional)"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50/40 border border-slate-200 font-body text-xs font-bold focus:outline-none focus:ring-2 focus:ring-orange-300 focus:bg-white transition-all"
+                />
                 <textarea
                   value={quickNoteContent}
                   onChange={(e) => setQuickNoteContent(e.target.value)}
@@ -295,11 +341,34 @@ export default function LeadDetailPanel({
                   className="w-full p-3 rounded-xl bg-slate-50/40 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-orange-300 focus:bg-white transition-all resize-none"
                 />
 
-                {/* ── Tags ── */}
-                <div className="flex flex-col gap-1.5">
-                  <h4 className="font-display text-[10px] font-black text-slate-700 tracking-widest uppercase">
-                    Tags
-                  </h4>
+                {/* ── Tags + Schedule Call toggles ── */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTagsExpanded((v) => !v)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
+                      tagsExpanded || quickNoteTags.length > 0
+                        ? "bg-orange-50 border-orange-200 text-orange-700"
+                        : "bg-white border-slate-200 text-slate-600 hover:border-orange-300 hover:text-orange-600"
+                    }`}
+                  >
+                    <Tag size={11} /> Tags{quickNoteTags.length > 0 ? ` (${quickNoteTags.length})` : ""}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowCallbackPicker(!showCallbackPicker)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
+                      showCallbackPicker
+                        ? "bg-amber-500 border-amber-500 text-white"
+                        : "bg-white border-amber-200 text-amber-700 hover:border-amber-400"
+                    }`}
+                  >
+                    <CalendarClock size={11} /> Schedule Call
+                  </button>
+                </div>
+
+                {/* ── Tags (collapsed by default) ── */}
+                {tagsExpanded && (
                   <div className="flex flex-wrap gap-1.5">
                     {QUICK_NOTE_TAGS.map((tag) => {
                       const selected = quickNoteTags.includes(tag);
@@ -319,13 +388,13 @@ export default function LeadDetailPanel({
                       );
                     })}
                   </div>
-                </div>
+                )}
 
                 {/* ── Callback scheduler ── */}
                 {showCallbackPicker && (
                   <div className="flex flex-col gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
                     <h4 className="font-display text-[10px] font-black text-amber-700 tracking-widest uppercase flex items-center gap-1.5">
-                      <CalendarClock size={11} /> Schedule Callback
+                      <CalendarClock size={11} /> Schedule Call
                     </h4>
                     <div className="flex gap-2">
                       <input
@@ -357,10 +426,16 @@ export default function LeadDetailPanel({
                   </label>
                   <button
                     onClick={() => saveQuickNote(selectedLead.id)}
-                    disabled={quickNoteSaving || (!quickNoteContent.trim() && quickNoteTags.length === 0)}
+                    disabled={
+                      quickNoteSaving ||
+                      (!quickNoteContent.trim() && !quickNoteTitle.trim() && quickNoteTags.length === 0 &&
+                        !(showCallbackPicker && callbackDate && callbackTime))
+                    }
                     className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-label text-xs font-bold disabled:opacity-50 transition-all shadow-sm flex items-center gap-1.5"
                   >
-                    {quickNoteSaving ? <RefreshCw size={11} className="animate-spin" /> : "Save Note"}
+                    {quickNoteSaving
+                      ? <RefreshCw size={11} className="animate-spin" />
+                      : showCallbackPicker ? "Schedule Callback" : "Save Note"}
                   </button>
                 </div>
               </div>
@@ -372,7 +447,6 @@ export default function LeadDetailPanel({
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     { id: "converted", label: "✓ Converted", style: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" },
-                    { id: "callback", label: "📅 Callback", style: "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100" },
                     { id: "not_interested", label: "Not Interested", style: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50" },
                     { id: "no_answer", label: "No Answer", style: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50" },
                     { id: "do_not_call", label: "Do Not Call", style: "border-red-200 bg-red-50 text-red-700 hover:bg-red-100" },

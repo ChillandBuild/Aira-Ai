@@ -47,6 +47,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   const [manualDialing, setManualDialing] = useState(false);
 
   // quick-note on selected lead
+  const [quickNoteTitle, setQuickNoteTitle] = useState("");
   const [quickNoteContent, setQuickNoteContent] = useState("");
   const [quickNoteSaving, setQuickNoteSaving] = useState(false);
   const [quickNoteTags, setQuickNoteTags] = useState<string[]>([]);
@@ -313,27 +314,36 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
     } finally { setManualDialing(false); }
   }
 
+  function composeNoteContent() {
+    const title = quickNoteTitle.trim();
+    const body = quickNoteContent.trim();
+    return title ? `${title}\n\n${body}` : body;
+  }
+
   async function saveQuickNote(leadId: string) {
-    const hasNote = quickNoteContent.trim().length > 0 || quickNoteTags.length > 0;
-    const hasCallback = !!callbackDate && !!callbackTime;
+    const hasNote = quickNoteContent.trim().length > 0 || quickNoteTitle.trim().length > 0 || quickNoteTags.length > 0;
+    const hasCallback = showCallbackPicker && !!callbackDate && !!callbackTime;
     if (!hasNote && !hasCallback) return;
     setQuickNoteSaving(true);
     try {
       if (hasNote) {
-        await saveNote(leadId, quickNoteContent.trim(), quickNotePinned, quickNoteTags);
+        await saveNote(leadId, composeNoteContent(), quickNotePinned, quickNoteTags);
       }
       if (hasCallback) {
-        await createCallback(leadId, new Date(`${callbackDate}T${callbackTime}`).toISOString(), quickNoteContent.trim());
+        await createCallback(leadId, new Date(`${callbackDate}T${callbackTime}`).toISOString(), composeNoteContent());
       }
+      setQuickNoteTitle("");
       setQuickNoteContent("");
       setQuickNoteTags([]);
       setQuickNotePinned(false);
       setCallbackDate("");
       setCallbackTime("");
       setShowCallbackPicker(false);
-      toast.success("Note saved");
-      // Refresh notes
+      toast.success(hasCallback ? "Callback scheduled" : "Note saved");
+      // Refresh notes & callbacks
       fetchNotes(leadId).then(setSelectedLeadNotes).catch(() => {});
+      loadCallbacks();
+      if (hasCallback) loadData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save note");
     } finally { setQuickNoteSaving(false); }
@@ -495,12 +505,13 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
         { notes: quickNoteContent.trim() || undefined }
       );
       if (outcome === "converted") {
-        await api.leads.convert(selectedLead.id, quickNoteContent.trim());
-      } else if (quickNoteContent.trim() || quickNoteTags.length > 0) {
-        await saveNote(selectedLead.id, quickNoteContent.trim(), quickNotePinned, quickNoteTags);
+        await api.leads.convert(selectedLead.id, composeNoteContent());
+      } else if (quickNoteContent.trim() || quickNoteTitle.trim() || quickNoteTags.length > 0) {
+        await saveNote(selectedLead.id, composeNoteContent(), quickNotePinned, quickNoteTags);
       }
       setActiveCallCtx(null);
       toast.success(`Outcome "${outcome.replace('_', ' ')}" logged successfully`);
+      setQuickNoteTitle("");
       setQuickNoteContent("");
       setQuickNoteTags([]);
       setQuickNotePinned(false);
@@ -737,48 +748,6 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
 
         {/* Right Side: Detailed Profile Page (8/12 columns) */}
         <div className="col-span-8 flex flex-col min-h-0 bg-slate-50 rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-          {/* Sticky call banner */}
-          {activeCallCtx && (
-            <div className="shrink-0 p-4 bg-slate-50 border-b border-slate-200">
-              <div className="p-5 bg-gradient-to-r from-indigo-900 to-slate-900 text-white rounded-2xl">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="flex items-center gap-4">
-                    <div className={`p-3.5 bg-indigo-500/20 text-indigo-300 rounded-2xl ${callStatus === "ringing" ? "animate-pulse" : ""}`}>
-                      <Phone size={20} className={callStatus === "ringing" ? "animate-bounce" : ""} />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-display font-bold text-sm tracking-wide uppercase text-indigo-300">
-                          {callStatus === "ringing" ? "Ringing..." : callStatus === "connected" ? "Connected" : "Ended"}
-                        </span>
-                        {callStatus === "connected" && (
-                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping inline-block" />
-                        )}
-                      </div>
-                      <h4 className="font-display font-extrabold text-lg mt-0.5">
-                        {activeCallCtx.name || "Offline Call"}
-                      </h4>
-                      <p className="font-mono text-xs text-slate-400 mt-0.5">{formatPhone(activeCallCtx.phone || "")}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    {callStatus === "connected" && (
-                      <div className="bg-slate-800/80 px-4 py-2 rounded-xl border border-slate-700/50 font-mono text-sm font-bold text-emerald-400">
-                        {Math.floor(callDuration / 60).toString().padStart(2, '0')}:
-                        {(callDuration % 60).toString().padStart(2, '0')}
-                      </div>
-                    )}
-                    <div className="text-right">
-                      <p className="text-[11px] text-slate-450 italic">
-                        Hint: Reject on your phone to cancel/hang up this call.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Single scrollable area — profile */}
           <div className="flex-1 overflow-y-auto">
             {!selectedLeadId ? (
@@ -817,6 +786,11 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
               selectedLeadLoading={selectedLeadLoading}
               activeProfileTab={activeProfileTab}
               setActiveProfileTab={setActiveProfileTab}
+              activeCallCtx={activeCallCtx}
+              callStatus={callStatus}
+              callDuration={callDuration}
+              quickNoteTitle={quickNoteTitle}
+              setQuickNoteTitle={setQuickNoteTitle}
               quickNoteContent={quickNoteContent}
               setQuickNoteContent={setQuickNoteContent}
               quickNoteSaving={quickNoteSaving}

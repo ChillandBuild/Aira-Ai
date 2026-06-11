@@ -138,6 +138,7 @@ async def create_callback(payload: CallbackCreate, ctx: dict = Depends(get_tenan
         "scheduled_by_caller_id": ctx.get("caller_id"),
         "tenant_id": ctx["tenant_id"],
     }).execute()
+    db.table("leads").update({"call_status": "callback"}).eq("id", payload.lead_id).eq("tenant_id", ctx["tenant_id"]).execute()
     return row.data[0] if row.data else {}
 
 
