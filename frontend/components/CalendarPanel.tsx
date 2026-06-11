@@ -122,8 +122,8 @@ export function CalendarPanel({ isOpen, onClose }: CalendarPanelProps) {
       <div 
         ref={panelRef}
         className={cn(
-          "fixed right-0 top-0 h-full w-[400px] bg-white/90 backdrop-blur-xl border-l border-white/20 shadow-2xl z-[70] transition-transform duration-500 ease-out flex flex-col",
-          isOpen ? "translate-x-0" : "translate-x-full"
+          "fixed right-0 bottom-0 h-[90vh] w-[400px] bg-white/90 backdrop-blur-xl border-t border-l border-white/20 rounded-t-3xl shadow-2xl z-[70] transition-transform duration-500 ease-out flex flex-col",
+          isOpen ? "translate-y-0" : "translate-y-full"
         )}
       >
         {/* Header */}
@@ -134,7 +134,7 @@ export function CalendarPanel({ isOpen, onClose }: CalendarPanelProps) {
             </div>
             <div>
               <div className="font-display font-bold text-xl leading-none">
-                {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                {`${String(currentTime.getHours()).padStart(2, "0")}:${String(currentTime.getMinutes()).padStart(2, "0")}`}
               </div>
               <div className="font-label text-[10px] uppercase tracking-widest text-ink-muted mt-1">
                 {currentTime.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}
