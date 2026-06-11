@@ -1,13 +1,13 @@
 "use client";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { useAuthRole, clearRoleCache } from "@/app/dashboard/contexts/AuthRoleContext";
+import { useAuthRole } from "@/app/dashboard/contexts/AuthRoleContext";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import {
   LayoutDashboard, MessageSquare, Users, Settings, Phone,
   BarChart2, Upload, BookOpen, Layers, FileCheck, StickyNote,
-  LogOut, Inbox, Zap, ChevronDown, ChevronRight, RadioTower, Calendar,
+  Inbox, Zap, ChevronDown, ChevronRight, RadioTower, Calendar,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AiraLogo } from "./logo";
@@ -28,36 +28,6 @@ const TELECALLING_ITEMS: NavItem[] = [
   { href: "/dashboard/telecalling/scheduled", icon: Calendar, label: "Scheduled Calls" },
   { href: "/dashboard/notes", icon: StickyNote, label: "Call Notes" },
 ];
-
-function LogoutButton() {
-  const router = useRouter();
-  async function handleLogout() {
-    if (!confirm("Are you sure you want to sign out?")) return;
-    clearRoleCache();
-    // Set telecaller status to logged_out before signing out
-    try {
-      const headers = await getAuthHeaders();
-      await fetch(`${API_URL}/api/v1/callers/my-status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...headers },
-        body: JSON.stringify({ status: "logged_out" }),
-      });
-    } catch {}
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
-  }
-  return (
-    <button
-      onClick={handleLogout}
-      className="flex items-center gap-2.5 px-3 py-2 w-full rounded-xl text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 transition-all duration-150 font-body text-[13px] font-medium"
-    >
-      <LogOut size={15} />
-      Sign out
-    </button>
-  );
-}
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -151,8 +121,8 @@ export function Sidebar() {
       <div className="mx-5 h-px bg-zinc-300/60" />
 
       <div className="flex-grow overflow-y-auto px-3 py-4 space-y-1.5 scrollbar-thin">
-        {/* TOP LEVEL: Overview / Profile */}
-        {role === "owner" ? (
+        {/* TOP LEVEL: Overview */}
+        {role === "owner" && (
           <Link
             href="/dashboard"
             className={cn(
@@ -164,19 +134,6 @@ export function Sidebar() {
           >
             <LayoutDashboard size={16} className={pathname === "/dashboard" ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
             <span>Dashboard</span>
-          </Link>
-        ) : (
-          <Link
-            href="/dashboard/profile"
-            className={cn(
-              "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-150 group",
-              pathname === "/dashboard/profile"
-                ? "bg-zinc-200/70 text-zinc-950"
-                : "text-zinc-700 hover:bg-zinc-200/40 hover:text-zinc-950"
-            )}
-          >
-            <LayoutDashboard size={16} className={pathname === "/dashboard/profile" ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
-            <span>My Profile</span>
           </Link>
         )}
 
@@ -476,9 +433,6 @@ export function Sidebar() {
           </div>
         )}
 
-        <div className="pt-2 border-t border-zinc-200/60">
-          <LogoutButton />
-        </div>
       </div>
     </aside>
   );
