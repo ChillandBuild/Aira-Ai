@@ -2,82 +2,58 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { Bell, X, Clock, Info, CheckCircle2 } from "lucide-react";
-import { api, AppNotification } from "@/lib/api";
 import { useAuthRole } from "@/app/dashboard/contexts/AuthRoleContext";
 import { usePolling } from "@/hooks/usePolling";
+import { useNotifications } from "@/hooks/useNotifications";
 import { fetchTodayCallbacks } from "@/app/dashboard/telecalling/lib/notes-api";
 import type { CallbackJob } from "@/app/dashboard/telecalling/types";
 import { useRouter } from "next/navigation";
 
-export function NotificationCenter() {
+export function NotificationBell() {
   const { role, callerId } = useAuthRole();
   const router = useRouter();
+  const { notifications, markRead } = useNotifications();
 
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"alerts" | "callbacks">("alerts");
 
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [callbacks, setCallbacks] = useState<CallbackJob[]>([]);
   const notifiedSet = useRef<Set<string>>(new Set());
 
-  const loadData = useCallback(async () => {
-    if (role !== "caller" && role !== "owner") return;
+  const loadCallbacks = useCallback(async () => {
+    if (role !== "caller" || !callerId) return;
 
     try {
-      // 1. Fetch unread notifications
-      const notifsRes = await api.notifications.list();
-      const unreadNotifs = notifsRes.data || [];
-      
-      // Toast for new notifications
-      unreadNotifs.forEach((n) => {
-        if (!notifiedSet.current.has(n.id)) {
-          notifiedSet.current.add(n.id);
-          toast(n.title, {
-            description: n.message,
-            icon: <Info className="text-indigo-500" size={16} />,
+      const todayJobs = await fetchTodayCallbacks();
+      const now = new Date();
+      const due = todayJobs.filter((job) => {
+        if (job.lead?.assigned_to !== callerId) return false;
+        return new Date(job.scheduled_for) <= now;
+      });
+
+      due.forEach((cb) => {
+        if (!notifiedSet.current.has(cb.id)) {
+          notifiedSet.current.add(cb.id);
+          toast("Callback Due!", {
+            description: `Time to call ${cb.lead?.name || "Lead"}`,
+            icon: <Clock className="text-amber-500" size={16} />,
           });
         }
       });
-      setNotifications(unreadNotifs);
-
-      // 2. Fetch due callbacks if caller
-      if (role === "caller" && callerId) {
-        const todayJobs = await fetchTodayCallbacks();
-        const now = new Date();
-        const due = todayJobs.filter((job) => {
-          if (job.lead?.assigned_to !== callerId) return false;
-          return new Date(job.scheduled_for) <= now;
-        });
-        
-        due.forEach((cb) => {
-          if (!notifiedSet.current.has(cb.id)) {
-            notifiedSet.current.add(cb.id);
-            toast("Callback Due!", {
-              description: `Time to call ${cb.lead?.name || "Lead"}`,
-              icon: <Clock className="text-amber-500" size={16} />,
-            });
-          }
-        });
-        setCallbacks(due);
-      }
+      setCallbacks(due);
     } catch (err) {
-      console.error("Failed to load NotificationCenter data", err);
+      console.error("Failed to load due callbacks", err);
     }
   }, [role, callerId]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    loadCallbacks();
+  }, [loadCallbacks]);
 
-  usePolling(loadData, 30_000, !!role); // poll every 30s
+  usePolling(loadCallbacks, 30_000, !!role);
 
-  const handleMarkRead = async (id: string) => {
-    try {
-      await api.notifications.markRead(id);
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
-    } catch (err) {
-      console.error("Failed to mark read", err);
-    }
+  const handleMarkRead = (id: string) => {
+    markRead(id);
   };
 
   const handleCallbackClick = () => {
@@ -88,14 +64,14 @@ export function NotificationCenter() {
   const totalUnread = notifications.length + callbacks.length;
 
   return (
-    <div className="fixed top-6 right-8 z-[100]">
+    <div className="relative">
       {/* Bell Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="relative p-3 bg-white border border-slate-200/80 rounded-2xl hover:bg-slate-50 hover:border-indigo-500 transition-all shadow-sm group"
+        className="relative p-2.5 bg-white border border-slate-200/80 rounded-xl hover:bg-slate-50 hover:border-indigo-500 transition-all group"
         title="Notification Center"
       >
-        <Bell size={20} className="text-slate-600 group-hover:text-indigo-600 transition-colors" />
+        <Bell size={18} className="text-slate-600 group-hover:text-indigo-600 transition-colors" />
         {totalUnread > 0 && (
           <span className="absolute -top-1.5 -right-1.5 min-w-[22px] h-[22px] px-1.5 bg-gradient-to-r from-rose-500 to-pink-600 text-white text-[10px] font-black rounded-full flex items-center justify-center ring-4 ring-background shadow-sm animate-bounce-short">
             {totalUnread > 99 ? "99+" : totalUnread}
@@ -108,7 +84,7 @@ export function NotificationCenter() {
         <>
           <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
           <div className="absolute right-0 top-full mt-3 w-80 md:w-96 bg-white border border-slate-200/80 rounded-3xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-[80vh] animate-in fade-in slide-in-from-top-4 duration-200">
-            
+
             {/* Header */}
             <div className="px-5 py-4 bg-gradient-to-br from-indigo-50 to-purple-50 border-b border-slate-100 flex items-center justify-between">
               <h3 className="font-display text-sm font-black text-slate-800 uppercase tracking-wider">
@@ -212,7 +188,7 @@ export function NotificationCenter() {
                 </div>
               )}
             </div>
-            
+
           </div>
         </>
       )}

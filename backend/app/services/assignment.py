@@ -148,7 +148,7 @@ def auto_assign_lead(
 
     query = (
         db.table("callers")
-        .select("id,name")
+        .select("id,name,user_id")
         .eq("tenant_id", tenant_id)
         .eq("active", True)
         .eq("status", "active")
@@ -195,6 +195,23 @@ def auto_assign_lead(
         prev_caller_name=prev_caller_name,
         db=db,
     )
+
+    try:
+        if chosen.get("user_id"):
+            from app.services.notify import notify_user
+            lead_row = db.table("leads").select("name").eq("id", lead_id).maybe_single().execute()
+            lead_name = (lead_row.data or {}).get("name") if lead_row else None
+            notify_user(
+                tenant_id,
+                chosen["user_id"],
+                "lead_assigned",
+                "New lead assigned",
+                f"You've been assigned '{lead_name or 'a new lead'}'.",
+                db=db,
+            )
+    except Exception:
+        pass
+
     return chosen_id
 
 

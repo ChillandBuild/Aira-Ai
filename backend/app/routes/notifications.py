@@ -49,3 +49,41 @@ async def mark_notification_read(
     )
     
     return {"success": True, "data": row.data[0] if row.data else None}
+
+@router.get("/pool")
+async def list_pool_items(
+    tenant_id: str = Depends(get_tenant_id),
+    user_id: str = Depends(get_current_user),
+):
+    """Currently-actionable shared-pool items for the claim banner.
+
+    Reflects live state (not stale notifications): pending unassigned handovers.
+    Returns at most 20.
+    """
+    db = get_supabase()
+    items: list[dict] = []
+    try:
+        handovers = (
+            db.table("chat_handovers")
+            .select("id, lead_id, reason, created_at, leads(name)")
+            .eq("tenant_id", tenant_id)
+            .eq("status", "pending")
+            .is_("assigned_to", "null")
+            .order("created_at", desc=True)
+            .limit(20)
+            .execute()
+        )
+        for h in (handovers.data or []):
+            lead = h.get("leads") or {}
+            items.append({
+                "kind": "handover",
+                "id": h["id"],
+                "lead_id": h["lead_id"],
+                "lead_name": lead.get("name") if isinstance(lead, dict) else None,
+                "reason": h.get("reason"),
+                "created_at": h.get("created_at"),
+            })
+    except Exception as e:
+        logger.warning(f"pool handovers fetch failed (transient?): {e}")
+
+    return {"data": items}

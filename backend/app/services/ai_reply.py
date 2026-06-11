@@ -444,6 +444,21 @@ def _trigger_chat_escalation(
         "status": "pending",
     }).execute()
     logger.info(f"Chat handover created for lead {lead_id} — reason: {reason[:60]}")
+    try:
+        from app.services.notify import notify_pool
+        lead_row = (
+            db.table("leads").select("name").eq("id", lead_id).maybe_single().execute()
+        )
+        lead_name = (lead_row.data or {}).get("name") if lead_row else None
+        notify_pool(
+            tenant_id,
+            "handover_new",
+            "New handover in pool",
+            f"Lead '{lead_name or 'Unknown'}' needs a human — unclaimed.",
+            db=db,
+        )
+    except Exception:
+        pass
 
 
 async def generate_reply(

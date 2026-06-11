@@ -397,6 +397,13 @@ async def whatsapp_webhook(
                     }
                     db.table("messages").insert(insert_row).execute()
 
+                    try:
+                        from app.services.notify import notify_assigned_caller_of_reply
+                        if lead_id:
+                            notify_assigned_caller_of_reply(lead_id, tenant_id, db=db)
+                    except Exception:
+                        pass
+
                     # Reset engagement suppression counter on inbound reply
                     if lead_id:
                         try:
