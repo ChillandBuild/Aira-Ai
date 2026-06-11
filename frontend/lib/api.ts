@@ -1238,6 +1238,13 @@ export const api = {
         method: "PATCH",
       }),
   },
+  chatHandovers: {
+    assign: (handoverId: string, callerId: string) =>
+      apiFetch<{ assigned: boolean }>(`/api/v1/chat-handovers/${handoverId}/assign`, {
+        method: "PATCH",
+        body: JSON.stringify({ caller_id: callerId }),
+      }),
+  },
 };
 
 export interface Todo {
