@@ -185,7 +185,7 @@ Regenerate after big changes: `/graphify . --update` then rebuild the wiki. Live
 | backend/supabase/migrations/ | All schema migrations 001–083 |
 | frontend/app/dashboard/ | All dashboard pages |
 
-## Migration Index (latest = 102)
+## Migration Index (latest = 103)
 | Migration | What |
 |---|---|
 | 051 | Telegram support — tg_user_id on leads |
@@ -246,6 +246,7 @@ Regenerate after big changes: `/graphify . --update` then rebuild the wiki. Live
 | 100_add_follow_up_job_id_to_call_logs | call_logs.follow_up_job_id FK + index (callback resilience) |
 | 101_drop_1d_1w_1m_cadences | drop legacy 1d/1w/1m follow-up cadences |
 | 102_call_status_dnc | leads.call_status (new/in_progress/callback/converted/not_interested/dnc/unreachable) + do_not_call + CHECK + idx_leads_call_status — call-status pipeline orthogonal to A/B/C/D segment; DNC is lead-level (not a call outcome) |
+| 103_reengagement_target_sources | reengagement_steps.target_sources jsonb — filter re-engagement by acquisition source (organic/meta_ads/csv/telegram/instagram/facebook); NULL = all |
 
 ## Bot Flow Builder (replaces Automations UI)
 Visual WhatsApp flow builder at /dashboard/automations (sidebar "Bot Flows"). Backend

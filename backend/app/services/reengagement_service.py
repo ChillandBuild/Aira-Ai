@@ -11,6 +11,25 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _classify_source(lead: dict) -> str:
+    """Map a lead to an acquisition-source bucket (ad referral wins over channel)."""
+    if lead.get("ad_campaign_id"):
+        return "meta_ads"
+    src = (lead.get("source") or "").lower()
+    if src == "upload":
+        return "csv"
+    if src in ("telegram", "instagram", "facebook"):
+        return src
+    return "organic"
+
+
+def _lead_matches_sources(lead: dict, target_sources) -> bool:
+    """NULL/empty target_sources = all sources."""
+    if not target_sources:
+        return True
+    return _classify_source(lead) in target_sources
+
+
 async def process_due_reengagements() -> int:
     """Query and process all pending re-engagement steps for all tenants."""
     db = get_supabase()
@@ -29,6 +48,7 @@ async def process_due_reengagements() -> int:
         tenant_id = step["tenant_id"]
         delay_hours = step["delay_hours"]
         target_segments = step["target_segments"] or []
+        target_sources = step.get("target_sources") or []
         message_type = step["message_type"]
         
         if step["type"] == "broadcast":
@@ -78,7 +98,7 @@ async def process_due_reengagements() -> int:
                 # Fetch lead details to check current segment and last_inbound_at
                 lead_res = (
                     db.table("leads")
-                    .select("id, name, phone, segment, last_inbound_at, source, collected_data")
+                    .select("id, name, phone, segment, last_inbound_at, source, ad_campaign_id, collected_data")
                     .eq("id", lead_id)
                     .eq("tenant_id", tenant_id)
                     .maybe_single()
@@ -86,6 +106,8 @@ async def process_due_reengagements() -> int:
                 )
                 lead = lead_res.data if lead_res else None
                 if not lead or lead.get("segment") not in target_segments:
+                    continue
+                if not _lead_matches_sources(lead, target_sources):
                     continue
 
                 # Process sending
@@ -98,7 +120,7 @@ async def process_due_reengagements() -> int:
             # Find leads with last_inbound_at
             leads_res = (
                 db.table("leads")
-                .select("id, name, phone, segment, last_inbound_at, source, collected_data")
+                .select("id, name, phone, segment, last_inbound_at, source, ad_campaign_id, collected_data")
                 .eq("tenant_id", tenant_id)
                 .not_.is_("last_inbound_at", "null")
                 .execute()
@@ -131,6 +153,8 @@ async def process_due_reengagements() -> int:
                     continue
 
                 if lead.get("segment") not in target_segments:
+                    continue
+                if not _lead_matches_sources(lead, target_sources):
                     continue
 
                 # Process sending
