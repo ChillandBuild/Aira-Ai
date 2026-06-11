@@ -281,6 +281,10 @@ export interface CallbackBoardItem {
     status: "active" | "break" | "logged_out";
     is_on_call: boolean;
   } | null;
+  scheduled_by: {
+    id: string;
+    name: string | null;
+  } | null;
 }
 
 export interface AdCampaignInsight {

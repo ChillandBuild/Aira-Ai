@@ -1034,11 +1034,11 @@ async def release_lead(lead_id: UUID, tenant_id: str = Depends(get_tenant_id)):
 
 @router.post("/{lead_id}/takeover")
 async def takeover_lead(lead_id: UUID, ctx: dict = Depends(get_tenant_and_role)):
-    """Allow a telecaller to claim/take over an overdue callback lead from another caller."""
+    """Allow a telecaller to claim an overdue callback from an unavailable caller."""
     tenant_id = ctx["tenant_id"]
     caller_id = ctx.get("caller_id")
     if not caller_id:
-        raise HTTPException(status_code=400, detail="Only telecallers can claim/takeover leads")
+        raise HTTPException(status_code=400, detail="Only telecallers can claim callbacks")
 
     db = get_supabase()
     
@@ -1094,9 +1094,9 @@ async def takeover_lead(lead_id: UUID, ctx: dict = Depends(get_tenant_and_role))
             prev_caller_name = caller_res.data.get("name") or "Unknown"
             prev_caller_user_id = caller_res.data.get("user_id")
 
-    # Live call shield: an active owner mid-call is never takeover-eligible
+    # Live call shield: a caller who is active and mid-call is never claim-eligible
     if assigned_to and not is_offline and is_caller_on_call(db, assigned_to, tenant_id):
-        raise HTTPException(status_code=400, detail="Owner is currently on a call — cannot take over")
+        raise HTTPException(status_code=400, detail="Assigned caller is on a call — cannot claim yet")
 
     # Overdue threshold: 15 minutes
     overdue_limit = scheduled_for + timedelta(minutes=15)
@@ -1105,7 +1105,7 @@ async def takeover_lead(lead_id: UUID, ctx: dict = Depends(get_tenant_and_role))
     if not is_overdue and not is_offline:
         raise HTTPException(
             status_code=400,
-            detail="Cannot takeover yet: lead's callback is not overdue by 15 mins and caller is active"
+            detail="Cannot claim yet: callback is not 15 mins overdue and the caller is still active"
         )
 
     # 3. Perform takeover atomically
@@ -1153,8 +1153,8 @@ async def takeover_lead(lead_id: UUID, ctx: dict = Depends(get_tenant_and_role))
             "tenant_id": tenant_id,
             "user_id": prev_caller_user_id,
             "type": "callback_taken_over",
-            "title": "Callback Taken Over",
-            "message": f"{me_name} took over your callback for '{lead_data.get('name') or 'Unknown'}'.",
+            "title": "Callback Claimed",
+            "message": f"{me_name} claimed your callback for '{lead_data.get('name') or 'Unknown'}'.",
         }).execute()
 
     return {"success": True, "assigned_to": caller_id}

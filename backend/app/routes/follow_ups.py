@@ -126,7 +126,7 @@ async def run_due_follow_ups(limit: int = Query(20, ge=1, le=100), tenant_id: st
 
 
 @router.post("/callback")
-async def create_callback(payload: CallbackCreate, tenant_id: str = Depends(get_tenant_id)):
+async def create_callback(payload: CallbackCreate, ctx: dict = Depends(get_tenant_and_role)):
     db = get_supabase()
     row = db.table("follow_up_jobs").insert({
         "lead_id": payload.lead_id,
@@ -134,8 +134,9 @@ async def create_callback(payload: CallbackCreate, tenant_id: str = Depends(get_
         "cadence": "callback",
         "status": "pending",
         "scheduled_for": payload.scheduled_for,
-        "message_preview": payload.note or "Callback scheduled by telecaller",
-        "tenant_id": tenant_id,
+        "message_preview": payload.note,
+        "scheduled_by_caller_id": ctx.get("caller_id"),
+        "tenant_id": ctx["tenant_id"],
     }).execute()
     return row.data[0] if row.data else {}
 
@@ -234,7 +235,7 @@ async def callbacks_board(ctx: dict = Depends(get_tenant_and_role)):
 
     jobs = (
         db.table("follow_up_jobs")
-        .select("id,lead_id,scheduled_for,message_preview,status")
+        .select("id,lead_id,scheduled_for,message_preview,status,scheduled_by_caller_id")
         .eq("tenant_id", tenant_id)
         .eq("cadence", "callback")
         .eq("status", "pending")
@@ -257,9 +258,12 @@ async def callbacks_board(ctx: dict = Depends(get_tenant_and_role)):
         )
         leads_by_id = {row["id"]: row for row in (leads_res.data or [])}
 
-    caller_ids = list({
-        lead["assigned_to"] for lead in leads_by_id.values() if lead.get("assigned_to")
-    })
+    # Resolve both the assigned caller (for status) and the scheduling caller
+    # (for "Scheduled by <name>") — they can be different people.
+    caller_ids = list(
+        {lead["assigned_to"] for lead in leads_by_id.values() if lead.get("assigned_to")}
+        | {job["scheduled_by_caller_id"] for job in job_rows if job.get("scheduled_by_caller_id")}
+    )
 
     callers_by_id: dict = {}
     if caller_ids:
@@ -300,10 +304,19 @@ async def callbacks_board(ctx: dict = Depends(get_tenant_and_role)):
                 "is_on_call": assigned_to in on_call_ids,
             }
 
+        scheduled_by = None
+        scheduler_id = job.get("scheduled_by_caller_id")
+        if scheduler_id and scheduler_id in callers_by_id:
+            scheduled_by = {
+                "id": scheduler_id,
+                "name": callers_by_id[scheduler_id].get("name"),
+            }
+
         result.append({
             **job,
             "lead": lead_data,
             "assigned_caller": assigned_caller,
+            "scheduled_by": scheduled_by,
         })
 
     return {"data": result}

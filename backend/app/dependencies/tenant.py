@@ -60,7 +60,9 @@ def get_tenant_and_role(user: dict = Depends(get_current_user)) -> dict:
     )
     if (tenant.data or {}).get("status") == "suspended":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended.")
-    caller_id = get_caller_id_for_user(user["user_id"], tenant_id) if role == "caller" else None
+    # Resolve a caller profile for ANY user that has one (owners can also be telecallers).
+    # Role still governs visibility/permissions; caller_id only enables telecalling actions.
+    caller_id = get_caller_id_for_user(user["user_id"], tenant_id)
     return {
         "tenant_id": tenant_id,
         "role": role,
