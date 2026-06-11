@@ -98,7 +98,7 @@ async def process_due_reengagements() -> int:
                 # Fetch lead details to check current segment and last_inbound_at
                 lead_res = (
                     db.table("leads")
-                    .select("id, name, phone, segment, last_inbound_at, source, ad_campaign_id, collected_data")
+                    .select("id, name, phone, segment, last_inbound_at, source, ad_campaign_id, whatsapp_undeliverable, opted_out, collected_data")
                     .eq("id", lead_id)
                     .eq("tenant_id", tenant_id)
                     .maybe_single()
@@ -120,7 +120,7 @@ async def process_due_reengagements() -> int:
             # Find leads with last_inbound_at
             leads_res = (
                 db.table("leads")
-                .select("id, name, phone, segment, last_inbound_at, source, ad_campaign_id, collected_data")
+                .select("id, name, phone, segment, last_inbound_at, source, ad_campaign_id, whatsapp_undeliverable, opted_out, collected_data")
                 .eq("tenant_id", tenant_id)
                 .not_.is_("last_inbound_at", "null")
                 .execute()
@@ -235,6 +235,19 @@ async def _send_reengagement(db, tenant_id: str, lead: dict, step: dict) -> bool
 
     # If lead doesn't have a phone number, we can't send WhatsApp
     if not phone:
+        return False
+
+    # Never re-engage a lead WhatsApp can't deliver to. Meta marks these via the delivery
+    # webhook (delivery_status=failed → leads.whatsapp_undeliverable=True). The original
+    # template never reached them, so a follow-up can't either — skip silently, no log.
+    if lead.get("whatsapp_undeliverable"):
+        logger.info(f"Re-engagement step {step_id} skipped for lead {lead_id} (whatsapp_undeliverable)")
+        return False
+
+    # Never re-engage a lead who has opted out. Messaging an opted-out lead is a
+    # compliance risk regardless of channel — skip silently, no log.
+    if lead.get("opted_out"):
+        logger.info(f"Re-engagement step {step_id} skipped for lead {lead_id} (opted_out)")
         return False
 
     # Check 24-hour WhatsApp session window for freeform messages

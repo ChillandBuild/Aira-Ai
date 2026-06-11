@@ -21,6 +21,19 @@ def _is_opt_out(body: str) -> bool:
     return normalized in _STOP_WORDS
 
 
+# Meta delivery error codes that are transient throttles (number still reachable, retry later).
+# These must NOT permanently flag a lead as undeliverable. 131049 = healthy-ecosystem engagement
+# throttle, 131048 = spam rate limit, 131056 = pair rate limit, 130472 = user in experiment.
+TRANSIENT_DELIVERY_ERROR_CODES = frozenset({131049, 131048, 131056, 130472})
+
+
+def _is_transient_delivery_error(code) -> bool:
+    try:
+        return int(code) in TRANSIENT_DELIVERY_ERROR_CODES
+    except (TypeError, ValueError):
+        return False
+
+
 def _get_tenant_id_for_meta_number(phone_number_id: str, db) -> str | None:
     try:
         result = db.table("phone_numbers").select("tenant_id").eq("meta_phone_number_id", phone_number_id).maybe_single().execute()
@@ -283,7 +296,7 @@ async def whatsapp_webhook(
 
                     logger.info(f"Inbound Meta WhatsApp from {phone}: type={msg_type} body={body!r}")
 
-                    existing = db.table("leads").select("id,score,segment,deleted_at,ai_enabled").eq("phone", phone).eq("tenant_id", tenant_id).limit(1).execute()
+                    existing = db.table("leads").select("id,score,segment,deleted_at,ai_enabled,whatsapp_undeliverable").eq("phone", phone).eq("tenant_id", tenant_id).limit(1).execute()
                     if existing.data:
                         lead_id = existing.data[0]["id"]
                         if existing.data[0].get("deleted_at"):
@@ -293,6 +306,13 @@ async def whatsapp_webhook(
                                 "needs_human_intervention": False,
                             }).eq("id", lead_id).eq("tenant_id", tenant_id).execute()
                             logger.info(f"Restored soft-deleted lead {lead_id} on inbound message")
+                        if existing.data[0].get("whatsapp_undeliverable"):
+                            try:
+                                db.table("leads").update({"whatsapp_undeliverable": False}) \
+                                    .eq("id", lead_id).eq("tenant_id", tenant_id).execute()
+                                logger.info(f"Cleared whatsapp_undeliverable for lead {lead_id} — inbound message proves reachable")
+                            except Exception as e:
+                                logger.warning(f"Failed to clear whatsapp_undeliverable for lead {lead_id}: {e}")
                     else:
                         new_lead = db.table("leads").insert({
                             "phone": phone,
@@ -467,6 +487,7 @@ async def whatsapp_webhook(
                     if message_id and status in ("delivered", "read", "failed"):
                         try:
                             update_payload: dict = {"delivery_status": status}
+                            err_code = None
                             # Capture Meta error code + title on failed status — surfaced in failed CSV
                             if status == "failed":
                                 errs = status_update.get("errors") or []
@@ -502,11 +523,16 @@ async def whatsapp_webhook(
                             # Mark lead as undeliverable so it's hidden from active views
                             # Also flip broadcast_recipients row so failed leads are excluded
                             # from Segment CSVs, scoring, and all dashboard analytics.
+                            # Skip the lead-level flag for transient throttle codes — number is
+                            # still reachable, just rate-limited; don't permanently exclude it.
                             if status == "failed" and updated.data:
                                 failed_lead_id = updated.data[0].get("lead_id")
                                 if failed_lead_id:
-                                    db.table("leads").update({"whatsapp_undeliverable": True}) \
-                                        .eq("id", failed_lead_id).eq("tenant_id", tenant_id).execute()
+                                    if _is_transient_delivery_error(err_code):
+                                        logger.info(f"Transient delivery error {err_code} for lead {failed_lead_id} — not flagging undeliverable")
+                                    else:
+                                        db.table("leads").update({"whatsapp_undeliverable": True}) \
+                                            .eq("id", failed_lead_id).eq("tenant_id", tenant_id).execute()
                                     try:
                                         db.table("broadcast_recipients") \
                                             .update({"send_status": "delivery_failed"}) \
@@ -515,6 +541,16 @@ async def whatsapp_webhook(
                                             .execute()
                                     except Exception as _br_err:
                                         logger.warning(f"broadcast_recipients delivery_failed update failed: {_br_err}")
+                            # Lead proved reachable again — clear any stale undeliverable flag.
+                            if status in ("delivered", "read") and updated.data:
+                                reachable_lead_id = updated.data[0].get("lead_id")
+                                if reachable_lead_id:
+                                    try:
+                                        db.table("leads").update({"whatsapp_undeliverable": False}) \
+                                            .eq("id", reachable_lead_id).eq("tenant_id", tenant_id) \
+                                            .eq("whatsapp_undeliverable", True).execute()
+                                    except Exception as _wu_err:
+                                        logger.warning(f"Failed to clear whatsapp_undeliverable for lead {reachable_lead_id}: {_wu_err}")
                             # Bot Flow Builder per-node analytics: bump node delivered_count once
                             if status == "delivered" and updated.data:
                                 step_id = updated.data[0].get("automation_step_id")

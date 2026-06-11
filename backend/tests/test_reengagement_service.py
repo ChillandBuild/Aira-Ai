@@ -120,6 +120,42 @@ async def test_freeform_window_closed_no_fallback_skips():
 
 
 @pytest.mark.asyncio
+async def test_undeliverable_lead_is_skipped_no_send_no_log():
+    """A lead Meta can't deliver to (whatsapp_undeliverable) must never be re-engaged
+    and must not appear in re-engagement history."""
+    from app.services import reengagement_service as svc
+    logs = []
+    db = _make_db(logs)
+    lead = _lead(2)  # window wide open — would normally send freeform
+    lead["whatsapp_undeliverable"] = True
+    with patch.object(svc, "send_whatsapp", new=AsyncMock()) as wa, \
+         patch.object(svc, "send_template_message", new=AsyncMock()) as tpl:
+        ok = await svc._send_reengagement(db, "t1", lead, _step())
+    assert ok is False
+    wa.assert_not_awaited()
+    tpl.assert_not_awaited()
+    assert len(logs) == 0
+
+
+@pytest.mark.asyncio
+async def test_opted_out_lead_is_skipped_no_send_no_log():
+    """A lead who has opted out must never be re-engaged and must not appear
+    in re-engagement history."""
+    from app.services import reengagement_service as svc
+    logs = []
+    db = _make_db(logs)
+    lead = _lead(2)  # window wide open — would normally send freeform
+    lead["opted_out"] = True
+    with patch.object(svc, "send_whatsapp", new=AsyncMock()) as wa, \
+         patch.object(svc, "send_template_message", new=AsyncMock()) as tpl:
+        ok = await svc._send_reengagement(db, "t1", lead, _step())
+    assert ok is False
+    wa.assert_not_awaited()
+    tpl.assert_not_awaited()
+    assert len(logs) == 0
+
+
+@pytest.mark.asyncio
 async def test_template_step_always_sends_template():
     from app.services import reengagement_service as svc
     logs = []
