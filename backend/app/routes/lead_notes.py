@@ -25,6 +25,26 @@ class UpdateNote(BaseModel):
     tags: list[str] | None = None
 
 
+@router.get("/all")
+async def all_notes(ctx: dict = Depends(get_tenant_and_role)):
+    """Returns every note for the tenant, joined with lead info. Callers only see notes for their assigned leads."""
+    db = get_supabase()
+    tenant_id = ctx["tenant_id"]
+
+    result = (
+        db.table("lead_notes")
+        .select("*, leads(id, name, phone, segment, score, assigned_to)")
+        .eq("tenant_id", tenant_id)
+        .order("is_pinned", desc=True)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    rows = result.data or []
+    if ctx.get("role") == "caller" and ctx.get("caller_id"):
+        rows = [r for r in rows if (r.get("leads") or {}).get("assigned_to") == ctx["caller_id"]]
+    return {"data": rows}
+
+
 @router.get("/leads-with-activity")
 async def leads_with_activity(ctx: dict = Depends(get_tenant_and_role)):
     """Returns leads that have at least one note or call log. Callers only see their assigned leads."""

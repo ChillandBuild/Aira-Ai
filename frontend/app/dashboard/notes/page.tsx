@@ -1,167 +1,36 @@
 "use client";
 import { toast } from "sonner";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import {
-  Search, StickyNote, Pin, Pencil, Trash2, Plus, X,
-  ChevronDown, ChevronUp, Phone, Tag, Filter,
+  Search, StickyNote, Plus, X, Phone, LayoutGrid, List as ListIcon, Pin, User,
 } from "lucide-react";
-import { api, Lead, CallLog } from "@/lib/api";
+import { api, Lead, CallLog, NoteWithLead } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import type { Note, NotesResponse } from "@/app/dashboard/telecalling/types";
 import { fetchNotes } from "@/app/dashboard/telecalling/lib/notes-api";
+import NoteCard from "./components/NoteCard";
+import { AiSummaryCard, SEGMENT_COLORS, SEGMENT_LABELS, TagChip, TagSelector } from "./components/shared";
 
-// ─── Tag system ───────────────────────────────────────────────────────────────
-const PRESET_TAGS = [
-  { label: "Follow-up", color: "bg-blue-100 text-blue-700 border-blue-200" },
-  { label: "Important", color: "bg-red-100 text-red-700 border-red-200" },
-  { label: "Callback", color: "bg-amber-100 text-amber-700 border-amber-200" },
-  { label: "Pricing", color: "bg-purple-100 text-purple-700 border-purple-200" },
-  { label: "Visit", color: "bg-green-100 text-green-700 border-green-200" },
-  { label: "Brochure", color: "bg-teal-100 text-teal-700 border-teal-200" },
-  { label: "Not interested", color: "bg-gray-100 text-gray-600 border-gray-200" },
-  { label: "Hot lead", color: "bg-orange-100 text-orange-700 border-orange-200" },
-];
+type PageMode = "by_lead" | "all_notes";
+type ViewMode = "grid" | "list";
 
-function tagStyle(label: string): string {
-  const found = PRESET_TAGS.find((t) => t.label.toLowerCase() === label.toLowerCase());
-  return found?.color ?? "bg-indigo-100 text-indigo-700 border-indigo-200";
+function pillClass(active: boolean) {
+  return `px-3 py-1.5 rounded-xl font-label text-xs font-bold transition-all ${
+    active ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-800"
+  }`;
 }
 
-function TagChip({ label, onRemove }: { label: string; onRemove?: () => void }) {
-  return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border font-label text-[10px] font-semibold ${tagStyle(label)}`}>
-      {label}
-      {onRemove && (
-        <button onClick={onRemove} className="hover:opacity-70 transition-opacity">
-          <X size={9} />
-        </button>
-      )}
-    </span>
-  );
+function iconPillClass(active: boolean) {
+  return `p-1.5 rounded-xl transition-all ${
+    active ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400 hover:text-slate-700"
+  }`;
 }
 
-function TagSelector({
-  selected,
-  onChange,
-}: {
-  selected: string[];
-  onChange: (tags: string[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [custom, setCustom] = useState("");
-
-  function toggle(label: string) {
-    if (selected.includes(label)) {
-      onChange(selected.filter((t) => t !== label));
-    } else {
-      onChange([...selected, label]);
-    }
-  }
-
-  function addCustom() {
-    const t = custom.trim();
-    if (t && !selected.includes(t)) onChange([...selected, t]);
-    setCustom("");
-  }
-
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface border border-surface-mid font-label text-xs text-on-surface-muted hover:text-on-surface hover:bg-surface-low transition-colors"
-      >
-        <Tag size={11} />
-        {selected.length > 0 ? `${selected.length} tag${selected.length > 1 ? "s" : ""}` : "Add tags"}
-      </button>
-      {open && (
-        <div className="absolute bottom-full mb-1 left-0 z-30 w-56 bg-surface rounded-xl shadow-card border border-surface-mid p-3 space-y-2">
-          <p className="font-label text-[10px] text-on-surface-muted uppercase tracking-wider">Select tags</p>
-          <div className="flex flex-wrap gap-1.5">
-            {PRESET_TAGS.map((t) => (
-              <button
-                key={t.label}
-                onClick={() => toggle(t.label)}
-                className={`px-2 py-0.5 rounded-full border font-label text-[10px] font-semibold transition-all ${
-                  selected.includes(t.label)
-                    ? t.color + " ring-2 ring-offset-1 ring-current"
-                    : "bg-surface-low border-surface-mid text-on-surface-muted hover:border-surface"
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex gap-1.5">
-            <input
-              value={custom}
-              onChange={(e) => setCustom(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustom(); } }}
-              placeholder="Custom tag…"
-              className="flex-1 px-2 py-1 rounded-lg bg-surface-low border border-surface-mid font-label text-xs focus:outline-none focus:ring-1 focus:ring-tertiary"
-            />
-            <button onClick={addCustom} className="px-2 py-1 rounded-lg bg-tertiary text-white font-label text-xs hover:bg-tertiary/90">
-              <Plus size={11} />
-            </button>
-          </div>
-          <button onClick={() => setOpen(false)} className="w-full text-center font-label text-[10px] text-on-surface-muted hover:text-on-surface">Done</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Segment colors ───────────────────────────────────────────────────────────
-const SEGMENT_COLORS: Record<string, string> = {
-  A: "bg-green-100 text-green-700",
-  B: "bg-amber-100 text-amber-700",
-  C: "bg-blue-100 text-blue-700",
-  D: "bg-red-100 text-red-600",
-};
-const SEGMENT_LABELS: Record<string, string> = {
-  A: "Hot", B: "Warm", C: "Cold", D: "Disqualified",
-};
-
-// ─── AI Summary card ──────────────────────────────────────────────────────────
-function AiSummaryCard({ log }: { log: CallLog }) {
-  const [open, setOpen] = useState(false);
-  const s = log.ai_summary;
-  if (!s) return null;
-  const fields = Object.entries(s).filter(([, v]) => v);
-  return (
-    <div className="p-4 bg-surface-low rounded-xl border border-surface-mid">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="font-label text-xs font-semibold text-on-surface">
-            {timeAgo(log.created_at)}
-            {log.duration_seconds != null && ` · ${log.duration_seconds}s`}
-          </p>
-          <p className="font-label text-xs text-on-surface-muted capitalize mt-0.5">
-            {log.status}{log.outcome ? ` · ${log.outcome.replace("_", " ")}` : ""}
-          </p>
-        </div>
-        <button onClick={() => setOpen((v) => !v)} className="p-1 rounded hover:bg-surface-mid transition-colors">
-          {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </button>
-      </div>
-      {open && (
-        <div className="mt-3 space-y-1.5">
-          {fields.map(([k, v]) => (
-            <p key={k} className="font-body text-xs text-on-surface">
-              <span className="font-semibold capitalize">{k.replace("_", " ")}:</span> {v}
-            </p>
-          ))}
-          {log.recording_url && (
-            <audio controls src={log.recording_url} className="mt-2 w-full h-8" />
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Main Notes Page ─────────────────────────────────────────────────────────
 export default function NotesPage() {
+  const [pageMode, setPageMode] = useState<PageMode>("by_lead");
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+
+  // by-lead state
   const [leads, setLeads] = useState<Lead[]>([]);
   const [search, setSearch] = useState("");
   const [lastCalledMap, setLastCalledMap] = useState<Record<string, string>>({});
@@ -169,22 +38,28 @@ export default function NotesPage() {
   const [notes, setNotes] = useState<NotesResponse | null>(null);
   const [callLogs, setCallLogs] = useState<CallLog[]>([]);
   const [notesLoading, setNotesLoading] = useState(false);
+  const [filterTag, setFilterTag] = useState<string | null>(null);
 
-  // Add note state
+  // add note state
   const [addContent, setAddContent] = useState("");
   const [addPinned, setAddPinned] = useState(false);
   const [addTags, setAddTags] = useState<string[]>([]);
   const [adding, setAdding] = useState(false);
 
-  // Edit note state
+  // edit note state (shared between By Lead notes & All Notes board)
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
   const [editPinned, setEditPinned] = useState(false);
   const [editTags, setEditTags] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
-  // Tag filter
-  const [filterTag, setFilterTag] = useState<string | null>(null);
+  // all-notes board state
+  const [allNotes, setAllNotes] = useState<NoteWithLead[]>([]);
+  const [allNotesLoading, setAllNotesLoading] = useState(false);
+  const [boardSearch, setBoardSearch] = useState("");
+  const [boardTag, setBoardTag] = useState<string | null>(null);
+  const [boardSegment, setBoardSegment] = useState<string | null>(null);
+  const [boardPinnedOnly, setBoardPinnedOnly] = useState(false);
 
   useEffect(() => { loadLeads(); }, []);
 
@@ -197,6 +72,15 @@ export default function NotesPage() {
       .finally(() => setNotesLoading(false));
   }, [selected]);
 
+  useEffect(() => {
+    if (pageMode !== "all_notes") return;
+    setAllNotesLoading(true);
+    api.notes.all()
+      .then((res) => setAllNotes(res.data || []))
+      .catch(() => setAllNotes([]))
+      .finally(() => setAllNotesLoading(false));
+  }, [pageMode]);
+
   async function loadLeads() {
     try {
       const res = await api.notes.leadsWithActivity();
@@ -204,7 +88,6 @@ export default function NotesPage() {
       setLeads(all);
       if (all.length) api.calls.recentByLeads(all.map((l) => l.id)).then(setLastCalledMap).catch(() => {});
     } catch {
-      // fallback: load all leads if endpoint not available
       try {
         const [a, b, c, d] = await Promise.all([
           api.leads.list({ segment: "A", limit: 50 }),
@@ -230,10 +113,25 @@ export default function NotesPage() {
     return tb.localeCompare(ta);
   });
 
-  const refreshNotes = useCallback(async () => {
+  async function refreshNotes() {
     if (!selected) return;
     setNotes(await fetchNotes(selected.id));
-  }, [selected]);
+  }
+
+  async function refreshAllNotes() {
+    const res = await api.notes.all();
+    setAllNotes(res.data || []);
+  }
+
+  function goToLead(leadId: string) {
+    const lead = leads.find((l) => l.id === leadId);
+    setPageMode("by_lead");
+    if (lead) {
+      setSelected(lead);
+    } else {
+      api.leads.get(leadId).then(setSelected).catch(() => {});
+    }
+  }
 
   async function addNote() {
     if (!selected || !addContent.trim()) return;
@@ -258,12 +156,24 @@ export default function NotesPage() {
     } finally { setAdding(false); }
   }
 
+  function startEdit(note: Note | NoteWithLead) {
+    setEditingId(note.id);
+    setEditContent(note.content);
+    setEditPinned(note.is_pinned);
+    setEditTags(note.tags ?? []);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+  }
+
   async function saveEdit(noteId: string) {
     setSaving(true);
     try {
       await api.notes.update(noteId, { content: editContent.trim(), is_pinned: editPinned, tags: editTags });
       setEditingId(null);
       await refreshNotes();
+      if (pageMode === "all_notes") await refreshAllNotes();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Update failed");
     } finally { setSaving(false); }
@@ -274,144 +184,234 @@ export default function NotesPage() {
     try {
       await api.notes.delete(noteId);
       await refreshNotes();
+      if (pageMode === "all_notes") await refreshAllNotes();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Delete failed");
     }
   }
 
-  const allNotes = notes ? [...notes.pinned, ...notes.notes] : [];
-  const filteredNotes = filterTag
-    ? allNotes.filter((n: Note) => (n.tags ?? []).includes(filterTag))
-    : allNotes;
+  const leadNoteItems = notes ? [...notes.pinned, ...notes.notes] : [];
+  const filteredLeadNotes = filterTag
+    ? leadNoteItems.filter((n: Note) => (n.tags ?? []).includes(filterTag))
+    : leadNoteItems;
   const aiLogs = callLogs.filter((l) => l.ai_summary);
+  const leadTags = Array.from(new Set(leadNoteItems.flatMap((n: Note) => n.tags ?? [])));
 
-  // Collect all unique tags across notes for filter UI
-  const allTags = Array.from(new Set(allNotes.flatMap((n: Note) => n.tags ?? [])));
+  const boardTags = Array.from(new Set(allNotes.flatMap((n) => n.tags ?? [])));
+  const filteredAllNotes = allNotes.filter((n) => {
+    if (boardPinnedOnly && !n.is_pinned) return false;
+    if (boardTag && !(n.tags ?? []).includes(boardTag)) return false;
+    if (boardSegment && n.leads?.segment !== boardSegment) return false;
+    if (boardSearch) {
+      const q = boardSearch.toLowerCase();
+      const matchContent = n.content.toLowerCase().includes(q);
+      const matchLead = (n.leads?.name ?? "").toLowerCase().includes(q) || (n.leads?.phone ?? "").includes(q);
+      if (!matchContent && !matchLead) return false;
+    }
+    return true;
+  });
+
+  const editProps = (note: Note | NoteWithLead) => ({
+    isEditing: editingId === note.id,
+    editContent, editPinned, editTags, saving,
+    onStartEdit: () => startEdit(note),
+    onContentChange: setEditContent,
+    onPinnedChange: setEditPinned,
+    onTagsChange: setEditTags,
+    onSave: () => saveEdit(note.id),
+    onCancel: cancelEdit,
+    onDelete: () => deleteNote(note.id),
+  });
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="font-display text-3xl font-bold text-tertiary">Notes</h1>
-        <p className="font-body text-on-surface-muted mt-1">Search leads and manage call notes</p>
-      </div>
-
-      <div className="grid grid-cols-3 gap-6">
-        {/* Left: lead list */}
-        <div className="col-span-1">
-          <div className="relative mb-4">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-muted" />
-            <input
-              type="text" placeholder="Search by name or phone…" value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-surface border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary"
-            />
+      <div className="mb-6 flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="font-display text-2xl font-extrabold text-slate-900 tracking-tight">Call Notes</h1>
+          <p className="font-body text-sm text-slate-500 mt-1">Browse and manage notes across your leads</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1 p-1 bg-slate-200/60 rounded-2xl">
+            <button onClick={() => setPageMode("by_lead")} className={pillClass(pageMode === "by_lead")}>By Lead</button>
+            <button onClick={() => setPageMode("all_notes")} className={pillClass(pageMode === "all_notes")}>All Notes</button>
           </div>
-          <div className="space-y-2 max-h-[calc(100vh-220px)] overflow-y-auto px-1 py-1">
-            {sortedLeads.length === 0 && (
-              <p className="font-body text-sm text-on-surface-muted px-2">No leads found.</p>
-            )}
-            {sortedLeads.map((lead) => (
-              <button key={lead.id} onClick={() => setSelected(lead)}
-                className={`w-full text-left p-4 rounded-xl transition-all ${selected?.id === lead.id ? "bg-primary/5 ring-2 ring-primary/30" : "bg-surface hover:bg-surface-low ring-1 ring-[#c4c7c7]/15"}`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="font-body text-sm font-semibold text-on-surface truncate">
-                      {lead.name || formatPhone(lead.phone)}
-                    </p>
-                    {lead.name && <p className="font-label text-xs text-on-surface-muted">{formatPhone(lead.phone)}</p>}
-                    {lastCalledMap[lead.id] && (
-                      <p className="font-label text-[10px] text-on-surface-muted mt-0.5">Called {timeAgo(lastCalledMap[lead.id])}</p>
-                    )}
-                  </div>
-                  <span className={`px-2 py-0.5 rounded-full font-label text-[10px] font-semibold shrink-0 ${SEGMENT_COLORS[lead.segment]}`}>
-                    {SEGMENT_LABELS[lead.segment]}
-                  </span>
-                </div>
-              </button>
-            ))}
+          <div className="flex gap-1 p-1 bg-slate-200/60 rounded-2xl">
+            <button onClick={() => setViewMode("grid")} className={iconPillClass(viewMode === "grid")} title="Grid view">
+              <LayoutGrid size={14} />
+            </button>
+            <button onClick={() => setViewMode("list")} className={iconPillClass(viewMode === "list")} title="List view">
+              <ListIcon size={14} />
+            </button>
           </div>
         </div>
+      </div>
 
-        {/* Right: lead detail */}
-        <div className="col-span-2">
-          {!selected ? (
-            <div className="flex flex-col items-center justify-center h-64 text-on-surface-muted">
+      {pageMode === "all_notes" ? (
+        <div className="space-y-4">
+          {/* Filters bar */}
+          <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 space-y-3">
+            <div className="relative">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text" placeholder="Search notes, lead name or phone…" value={boardSearch}
+                onChange={(e) => setBoardSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-white border border-slate-200 font-body text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(["A", "B", "C", "D"] as const).map((seg) => (
+                <button
+                  key={seg}
+                  onClick={() => setBoardSegment(boardSegment === seg ? null : seg)}
+                  className={`px-2.5 py-1 rounded-full border font-label text-[10px] font-black uppercase transition-all ${
+                    boardSegment === seg ? `${SEGMENT_COLORS[seg]} border-transparent` : "bg-white border-slate-200 text-slate-400 hover:border-slate-300"
+                  }`}
+                >
+                  {SEGMENT_LABELS[seg]}
+                </button>
+              ))}
+              <button
+                onClick={() => setBoardPinnedOnly((v) => !v)}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-full border font-label text-[10px] font-bold uppercase transition-all ${
+                  boardPinnedOnly ? "bg-amber-100 text-amber-700 border-transparent" : "bg-white border-slate-200 text-slate-400 hover:border-slate-300"
+                }`}
+              >
+                <Pin size={10} /> Pinned
+              </button>
+              {boardTags.length > 0 && <span className="w-px h-4 bg-slate-200 mx-1" />}
+              {boardTags.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setBoardTag(boardTag === t ? null : t)}
+                  className={`px-2 py-0.5 rounded-full border font-label text-[10px] font-semibold transition-all ${
+                    boardTag === t ? "ring-2 ring-current ring-offset-1" : "opacity-60 hover:opacity-100"
+                  } bg-indigo-50 text-indigo-700 border-indigo-100`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {allNotesLoading ? (
+            <p className="font-body text-sm text-slate-400 px-2">Loading…</p>
+          ) : filteredAllNotes.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-slate-400">
               <StickyNote size={40} className="mb-3 opacity-30" />
-              <p className="font-body text-sm">Select a lead to view notes</p>
+              <p className="font-body text-sm">No notes match your filters.</p>
+            </div>
+          ) : viewMode === "grid" ? (
+            <div className="columns-1 sm:columns-2 lg:columns-3 gap-4">
+              {filteredAllNotes.map((note) => (
+                <NoteCard key={note.id} note={note} view="grid" showLead {...editProps(note)} onLeadClick={() => goToLead(note.lead_id)} />
+              ))}
             </div>
           ) : (
-            <div className="space-y-6">
-              {/* Lead header card */}
-              <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15 flex items-center justify-between">
-                <div>
-                  <h2 className="font-display text-xl font-bold text-tertiary">
-                    {selected.name || formatPhone(selected.phone)}
-                  </h2>
-                  <p className="font-label text-sm text-on-surface-muted mt-0.5">
-                    {selected.name ? formatPhone(selected.phone) + " · " : ""}Segment {selected.segment} · Score {selected.score}
-                  </p>
-                </div>
-                <button onClick={() => setSelected(null)} className="p-2 rounded-lg hover:bg-surface-low transition-colors text-on-surface-muted">
-                  <X size={16} />
-                </button>
-              </div>
-
-              {notesLoading ? (
-                <p className="font-body text-sm text-on-surface-muted px-2">Loading…</p>
-              ) : (
-                <>
-                  {/* Notes Section */}
-                  <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-display text-base font-bold text-tertiary flex items-center gap-2">
-                        <StickyNote size={15} className="text-secondary" /> Notes
-                        {allNotes.length > 0 && (
-                          <span className="px-1.5 py-0.5 rounded-full bg-tertiary/10 font-label text-[10px] text-tertiary">
-                            {allNotes.length}
-                          </span>
-                        )}
-                      </h3>
-                      {/* Tag filter */}
-                      {allTags.length > 0 && (
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <Filter size={11} className="text-on-surface-muted" />
-                          {filterTag && (
-                            <button onClick={() => setFilterTag(null)}
-                              className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-tertiary/10 font-label text-[10px] text-tertiary hover:bg-tertiary/20">
-                              <X size={8} /> Clear
-                            </button>
-                          )}
-                          {allTags.map((t) => (
-                            <button key={t} onClick={() => setFilterTag(filterTag === t ? null : t)}
-                              className={`px-2 py-0.5 rounded-full border font-label text-[10px] font-semibold transition-all ${tagStyle(t)} ${filterTag === t ? "ring-2 ring-current ring-offset-1" : "opacity-60 hover:opacity-100"}`}>
-                              {t}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+            <div className="space-y-2">
+              {filteredAllNotes.map((note) => (
+                <NoteCard key={note.id} note={note} view="list" showLead {...editProps(note)} onLeadClick={() => goToLead(note.lead_id)} />
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-12 gap-4">
+          {/* Left: lead list */}
+          <div className="col-span-4 bg-slate-50 rounded-3xl p-5 shadow-sm border border-slate-200 flex flex-col" style={{ maxHeight: "calc(100vh - 220px)" }}>
+            <div className="relative mb-4 shrink-0">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text" placeholder="Search by name or phone…" value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-white border border-slate-200 font-body text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {sortedLeads.length === 0 && (
+                <p className="font-body text-sm text-slate-400 px-2">No leads found.</p>
+              )}
+              {sortedLeads.map((lead) => (
+                <button
+                  key={lead.id}
+                  onClick={() => setSelected(lead)}
+                  className={`w-full text-left rounded-2xl border p-3 flex items-center gap-3 transition-all ${
+                    selected?.id === lead.id
+                      ? "bg-white border-indigo-200 shadow-sm ring-1 ring-indigo-500/10"
+                      : "bg-white/60 border-slate-100 hover:bg-white hover:shadow-sm"
+                  }`}
+                >
+                  <div className="w-9 h-9 rounded-full bg-indigo-500 text-white flex items-center justify-center font-display text-xs font-bold shrink-0">
+                    {lead.name ? lead.name.charAt(0).toUpperCase() : <User size={14} />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-body text-sm font-bold text-slate-800 truncate">
+                        {lead.name || formatPhone(lead.phone)}
+                      </p>
+                      <span className={`px-1.5 py-0.5 rounded font-label text-[8px] font-black uppercase shrink-0 ${SEGMENT_COLORS[lead.segment]}`}>
+                        {SEGMENT_LABELS[lead.segment]}
+                      </span>
                     </div>
+                    <p className="font-label text-xs text-slate-500 mt-0.5">
+                      {lead.name ? formatPhone(lead.phone) + " · " : ""}Score {lead.score}/10
+                    </p>
+                    {lastCalledMap[lead.id] && (
+                      <p className="font-label text-[10px] text-slate-400 mt-0.5">Called {timeAgo(lastCalledMap[lead.id])}</p>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
 
-                    {/* Add note input */}
-                    <div className="mb-5 p-4 bg-surface-low rounded-xl space-y-3">
-                      <textarea value={addContent} onChange={(e) => setAddContent(e.target.value)}
+          {/* Right: lead notes */}
+          <div className="col-span-8 space-y-4 overflow-y-auto" style={{ maxHeight: "calc(100vh - 220px)" }}>
+            {!selected ? (
+              <div className="flex flex-col items-center justify-center h-64 text-slate-400 bg-slate-50 rounded-3xl border border-slate-200">
+                <StickyNote size={40} className="mb-3 opacity-30" />
+                <p className="font-body text-sm">Select a lead to view notes</p>
+              </div>
+            ) : (
+              <>
+                {/* Lead header */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex items-center justify-between">
+                  <div>
+                    <h2 className="font-display text-lg font-extrabold text-slate-900">
+                      {selected.name || formatPhone(selected.phone)}
+                    </h2>
+                    <p className="font-label text-xs text-slate-500 mt-0.5">
+                      {selected.name ? formatPhone(selected.phone) + " · " : ""}Segment {selected.segment} · Score {selected.score}
+                    </p>
+                  </div>
+                  <button onClick={() => setSelected(null)} className="p-2 rounded-lg hover:bg-slate-50 transition-colors text-slate-400">
+                    <X size={16} />
+                  </button>
+                </div>
+
+                {notesLoading ? (
+                  <p className="font-body text-sm text-slate-400 px-2">Loading…</p>
+                ) : (
+                  <>
+                    {/* Add note composer */}
+                    <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3 shadow-sm">
+                      <textarea
+                        value={addContent} onChange={(e) => setAddContent(e.target.value)}
                         placeholder="Add a new note…" rows={3}
-                        className="w-full px-3 py-2 rounded-lg bg-surface border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary resize-none"
+                        className="w-full px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 font-body text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
                       />
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <div className="flex items-center gap-3 flex-wrap">
                           <label className="flex items-center gap-2 cursor-pointer select-none">
                             <input type="checkbox" checked={addPinned} onChange={(e) => setAddPinned(e.target.checked)} className="rounded" />
-                            <span className="font-label text-sm text-on-surface-muted">Pin note</span>
+                            <span className="font-label text-sm text-slate-500">Pin note</span>
                           </label>
                           <TagSelector selected={addTags} onChange={setAddTags} />
                         </div>
                         <button onClick={addNote} disabled={adding || !addContent.trim()}
-                          className="flex items-center gap-1.5 px-4 py-2 bg-tertiary text-white rounded-lg font-label text-sm font-semibold hover:bg-tertiary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                          className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-xl font-label text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                           <Plus size={13} /> {adding ? "Saving…" : "Add Note"}
                         </button>
                       </div>
-                      {/* Preview selected add-tags */}
                       {addTags.length > 0 && (
                         <div className="flex flex-wrap gap-1.5">
                           {addTags.map((t) => <TagChip key={t} label={t} onRemove={() => setAddTags(addTags.filter((x) => x !== t))} />)}
@@ -419,108 +419,79 @@ export default function NotesPage() {
                       )}
                     </div>
 
-                    {/* Notes list */}
-                    {filteredNotes.length === 0 ? (
-                      <p className="font-body text-sm text-on-surface-muted">
-                        {filterTag ? `No notes tagged "${filterTag}".` : "No notes yet for this lead."}
-                      </p>
-                    ) : (
-                      <div className="space-y-3">
-                        {filteredNotes.map((note: Note) => (
-                          <div key={note.id} className={`p-4 rounded-xl transition-all ${note.is_pinned ? "bg-amber-50 border border-amber-100" : "bg-surface-low"}`}>
-                            {editingId === note.id ? (
-                              <div className="space-y-2">
-                                <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} rows={3}
-                                  className="w-full px-3 py-2 rounded-lg bg-surface border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary resize-none"
-                                />
-                                <div className="flex items-center justify-between gap-2 flex-wrap">
-                                  <div className="flex items-center gap-3">
-                                    <label className="flex items-center gap-2 cursor-pointer select-none">
-                                      <input type="checkbox" checked={editPinned} onChange={(e) => setEditPinned(e.target.checked)} className="rounded" />
-                                      <span className="font-label text-xs text-on-surface-muted">Pinned</span>
-                                    </label>
-                                    <TagSelector selected={editTags} onChange={setEditTags} />
-                                  </div>
-                                  <div className="flex gap-2">
-                                    <button onClick={() => saveEdit(note.id)} disabled={saving}
-                                      className="px-3 py-1.5 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 disabled:opacity-50 transition-colors">
-                                      {saving ? "Saving…" : "Save"}
-                                    </button>
-                                    <button onClick={() => setEditingId(null)}
-                                      className="px-3 py-1.5 bg-surface border border-surface-mid rounded-lg font-label text-xs font-semibold hover:bg-surface-mid transition-colors">
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </div>
-                                {editTags.length > 0 && (
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {editTags.map((t) => <TagChip key={t} label={t} onRemove={() => setEditTags(editTags.filter((x) => x !== t))} />)}
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="flex-1 min-w-0">
-                                  <p className="font-body text-sm text-on-surface whitespace-pre-wrap">{note.content}</p>
-                                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                                    <span className="font-label text-[10px] text-on-surface-muted">{timeAgo(note.created_at)}</span>
-                                    {note.is_pinned && (
-                                      <span className="flex items-center gap-0.5 font-label text-[10px] text-amber-600 font-semibold">
-                                        <Pin size={9} /> Pinned
-                                      </span>
-                                    )}
-                                    {(note.tags ?? []).map((t: string) => (
-                                      <TagChip key={t} label={t} />
-                                    ))}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <button onClick={() => {
-                                    setEditingId(note.id);
-                                    setEditContent(note.content);
-                                    setEditPinned(note.is_pinned);
-                                    setEditTags(note.tags ?? []);
-                                  }}
-                                    className="p-1.5 rounded-lg hover:bg-surface-mid transition-colors text-on-surface-muted hover:text-on-surface">
-                                    <Pencil size={12} />
-                                  </button>
-                                  <button onClick={() => deleteNote(note.id)}
-                                    className="p-1.5 rounded-lg hover:bg-red-50 transition-colors text-on-surface-muted hover:text-red-500">
-                                    <Trash2 size={12} />
-                                  </button>
-                                </div>
-                              </div>
+                    {/* Notes section */}
+                    <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4">
+                      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                        <h3 className="font-display text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                          <StickyNote size={14} className="text-indigo-500" /> Notes
+                          {leadNoteItems.length > 0 && (
+                            <span className="px-1.5 py-0.5 rounded-full bg-indigo-50 font-label text-[10px] text-indigo-600">
+                              {leadNoteItems.length}
+                            </span>
+                          )}
+                        </h3>
+                        {leadTags.length > 0 && (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {filterTag && (
+                              <button onClick={() => setFilterTag(null)}
+                                className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-indigo-50 font-label text-[10px] text-indigo-600 hover:bg-indigo-100">
+                                <X size={8} /> Clear
+                              </button>
                             )}
+                            {leadTags.map((t) => (
+                              <button key={t} onClick={() => setFilterTag(filterTag === t ? null : t)}
+                                className={`px-2 py-0.5 rounded-full border font-label text-[10px] font-semibold transition-all ${filterTag === t ? "ring-2 ring-current ring-offset-1" : "opacity-60 hover:opacity-100"} bg-indigo-50 text-indigo-700 border-indigo-100`}>
+                                {t}
+                              </button>
+                            ))}
                           </div>
-                        ))}
+                        )}
                       </div>
-                    )}
-                  </div>
 
-                  {/* AI Call Summaries Section */}
-                  <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
-                    <h3 className="font-display text-base font-bold text-tertiary mb-4 flex items-center gap-2">
-                      <Phone size={15} className="text-secondary" /> Call Summaries
-                      {aiLogs.length > 0 && (
-                        <span className="px-1.5 py-0.5 rounded-full bg-tertiary/10 font-label text-[10px] text-tertiary">
-                          {aiLogs.length}
-                        </span>
+                      {filteredLeadNotes.length === 0 ? (
+                        <p className="font-body text-sm text-slate-400">
+                          {filterTag ? `No notes tagged "${filterTag}".` : "No notes yet for this lead."}
+                        </p>
+                      ) : viewMode === "grid" ? (
+                        <div className="columns-1 sm:columns-2 gap-4">
+                          {filteredLeadNotes.map((note) => (
+                            <NoteCard key={note.id} note={note} view="grid" {...editProps(note)} />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {filteredLeadNotes.map((note) => (
+                            <NoteCard key={note.id} note={note} view="list" {...editProps(note)} />
+                          ))}
+                        </div>
                       )}
-                    </h3>
-                    {aiLogs.length === 0 ? (
-                      <p className="font-body text-sm text-on-surface-muted">No AI summaries yet. They appear after calls are processed.</p>
-                    ) : (
-                      <div className="space-y-3">
-                        {aiLogs.map((log) => <AiSummaryCard key={log.id} log={log} />)}
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
+                    </div>
+
+                    {/* AI Call Summaries */}
+                    <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4">
+                      <h3 className="font-display text-sm font-extrabold text-slate-900 mb-4 flex items-center gap-2">
+                        <Phone size={14} className="text-indigo-500" /> Call Summaries
+                        {aiLogs.length > 0 && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-indigo-50 font-label text-[10px] text-indigo-600">
+                            {aiLogs.length}
+                          </span>
+                        )}
+                      </h3>
+                      {aiLogs.length === 0 ? (
+                        <p className="font-body text-sm text-slate-400">No AI summaries yet. They appear after calls are processed.</p>
+                      ) : (
+                        <div className="space-y-3">
+                          {aiLogs.map((log) => <AiSummaryCard key={log.id} log={log} />)}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

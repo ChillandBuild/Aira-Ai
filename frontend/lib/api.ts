@@ -115,6 +115,25 @@ export interface CallLog {
   leads?: { phone: string | null; name: string | null } | null;
 }
 
+export interface NoteWithLead {
+  id: string;
+  lead_id: string;
+  caller_id: string | null;
+  call_log_id: string | null;
+  content: string;
+  structured: {
+    course?: string;
+    budget?: string;
+    timeline?: string;
+    next_action?: string;
+    sentiment?: string;
+  };
+  is_pinned: boolean;
+  tags?: string[];
+  created_at: string;
+  leads: { id: string; name: string | null; phone: string; segment: string; score: number; assigned_to: string | null } | null;
+}
+
 export interface SegmentTemplate {
   id: string;
   segment: "A" | "B" | "C" | "D";
@@ -843,6 +862,8 @@ export const api = {
       apiFetch<{ data: { id: string; name: string | null; phone: string; score: number; segment: string; assigned_to: string | null }[] }>(
         `/api/v1/lead-notes/leads-with-activity`
       ),
+    all: () =>
+      apiFetch<{ data: NoteWithLead[] }>(`/api/v1/lead-notes/all`),
     update: (noteId: string, data: { content?: string; is_pinned?: boolean; tags?: string[] }) =>
       apiFetch<{ id: string; content: string; is_pinned: boolean; tags: string[] }>(
         `/api/v1/lead-notes/note/${noteId}`,

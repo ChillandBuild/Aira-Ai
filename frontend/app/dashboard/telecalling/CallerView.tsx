@@ -480,11 +480,11 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-transparent">
       {/* Main Split Layout */}
-      <div className="flex-1 grid grid-cols-12 gap-6 min-h-0 pb-4">
-        {/* Left Side: Lead List (5/12 columns) */}
-        <div className="col-span-5 flex flex-col gap-5 min-h-0 pr-1">
+      <div className="flex-1 grid grid-cols-12 gap-4 min-h-0 pb-4">
+        {/* Left Side: Lead List (4/12 columns) */}
+        <div className="col-span-4 flex flex-col gap-5 min-h-0 pr-1">
           {/* Lead List Card */}
-          <div className="flex-1 bg-slate-50 rounded-3xl p-6 shadow-sm border border-slate-200 flex flex-col min-h-0">
+          <div className="flex-1 bg-slate-50 rounded-3xl p-5 shadow-sm border border-slate-200 flex flex-col min-h-0">
             {/* Header / Title */}
             <div className="flex items-center justify-between mb-4 shrink-0">
               <div>
@@ -508,7 +508,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                 <button
                   onClick={handleCallNext}
                   disabled={dialingNext || myStatus !== "active"}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-indigo-600 to-indigo-755 text-white rounded-2xl font-label text-xs font-bold transition-all shadow-sm hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                  className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-2xl font-label text-xs font-bold transition-all shadow-sm hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
                   title="Call next hot lead in queue"
                 >
                   {dialingNext ? <RefreshCw size={12} className="animate-spin mr-1" /> : <Sparkles size={12} className="mr-1 fill-white text-white" />}
@@ -532,7 +532,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
             </div>
 
             {/* Tabs for To Call, Callbacks, In Prog, Closed, Manual Dial */}
-            <div className="flex gap-1.5 p-1 bg-slate-200/60 rounded-2xl shrink-0 mb-4">
+            <div className="flex gap-0.5 p-0.5 bg-slate-200/60 rounded-2xl shrink-0 mb-4">
               {[
                 { id: "new", label: `To Call (${newLeads.length})` },
                 { id: "callback", label: `Callbacks (${callbackLeads.length})` },
@@ -543,7 +543,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                 <button
                   key={tab.id}
                   onClick={() => setQueueSubTab(tab.id as typeof queueSubTab)}
-                  className={`flex-1 py-1.5 px-0.5 rounded-xl font-label text-[9.5px] font-extrabold text-center transition-all ${
+                  className={`flex-1 py-1.5 px-0 rounded-xl font-label text-[9.5px] font-extrabold text-center whitespace-nowrap transition-all ${
                     queueSubTab === tab.id
                       ? "bg-white text-orange-600 shadow-sm"
                       : "text-amber-700/70 hover:text-slate-800"
@@ -581,7 +581,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                 <p className="font-label text-xs text-slate-400 mt-1">Try switching tabs or adjusting your search query.</p>
               </div>
             ) : (
-              <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1">
                 {activeSubTabLeads.map((lead) => {
                   if (!lead) return null;
                   const isSelected = selectedLeadId === lead.id;
@@ -609,7 +609,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                     <div
                       key={lead.id}
                       onClick={() => setSelectedLeadId(lead.id)}
-                      className={`rounded-2xl border-y border-r border-l-[6px] transition-all duration-200 cursor-pointer p-4 flex items-center justify-between gap-3 ${borderAccent} ${
+                      className={`rounded-2xl border-y border-r border-l-[6px] transition-all duration-200 cursor-pointer p-3 flex items-center justify-between gap-3 ${borderAccent} ${
                         isSelected
                           ? "bg-gradient-to-r from-indigo-50/70 to-purple-50/20 border-indigo-200 shadow-[0_4px_15px_rgba(99,102,241,0.06)] ring-1 ring-indigo-500/10 translate-x-1"
                           : "bg-slate-50/30 border-slate-100 hover:bg-slate-50 hover:shadow-sm"
@@ -617,7 +617,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                     >
                       <div className="flex items-center gap-3 min-w-0 flex-1">
                         {/* Initial Circle Avatar */}
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-display text-sm font-bold text-white shrink-0 ${avatarBg}`}>
+                        <div className={`w-9 h-9 rounded-full flex items-center justify-center font-display text-xs font-bold text-white shrink-0 ${avatarBg}`}>
                           {lead.name ? lead.name.charAt(0).toUpperCase() : <User size={14} />}
                         </div>
 
@@ -636,14 +636,14 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                               <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded font-label text-[8px] font-black uppercase">CALLBACK</span>
                             )}
                           </div>
-                          <div className="flex items-center gap-1.5 mt-1">
+                          <div className="flex items-center gap-1.5 mt-0.5">
                             <p className="font-label text-xs text-slate-500">
                               {lead.name ? formatPhone(lead.phone) + " · " : ""}Score {lead.score}/10
                             </p>
                           </div>
-                          
+
                           {/* Third line showing action status/time */}
-                          <div className="flex items-center gap-1 text-[10px] text-slate-400 mt-1">
+                          <div className="flex items-center gap-1 text-[10px] text-slate-400 mt-0.5">
                             <Clock size={10} />
                             {lead.call_status === "callback" ? (
                               <span>Scheduled callback</span>
@@ -655,7 +655,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                           </div>
                         </div>
                       </div>
-                      
+
                       {/* Direct phone call button */}
                       <button
                         onClick={(e) => {
@@ -676,8 +676,8 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
           
         </div>
 
-        {/* Right Side: Detailed Profile Page (7/12 columns) */}
-        <div className="col-span-7 flex flex-col min-h-0 bg-slate-50 rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+        {/* Right Side: Detailed Profile Page (8/12 columns) */}
+        <div className="col-span-8 flex flex-col min-h-0 bg-slate-50 rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
           {/* Sticky call banner */}
           {activeCallCtx && (
             <div className="shrink-0 p-4 bg-slate-50 border-b border-slate-200">
