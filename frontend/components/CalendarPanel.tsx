@@ -122,8 +122,8 @@ export function CalendarPanel({ isOpen, onClose }: CalendarPanelProps) {
       <div 
         ref={panelRef}
         className={cn(
-          "fixed right-0 bottom-0 h-[90vh] w-[400px] bg-white/90 backdrop-blur-xl border-t border-l border-white/20 rounded-t-3xl shadow-2xl z-[70] transition-transform duration-500 ease-out flex flex-col",
-          isOpen ? "translate-y-0" : "translate-y-full"
+          "fixed right-0 top-0 h-full w-[400px] bg-white/90 backdrop-blur-xl border-l border-white/20 shadow-2xl z-[70] transition-transform duration-500 ease-out flex flex-col",
+          isOpen ? "translate-x-0" : "translate-x-full"
         )}
       >
         {/* Header */}
