@@ -134,7 +134,7 @@ export function CalendarPanel({ isOpen, onClose }: CalendarPanelProps) {
             </div>
             <div>
               <div className="font-display font-bold text-xl leading-none">
-                {`${String(currentTime.getHours()).padStart(2, "0")}:${String(currentTime.getMinutes()).padStart(2, "0")}`}
+                {currentTime.toLocaleTimeString("en-US", { hour12: false, hour: '2-digit', minute: '2-digit' })}
               </div>
               <div className="font-label text-[10px] uppercase tracking-widest text-ink-muted mt-1">
                 {currentTime.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}

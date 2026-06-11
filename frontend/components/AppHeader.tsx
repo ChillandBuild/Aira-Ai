@@ -4,28 +4,27 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { ProfileMenu } from "@/components/ProfileMenu";
 
 export function AppHeader({ onOpenCalendar }: { onOpenCalendar: () => void }) {
-  const [time, setTime] = useState("");
+  const [time, setTime] = useState<string>("");
 
   useEffect(() => {
-    const updateClock = () => {
+    const updateTime = () => {
       const now = new Date();
-      const hh = String(now.getHours()).padStart(2, "0");
-      const mm = String(now.getMinutes()).padStart(2, "0");
-      setTime(`${hh}:${mm}`);
+      setTime(now.toLocaleTimeString("en-US", { hour12: false, hour: '2-digit', minute: '2-digit' }));
     };
-    updateClock();
-    const timer = setInterval(updateClock, 1000);
-    return () => clearInterval(timer);
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
   }, []);
 
   return (
     <header className="sticky top-0 z-40 h-14 flex items-center justify-end gap-2.5 px-7 bg-background/80 backdrop-blur border-b border-slate-200/60">
       <button
         onClick={onOpenCalendar}
-        className="px-3.5 py-2 bg-white border border-slate-200/80 rounded-xl hover:bg-slate-50 hover:border-indigo-500 transition-all font-mono text-xs font-extrabold text-slate-700 shadow-sm flex items-center justify-center min-w-[65px]"
+        className="p-2.5 transition-all text-black font-bold text-lg hover:text-indigo-600 bg-transparent border-none"
         title="Schedule & Notes"
       >
         {time || "00:00"}
+        <span className="sr-only">Schedule & Notes</span>
       </button>
       <NotificationBell />
       <ProfileMenu />
