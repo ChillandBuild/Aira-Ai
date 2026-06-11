@@ -2,14 +2,17 @@
 import { toast } from "sonner";
 import { useEffect, useState } from "react";
 import {
-  Search, StickyNote, Plus, X, Phone, LayoutGrid, List as ListIcon, Pin, User,
+  Search, StickyNote, Plus, X, LayoutGrid, List as ListIcon, Pin, User, CalendarClock, RefreshCw, Sparkles,
 } from "lucide-react";
 import { api, Lead, CallLog, NoteWithLead } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import type { Note, NotesResponse } from "@/app/dashboard/telecalling/types";
-import { fetchNotes } from "@/app/dashboard/telecalling/lib/notes-api";
+import { fetchNotes, saveNote, createCallback } from "@/app/dashboard/telecalling/lib/notes-api";
 import NoteCard from "./components/NoteCard";
-import { AiSummaryCard, SEGMENT_COLORS, SEGMENT_LABELS, TagChip, TagSelector } from "./components/shared";
+import {
+  AiSummaryCard, SEGMENT_COLORS, SEGMENT_LABELS, TagChip, TagSelector,
+  dotColorFor, outcomeDotColor, scoreBadgeColor, TimelineItem,
+} from "./components/shared";
 
 type PageMode = "by_lead" | "all_notes";
 type ViewMode = "grid" | "list";
@@ -41,10 +44,14 @@ export default function NotesPage() {
   const [filterTag, setFilterTag] = useState<string | null>(null);
 
   // add note state
+  const [addTitle, setAddTitle] = useState("");
   const [addContent, setAddContent] = useState("");
   const [addPinned, setAddPinned] = useState(false);
   const [addTags, setAddTags] = useState<string[]>([]);
   const [adding, setAdding] = useState(false);
+  const [showCallbackPicker, setShowCallbackPicker] = useState(false);
+  const [callbackDate, setCallbackDate] = useState("");
+  const [callbackTime, setCallbackTime] = useState("");
 
   // edit note state (shared between By Lead notes & All Notes board)
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -133,23 +140,28 @@ export default function NotesPage() {
     }
   }
 
+  function composeAddContent() {
+    const title = addTitle.trim();
+    const body = addContent.trim();
+    return title ? `${title}\n\n${body}` : body;
+  }
+
   async function addNote() {
-    if (!selected || !addContent.trim()) return;
+    if (!selected) return;
+    const hasNote = addContent.trim().length > 0 || addTitle.trim().length > 0 || addTags.length > 0;
+    const hasCallback = showCallbackPicker && !!callbackDate && !!callbackTime;
+    if (!hasNote && !hasCallback) return;
     setAdding(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const { createClient } = await import("@/lib/supabase/client");
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      await fetch(`${apiUrl}/api/v1/lead-notes/${selected.id}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
-        },
-        body: JSON.stringify({ content: addContent.trim(), is_pinned: addPinned, tags: addTags }),
-      });
-      setAddContent(""); setAddPinned(false); setAddTags([]);
+      if (hasNote) {
+        await saveNote(selected.id, composeAddContent(), addPinned, addTags);
+      }
+      if (hasCallback) {
+        await createCallback(selected.id, new Date(`${callbackDate}T${callbackTime}`).toISOString(), composeAddContent());
+      }
+      setAddTitle(""); setAddContent(""); setAddPinned(false); setAddTags([]);
+      setShowCallbackPicker(false); setCallbackDate(""); setCallbackTime("");
+      toast.success(hasCallback ? "Callback scheduled" : "Note added");
       await refreshNotes();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to add note");
@@ -190,7 +202,9 @@ export default function NotesPage() {
     }
   }
 
-  const leadNoteItems = notes ? [...notes.pinned, ...notes.notes] : [];
+  // Auto-generated "AI Summary: ..." notes (linked to a call_log) live in the
+  // Summary section instead of mixing into the manual Notes timeline.
+  const leadNoteItems = notes ? [...notes.pinned, ...notes.notes].filter((n) => !n.call_log_id) : [];
   const filteredLeadNotes = filterTag
     ? leadNoteItems.filter((n: Note) => (n.tags ?? []).includes(filterTag))
     : leadNoteItems;
@@ -374,16 +388,29 @@ export default function NotesPage() {
             ) : (
               <>
                 {/* Lead header */}
-                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex items-center justify-between">
-                  <div>
-                    <h2 className="font-display text-lg font-extrabold text-slate-900">
-                      {selected.name || formatPhone(selected.phone)}
-                    </h2>
-                    <p className="font-label text-xs text-slate-500 mt-0.5">
-                      {selected.name ? formatPhone(selected.phone) + " · " : ""}Segment {selected.segment} · Score {selected.score}
-                    </p>
+                <div className="bg-gradient-to-r from-indigo-50 via-white to-white rounded-2xl border border-slate-200 p-5 shadow-sm flex items-center justify-between">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-500 text-white flex items-center justify-center font-display text-base font-bold shrink-0 shadow-sm">
+                      {selected.name ? selected.name.charAt(0).toUpperCase() : <User size={18} />}
+                    </div>
+                    <div className="min-w-0">
+                      <h2 className="font-display text-lg font-extrabold text-slate-900 truncate">
+                        {selected.name || formatPhone(selected.phone)}
+                      </h2>
+                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                        {selected.name && (
+                          <span className="font-label text-xs text-slate-500">{formatPhone(selected.phone)}</span>
+                        )}
+                        <span className={`px-1.5 py-0.5 rounded font-label text-[9px] font-black uppercase ${SEGMENT_COLORS[selected.segment]}`}>
+                          {SEGMENT_LABELS[selected.segment]}
+                        </span>
+                        <span className={`px-1.5 py-0.5 rounded font-label text-[9px] font-black ${scoreBadgeColor(selected.score)}`}>
+                          Score {selected.score}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <button onClick={() => setSelected(null)} className="p-2 rounded-lg hover:bg-slate-50 transition-colors text-slate-400">
+                  <button onClick={() => setSelected(null)} className="p-2 rounded-lg hover:bg-white transition-colors text-slate-400 shrink-0">
                     <X size={16} />
                   </button>
                 </div>
@@ -394,22 +421,38 @@ export default function NotesPage() {
                   <>
                     {/* Add note composer */}
                     <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3 shadow-sm">
+                      <h3 className="font-display text-xs font-black text-slate-800 tracking-widest uppercase flex items-center gap-1.5">
+                        <span className="w-5 h-5 rounded-lg bg-indigo-50 flex items-center justify-center">
+                          <Plus size={11} className="text-indigo-500" />
+                        </span>
+                        New Note
+                      </h3>
+                      <input
+                        type="text" value={addTitle} onChange={(e) => setAddTitle(e.target.value)}
+                        placeholder="Title (optional)"
+                        className="w-full px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 font-body text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                      />
                       <textarea
                         value={addContent} onChange={(e) => setAddContent(e.target.value)}
                         placeholder="Add a new note…" rows={3}
                         className="w-full px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 font-body text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
                       />
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <label className="flex items-center gap-2 cursor-pointer select-none">
-                            <input type="checkbox" checked={addPinned} onChange={(e) => setAddPinned(e.target.checked)} className="rounded" />
-                            <span className="font-label text-sm text-slate-500">Pin note</span>
-                          </label>
-                          <TagSelector selected={addTags} onChange={setAddTags} />
-                        </div>
-                        <button onClick={addNote} disabled={adding || !addContent.trim()}
-                          className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-xl font-label text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                          <Plus size={13} /> {adding ? "Saving…" : "Add Note"}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input type="checkbox" checked={addPinned} onChange={(e) => setAddPinned(e.target.checked)} className="rounded" />
+                          <span className="font-label text-sm text-slate-500">Pin note</span>
+                        </label>
+                        <TagSelector selected={addTags} onChange={setAddTags} />
+                        <button
+                          type="button"
+                          onClick={() => setShowCallbackPicker((v) => !v)}
+                          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-label text-xs font-semibold border transition-all ${
+                            showCallbackPicker
+                              ? "bg-amber-500 border-amber-500 text-white"
+                              : "bg-white border-amber-200 text-amber-700 hover:border-amber-400"
+                          }`}
+                        >
+                          <CalendarClock size={12} /> Schedule Call
                         </button>
                       </div>
                       {addTags.length > 0 && (
@@ -417,13 +460,47 @@ export default function NotesPage() {
                           {addTags.map((t) => <TagChip key={t} label={t} onRemove={() => setAddTags(addTags.filter((x) => x !== t))} />)}
                         </div>
                       )}
+                      {showCallbackPicker && (
+                        <div className="flex flex-col gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
+                          <h4 className="font-display text-[10px] font-black text-amber-700 tracking-widest uppercase flex items-center gap-1.5">
+                            <CalendarClock size={11} /> Schedule Call
+                          </h4>
+                          <div className="flex gap-2">
+                            <input
+                              type="date" value={callbackDate} onChange={(e) => setCallbackDate(e.target.value)}
+                              className="flex-1 px-2 py-1.5 rounded-lg border border-amber-200 bg-white font-body text-xs focus:outline-none focus:ring-2 focus:ring-amber-300"
+                            />
+                            <input
+                              type="time" value={callbackTime} onChange={(e) => setCallbackTime(e.target.value)}
+                              className="flex-1 px-2 py-1.5 rounded-lg border border-amber-200 bg-white font-body text-xs focus:outline-none focus:ring-2 focus:ring-amber-300"
+                            />
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex justify-end">
+                        <button
+                          onClick={addNote}
+                          disabled={
+                            adding ||
+                            (!addContent.trim() && !addTitle.trim() && addTags.length === 0 &&
+                              !(showCallbackPicker && callbackDate && callbackTime))
+                          }
+                          className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-xl font-label text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {adding ? <RefreshCw size={13} className="animate-spin" /> : <Plus size={13} />}
+                          {adding ? "Saving…" : showCallbackPicker ? "Schedule Callback" : "Add Note"}
+                        </button>
+                      </div>
                     </div>
 
                     {/* Notes section */}
                     <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4">
                       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                         <h3 className="font-display text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                          <StickyNote size={14} className="text-indigo-500" /> Notes
+                          <span className="w-6 h-6 rounded-lg bg-indigo-50 flex items-center justify-center">
+                            <StickyNote size={13} className="text-indigo-500" />
+                          </span>
+                          Notes
                           {leadNoteItems.length > 0 && (
                             <span className="px-1.5 py-0.5 rounded-full bg-indigo-50 font-label text-[10px] text-indigo-600">
                               {leadNoteItems.length}
@@ -452,27 +529,26 @@ export default function NotesPage() {
                         <p className="font-body text-sm text-slate-400">
                           {filterTag ? `No notes tagged "${filterTag}".` : "No notes yet for this lead."}
                         </p>
-                      ) : viewMode === "grid" ? (
-                        <div className="columns-1 sm:columns-2 gap-4">
-                          {filteredLeadNotes.map((note) => (
-                            <NoteCard key={note.id} note={note} view="grid" {...editProps(note)} />
-                          ))}
-                        </div>
                       ) : (
-                        <div className="space-y-2">
-                          {filteredLeadNotes.map((note) => (
-                            <NoteCard key={note.id} note={note} view="list" {...editProps(note)} />
+                        <div>
+                          {filteredLeadNotes.map((note, i) => (
+                            <TimelineItem key={note.id} color={dotColorFor(note)} isLast={i === filteredLeadNotes.length - 1}>
+                              <NoteCard note={note} view="list" {...editProps(note)} />
+                            </TimelineItem>
                           ))}
                         </div>
                       )}
                     </div>
 
-                    {/* AI Call Summaries */}
+                    {/* Summary (AI call summaries) */}
                     <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4">
                       <h3 className="font-display text-sm font-extrabold text-slate-900 mb-4 flex items-center gap-2">
-                        <Phone size={14} className="text-indigo-500" /> Call Summaries
+                        <span className="w-6 h-6 rounded-lg bg-purple-50 flex items-center justify-center">
+                          <Sparkles size={13} className="text-purple-500" />
+                        </span>
+                        Summary
                         {aiLogs.length > 0 && (
-                          <span className="px-1.5 py-0.5 rounded-full bg-indigo-50 font-label text-[10px] text-indigo-600">
+                          <span className="px-1.5 py-0.5 rounded-full bg-purple-50 font-label text-[10px] text-purple-600">
                             {aiLogs.length}
                           </span>
                         )}
@@ -480,8 +556,12 @@ export default function NotesPage() {
                       {aiLogs.length === 0 ? (
                         <p className="font-body text-sm text-slate-400">No AI summaries yet. They appear after calls are processed.</p>
                       ) : (
-                        <div className="space-y-3">
-                          {aiLogs.map((log) => <AiSummaryCard key={log.id} log={log} />)}
+                        <div>
+                          {aiLogs.map((log, i) => (
+                            <TimelineItem key={log.id} color={outcomeDotColor(log.outcome)} isLast={i === aiLogs.length - 1}>
+                              <AiSummaryCard log={log} />
+                            </TimelineItem>
+                          ))}
                         </div>
                       )}
                     </div>

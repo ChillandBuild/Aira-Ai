@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronUp, Plus, Tag, X } from "lucide-react";
 import { timeAgo } from "@/lib/utils";
 import type { CallLog } from "@/lib/api";
@@ -40,6 +40,76 @@ export function cardBgFor(note: { tags?: string[]; is_pinned: boolean }): string
   const tag = note.tags?.[0];
   if (tag && TAG_CARD_BG[tag]) return TAG_CARD_BG[tag];
   return DEFAULT_CARD_BG;
+}
+
+// Solid dot colors for the timeline rail, keyed by a note's first tag
+const TAG_DOT_COLOR: Record<string, string> = {
+  "Follow-up": "bg-blue-400",
+  "Important": "bg-red-400",
+  "Callback": "bg-amber-400",
+  "Pricing": "bg-purple-400",
+  "Visit": "bg-green-400",
+  "Brochure": "bg-teal-400",
+  "Not interested": "bg-slate-400",
+  "Hot lead": "bg-orange-400",
+};
+
+export function dotColorFor(note: { tags?: string[]; is_pinned: boolean }): string {
+  if (note.is_pinned) return "bg-amber-400";
+  const tag = note.tags?.[0];
+  if (tag && TAG_DOT_COLOR[tag]) return TAG_DOT_COLOR[tag];
+  return "bg-indigo-400";
+}
+
+// ─── Score pill ─────────────────────────────────────────────────────────────────
+export function scoreBadgeColor(score: number): string {
+  if (score >= 7) return "bg-emerald-50 text-emerald-600";
+  if (score >= 4) return "bg-amber-50 text-amber-600";
+  return "bg-rose-50 text-rose-600";
+}
+
+// ─── Call outcome → dot color ───────────────────────────────────────────────────
+const OUTCOME_DOT_COLOR: Record<string, string> = {
+  converted: "bg-emerald-400",
+  not_interested: "bg-rose-400",
+  no_answer: "bg-slate-400",
+  do_not_call: "bg-red-400",
+  unreachable: "bg-gray-400",
+};
+
+export function outcomeDotColor(outcome?: string | null): string {
+  return (outcome && OUTCOME_DOT_COLOR[outcome]) || "bg-indigo-400";
+}
+
+const OUTCOME_BADGE_COLOR: Record<string, string> = {
+  converted: "bg-emerald-50 text-emerald-600",
+  not_interested: "bg-rose-50 text-rose-600",
+  no_answer: "bg-slate-100 text-slate-500",
+  do_not_call: "bg-red-50 text-red-600",
+  unreachable: "bg-gray-100 text-gray-500",
+};
+
+export function outcomeBadgeColor(outcome?: string | null): string {
+  return (outcome && OUTCOME_BADGE_COLOR[outcome]) || "bg-indigo-50 text-indigo-600";
+}
+
+// ─── Timeline rail ───────────────────────────────────────────────────────────────
+export function TimelineItem({
+  color = "bg-indigo-400",
+  isLast = false,
+  children,
+}: {
+  color?: string;
+  isLast?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className="relative pl-6 pb-3 last:pb-0">
+      {!isLast && <span className="absolute left-[4.5px] top-3 bottom-0 w-px bg-slate-200" />}
+      <span className={`absolute left-0 top-2 w-[11px] h-[11px] rounded-full ring-4 ring-white ${color}`} />
+      {children}
+    </div>
+  );
 }
 
 // ─── Segment badges ────────────────────────────────────────────────────────────
@@ -145,23 +215,25 @@ export function AiSummaryCard({ log }: { log: CallLog }) {
   if (!s) return null;
   const fields = Object.entries(s).filter(([, v]) => v);
   return (
-    <div className="p-4 bg-white rounded-2xl border border-slate-200">
-      <div className="flex items-center justify-between">
+    <div className="p-4 bg-white rounded-2xl border border-slate-200 border-l-4 border-l-indigo-200 shadow-sm hover:shadow-md transition-shadow">
+      <div className="flex items-center justify-between gap-2">
         <div>
           <p className="font-label text-xs font-semibold text-slate-700">
             {timeAgo(log.created_at)}
             {log.duration_seconds != null && ` · ${log.duration_seconds}s`}
           </p>
-          <p className="font-label text-xs text-slate-400 capitalize mt-0.5">
-            {log.status}{log.outcome ? ` · ${log.outcome.replace("_", " ")}` : ""}
-          </p>
+          {log.outcome && (
+            <span className={`inline-block mt-1 px-2 py-0.5 rounded-full font-label text-[10px] font-bold uppercase tracking-wide capitalize ${outcomeBadgeColor(log.outcome)}`}>
+              {log.outcome.replace("_", " ")}
+            </span>
+          )}
         </div>
-        <button onClick={() => setOpen((v) => !v)} className="p-1 rounded hover:bg-slate-100 transition-colors text-slate-400">
+        <button onClick={() => setOpen((v) => !v)} className="p-1.5 rounded-lg hover:bg-indigo-50 transition-colors text-slate-400 hover:text-indigo-500 shrink-0">
           {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
       </div>
       {open && (
-        <div className="mt-3 space-y-1.5">
+        <div className="mt-3 space-y-1.5 pt-3 border-t border-slate-100">
           {fields.map(([k, v]) => (
             <p key={k} className="font-body text-xs text-slate-600">
               <span className="font-semibold text-slate-800 capitalize">{k.replace("_", " ")}:</span> {v}
