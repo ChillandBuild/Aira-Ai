@@ -210,7 +210,7 @@ export default function NotesPage() {
   const filteredLeadNotes = filterTag
     ? leadNoteItems.filter((n: Note) => (n.tags ?? []).includes(filterTag))
     : leadNoteItems;
-  const aiLogs = callLogs.filter((l) => l.ai_summary);
+  const aiLogs = callLogs.filter((l) => l.ai_summary || l.recording_url);
   const leadTags = Array.from(new Set(leadNoteItems.flatMap((n: Note) => n.tags ?? [])));
 
   const boardTags = Array.from(new Set(allNotes.flatMap((n) => n.tags ?? [])));
@@ -523,6 +523,9 @@ export default function NotesPage() {
                               <AiSummaryCard
                                 log={log}
                                 prevSummary={aiLogs[i + 1]?.ai_summary ?? undefined}
+                                onGenerated={(updated) =>
+                                  setCallLogs((logs) => logs.map((l) => (l.id === updated.id ? { ...l, ...updated } : l)))
+                                }
                               />
                             </TimelineItem>
                           ))}

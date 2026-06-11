@@ -98,7 +98,7 @@ export interface CallLog {
   lead_id: string | null;
   call_sid: string | null;
   duration_seconds: number | null;
-  outcome: "converted" | "callback" | "not_interested" | "no_answer" | "do_not_call" | "do_not_contact" | null;
+  outcome: "converted" | "callback" | "not_interested" | "no_answer" | "do_not_call" | "do_not_contact" | "in_progress" | null;
   disposition: string | null;
   recording_url: string | null;
   score: number | null;
@@ -857,6 +857,8 @@ export const api = {
       apiFetch<{ deleted: boolean }>(`/api/v1/calls/${callLogId}`, { method: "DELETE" }),
     getLog: (callLogId: string) =>
       apiFetch<CallLog>(`/api/v1/calls/${callLogId}`),
+    generateSummary: (callLogId: string) =>
+      apiFetch<CallLog>(`/api/v1/calls/${callLogId}/generate-summary`, { method: "POST" }),
     getPendingWrapups: () =>
       apiFetch<CallLog[]>(`/api/v1/calls/pending-wrapups`),
     nextLead: (callerId?: string) =>

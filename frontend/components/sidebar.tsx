@@ -32,6 +32,7 @@ const TELECALLING_ITEMS: NavItem[] = [
 function LogoutButton() {
   const router = useRouter();
   async function handleLogout() {
+    if (!confirm("Are you sure you want to sign out?")) return;
     clearRoleCache();
     // Set telecaller status to logged_out before signing out
     try {

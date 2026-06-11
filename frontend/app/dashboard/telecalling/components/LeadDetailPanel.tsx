@@ -447,6 +447,7 @@ export default function LeadDetailPanel({
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     { id: "converted", label: "✓ Converted", style: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" },
+                    { id: "in_progress", label: "In Progress", style: "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100" },
                     { id: "not_interested", label: "Not Interested", style: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50" },
                     { id: "no_answer", label: "No Answer", style: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50" },
                     { id: "do_not_call", label: "Do Not Call", style: "border-red-200 bg-red-50 text-red-700 hover:bg-red-100" },

@@ -1,8 +1,8 @@
 "use client";
 import { useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronUp, Plus, Tag, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, RefreshCw, Sparkles, Tag, X } from "lucide-react";
 import { formatDateTime } from "@/lib/utils";
-import type { CallLog } from "@/lib/api";
+import { api, type CallLog } from "@/lib/api";
 
 // ─── Tag system ───────────────────────────────────────────────────────────────
 export const PRESET_TAGS = [
@@ -268,19 +268,63 @@ const PLAYBACK_RATES = [1, 1.25, 1.5, 2];
 export function AiSummaryCard({
   log,
   prevSummary,
+  onGenerated,
 }: {
   log: CallLog;
   prevSummary?: CallLog["ai_summary"];
+  onGenerated?: (updated: CallLog) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [rate, setRate] = useState(1);
+  const [generating, setGenerating] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const s = log.ai_summary;
-  if (!s) return null;
 
   function setPlaybackRate(r: number) {
     setRate(r);
     if (audioRef.current) audioRef.current.playbackRate = r;
+  }
+
+  async function generateSummary() {
+    setGenerating(true);
+    try {
+      const updated = await api.calls.generateSummary(log.id);
+      onGenerated?.(updated);
+    } catch {
+      // surfaced via disabled state reverting; caller can retry
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  if (!s) {
+    if (!log.recording_url) return null;
+    return (
+      <div className="p-4 bg-white rounded-2xl border border-slate-200 border-l-4 border-l-slate-200 shadow-sm">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <p className="font-label text-xs font-semibold text-slate-700">
+              {formatDateTime(log.created_at)}
+              {log.duration_seconds != null && ` · ${log.duration_seconds}s`}
+            </p>
+            {log.outcome && (
+              <span className={`inline-block mt-1 px-2 py-0.5 rounded-full font-label text-[10px] font-bold uppercase tracking-wide capitalize ${outcomeBadgeColor(log.outcome)}`}>
+                {log.outcome.replace("_", " ")}
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={generateSummary}
+            disabled={generating}
+            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-label text-[10px] font-extrabold disabled:opacity-60 transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap"
+          >
+            {generating ? <RefreshCw size={11} className="animate-spin" /> : <Sparkles size={11} />}
+            {generating ? "Generating…" : "Generate Summary"}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (

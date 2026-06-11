@@ -72,11 +72,9 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
   const [showWrapupModal, setShowWrapupModal] = useState(false);
   const [wrapupOutcome, setWrapupOutcome] = useState<string>("");
   const [wrapupNotes, setWrapupNotes] = useState<string>("");
-  const [wrapupCallbackTime, setWrapupCallbackTime] = useState<string>("");
   const [wrapupSaving, setWrapupSaving] = useState(false);
   const [wrapupTags, setWrapupTags] = useState<string[]>([]);
   const [wrapupQualityRating, setWrapupQualityRating] = useState(0);
-  const [wrapupAiSummary, setWrapupAiSummary] = useState<CallLog["ai_summary"] | null>(null);
 
   // Blocking Pending-Wrapups list
   const [pendingWrapups, setPendingWrapups] = useState<CallLog[]>([]);
@@ -201,21 +199,6 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
 
     return () => clearInterval(pollInterval);
   }, [activeCallCtx, loadData, setActiveCallCtx]);
-
-  // Poll for the AI call summary while the wrap-up modal is open — it's generated
-  // by a background task after the recording is processed, so it may not be ready yet.
-  useEffect(() => {
-    if (!showWrapupModal || !activeCallCtx?.callLogId || wrapupAiSummary) return;
-    const interval = setInterval(async () => {
-      try {
-        const log = await api.calls.getLog(activeCallCtx.callLogId!);
-        if (log.ai_summary) setWrapupAiSummary(log.ai_summary);
-      } catch (err) {
-        console.error("Error polling AI summary:", err);
-      }
-    }, 4000);
-    return () => clearInterval(interval);
-  }, [showWrapupModal, activeCallCtx?.callLogId, wrapupAiSummary]);
 
   // Call duration timer
   useEffect(() => {
@@ -435,17 +418,12 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       toast.error("Outcome is required");
       return;
     }
-    if (wrapupOutcome === "callback" && !wrapupCallbackTime) {
-      toast.error("Callback time is required");
-      return;
-    }
     setWrapupSaving(true);
     try {
       await api.calls.setOutcome(
         activeCallCtx.callLogId,
         wrapupOutcome as NonNullable<CallLog["outcome"]>,
         {
-          callbackTime: wrapupCallbackTime ? new Date(wrapupCallbackTime).toISOString() : undefined,
           notes: wrapupNotes.trim() || undefined,
           qualityRating: wrapupQualityRating || undefined,
         }
@@ -461,10 +439,8 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       setShowWrapupModal(false);
       setWrapupOutcome("");
       setWrapupNotes("");
-      setWrapupCallbackTime("");
       setWrapupTags([]);
       setWrapupQualityRating(0);
-      setWrapupAiSummary(null);
       setActiveCallCtx(null);
       loadData();
     } catch (err) {
@@ -476,18 +452,6 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
 
   const toggleWrapupTag = (tag: string) => {
     setWrapupTags((tags) => (tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag]));
-  };
-
-  const applyAiSummary = () => {
-    if (!wrapupAiSummary) return;
-    const lines = [
-      wrapupAiSummary.sentiment && `Sentiment: ${wrapupAiSummary.sentiment}`,
-      wrapupAiSummary.course && `Course interest: ${wrapupAiSummary.course}`,
-      wrapupAiSummary.budget && `Budget: ${wrapupAiSummary.budget}`,
-      wrapupAiSummary.timeline && `Timeline: ${wrapupAiSummary.timeline}`,
-      wrapupAiSummary.next_action && `Next action: ${wrapupAiSummary.next_action}`,
-    ].filter(Boolean);
-    setWrapupNotes(lines.join("\n"));
   };
 
   const handleQuickOutcome = async (outcome: string) => {
@@ -884,14 +848,14 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setWrapupOutcome("callback")}
+                    onClick={() => setWrapupOutcome("in_progress")}
                     className={`px-3 py-2.5 rounded-xl font-label text-xs font-bold border transition-all text-center ${
-                      wrapupOutcome === "callback"
+                      wrapupOutcome === "in_progress"
                         ? "bg-indigo-600 border-indigo-600 text-white"
                         : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
                     }`}
                   >
-                    Callback Scheduled
+                    In Progress
                   </button>
                   <button
                     type="button"
@@ -939,36 +903,6 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                   </button>
                 </div>
               </div>
-
-              {wrapupOutcome === "callback" && (
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
-                  <p className="font-label text-[10px] text-amber-800 uppercase font-black tracking-widest block">
-                    Schedule Next Callback Time
-                  </p>
-                  <input
-                    type="datetime-local"
-                    value={wrapupCallbackTime}
-                    onChange={(e) => setWrapupCallbackTime(e.target.value)}
-                    min={new Date().toISOString().slice(0, 16)}
-                    className="w-full px-3 py-2 rounded-xl bg-white border border-amber-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all"
-                  />
-                </div>
-              )}
-
-              {wrapupAiSummary && (
-                <div className="bg-orange-50 border border-orange-200 rounded-2xl p-3 flex items-center justify-between gap-3">
-                  <p className="font-label text-[10px] text-orange-700 font-bold flex items-center gap-1.5">
-                    <Sparkles size={12} className="text-orange-500" /> AI call summary is ready
-                  </p>
-                  <button
-                    type="button"
-                    onClick={applyAiSummary}
-                    className="px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-label text-[10px] font-extrabold transition-all shadow-sm whitespace-nowrap"
-                  >
-                    Use AI Summary
-                  </button>
-                </div>
-              )}
 
               <div>
                 <label className="font-label text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block mb-1.5">

@@ -405,7 +405,7 @@ async def _process_telecmi_recording(call_log_id: str, recording_url: str) -> No
 _SKIP_OUTCOMES = {"no_answer", "voicemail"}
 
 
-async def _run_summarization(call_log_id: str, recording_url: str) -> None:
+async def _run_summarization(call_log_id: str, recording_url: str, force: bool = False) -> None:
     try:
         db = get_supabase()
 
@@ -420,7 +420,7 @@ async def _run_summarization(call_log_id: str, recording_url: str) -> None:
         call_data = (call_row.data or {})
         outcome = call_data.get("outcome")
 
-        if outcome in _SKIP_OUTCOMES:
+        if not force and outcome in _SKIP_OUTCOMES:
             logger.info(f"Skipping AI analysis for {call_log_id}: outcome={outcome}")
             return
 
@@ -490,13 +490,20 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depe
     if not payload.outcome and not payload.disposition:
         raise HTTPException(status_code=400, detail="Provide an outcome or a disposition")
 
-    if payload.outcome not in ("converted", "callback", "not_interested", "no_answer", "do_not_call", "do_not_contact", None):
+    if payload.outcome not in ("converted", "callback", "not_interested", "no_answer", "do_not_call", "do_not_contact", "in_progress", None):
         raise HTTPException(status_code=400, detail="Invalid outcome value")
 
     # Intercept DNC outcomes to handle them as lead-level actions
     dnc_outcome = None
     if payload.outcome in ("do_not_call", "do_not_contact"):
         dnc_outcome = payload.outcome
+        payload.outcome = None
+        payload.disposition = "answered"
+
+    # "in_progress" is a call_status, not a call_logs.outcome (CHECK-constrained) —
+    # record it as an "answered" disposition with no business outcome.
+    in_progress = payload.outcome == "in_progress"
+    if in_progress:
         payload.outcome = None
         payload.disposition = "answered"
 
@@ -523,7 +530,7 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depe
         new_caller_score = recompute_caller_score(log.data["caller_id"], db)
 
     lead_id = log.data.get("lead_id")
-    if lead_id and (effective_outcome is not None or dnc_outcome is not None):
+    if lead_id and (effective_outcome is not None or dnc_outcome is not None or in_progress):
         lead = (
             db.table("leads")
             .select("segment,phone,ai_enabled,converted_at,tenant_id,assigned_to")
@@ -543,6 +550,8 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depe
                 lead_updates["do_not_call"] = True
                 lead_updates["opted_out"] = True
                 lead_updates["call_status"] = "dnc"
+            elif in_progress:
+                lead_updates["call_status"] = "in_progress"
             elif effective_outcome == "converted":
                 lead_updates["call_status"] = "converted"
                 lead_updates["converted_at"] = datetime.now(timezone.utc).isoformat()
@@ -587,13 +596,15 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depe
                 to_segment=lead_data.get("segment"),
                 event_type=event_type,
                 metadata={
-                    "outcome": dnc_outcome or effective_outcome,
+                    "outcome": dnc_outcome or ("in_progress" if in_progress else effective_outcome),
                     "disposition": payload.disposition,
                     "call_status": lead_updates.get("call_status"),
                 },
                 tenant_id=lead_data.get("tenant_id"),
                 db=db,
             )
+
+            outcome_reason = "in_progress" if in_progress else effective_outcome
 
             if dnc_outcome is not None:
                 # Explicitly cancel all pending follow-up jobs
@@ -608,7 +619,7 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depe
                     phone=lead_data.get("phone"),
                     converted_at=lead_data.get("converted_at"),
                     ai_enabled=lead_data.get("ai_enabled", True),
-                    reason=f"call_{effective_outcome}",
+                    reason=f"call_{outcome_reason}",
                     tenant_id=lead_data.get("tenant_id"),
                     db=db,
                 )
@@ -623,7 +634,7 @@ async def set_outcome(call_log_id: str, payload: OutcomeUpdate, ctx: dict = Depe
                 maybe_assign_lead(
                     str(lead_id), ctx["tenant_id"],
                     lead_data.get("segment"), None,
-                    reason=f"call_{effective_outcome}",
+                    reason=f"call_{outcome_reason}",
                 )
 
             linked_job_id = log.data.get("follow_up_job_id")
@@ -715,6 +726,36 @@ async def backfill_summaries(background_tasks: BackgroundTasks, limit: int = Que
         background_tasks.add_task(_run_summarization, row["id"], row["recording_url"])
 
     return {"queued": len(rows)}
+
+
+@router.post("/{call_log_id}/generate-summary")
+async def generate_summary(call_log_id: str, ctx: dict = Depends(get_tenant_and_role)):
+    """On-demand AI summary (re)generation from a call's recording."""
+    db = get_supabase()
+    log = (
+        db.table("call_logs")
+        .select("recording_url")
+        .eq("id", call_log_id)
+        .eq("tenant_id", ctx["tenant_id"])
+        .maybe_single()
+        .execute()
+    )
+    if not log.data:
+        raise HTTPException(status_code=404, detail="Call log not found")
+    if not log.data.get("recording_url"):
+        raise HTTPException(status_code=400, detail="No recording available for this call")
+
+    await _run_summarization(call_log_id, log.data["recording_url"], force=True)
+
+    result = (
+        db.table("call_logs")
+        .select("*")
+        .eq("id", call_log_id)
+        .eq("tenant_id", ctx["tenant_id"])
+        .maybe_single()
+        .execute()
+    )
+    return result.data
 
 
 @router.get("/next-lead")
