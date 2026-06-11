@@ -374,7 +374,7 @@ export function AiSummaryCard({
           {(Object.keys(SUMMARY_FIELD_LABELS) as Array<keyof typeof SUMMARY_FIELD_LABELS>).map((k) => {
             let v = s[k];
             if (k === "course" && !v) {
-              v = (s as any).product;
+              v = s.product;
             }
             if (!v) return null;
             const prev = prevSummary?.[k];

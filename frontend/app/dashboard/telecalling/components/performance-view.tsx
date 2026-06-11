@@ -746,8 +746,8 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
                   {item.ai_summary && (
                     <div className="bg-white/80 p-3 rounded-xl border border-slate-200/50 text-[11px] leading-relaxed text-slate-600 space-y-1">
                       {item.ai_summary.brief && <p><span className="font-bold text-slate-800">Brief:</span> {item.ai_summary.brief}</p>}
-                      {(item.ai_summary.course || (item.ai_summary as any).product) && (
-                        <p><span className="font-bold text-slate-800">Course Interest:</span> {item.ai_summary.course || (item.ai_summary as any).product}</p>
+                      {(item.ai_summary.course || item.ai_summary.product) && (
+                        <p><span className="font-bold text-slate-800">Course Interest:</span> {item.ai_summary.course || item.ai_summary.product}</p>
                       )}
                       <p><span className="font-bold text-slate-800">Summary:</span> Next Action: {item.ai_summary.next_action || "\u2014"}</p>
                       {item.ai_summary.budget && <p><span className="font-bold text-slate-800">Budget:</span> {item.ai_summary.budget}</p>}
