@@ -340,6 +340,19 @@ async def _process_callback_reassignments() -> None:
                         f"Callback reassignment (PULL release): job={job['id']} lead={job['lead_id']} "
                         f"from={current_caller_id}"
                     )
+                    try:
+                        from app.services.notify import notify_pool
+                        notify_pool(
+                            tid,
+                            "callback_claimable",
+                            "Callback available to claim",
+                            f"Callback for '{lead_name}' is unassigned and ready to claim.",
+                            db=db,
+                            segments=cfg.get("segments"),
+                            exclude_user_ids=[caller.data["user_id"]] if (caller and caller.data and caller.data.get("user_id")) else None,
+                        )
+                    except Exception:
+                        pass
                     continue
 
                 # Caller unavailable and not claimed via the claim board. Escalate immediately.
@@ -373,6 +386,18 @@ async def _process_callback_reassignments() -> None:
                         "title": "Missed Callback Alert",
                         "message": f"Callback for '{lead_name}' was missed because '{old_caller_name}' was unavailable and not claimed via the board."
                     }).execute()
+
+                try:
+                    from app.services.notify import notify_pool
+                    notify_pool(
+                        tid,
+                        "callback_claimable",
+                        "Callback needs attention",
+                        f"Callback for '{lead_name}' was missed and is open in the pool.",
+                        db=db,
+                    )
+                except Exception:
+                    pass
 
                 logger.info(f"Callback missed escalation (not claimed via board): job={job['id']} lead={job['lead_id']}")
 
