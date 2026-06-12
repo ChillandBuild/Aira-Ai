@@ -8,6 +8,7 @@ import {
 import { api, TeamMember, Caller, TimelineEvent, CallLog } from "@/lib/api";
 import { useAuthRole } from "../contexts/AuthRoleContext";
 import { format, differenceInSeconds, subDays, startOfDay, isSameDay } from "date-fns";
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 
 import AssignmentLog from "../telecalling/components/assignment-log";
 import PerformanceView from "../telecalling/components/performance-view";
@@ -66,8 +67,6 @@ function formatDuration(seconds: number): string {
 function initials(name: string): string {
   return name.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "UN";
 }
-
-const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /* ──────────────────────────── InlineEditCell ──────────────────────────── */
 function InlineEditCell({
@@ -182,22 +181,23 @@ function TeamProfilePanel({ callerId, callerName }: { callerId: string, callerNa
     return +(scored.reduce((s, l) => s + (l.score ?? 0), 0) / scored.length).toFixed(1);
   }, [callLogs]);
 
-  const weeklyData = useMemo(() => {
-    const days: { label: string; count: number; dateStr: string }[] = [];
+  const dailyTrend = useMemo(() => {
+    const days: { label: string; dateStr: string; calls: number; converted: number }[] = [];
     const now = new Date();
-    for (let i = 6; i >= 0; i--) {
+    for (let i = 13; i >= 0; i--) {
       const d = subDays(now, i);
-      days.push({ label: DAY_LABELS[d.getDay()], dateStr: format(d, "yyyy-MM-dd"), count: 0 });
+      days.push({ label: format(d, "MMM d"), dateStr: format(d, "yyyy-MM-dd"), calls: 0, converted: 0 });
     }
     callLogs.forEach((log) => {
       const logDate = startOfDay(new Date(log.created_at));
       const match = days.find((d) => isSameDay(new Date(d.dateStr), logDate));
-      if (match) match.count++;
+      if (match) {
+        match.calls++;
+        if (log.outcome === "converted") match.converted++;
+      }
     });
     return days;
   }, [callLogs]);
-
-  const maxWeekly = useMemo(() => Math.max(...weeklyData.map((d) => d.count), 1), [weeklyData]);
 
   const outcomeBreakdown = useMemo(() => {
     const map: Record<string, number> = {};
@@ -208,19 +208,6 @@ function TeamProfilePanel({ callerId, callerName }: { callerId: string, callerNa
     return map;
   }, [callLogs]);
   const outcomeTotal = useMemo(() => Object.values(outcomeBreakdown).reduce((a, b) => a + b, 0), [outcomeBreakdown]);
-  const conicGradient = useMemo(() => {
-    if (outcomeTotal === 0) return "conic-gradient(#e2e8f0 0% 100%)";
-    const entries = Object.entries(outcomeBreakdown);
-    const segments: string[] = [];
-    let cumulative = 0;
-    entries.forEach(([key, count]) => {
-      const pct = (count / outcomeTotal) * 100;
-      const color = OUTCOME_COLORS[key] ?? "#a78bfa";
-      segments.push(`${color} ${cumulative}% ${cumulative + pct}%`);
-      cumulative += pct;
-    });
-    return `conic-gradient(${segments.join(", ")})`;
-  }, [outcomeBreakdown, outcomeTotal]);
 
   const timeDist = useMemo(() => {
     if (!summary) return { active: 0, breakPct: 0, idle: 0 };
@@ -357,23 +344,18 @@ function TeamProfilePanel({ callerId, callerName }: { callerId: string, callerNa
         <div className="card p-5">
           <div className="flex items-center gap-2 mb-4">
             <BarChart3 size={14} className="text-amber-600" />
-            <h3 className="font-display font-semibold text-ink text-xs">Call Volume — Last 7 Days</h3>
+            <h3 className="font-display font-semibold text-ink text-xs">Calls vs Conversions — Last 14 Days</h3>
           </div>
-          <div className="flex items-end justify-between gap-1.5 h-28">
-            {weeklyData.map((d) => (
-              <div key={d.dateStr} className="flex-1 flex flex-col items-center gap-1">
-                <span className="text-[9px] font-label text-ink-muted">{d.count || ""}</span>
-                <div className="w-full max-w-[20px] flex justify-center">
-                  <div className="w-full rounded-t-md transition-all duration-500"
-                    style={{
-                      height: d.count > 0 ? `${(d.count / maxWeekly) * 80}px` : "3px",
-                      background: d.count > 0 ? "linear-gradient(to top, #f59e0b, #f97316)" : "#e2e8f0",
-                    }} />
-                </div>
-                <span className="text-[9px] font-label text-ink-muted mt-1">{d.label.slice(0, 2)}</span>
-              </div>
-            ))}
-          </div>
+          <ResponsiveContainer width="100%" height={180}>
+            <LineChart data={dailyTrend} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
+              <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#a1a1aa" }} interval={1} />
+              <YAxis tick={{ fontSize: 10, fill: "#a1a1aa" }} allowDecimals={false} />
+              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e4e4e7" }} />
+              <Line type="monotone" dataKey="calls" stroke="#f59e0b" strokeWidth={2} dot={false} name="Calls" />
+              <Line type="monotone" dataKey="converted" stroke="#10b981" strokeWidth={2} dot={false} name="Converted" />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
 
         <div className="card p-5">
@@ -381,27 +363,29 @@ function TeamProfilePanel({ callerId, callerName }: { callerId: string, callerNa
             <Activity size={14} className="text-emerald-600" />
             <h3 className="font-display font-semibold text-ink text-xs">Outcome Breakdown</h3>
           </div>
-          <div className="flex flex-row items-center gap-6">
-            <div className="relative w-24 h-24 flex-shrink-0">
-              <div className="w-full h-full rounded-full" style={{ background: conicGradient }} />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-14 h-14 rounded-full bg-white dark:bg-slate-900 flex items-center justify-center shadow-inner">
-                  <span className="font-display text-base font-bold text-ink">{outcomeTotal}</span>
-                </div>
-              </div>
-            </div>
-            <div className="flex flex-col gap-1.5 flex-1">
-              {Object.entries(outcomeBreakdown).map(([key, count]) => (
-                <div key={key} className="flex items-center justify-between gap-1.5">
-                  <div className="flex items-center gap-1.5">
-                     <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: OUTCOME_COLORS[key] ?? "#a78bfa" }} />
-                     <span className="text-[10px] font-label text-ink-muted truncate max-w-[90px]">{OUTCOME_LABELS[key] ?? key}</span>
+          {outcomeTotal === 0 ? (
+            <p className="text-center py-4 text-[11px] text-ink-muted font-body">No calls logged yet.</p>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              {Object.entries(outcomeBreakdown).map(([key, count]) => {
+                const pct = Math.round((count / outcomeTotal) * 100);
+                return (
+                  <div key={key}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] font-label text-ink-muted">{OUTCOME_LABELS[key] ?? key}</span>
+                      <span className="text-[11px] font-label text-ink font-semibold">{count} ({pct}%)</span>
+                    </div>
+                    <div className="w-full bg-surface-subtle h-2 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${pct}%`, backgroundColor: OUTCOME_COLORS[key] ?? "#a78bfa" }}
+                      />
+                    </div>
                   </div>
-                  <span className="text-[10px] font-label text-ink">{count}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
-          </div>
+          )}
         </div>
       </div>
 
