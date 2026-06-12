@@ -1,6 +1,6 @@
 "use client";
 import { toast } from "sonner";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -580,6 +580,7 @@ export default function OutboundLeadsPage() {
 
   const [broadcastHistory, setBroadcastHistory] = useState<BroadcastHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyRefreshing, setHistoryRefreshing] = useState(false);
   const [historySearch, setHistorySearch] = useState("");
   const [historyStatusFilter, setHistoryStatusFilter] = useState<"all" | "failures" | "clean">("all");
   const [activeTab, setActiveTab] = useState<"upload" | "history" | "tags">("upload");
@@ -600,6 +601,29 @@ export default function OutboundLeadsPage() {
     return matchesSearch && matchesFilter;
   });
   
+  // Re-count delivery metrics live from the DB, then refresh the list in place.
+  // Silent (no full-list spinner) so cards update without flicker.
+  const refreshHistory = useCallback(async () => {
+    setHistoryRefreshing(true);
+    try {
+      const auth = await getAuthHeaders();
+      await fetch(`${API_URL}/api/v1/upload/history/refresh`, { method: "POST", headers: auth });
+      const r = await fetch(`${API_URL}/api/v1/upload/history`, { headers: auth });
+      const res: { data: BroadcastHistoryItem[] } = await r.json();
+      setBroadcastHistory(res.data || []);
+    } catch {
+      // best-effort — keep showing the last known numbers
+    } finally {
+      setHistoryRefreshing(false);
+    }
+  }, []);
+
+  // Auto-refresh to live numbers whenever the History tab is opened, so the cards
+  // are never a stale snapshot. The mount fetch already showed the snapshot instantly.
+  useEffect(() => {
+    if (activeTab === "history") refreshHistory();
+  }, [activeTab, refreshHistory]);
+
   // Supabase client for realtime updates
   // Realtime subscription for message status updates
   useEffect(() => {
@@ -627,7 +651,7 @@ export default function OutboundLeadsPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [activeTab, tagsLoaded, tagsListLoading]);
+  }, [activeTab, tagsLoaded, tagsListLoading, refreshHistory]);
 
   usePolling(() => {
     if (activeTab === "tags") loadTags();
@@ -742,27 +766,6 @@ export default function OutboundLeadsPage() {
         .finally(() => setHistoryLoading(false));
     });
   }, []);
-
-  async function refreshHistory() {
-    // First call the backend refresh endpoint
-    try {
-      const auth = await getAuthHeaders();
-      await fetch(`${API_URL}/api/v1/upload/history/refresh`, { 
-        method: "POST", 
-        headers: auth 
-      });
-    } catch (e) {
-      console.error("Failed to refresh metrics:", e);
-    }
-    
-    // Then fetch the updated history
-    getAuthHeaders().then(auth => {
-      fetch(`${API_URL}/api/v1/upload/history`, { headers: auth })
-        .then(r => r.json())
-        .then((res: { data: BroadcastHistoryItem[] }) => setBroadcastHistory(res.data || []))
-        .catch(() => {});
-    });
-  }
 
   useEffect(() => {
     if (currentStep === 4) {
@@ -2203,8 +2206,15 @@ export default function OutboundLeadsPage() {
                 <Clock size={22} className="text-emerald-600" />
               </div>
               <div>
-                <h2 className="font-display text-xl font-bold text-gray-900">Broadcast History</h2>
-                <p className="font-body text-sm text-gray-500 mt-0.5">Last 50 campaign dispatches for your account</p>
+                <div className="flex items-center gap-2">
+                  <h2 className="font-display text-xl font-bold text-gray-900">Broadcast History</h2>
+                  {historyRefreshing && (
+                    <span className="inline-flex items-center gap-1 font-label text-[11px] font-semibold text-emerald-600">
+                      <RefreshCw size={11} className="animate-spin" /> Updating…
+                    </span>
+                  )}
+                </div>
+                <p className="font-body text-sm text-gray-500 mt-0.5">Last 50 campaign dispatches for your account · live counts</p>
               </div>
             </div>
             {!historyLoading && broadcastHistory.length > 0 && (
