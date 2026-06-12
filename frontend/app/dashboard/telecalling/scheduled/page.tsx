@@ -150,19 +150,8 @@ export default function ScheduledCallsPage() {
     }
     setTakeoverLoading(true);
     try {
-      // 1. Perform takeover
       await api.leads.takeover(cb.lead_id);
-      toast.success("Callback claimed — calling now");
-
-      // 2. Initiate call
-      const res = await api.calls.initiate({ leadId: cb.lead_id, callbackJobId: cb.id }, callerId);
-      setActiveCallCtx({
-        leadId: res.lead_id ?? cb.lead_id,
-        name: res.lead_name ?? cb.lead.name ?? null,
-        phone: cb.lead.phone ?? "",
-        callLogId: res.call_log_id ?? null,
-      });
-      toast.success(`Calling ${cb.lead.name || cb.lead.phone}...`);
+      toast.success("Callback claimed");
 
       // Close modal and refresh board
       setHandoffCallback(null);
@@ -447,7 +436,7 @@ export default function ScheduledCallsPage() {
                   </h2>
                 </div>
                 <p className="font-body text-xs text-slate-500 mt-1">
-                  Claim this overdue callback. Once claimed, the lead is assigned to you and dialed automatically.
+                  Claim this overdue callback. Once claimed, the lead is assigned to you.
                 </p>
               </div>
               <button
