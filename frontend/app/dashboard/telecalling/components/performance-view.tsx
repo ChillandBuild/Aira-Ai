@@ -8,6 +8,7 @@ import {
   Loader2, Search, Award, BarChart2, ShieldAlert
 } from "lucide-react";
 import { api, Caller, CallLog, TimelineEvent, Lead, TelecallingAnalyticsExtended } from "@/lib/api";
+import TeamAttendanceGrid from "../../team/TeamAttendanceGrid";
 import { formatPhone, timeAgo, formatIST } from "@/lib/utils";
 import { fetchNotes } from "../lib/notes-api";
 import type { NotesResponse, Note } from "../types";
@@ -436,6 +437,9 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
           <span className="text-slate-400 font-label text-[10px] uppercase font-bold tracking-wider mt-1 block">Total Calls Today</span>
         </div>
       </div>
+
+      {/* 2b. Team Attendance */}
+      <TeamAttendanceGrid />
 
       {/* 3. Performance Table & Export */}
       <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
