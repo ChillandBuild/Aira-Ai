@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, Clock } from "lucide-react";
 import { NotificationBell } from "@/components/NotificationBell";
 import { ProfileMenu } from "@/components/ProfileMenu";
 
@@ -43,7 +43,8 @@ export function AppHeader({ onOpenCalendar, isSidebarCollapsed, onToggleSidebar 
           className="px-3 py-1.5 transition-all text-black font-bold text-lg hover:text-indigo-600 bg-slate-200/40 backdrop-blur-md border border-slate-200/50 rounded-xl shadow-sm hover:bg-slate-200/60"
           title="Schedule & Notes"
         >
-          {time || "00:00"}
+          <Clock size={14} className="inline -mt-0.5 mr-1" />
+          <span className="font-bold">{time || "00:00"}</span>
           <span className="sr-only">Schedule & Notes</span>
         </button>
         <NotificationBell />

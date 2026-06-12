@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { api, Lead } from "@/lib/api";
 import { SegmentBadge } from "./segment-badge";
 import { formatIST, formatPhone, cn } from "@/lib/utils";
-import { MessageCircle, Trash2, MoreVertical, Search, X, SearchX, ChevronLeft, Pin, Filter, RefreshCw } from "lucide-react";
+import { MessageCircle, Trash2, MoreVertical, Search, X, SearchX, ChevronLeft, Pin, Filter, RefreshCw, Clock } from "lucide-react";
 import { toast } from "sonner";
 
 const AVATAR_COLORS = [
