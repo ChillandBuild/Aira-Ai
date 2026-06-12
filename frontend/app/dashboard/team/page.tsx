@@ -665,11 +665,11 @@ export default function TeamPage() {
           {/* Controls */}
           <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-3 rounded-2xl border border-border-subtle shadow-sm">
             <div className="relative w-full md:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" size={16} />
-              <input 
-                type="text" 
-                placeholder="Search team..." 
-                className="input pl-9 h-10 w-full"
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted pointer-events-none" size={16} />
+              <input
+                type="text"
+                placeholder="Search team..."
+                className="input !pl-10 h-10 w-full"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
               />
