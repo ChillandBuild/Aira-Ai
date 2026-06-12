@@ -364,6 +364,30 @@ export interface TeamMember {
   } | null;
 }
 
+export interface AttendanceDay {
+  date: string;
+  status: "present" | "absent" | "future";
+}
+
+export interface CallerAttendance {
+  caller_id: string;
+  days: AttendanceDay[];
+  today_status: "present" | "absent" | "future";
+}
+
+export interface TeamAttendanceSummary {
+  present_today: number;
+  absent_today: number;
+  attendance_rate_month: number;
+}
+
+export interface TeamAttendanceGridData {
+  callers: { caller_id: string; name: string }[];
+  days: string[];
+  grid: Record<string, Record<string, "present" | "absent" | "future">>;
+  summary: TeamAttendanceSummary;
+}
+
 export interface MyProfile {
   tenant_id: string;
   role: "owner" | "caller";
@@ -1217,6 +1241,17 @@ export const api = {
       }),
     remove: (userId: string) =>
       apiFetch<{ removed: boolean }>(`/api/v1/team/${userId}`, { method: "DELETE" }),
+    attendanceGrid: (month?: string) => {
+      const qs = month ? `?month=${month}` : "";
+      return apiFetch<{ data: TeamAttendanceGridData }>(`/api/v1/team/attendance${qs}`);
+    },
+    attendanceForCaller: (callerId: string, months: number = 4) =>
+      apiFetch<{ data: CallerAttendance }>(`/api/v1/team/attendance/${callerId}?months=${months}`),
+    markAttendance: (callerId: string, date: string, status: "present" | "absent") =>
+      apiFetch<{ data: AttendanceDay }>(`/api/v1/team/attendance/${callerId}`, {
+        method: "POST",
+        body: JSON.stringify({ date, status }),
+      }),
   },
   todos: {
     list: async (params?: { start_date?: string; end_date?: string }) => {
