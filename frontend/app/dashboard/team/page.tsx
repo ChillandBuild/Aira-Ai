@@ -616,17 +616,17 @@ export default function TeamPage() {
       </div>
 
       {/* View tabs */}
-      <div className="mb-6 flex gap-2">
+      <div className="mb-6 flex border-b border-border-subtle">
         <button onClick={() => setTab("members")}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-label text-sm font-semibold transition-colors border ${tab === "members" ? "bg-primary/10 text-primary border-primary/20" : "bg-white text-on-surface-muted border-surface-mid hover:border-primary/30"}`}>
+          className={`flex items-center gap-1.5 px-6 py-3 font-label font-semibold text-sm transition-all border-b-2 ${tab === "members" ? "border-tertiary text-tertiary" : "border-transparent text-on-surface-muted hover:text-on-surface"}`}>
           <Users size={14} /> Team Members
         </button>
         <button onClick={() => setTab("log")}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-label text-sm font-semibold transition-colors border ${tab === "log" ? "bg-primary/10 text-primary border-primary/20" : "bg-white text-on-surface-muted border-surface-mid hover:border-primary/30"}`}>
+          className={`flex items-center gap-1.5 px-6 py-3 font-label font-semibold text-sm transition-all border-b-2 ${tab === "log" ? "border-tertiary text-tertiary" : "border-transparent text-on-surface-muted hover:text-on-surface"}`}>
           <ClipboardList size={14} /> Assignment Log
         </button>
         <button onClick={() => setTab("performance")}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-label text-sm font-semibold transition-colors border ${tab === "performance" ? "bg-primary/10 text-primary border-primary/20" : "bg-white text-on-surface-muted border-surface-mid hover:border-primary/30"}`}>
+          className={`flex items-center gap-1.5 px-6 py-3 font-label font-semibold text-sm transition-all border-b-2 ${tab === "performance" ? "border-tertiary text-tertiary" : "border-transparent text-on-surface-muted hover:text-on-surface"}`}>
           <TrendingUp size={14} /> Performance
         </button>
       </div>
