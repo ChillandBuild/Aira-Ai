@@ -711,66 +711,57 @@ export default function TeamPage() {
               <p className="font-body text-sm text-ink-muted">Adjust your filters or invite new members.</p>
             </div>
           ) : viewMode === "grid" ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {filteredMembers.map(m => (
-                <div 
-                  key={m.user_id} 
+                <div
+                  key={m.user_id}
                   onClick={() => setSelectedMemberId(m.user_id)}
-                  className={`card p-5 cursor-pointer transition-all border-2 ${selectedMemberId === m.user_id ? "border-primary bg-primary/5" : "border-transparent hover:border-primary/30"}`}
+                  className={`card p-3 cursor-pointer transition-all border-2 ${selectedMemberId === m.user_id ? "border-primary bg-primary/5" : "border-transparent hover:border-primary/30"}`}
                 >
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="flex items-center gap-3">
+                  <div className="flex justify-between items-start mb-2">
+                    <div className="flex items-center gap-2">
                       <div className="relative">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white font-display text-sm font-bold">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white font-display text-xs font-bold">
                           {initials(m.displayName)}
                         </div>
-                        <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${m.computedStatus === 'active' ? 'bg-emerald-500' : m.computedStatus === 'break' ? 'bg-amber-500' : 'bg-slate-400'}`} />
+                        <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${m.computedStatus === 'active' ? 'bg-emerald-500' : m.computedStatus === 'break' ? 'bg-amber-500' : 'bg-slate-400'}`} />
                       </div>
                       <div>
                         {m.caller_profile?.id ? (
-                          <div className="font-label font-semibold text-ink text-sm">
+                          <div className="font-label font-semibold text-ink text-xs">
                             <InlineEditCell callerId={m.caller_profile.id} initial={m.caller_profile.name ?? null} field="name" placeholder="Name" onUpdate={load} />
                           </div>
                         ) : (
-                          <p className="font-label font-semibold text-ink text-sm">{m.displayName}</p>
+                          <p className="font-label font-semibold text-ink text-xs">{m.displayName}</p>
                         )}
-                        <span className={`mt-1 inline-block badge text-[10px] py-0 ${m.role === "owner" ? "badge-green" : "badge-yellow"}`}>
+                        <span className={`mt-0.5 inline-block badge text-[9px] py-0 ${m.role === "owner" ? "badge-green" : "badge-yellow"}`}>
                           {m.role === "owner" ? "admin" : "caller"}
                         </span>
                       </div>
                     </div>
                     {m.role !== "owner" && (
-                      <button onClick={(e) => { e.stopPropagation(); handleRemove(m.user_id); }} className="p-1.5 rounded-lg hover:bg-red-50 text-ink-muted hover:text-red-500 transition-colors" title="Remove Telecaller">
-                        <Trash2 size={14} />
+                      <button onClick={(e) => { e.stopPropagation(); handleRemove(m.user_id); }} className="p-1 rounded-lg hover:bg-red-50 text-ink-muted hover:text-red-500 transition-colors" title="Remove Telecaller">
+                        <Trash2 size={12} />
                       </button>
                     )}
                   </div>
 
-                  <div className="space-y-2 mt-4">
-                    <div className="flex items-center justify-between text-xs font-body">
+                  <div className="space-y-1.5 mt-2">
+                    <div className="flex items-center justify-between text-[11px] font-body">
                       <span className="text-ink-muted">Score</span>
                       <span className="font-semibold text-ink">{m.caller_profile?.overall_score ?? "—"}/10</span>
                     </div>
-                    <div className="w-full bg-surface-subtle h-1.5 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-primary rounded-full transition-all" 
+                    <div className="w-full bg-surface-subtle h-1 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary rounded-full transition-all"
                         style={{ width: `${(m.caller_profile?.overall_score || 0) * 10}%` }}
                       />
                     </div>
-                    
-                    <div className="pt-2 flex flex-col gap-1.5">
-                      <div className="flex items-center gap-2 text-xs font-body">
-                        <Phone size={12} className="text-ink-muted" />
-                        {m.caller_profile?.id ? (
-                          <InlineEditCell callerId={m.caller_profile.id} initial={m.caller_profile.phone ?? null} field="phone" placeholder="+91xxxxxxxxxx" onUpdate={load} />
-                        ) : <span className="text-ink-muted">—</span>}
-                      </div>
-                      <div className="flex items-center gap-2 text-xs font-body">
-                        <span className="text-[10px] font-label text-ink-muted bg-surface-subtle px-1 rounded">ID</span>
-                        {m.caller_profile?.id ? (
-                          <InlineEditCell callerId={m.caller_profile.id} initial={m.caller_profile.telecmi_agent_id ?? null} field="telecmi_agent_id" placeholder="e.g. 102_33335739" onUpdate={load} />
-                        ) : <span className="text-ink-muted">—</span>}
-                      </div>
+                    <div className="pt-1 flex items-center gap-1.5 text-[11px] font-body">
+                      <Phone size={11} className="text-ink-muted" />
+                      {m.caller_profile?.id ? (
+                        <InlineEditCell callerId={m.caller_profile.id} initial={m.caller_profile.phone ?? null} field="phone" placeholder="+91xxxxxxxxxx" onUpdate={load} />
+                      ) : <span className="text-ink-muted">—</span>}
                     </div>
                   </div>
                 </div>
