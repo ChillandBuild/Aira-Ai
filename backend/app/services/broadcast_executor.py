@@ -199,6 +199,7 @@ async def execute_broadcast(row: dict) -> dict:
                     "send_status": "sent",
                     "meta_message_id": _meta_msg_id,
                     "tag_id": tag_id,
+                    "extra_cols": extra_cols or None,
                 })
 
                 if lead_id:

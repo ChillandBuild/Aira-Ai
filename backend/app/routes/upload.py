@@ -307,6 +307,9 @@ class BulkSendRequest(BaseModel):
     tag_id: Optional[str] = None  # broadcast tag for per-product interest tracking
     exclude_negative_replies: bool = False  # skip leads who previously rejected a broadcast
     include_opted_out: bool = False  # send to opted-out leads if True
+    retry_enabled: bool = False  # auto-retry undelivered leads (marketing-cap 131049 + silent drops)
+    retry_time: Optional[str] = None  # HH:MM wall-clock in tenant tz, e.g. "10:00"
+    retry_max_attempts: int = 2  # number of retries (1-5)
 
 
 class RiskAuditRequest(BaseModel):
@@ -335,6 +338,19 @@ def _create_csv_signed_url(db, path: str, expires_in: int = 300) -> str | None:
         or getattr(result, "signedURL", None)
         or getattr(result, "url", None)
     )
+
+
+def _retry_fields(body) -> dict:
+    """Retry config to merge onto an original scheduled_broadcasts row. {} when disabled."""
+    if not getattr(body, "retry_enabled", False) or not getattr(body, "retry_time", None):
+        return {}
+    try:
+        h, m = map(int, str(body.retry_time).split(":")[:2])
+        retry_time = f"{h:02d}:{m:02d}:00"
+    except Exception:
+        return {}
+    attempts = max(1, min(5, int(getattr(body, "retry_max_attempts", 2) or 2)))
+    return {"retry_enabled": True, "retry_time": retry_time, "retry_max_attempts": attempts}
 
 
 def _insert_scheduled_broadcast(db, record: dict) -> None:
@@ -604,6 +620,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 "csv_file_url": body.csv_file_url,
                 "csv_file_path": body.csv_file_path,
                 "csv_file_name": body.csv_file_name,
+                **_retry_fields(body),
             })
             return {"status": "scheduled", "fire_at": fire_at.isoformat(), "total": len(eligible)}
 
@@ -639,6 +656,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                     "csv_file_url": body.csv_file_url,
                     "csv_file_path": body.csv_file_path,
                     "csv_file_name": body.csv_file_name,
+                    **_retry_fields(body),
                 })
             if records:
                 _insert_scheduled_broadcasts(db, records)
@@ -920,6 +938,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                 "send_status": "sent",
                 "tag_id": body.tag_id,
                 "meta_message_id": meta_msg_id,
+                "extra_cols": (lead.extra_cols or None),
             })
 
             if lead_id:
@@ -1021,6 +1040,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
                     "csv_file_name": body.csv_file_name,
                     "tag_id": body.tag_id,
                     "executed_at": broadcast_timestamp.isoformat(),
+                    **_retry_fields(body),
                 })
                 logger.info(f"Shell scheduled_broadcasts record inserted for immediate broadcast_id: {broadcast_id}")
             except Exception as sb_err:
@@ -1521,6 +1541,132 @@ async def get_failed_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=failed_{broadcast_id[:8]}.csv"},
     )
+
+
+@router.get("/retry-timeline/{broadcast_id}")
+async def get_retry_timeline(broadcast_id: str, tenant_id: str = Depends(get_tenant_id)):
+    """Per-attempt delivery metrics for a broadcast's auto-retry chain."""
+    db = get_supabase()
+
+    row = (
+        db.table("scheduled_broadcasts")
+        .select("id,retry_of,retry_enabled,retry_time,retry_max_attempts,retry_completed_at")
+        .eq("id", broadcast_id)
+        .eq("tenant_id", tenant_id)
+        .maybe_single()
+        .execute()
+    )
+    if not row or not row.data:
+        raise HTTPException(status_code=404, detail="Broadcast not found")
+    parent_id = row.data.get("retry_of") or row.data["id"]
+
+    parent = (
+        db.table("scheduled_broadcasts")
+        .select("id,retry_enabled,retry_time,retry_max_attempts,retry_completed_at,executed_at,fire_at")
+        .eq("id", parent_id)
+        .eq("tenant_id", tenant_id)
+        .maybe_single()
+        .execute()
+    ).data or {}
+
+    children = (
+        db.table("scheduled_broadcasts")
+        .select("id,retry_attempt,executed_at,fire_at")
+        .eq("retry_of", parent_id)
+        .eq("tenant_id", tenant_id)
+        .order("retry_attempt")
+        .execute()
+        .data or []
+    )
+
+    chain = [{"id": parent_id, "retry_attempt": 0,
+              "executed_at": parent.get("executed_at") or parent.get("fire_at")}] + [
+        {"id": c["id"], "retry_attempt": c.get("retry_attempt"),
+         "executed_at": c.get("executed_at") or c.get("fire_at")}
+        for c in children
+    ]
+
+    def _delivered(msg_ids: list[str]) -> int:
+        n = 0
+        for i in range(0, len(msg_ids), 100):
+            batch = msg_ids[i:i + 100]
+            res = (
+                db.table("messages")
+                .select("meta_message_id", count="exact")
+                .eq("tenant_id", tenant_id)
+                .in_("meta_message_id", batch)
+                .in_("delivery_status", ["delivered", "read"])
+                .execute()
+            )
+            n += res.count or len(res.data or [])
+        return n
+
+    attempts = []
+    reached_leads: set[str] = set()
+    original_targeted = 0
+    for att in chain:
+        recips = (
+            db.table("broadcast_recipients")
+            .select("lead_id,meta_message_id")
+            .eq("tenant_id", tenant_id)
+            .eq("broadcast_id", att["id"])
+            .eq("send_status", "sent")
+            .execute()
+            .data or []
+        )
+        msg_ids = [r["meta_message_id"] for r in recips if r.get("meta_message_id")]
+        targeted = len(recips)
+        delivered = _delivered(msg_ids) if msg_ids else 0
+        if att["retry_attempt"] == 0:
+            original_targeted = targeted
+        attempts.append({
+            "attempt": att["retry_attempt"],
+            "label": "Original" if att["retry_attempt"] == 0 else f"Retry {att['retry_attempt']}",
+            "sent_at": att["executed_at"],
+            "targeted": targeted,
+            "delivered": delivered,
+            "undelivered": max(0, targeted - delivered),
+        })
+
+    # Eventually-reached leads across the whole chain (distinct).
+    chain_ids = [c["id"] for c in chain]
+    all_recips = (
+        db.table("broadcast_recipients")
+        .select("lead_id,meta_message_id")
+        .eq("tenant_id", tenant_id)
+        .in_("broadcast_id", chain_ids)
+        .execute()
+        .data or []
+    )
+    mid_to_lead = {r["meta_message_id"]: r["lead_id"] for r in all_recips if r.get("meta_message_id") and r.get("lead_id")}
+    all_mids = list(mid_to_lead.keys())
+    for i in range(0, len(all_mids), 100):
+        batch = all_mids[i:i + 100]
+        res = (
+            db.table("messages")
+            .select("meta_message_id")
+            .eq("tenant_id", tenant_id)
+            .in_("meta_message_id", batch)
+            .in_("delivery_status", ["delivered", "read"])
+            .execute()
+        )
+        for m in (res.data or []):
+            lid = mid_to_lead.get(m.get("meta_message_id"))
+            if lid:
+                reached_leads.add(lid)
+
+    return {
+        "broadcast_id": parent_id,
+        "retry_enabled": bool(parent.get("retry_enabled")),
+        "retry_time": parent.get("retry_time"),
+        "retry_max_attempts": parent.get("retry_max_attempts"),
+        "completed": parent.get("retry_completed_at") is not None,
+        "attempts": attempts,
+        "rollup": {
+            "original_targeted": original_targeted,
+            "eventually_delivered": len(reached_leads),
+        },
+    }
 
 
 @router.get("/history")

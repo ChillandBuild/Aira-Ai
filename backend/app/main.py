@@ -71,6 +71,16 @@ async def _process_scheduled_broadcasts() -> None:
         logger.error(f"Scheduled broadcast executor error: {e}")
 
 
+async def _process_broadcast_retries() -> None:
+    """APScheduler job: advance broadcast auto-retry chains that are due."""
+    _heartbeats["broadcast-retries"] = datetime.now(timezone.utc)
+    try:
+        from app.services.broadcast_retry import process_due_retries
+        process_due_retries()
+    except Exception as e:
+        logger.error(f"Broadcast retry orchestrator error: {e}")
+
+
 async def _check_token_health() -> None:
     """APScheduler daily job: validate Meta tokens for all tenants, create incidents if invalid."""
     import httpx
@@ -432,6 +442,13 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
     )
     _scheduler.add_job(
+        _process_broadcast_retries,
+        trigger="interval",
+        minutes=5,
+        id="broadcast-retries",
+        replace_existing=True,
+    )
+    _scheduler.add_job(
         _check_token_health,
         trigger="interval",
         hours=24,
@@ -467,7 +484,7 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
     )
     _scheduler.start()
-    logger.info("Schedulers started: automation(5m) + broadcasts(1m) + token-health(24h) + engagement-decay(6h) + reengagement(1m) + callback-reassignment(1m) + assignment-sweep(2m)")
+    logger.info("Schedulers started: automation(5m) + broadcasts(1m) + broadcast-retries(5m) + token-health(24h) + engagement-decay(6h) + reengagement(1m) + callback-reassignment(1m) + assignment-sweep(2m)")
 
     yield
 

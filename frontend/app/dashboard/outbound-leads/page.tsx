@@ -281,6 +281,86 @@ function SegmentDropdown({ tagId, dark }: { tagId: string, dark?: boolean }) {
 }
 
 // ─── Per-broadcast Segment Dropdown ──────────────────────────────────────────
+type RetryAttempt = {
+  attempt: number;
+  label: string;
+  sent_at: string | null;
+  targeted: number;
+  delivered: number;
+  undelivered: number;
+};
+
+type RetryTimelineData = {
+  retry_enabled: boolean;
+  retry_time: string | null;
+  retry_max_attempts: number | null;
+  completed: boolean;
+  attempts: RetryAttempt[];
+  rollup: { original_targeted: number; eventually_delivered: number };
+};
+
+function RetryTimeline({ broadcastId }: { broadcastId: string }) {
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState<RetryTimelineData | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function toggle() {
+    if (open) { setOpen(false); return; }
+    setOpen(true);
+    if (data || loading) return;
+    setLoading(true);
+    try {
+      const auth = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/v1/upload/retry-timeline/${broadcastId}`, { headers: auth });
+      if (res.ok) setData(await res.json());
+    } catch {
+      // silent — timeline is non-critical
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Only show the expander once there is at least one retry attempt to report.
+  const hasRetries = data ? data.attempts.length > 1 : true;
+
+  return (
+    <div className="mt-3 pt-3 border-t border-surface-mid/30">
+      <button
+        onClick={toggle}
+        className="flex items-center gap-1.5 font-label text-[11px] font-bold text-tertiary hover:underline"
+      >
+        <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+        {open ? "Hide retry timeline" : "Retry timeline"}
+      </button>
+
+      {open && !loading && data && hasRetries && (
+        <div className="mt-2.5 space-y-1.5">
+          <div className="grid grid-cols-4 gap-2 font-label text-[10px] font-bold text-on-surface-muted uppercase tracking-wider px-2">
+            <span>Attempt</span><span className="text-right">Targeted</span><span className="text-right">Delivered</span><span className="text-right">Still failed</span>
+          </div>
+          {data.attempts.map((a) => (
+            <div key={a.attempt} className="grid grid-cols-4 gap-2 items-center bg-surface-low rounded-lg px-2 py-1.5 font-body text-xs">
+              <span className="font-semibold text-on-surface truncate" title={a.sent_at || ""}>{a.label}</span>
+              <span className="text-right text-on-surface-muted">{a.targeted}</span>
+              <span className="text-right text-green-600 font-semibold">{a.delivered}</span>
+              <span className="text-right text-amber-600 font-semibold">{a.undelivered}</span>
+            </div>
+          ))}
+          <p className="font-body text-[11px] text-on-surface-muted pt-1 px-2">
+            {data.rollup.eventually_delivered} of {data.rollup.original_targeted} eventually delivered
+            {!data.completed && data.retry_enabled ? " · more retries pending" : ""}.
+          </p>
+        </div>
+      )}
+      {open && !loading && data && !hasRetries && (
+        <p className="mt-2 font-body text-[11px] text-on-surface-muted px-2">
+          {data.retry_enabled ? "Auto-retry on — no undelivered leads to retry yet." : "Auto-retry was off for this broadcast."}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function BroadcastSegmentDropdown({ broadcastId, tagId, onDownload }: {
   broadcastId: string;
   tagId?: string;
@@ -482,6 +562,9 @@ export default function OutboundLeadsPage() {
   const [riskLoading, setRiskLoading] = useState(false);
   const [excludeNegativeReplies, setExcludeNegativeReplies] = useState(false);
   const [includeOptedOut, setIncludeOptedOut] = useState(false);
+  const [retryEnabled, setRetryEnabled] = useState(false);
+  const [retryTime, setRetryTime] = useState("10:00");
+  const [retryMaxAttempts, setRetryMaxAttempts] = useState(2);
 
   // Tags management state
   const [tagsList, setTagsList] = useState<BroadcastTag[]>([]);
@@ -953,6 +1036,9 @@ export default function OutboundLeadsPage() {
         tag_id: selectedTag || undefined,
         exclude_negative_replies: excludeNegativeReplies,
         include_opted_out: includeOptedOut,
+        retry_enabled: retryEnabled,
+        retry_time: retryEnabled ? retryTime : undefined,
+        retry_max_attempts: retryMaxAttempts,
       };
 
       const auth = await getAuthHeaders();
@@ -1444,6 +1530,54 @@ export default function OutboundLeadsPage() {
                       </div>
                     </div>
                   )}
+
+                  {/* ── Auto-retry undelivered (marketing-cap 131049 + silent drops) ── */}
+                  <div className="rounded-xl border border-surface-mid bg-surface-low p-4 space-y-3">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={retryEnabled}
+                        onChange={(e) => setRetryEnabled(e.target.checked)}
+                        className="mt-0.5 accent-[var(--color-tertiary)]"
+                      />
+                      <span>
+                        <span className="font-label text-xs font-bold text-on-surface block">Auto-retry undelivered messages</span>
+                        <span className="font-body text-xs text-on-surface-muted">
+                          Re-send to leads who never got the message (Meta&apos;s daily marketing cap). Wrong numbers and unsubscribed leads are excluded automatically.
+                        </span>
+                      </span>
+                    </label>
+
+                    {retryEnabled && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-7">
+                        <div>
+                          <label className="block font-label text-[10px] font-bold text-on-surface-muted uppercase tracking-wider mb-1.5">
+                            Retry each day at
+                          </label>
+                          <input
+                            type="time"
+                            value={retryTime}
+                            onChange={(e) => setRetryTime(e.target.value)}
+                            className={inputCls}
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-label text-[10px] font-bold text-on-surface-muted uppercase tracking-wider mb-1.5">
+                            Max retries
+                          </label>
+                          <select
+                            value={retryMaxAttempts}
+                            onChange={(e) => setRetryMaxAttempts(parseInt(e.target.value, 10))}
+                            className={inputCls}
+                          >
+                            {[1, 2, 3, 4, 5].map((n) => (
+                              <option key={n} value={n}>{n} {n === 1 ? "retry" : "retries"}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                   <div className="flex items-center justify-between pt-4 border-t border-surface-mid/30">
                     <button
@@ -2331,6 +2465,8 @@ export default function OutboundLeadsPage() {
                     </div>
                   </div>
                 </div>
+
+                {item.broadcast_id && <RetryTimeline broadcastId={item.broadcast_id} />}
               </div>
             ))}
           </div>
