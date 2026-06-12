@@ -98,6 +98,8 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
   const [searchQuery, setSearchQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [statusTab, setStatusTab] = useState<"all" | "action" | "bot" | "converted" | "optout">("all");
+  const [sortBy, setSortBy] = useState<"recent" | "score-desc" | "score-asc" | "action">("recent");
 
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -118,16 +120,40 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
     return "whatsapp";
   };
 
+  // Platform + segment filtered set — shared by the list and the tab counts
+  // so the badge numbers always match what a tab will actually show.
+  const scoped = useMemo(() => {
+    let base = platform === "all" ? leads : leads.filter((l) => getLeadPlatform(l) === platform);
+    if (segment) {
+      base = base.filter((l) => l.segment === segment);
+    }
+    return base;
+  }, [leads, platform, segment]);
+
   const visible = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    const base = platform === "all" ? leads : leads.filter((l) => getLeadPlatform(l) === platform);
-    return (segment ? base.filter((l) => l.segment === segment) : base)
+
+    // Status Tab filter (platform + segment already applied in `scoped`)
+    let base = scoped;
+    if (statusTab === "action") {
+      base = base.filter((l) => l.needs_human_intervention === true);
+    } else if (statusTab === "bot") {
+      base = base.filter((l) => l.ai_enabled !== false);
+    } else if (statusTab === "converted") {
+      base = base.filter((l) => Boolean(l.converted_at));
+    } else if (statusTab === "optout") {
+      base = base.filter((l) => l.opted_out === true);
+    }
+
+    // Search query filter
+    return base
       .filter((l) => {
         if (!q) return true;
         const name = l.name?.toLowerCase() || "";
         const phone = l.phone?.toLowerCase() || "";
         return name.includes(q) || phone.includes(q);
       })
+      // 5. Sort By
       .sort((a, b) => {
         const aPinned = a.pinned_at ? 1 : 0;
         const bPinned = b.pinned_at ? 1 : 0;
@@ -135,13 +161,35 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
         if (aPinned && bPinned) {
           return new Date(b.pinned_at!).getTime() - new Date(a.pinned_at!).getTime();
         }
-        if (a.needs_human_intervention && !b.needs_human_intervention) return -1;
-        if (!a.needs_human_intervention && b.needs_human_intervention) return 1;
+        
+        if (sortBy === "score-desc") {
+          return b.score - a.score;
+        }
+        if (sortBy === "score-asc") {
+          return a.score - b.score;
+        }
+        if (sortBy === "action") {
+          const aAct = a.needs_human_intervention ? 1 : 0;
+          const bAct = b.needs_human_intervention ? 1 : 0;
+          if (aAct !== bAct) return bAct - aAct;
+        }
+        
+        // Default / recent sort
         const aTime = (a as ConversationLead).last_reply_at || a.created_at;
         const bTime = (b as ConversationLead).last_reply_at || b.created_at;
         return new Date(bTime).getTime() - new Date(aTime).getTime();
       });
-  }, [leads, platform, segment, searchQuery]);
+  }, [scoped, searchQuery, statusTab, sortBy]);
+
+  const tabCounts = useMemo(() => {
+    return {
+      all: scoped.length,
+      action: scoped.filter(l => l.needs_human_intervention).length,
+      bot: scoped.filter(l => l.ai_enabled !== false).length,
+      converted: scoped.filter(l => l.converted_at).length,
+      optout: scoped.filter(l => l.opted_out).length,
+    };
+  }, [scoped]);
 
   const platformCounts = useMemo(() => {
     const counts: Record<string, number> = { whatsapp: 0, instagram: 0, facebook: 0, telegram: 0, all: leads.length };
@@ -285,6 +333,17 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
                   </button>
                 )}
               </div>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as "recent" | "score-desc" | "score-asc" | "action")}
+                className="h-9 rounded-xl bg-surface-low border border-surface-mid text-[12px] text-on-surface font-semibold px-2 focus:outline-none focus:ring-2 focus:ring-tertiary/20 focus:border-tertiary transition-all shrink-0 cursor-pointer max-w-[85px] truncate"
+                title="Sort by"
+              >
+                <option value="recent">Recent</option>
+                <option value="score-desc">Score H-L</option>
+                <option value="score-asc">Score L-H</option>
+                <option value="action">Action First</option>
+              </select>
               <button
                 onClick={() => setFiltersOpen((v) => !v)}
                 title="Filters"
@@ -308,6 +367,63 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
               >
                 <RefreshCw size={14} className={isRefreshing ? "animate-spin" : ""} />
               </button>
+            </div>
+
+            {/* ── Status filter tabs ── */}
+            <div className="flex gap-1 overflow-x-auto pb-1.5 mt-3 scrollbar-thin border-b border-surface-mid/30">
+              {(["all", "action", "bot", "converted", "optout"] as const).map((tab) => {
+                const count = tabCounts[tab];
+                let label = "";
+                let bgActive = "bg-tertiary text-white shadow-sm";
+                const badgeActive = "bg-white/20 text-white";
+                
+                switch (tab) {
+                  case "all":
+                    label = "All";
+                    break;
+                  case "action":
+                    label = "Action";
+                    bgActive = "bg-red-500 text-white shadow-sm";
+                    break;
+                  case "bot":
+                    label = "Bot";
+                    bgActive = "bg-emerald-500 text-white shadow-sm";
+                    break;
+                  case "converted":
+                    label = "Converted";
+                    bgActive = "bg-indigo-500 text-white shadow-sm";
+                    break;
+                  case "optout":
+                    label = "Opt-out";
+                    bgActive = "bg-zinc-600 text-white shadow-sm";
+                    break;
+                }
+
+                const active = statusTab === tab;
+
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => setStatusTab(tab)}
+                    className={cn(
+                      "px-2.5 py-1 rounded-lg font-label text-[10.5px] font-semibold transition-all duration-200 flex items-center gap-1 shrink-0",
+                      active
+                        ? bgActive
+                        : "bg-surface-low text-on-surface-muted hover:bg-surface-mid hover:text-on-surface"
+                    )}
+                  >
+                    {label}
+                    {count > 0 && (
+                      <span className={cn(
+                        "px-1 py-0.5 rounded-full text-[8.5px] font-bold min-w-[14px] text-center",
+                        active ? badgeActive : "bg-surface-mid text-on-surface-muted"
+                      )}>
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
             {/* ── Collapsible filter panel ── */}
@@ -390,10 +506,12 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
               key={lead.id}
               onClick={() => onSelect(lead)}
               className={cn(
-                "w-full text-left px-4 py-3.5 border-b border-surface-mid/40 transition-all duration-150 group flex items-start gap-3 relative",
+                "w-full text-left px-4 py-3.5 border-b border-surface-mid/30 transition-all duration-200 group flex items-start gap-3 relative overflow-hidden",
                 selectedId === lead.id
-                  ? "bg-surface before:absolute before:left-0 before:top-0 before:bottom-0 before:w-[3px] before:bg-tertiary"
-                  : "hover:bg-surface"
+                  ? "bg-indigo-50/45 before:absolute before:left-0 before:top-0 before:bottom-0 before:w-[3px] before:bg-indigo-600 shadow-[inset_0_1px_2px_rgba(99,102,241,0.05)]"
+                  : lead.needs_human_intervention
+                    ? "bg-red-50/15 hover:bg-red-50/25"
+                    : "hover:bg-zinc-50/60"
               )}
             >
               {selectionMode && (

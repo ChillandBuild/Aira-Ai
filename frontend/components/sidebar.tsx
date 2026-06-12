@@ -29,7 +29,7 @@ const TELECALLING_ITEMS: NavItem[] = [
   { href: "/dashboard/notes", icon: StickyNote, label: "Call Notes" },
 ];
 
-export function Sidebar() {
+export function Sidebar({ className }: { className?: string }) {
   const pathname = usePathname();
   const { role, enabledFeatures, loading: roleLoading } = useAuthRole();
   const [inboxCount, setInboxCount] = useState(0);
@@ -82,7 +82,7 @@ export function Sidebar() {
 
   if (roleLoading) {
     return (
-      <aside className="fixed left-0 top-0 h-full w-[220px] bg-background z-20" />
+      <aside className={cn("fixed left-0 top-0 h-full w-[220px] bg-background z-20 transition-all duration-300 ease-in-out", className)} />
     );
   }
 
@@ -98,7 +98,7 @@ export function Sidebar() {
   const showTc = expandedGroups.Telecalling || isTcActive;
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-[220px] bg-background flex flex-col z-20 select-none">
+    <aside className={cn("fixed left-0 top-0 h-full w-[220px] bg-background flex flex-col z-20 select-none transition-all duration-300 ease-in-out", className)}>
       {/* Brand */}
       <div className="px-5 py-5 flex items-center gap-3">
         <AiraLogo size={34} />
