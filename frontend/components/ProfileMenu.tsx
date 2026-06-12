@@ -27,9 +27,9 @@ export function ProfileMenu() {
 
   return (
     <div className="relative">
-      <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-2 pl-2 pr-2.5 py-1.5 bg-white border border-slate-200/80 rounded-xl hover:bg-slate-50 transition-all">
-        <span className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center"><User size={14} /></span>
-        <span className="text-xs font-bold text-slate-700 hidden sm:block">{roleLabel}</span>
+      <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-2 pl-2 pr-2.5 py-1.5 bg-slate-800/60 border border-slate-600/40 rounded-xl hover:bg-slate-700/60 transition-all">
+        <span className="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center"><User size={14} /></span>
+        <span className="text-xs font-bold text-slate-200 hidden sm:block">{roleLabel}</span>
         <ChevronDown size={14} className="text-slate-400" />
       </button>
       {open && (

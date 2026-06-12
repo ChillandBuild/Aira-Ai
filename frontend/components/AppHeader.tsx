@@ -18,13 +18,13 @@ export function AppHeader({ onOpenCalendar }: { onOpenCalendar: () => void }) {
   }, []);
 
   return (
-    <header className="sticky top-0 z-40 h-14 flex items-center justify-end gap-2.5 px-7 bg-background/80 backdrop-blur border-b border-slate-200/60">
+    <header className="sticky top-0 z-40 h-14 flex items-center justify-end gap-2.5 px-7 bg-slate-900/90 backdrop-blur-xl border-b border-slate-700/40">
       <button
         onClick={onOpenCalendar}
-        className="px-3 py-1.5 transition-all text-black font-bold text-lg hover:text-indigo-600 bg-slate-200/40 backdrop-blur-md border border-slate-200/50 rounded-xl shadow-sm hover:bg-slate-200/60"
+        className="px-3 py-1.5 transition-all text-slate-100 font-bold text-lg hover:text-white bg-slate-800/60 backdrop-blur-md border border-slate-600/40 rounded-xl shadow-sm hover:bg-slate-700/60"
         title="Schedule & Notes"
       >
-        <Clock size={14} className="inline -mt-0.5 mr-1" />
+        <Clock size={14} className="inline -mt-0.5 mr-1 text-slate-300" />
         <span className="font-bold">{time || "00:00"}</span>
         <span className="sr-only">Schedule & Notes</span>
       </button>

@@ -4,7 +4,7 @@ import { Trash2, UserPlus, Phone, Pencil, Check, X, Loader2, Activity, Users, Tr
 import Link from "next/link";
 import { api, TeamMember, Caller } from "@/lib/api";
 import { useAuthRole } from "../contexts/AuthRoleContext";
-import WinnerBanner from "./WinnerBanner";
+
 import AssignmentLog from "../telecalling/components/assignment-log";
 import PerformanceView from "../telecalling/components/performance-view";
 
@@ -159,7 +159,7 @@ export default function TeamPage() {
         </button>
       </div>
 
-      <WinnerBanner />
+
 
       {/* View tabs */}
       <div className="mb-6 flex gap-2">

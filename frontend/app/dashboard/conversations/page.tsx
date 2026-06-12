@@ -1,5 +1,6 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { getAuthHeaders, API_URL, Lead, api } from "@/lib/api";
 import { ConversationList } from "@/components/conversation-list";
 import { ChatThread } from "@/components/chat-thread";
@@ -66,14 +67,28 @@ export default function ConversationsPage() {
   const [folder, setFolder] = useState<InboxFolder>("chats");
   const [detailsOpen, setDetailsOpen] = useState(getDetailsPanelDefault);
 
+  const searchParams = useSearchParams();
+  const deepLinkLeadId = searchParams.get("lead");
+  const deepLinked = useRef(false);
+
   const load = useCallback(() => {
     fetchConversations(folder)
-      .then((leads) => { setLeads(leads); setError(false); })
+      .then((loadedLeads) => { setLeads(loadedLeads); setError(false); })
       .catch(() => setError(true));
   }, [folder]);
 
   useEffect(() => { load(); }, [load]);
   usePolling(load, 20000);
+
+  // Auto-select lead from ?lead= query param (e.g. from Inbox Reply button)
+  useEffect(() => {
+    if (!deepLinkLeadId || deepLinked.current || leads.length === 0) return;
+    const match = leads.find((l) => l.id === deepLinkLeadId);
+    if (match) {
+      setSelected(match);
+      deepLinked.current = true;
+    }
+  }, [deepLinkLeadId, leads]);
 
   useEffect(() => {
     localStorage.setItem("lead_details_open", String(detailsOpen));
