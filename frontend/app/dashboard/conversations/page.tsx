@@ -4,16 +4,10 @@ import { getAuthHeaders, API_URL, Lead, api } from "@/lib/api";
 import { ConversationList } from "@/components/conversation-list";
 import { ChatThread } from "@/components/chat-thread";
 import { LeadDetailsPanel } from "@/components/lead-details-panel";
-import { MessageSquare, ChevronRight, ChevronLeft } from "lucide-react";
+import { InboxRail, type InboxFolder } from "@/components/inbox-rail";
+import { ChevronLeft } from "lucide-react";
 import { usePolling } from "@/hooks/usePolling";
 import { toast } from "sonner";
-
-function getSidebarDefault(): boolean {
-  if (typeof window === "undefined") return true;
-  const stored = localStorage.getItem("sidebar_open");
-  if (stored !== null) return stored === "true";
-  return window.innerWidth >= 768;
-}
 
 function getDetailsPanelDefault(): boolean {
   if (typeof window === "undefined") return true;
@@ -22,9 +16,9 @@ function getDetailsPanelDefault(): boolean {
   return window.innerWidth >= 1280;
 }
 
-async function fetchConversations(): Promise<Lead[]> {
+async function fetchConversations(folder: InboxFolder): Promise<Lead[]> {
   const auth = await getAuthHeaders();
-  const res = await fetch(`${API_URL}/api/v1/conversations?limit=50`, { headers: auth });
+  const res = await fetch(`${API_URL}/api/v1/conversations?limit=50&folder=${folder}`, { headers: auth });
   if (!res.ok) throw new Error(`conversations fetch failed: ${res.status}`);
   const data = await res.json();
   return data.leads ?? [];
@@ -36,30 +30,59 @@ function togglePinInList(leads: Lead[], leadId: string): Lead[] {
   );
 }
 
+function SharedInboxEmpty() {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center px-8 text-center select-none">
+      <div className="w-[280px] h-[200px] rounded-2xl bg-gradient-to-br from-tertiary/15 via-tertiary/5 to-transparent border border-tertiary/15 p-4 mb-8 shadow-sm">
+        <div className="flex gap-1.5 mb-4">
+          <span className="w-2 h-2 rounded-full bg-tertiary/40" />
+          <span className="w-2 h-2 rounded-full bg-tertiary/40" />
+          <span className="w-2 h-2 rounded-full bg-tertiary/40" />
+        </div>
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="h-7 w-32 rounded-lg bg-tertiary/20" />
+            <div className="h-6 w-6 rounded-full bg-tertiary/30" />
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-7 w-7 rounded-full bg-tertiary/40" />
+            <div className="h-7 flex-1 rounded-lg bg-tertiary/15" />
+          </div>
+          <div className="h-7 w-3/4 rounded-lg bg-tertiary/10" />
+        </div>
+      </div>
+      <h2 className="font-display text-2xl font-bold text-tertiary mb-2">Shared Inbox</h2>
+      <p className="font-body text-sm font-semibold text-on-surface mb-1">Connect Multiple Platforms &ndash; all in one inbox!</p>
+      <p className="font-body text-sm text-on-surface-muted">Easily manage messages from multiple platforms in a single inbox.</p>
+    </div>
+  );
+}
+
 export default function ConversationsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selected, setSelected] = useState<Lead | null>(null);
   const [error, setError] = useState(false);
   const [platform, setPlatform] = useState<string>("all");
-  const [sidebarOpen, setSidebarOpen] = useState(getSidebarDefault);
+  const [folder, setFolder] = useState<InboxFolder>("chats");
   const [detailsOpen, setDetailsOpen] = useState(getDetailsPanelDefault);
 
   const load = useCallback(() => {
-    fetchConversations()
+    fetchConversations(folder)
       .then((leads) => { setLeads(leads); setError(false); })
       .catch(() => setError(true));
-  }, []);
+  }, [folder]);
 
   useEffect(() => { load(); }, [load]);
   usePolling(load, 20000);
 
   useEffect(() => {
-    localStorage.setItem("sidebar_open", String(sidebarOpen));
-  }, [sidebarOpen]);
-
-  useEffect(() => {
     localStorage.setItem("lead_details_open", String(detailsOpen));
   }, [detailsOpen]);
+
+  function handleFolderChange(next: InboxFolder) {
+    setFolder(next);
+    setSelected(null);
+  }
 
   function handleSelect(lead: Lead) {
     setSelected(lead);
@@ -94,23 +117,42 @@ export default function ConversationsPage() {
     }
   }
 
+  // Archiving/blocking changes which folder a lead belongs to, so it leaves the
+  // current list. Optimistically remove; reload on failure.
+  function handleArchive(id: string) {
+    setLeads((prev) => prev.filter((l) => l.id !== id));
+    if (selected?.id === id) setSelected(null);
+    api.leads.archive(id)
+      .then(() => toast.success(folder === "archived" ? "Chat unarchived" : "Chat archived"))
+      .catch(() => { toast.error("Failed to archive"); load(); });
+  }
+
+  function handleBlock(id: string) {
+    setLeads((prev) => prev.filter((l) => l.id !== id));
+    if (selected?.id === id) setSelected(null);
+    api.leads.block(id)
+      .then(() => toast.success(folder === "blocked" ? "Contact unblocked" : "Contact blocked"))
+      .catch(() => { toast.error("Failed to block"); load(); });
+  }
+
   return (
-    <div className="-m-8 h-screen flex relative">
-      {/* ── Left: Conversation list ── */}
-      <div
-        className="relative flex-shrink-0 transition-all duration-300 ease-in-out"
-        style={{ width: sidebarOpen ? 340 : 0, overflow: "hidden" }}
-      >
+    <div className="h-screen flex relative pl-16">
+      <InboxRail folder={folder} onFolderChange={handleFolderChange} />
+
+      {/* ── Conversation list ── */}
+      <div className="relative flex-shrink-0 w-[440px] max-w-[42vw]">
         <ConversationList
           leads={leads}
           selectedId={selected?.id ?? null}
           onSelect={handleSelect}
           platform={platform}
           onPlatformChange={setPlatform}
-          onCollapse={() => setSidebarOpen(false)}
           onRefresh={load}
           onPin={handlePin}
           onPinSelected={handlePinSelected}
+          onArchive={handleArchive}
+          onBlock={handleBlock}
+          folder={folder}
           onDeleted={(deletedIds) => {
             setLeads((prev) => prev.filter((l) => !deletedIds.includes(l.id)));
             if (selected && deletedIds.includes(selected.id)) {
@@ -120,17 +162,7 @@ export default function ConversationsPage() {
         />
       </div>
 
-      {/* Left collapse toggle */}
-      {!sidebarOpen && (
-        <button
-          onClick={() => setSidebarOpen(true)}
-          className="absolute left-0 top-1/2 -translate-y-1/2 z-30 w-6 h-12 bg-surface border border-surface-mid border-l-0 rounded-r-lg flex items-center justify-center text-on-surface-muted hover:text-tertiary hover:bg-surface-low transition-colors shadow-md"
-        >
-          <ChevronRight size={14} />
-        </button>
-      )}
-
-      {/* ── Center: Chat thread ── */}
+      {/* ── Center: Chat thread / Shared Inbox empty state ── */}
       {selected ? (
         <ChatThread
           lead={selected}
@@ -141,11 +173,10 @@ export default function ConversationsPage() {
           onLeadUpdate={(updated) => setSelected(updated)}
         />
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center text-on-surface-muted gap-3">
-          <MessageSquare size={48} className="opacity-20" />
-          <p className="font-body text-sm">Select a conversation to view messages</p>
-          {error && <p className="font-body text-sm text-red-500">Failed to load conversations. Retrying…</p>}
-        </div>
+        <SharedInboxEmpty />
+      )}
+      {error && !selected && (
+        <p className="absolute bottom-4 left-1/2 -translate-x-1/2 font-body text-sm text-red-500">Failed to load conversations. Retrying…</p>
       )}
 
       {/* ── Right: Lead details panel ── */}

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { api, Lead } from "@/lib/api";
 import { SegmentBadge } from "./segment-badge";
 import { formatIST, formatPhone, cn } from "@/lib/utils";
-import { MessageCircle, Trash2, MoreVertical, Search, X, SearchX, ChevronLeft, Pin, Filter, RefreshCw } from "lucide-react";
+import { MessageCircle, Trash2, MoreVertical, MoreHorizontal, Search, X, SearchX, ChevronLeft, Pin, Filter, RefreshCw, Archive, Ban, Check, CheckCheck } from "lucide-react";
 import { toast } from "sonner";
 
 const AVATAR_COLORS = [
@@ -87,9 +87,12 @@ interface Props {
   onPin?: (id: string) => void;
   onPinSelected?: (ids: string[]) => void;
   onRefresh?: () => void;
+  onArchive?: (id: string) => void;
+  onBlock?: (id: string) => void;
+  folder?: "chats" | "archived" | "blocked";
 }
 
-export function ConversationList({ leads, selectedId, onSelect, onDeleted, platform, onPlatformChange, onCollapse, onPin, onPinSelected, onRefresh }: Props) {
+export function ConversationList({ leads, selectedId, onSelect, onDeleted, platform, onPlatformChange, onCollapse, onPin, onPinSelected, onRefresh, onArchive, onBlock, folder = "chats" }: Props) {
   const [segment, setSegment] = useState<"A" | "B" | "C" | "D" | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
@@ -98,6 +101,7 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
   const [searchQuery, setSearchQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [cardMenuId, setCardMenuId] = useState<string | null>(null);
 
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -106,10 +110,27 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setMenuOpen(false);
       }
+      if (!(event.target as HTMLElement).closest?.("[data-card-menu]")) {
+        setCardMenuId(null);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  function accountLabel(lead: Lead): string {
+    return (lead.tag_name || lead.ad_campaign_name || lead.source || "whatsapp").toUpperCase();
+  }
+
+  async function handleDeleteOne(id: string) {
+    setCardMenuId(null);
+    try {
+      await api.leads.delete(id);
+      onDeleted?.([id]);
+    } catch {
+      toast.error("Failed to delete chat");
+    }
+  }
 
   const getLeadPlatform = (lead: Lead) => {
     if (lead.source === "instagram" || lead.source === "telegram" || lead.source === "facebook") {
@@ -211,7 +232,7 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
   }
 
   return (
-    <div className="w-[340px] flex-shrink-0 bg-surface border-r border-surface-mid flex flex-col h-full shadow-[2px_0_10px_rgba(0,0,0,0.02)] z-10 relative">
+    <div className="w-full flex-shrink-0 bg-surface border-r border-surface-mid flex flex-col h-full shadow-[2px_0_10px_rgba(0,0,0,0.02)] z-10 relative">
       <div className="px-4 py-3 border-b border-surface-mid bg-surface relative z-10">
         {selectionMode ? (
           /* ── Selection mode bar ── */
@@ -244,7 +265,9 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
             {/* ── Title row ── */}
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-1.5">
-                <h2 className="font-display text-base font-bold text-on-surface tracking-tight">Conversations</h2>
+                <h2 className="font-display text-base font-bold text-on-surface tracking-tight capitalize">
+                  {folder === "chats" ? "Shared Inbox" : folder}
+                </h2>
                 {onCollapse && (
                   <button onClick={onCollapse} className="p-1 rounded-md hover:bg-surface-low text-on-surface-muted hover:text-on-surface transition-colors">
                     <ChevronLeft size={15} />
@@ -274,7 +297,7 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
                 <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-muted group-focus-within:text-tertiary transition-colors" />
                 <input
                   type="text"
-                  placeholder="Search conversations..."
+                  placeholder="Type and submit to search"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-8 pr-7 py-2 bg-surface-low border border-surface-mid rounded-xl text-[13px] text-on-surface placeholder:text-on-surface-muted focus:outline-none focus:ring-2 focus:ring-tertiary/20 focus:border-tertiary transition-all"
@@ -385,12 +408,19 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
             )}
           </div>
         ) : (
-          visible.map((lead) => (
-            <button
+          visible.map((lead) => {
+            const isBot = lead.ai_enabled !== false;
+            const preview = lead.last_message_content || (lead.phone ? formatPhone(lead.phone) : "No messages yet");
+            const isLink = /^https?:\/\//i.test(preview.trim());
+            const needsAction = lead.needs_human_intervention || lead.needs_human_attention;
+            return (
+            <div
               key={lead.id}
               onClick={() => onSelect(lead)}
+              role="button"
+              tabIndex={0}
               className={cn(
-                "w-full text-left px-4 py-3.5 border-b border-surface-mid/40 transition-all duration-150 group flex items-start gap-3 relative",
+                "w-full text-left px-4 py-3.5 border-b border-surface-mid/40 transition-all duration-150 group flex items-start gap-3 relative cursor-pointer",
                 selectedId === lead.id
                   ? "bg-surface before:absolute before:left-0 before:top-0 before:bottom-0 before:w-[3px] before:bg-tertiary"
                   : "hover:bg-surface"
@@ -409,29 +439,29 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
 
               {/* Avatar with channel badge */}
               <div className="relative shrink-0 mt-0.5">
-                <div className={cn("w-9 h-9 rounded-full flex items-center justify-center text-white font-semibold text-xs select-none", getAvatarColor(lead.id))}>
+                <div className={cn("w-11 h-11 rounded-full flex items-center justify-center text-white font-semibold text-sm select-none", getAvatarColor(lead.id))}>
                   {getInitials(lead)}
                 </div>
-                <div className="absolute -bottom-0.5 -right-0.5 w-[16px] h-[16px] rounded-full bg-surface border border-surface flex items-center justify-center shadow-sm">
+                <div className="absolute -bottom-0.5 -right-0.5 w-[18px] h-[18px] rounded-full bg-surface border-2 border-surface flex items-center justify-center shadow-sm">
                   {lead.source === "instagram" ? (
-                    <IgIcon size={9} className="text-pink-500" />
+                    <IgIcon size={10} className="text-pink-500" />
                   ) : lead.source === "telegram" ? (
-                    <TgIcon size={9} className="text-sky-500" />
+                    <TgIcon size={10} className="text-sky-500" />
                   ) : lead.source === "facebook" ? (
-                    <FbIcon size={9} className="text-blue-600" />
+                    <FbIcon size={10} className="text-blue-600" />
                   ) : (
-                    <MessageCircle size={9} className="text-green-500" />
+                    <MessageCircle size={10} className="text-green-500" />
                   )}
                 </div>
               </div>
 
               {/* Content */}
               <div className="flex-1 min-w-0">
-                {/* Row 1: name + timestamp */}
+                {/* Row 1: name + unread/time */}
                 <div className="flex items-center justify-between gap-2 mb-0.5">
                   <div className="flex items-center gap-1 min-w-0">
                     <span className={cn(
-                      "font-display text-[13px] font-semibold truncate",
+                      "font-display text-[13.5px] font-semibold truncate",
                       selectedId === lead.id ? "text-tertiary" : "text-on-surface"
                     )}>
                       {lead.name || formatPhone(lead.phone) || "Unknown"}
@@ -452,45 +482,80 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
                       <Pin size={10} className="text-amber-500 fill-current shrink-0" />
                     ) : null}
                   </div>
-                  <span className="font-label text-[10px] text-on-surface-muted shrink-0 whitespace-nowrap">
-                    {formatIST((lead as ConversationLead).last_reply_at || lead.created_at)}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {needsAction && (
+                      <span className="w-[18px] h-[18px] rounded-full bg-tertiary flex items-center justify-center font-label text-[10px] font-bold text-white">!</span>
+                    )}
+                    <span className="font-label text-[10px] text-on-surface-muted whitespace-nowrap">
+                      {formatIST((lead as ConversationLead).last_reply_at || lead.created_at)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Row 2: preview + sender indicator */}
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <p className={cn(
+                    "font-body text-[12px] truncate leading-snug min-w-0",
+                    isLink ? "text-tertiary" : "text-on-surface-muted"
+                  )}>
+                    {preview}
+                  </p>
+                  <span className={cn(
+                    "flex items-center gap-0.5 font-label text-[10px] font-semibold shrink-0",
+                    isBot ? "text-emerald-600" : "text-on-surface-muted"
+                  )}>
+                    {isBot ? "Bot" : "You"}
+                    {isBot ? <CheckCheck size={12} /> : <Check size={12} />}
                   </span>
                 </div>
 
-                {/* Row 2: last message */}
-                <p className="font-body text-[11.5px] text-on-surface-muted truncate leading-snug mb-1.5">
-                  {lead.last_message_content || (lead.phone ? formatPhone(lead.phone) : "No messages yet")}
-                </p>
-
-                {/* Row 3: status badges */}
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {lead.needs_human_intervention && (
-                    <span className="font-label text-[9px] font-bold text-white bg-red-500 px-1.5 py-0.5 rounded-full">ACTION</span>
-                  )}
-                  <span className={cn(
-                    "font-label text-[10px] font-semibold px-1.5 py-0.5 rounded-full",
-                    lead.ai_enabled !== false
-                      ? "bg-emerald-50 text-emerald-700"
-                      : "bg-amber-50 text-amber-700"
-                  )}>
-                    {lead.ai_enabled !== false ? "Bot" : "You"}
-                  </span>
-                  {lead.ad_campaign_id && (
-                    <span className="inline-flex items-center gap-0.5 font-label text-[9px] font-bold text-violet-700 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded-full">
-                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/></svg>
-                      Meta Ad
+                {/* Row 3: account label + badges + per-item menu */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                    <span className="font-label text-[10px] font-bold text-on-surface-muted/70 tracking-wide truncate">
+                      {accountLabel(lead)}
                     </span>
-                  )}
-                  <SegmentBadge segment={lead.segment} />
-                  {lead.opted_out ? (
-                    <span className="font-label text-[9px] font-bold text-red-500 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded-full">STOP</span>
-                  ) : (
-                    <span className="font-label text-[10px] text-on-surface-muted font-medium">{lead.score}</span>
-                  )}
+                    <SegmentBadge segment={lead.segment} />
+                    {lead.opted_out && (
+                      <span className="font-label text-[9px] font-bold text-red-500 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded-full">STOP</span>
+                    )}
+                    {lead.blocked_at && (
+                      <span className="font-label text-[9px] font-bold text-red-600 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded-full">BLOCKED</span>
+                    )}
+                  </div>
+
+                  <div className="relative shrink-0" data-card-menu onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => setCardMenuId(cardMenuId === lead.id ? null : lead.id)}
+                      className="p-1 rounded-md text-on-surface-muted opacity-0 group-hover:opacity-100 hover:bg-surface-mid transition-all"
+                    >
+                      <MoreHorizontal size={15} />
+                    </button>
+                    {cardMenuId === lead.id && (
+                      <div className="absolute right-0 bottom-full mb-1 w-40 bg-surface border border-surface-mid rounded-xl shadow-xl overflow-hidden z-30 py-1">
+                        {onArchive && (
+                          <button onClick={() => { setCardMenuId(null); onArchive(lead.id); }} className="w-full flex items-center gap-2 px-3 py-2 text-left font-body text-[12.5px] text-on-surface hover:bg-surface-low transition-colors">
+                            <Archive size={14} className="text-on-surface-muted" />
+                            {folder === "archived" ? "Unarchive" : "Archive"}
+                          </button>
+                        )}
+                        {onBlock && (
+                          <button onClick={() => { setCardMenuId(null); onBlock(lead.id); }} className="w-full flex items-center gap-2 px-3 py-2 text-left font-body text-[12.5px] text-on-surface hover:bg-surface-low transition-colors">
+                            <Ban size={14} className="text-on-surface-muted" />
+                            {folder === "blocked" ? "Unblock" : "Block"}
+                          </button>
+                        )}
+                        <button onClick={() => handleDeleteOne(lead.id)} className="w-full flex items-center gap-2 px-3 py-2 text-left font-body text-[12.5px] text-red-600 hover:bg-red-50 transition-colors">
+                          <Trash2 size={14} /> Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </button>
-          ))
+            </div>
+            );
+          })
         )}
       </div>
     </div>

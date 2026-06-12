@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
 import { AuthRoleProvider } from "./contexts/AuthRoleContext";
 import { ActiveCallProvider } from "./contexts/ActiveCallContext";
@@ -13,6 +14,10 @@ const PING_INTERVAL_MS = 8 * 60 * 1000; // 8 min — keeps Render warm (sleeps a
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const pathname = usePathname();
+  // The conversations route renders its own thin inbox rail (Bulkwise-style) and
+  // fills the viewport, so we suppress the labeled sidebar + app header there.
+  const isInbox = pathname?.startsWith("/dashboard/conversations") ?? false;
 
   useEffect(() => {
     const ping = () => fetch(`${API_URL}/health`, { method: "GET" }).catch(() => {});
@@ -20,6 +25,20 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
     const id = setInterval(ping, PING_INTERVAL_MS);
     return () => clearInterval(id);
   }, []);
+
+  if (isInbox) {
+    return (
+      <AuthRoleProvider>
+        <ActiveCallProvider>
+          <SessionTracker />
+          <div className="h-screen bg-background overflow-hidden">
+            {children}
+          </div>
+          <CalendarPanel isOpen={isCalendarOpen} onClose={() => setIsCalendarOpen(false)} />
+        </ActiveCallProvider>
+      </AuthRoleProvider>
+    );
+  }
 
   return (
     <AuthRoleProvider>

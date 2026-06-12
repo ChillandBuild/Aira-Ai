@@ -483,12 +483,15 @@ async def generate_reply(
     # Step 0: fetch lead + load module configs
     lead_row = (
         db.table("leads")
-        .select("ai_enabled,score,segment,phone,converted_at,tenant_id,assigned_to,name")
+        .select("ai_enabled,score,segment,phone,converted_at,tenant_id,assigned_to,name,blocked_at")
         .eq("id", str(lead_id))
         .limit(1)
         .execute()
     )
     lead_data = lead_row.data[0] if lead_row.data else {}
+    if lead_data.get("blocked_at"):
+        logger.info(f"Lead {lead_id} is blocked — skipping auto-reply")
+        return
     tenant_id = lead_data.get("tenant_id") or "00000000-0000-0000-0000-000000000001"
     segment = lead_data.get("segment") or "C"
 

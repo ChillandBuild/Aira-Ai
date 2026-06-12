@@ -11,6 +11,7 @@ router = APIRouter()
 async def list_conversations(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    folder: str = Query(default="chats", pattern="^(chats|archived|blocked)$"),
     ctx: dict = Depends(get_tenant_and_role),
 ):
     db = get_supabase()
@@ -44,6 +45,15 @@ async def list_conversations(
         .eq("tenant_id", tenant_id)
         .is_("deleted_at", "null")
     )
+
+    # Inbox folders. Default "chats" hides archived + blocked; the folder views
+    # surface exactly one of them.
+    if folder == "archived":
+        lead_query = lead_query.not_.is_("archived_at", "null")
+    elif folder == "blocked":
+        lead_query = lead_query.not_.is_("blocked_at", "null")
+    else:
+        lead_query = lead_query.is_("archived_at", "null").is_("blocked_at", "null")
 
     # Callers see their assigned leads PLUS any lead in the shared escalation
     # pool (a pending handover sets needs_human_attention) so they can resolve it.

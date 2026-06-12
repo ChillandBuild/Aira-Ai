@@ -706,6 +706,33 @@ async def toggle_pin(lead_id: UUID, tenant_id: str = Depends(get_tenant_id)):
     return result.data[0]
 
 
+@router.patch("/{lead_id}/archive")
+async def toggle_archive(lead_id: UUID, tenant_id: str = Depends(get_tenant_id)):
+    """Toggle a conversation's archived state (inbox tidy — does not stop AI)."""
+    db = get_supabase()
+    cur = db.table("leads").select("archived_at").eq("id", str(lead_id)).eq("tenant_id", tenant_id).maybe_single().execute()
+    if not cur.data:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    new_val = None if cur.data.get("archived_at") else datetime.now(timezone.utc).isoformat()
+    res = db.table("leads").update({"archived_at": new_val}).eq("id", str(lead_id)).eq("tenant_id", tenant_id).execute()
+    return res.data[0] if res.data else {"archived_at": new_val}
+
+
+@router.patch("/{lead_id}/block")
+async def toggle_block(lead_id: UUID, tenant_id: str = Depends(get_tenant_id)):
+    """Toggle a contact's blocked state — hides from active inbox and stops AI auto-reply."""
+    db = get_supabase()
+    cur = db.table("leads").select("blocked_at").eq("id", str(lead_id)).eq("tenant_id", tenant_id).maybe_single().execute()
+    if not cur.data:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    blocking = not cur.data.get("blocked_at")
+    update: dict = {"blocked_at": datetime.now(timezone.utc).isoformat() if blocking else None}
+    if blocking:
+        update["ai_enabled"] = False  # blocked contacts must not get auto-replies
+    res = db.table("leads").update(update).eq("id", str(lead_id)).eq("tenant_id", tenant_id).execute()
+    return res.data[0] if res.data else update
+
+
 @router.post("/{lead_id}/send")
 async def send_human_message(lead_id: UUID, payload: HumanMessage, tenant_id: str = Depends(get_tenant_id)):
     content = (payload.content or "").strip()

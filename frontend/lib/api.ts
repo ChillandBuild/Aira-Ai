@@ -39,6 +39,9 @@ export interface Lead {
   channel?: string | null;
   call_status?: "new" | "in_progress" | "callback" | "converted" | "not_interested" | "dnc" | "unreachable" | null;
   do_not_call?: boolean;
+  needs_human_attention?: boolean;
+  archived_at?: string | null;
+  blocked_at?: string | null;
 }
 
 export interface Message {
@@ -659,6 +662,14 @@ export const api = {
       }),
     pin: (id: string) =>
       apiFetch<Lead>(`/api/v1/leads/${id}/pin`, {
+        method: "PATCH",
+      }),
+    archive: (id: string) =>
+      apiFetch<Lead>(`/api/v1/leads/${id}/archive`, {
+        method: "PATCH",
+      }),
+    block: (id: string) =>
+      apiFetch<Lead>(`/api/v1/leads/${id}/block`, {
         method: "PATCH",
       }),
     release: (id: string) =>
