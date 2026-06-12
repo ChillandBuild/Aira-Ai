@@ -158,64 +158,67 @@ function ScoreEventCard({ ev }: { ev: ScoreEvent }) {
   const ch = ev.metadata.channel;
 
   return (
-    <div className="rounded-xl bg-white border border-zinc-200 p-2.5 space-y-1 shadow-[0_1px_2px_rgba(0,0,0,0.01)] hover:border-zinc-300 transition-colors">
+    <div className="rounded-xl bg-surface-low border border-surface-mid p-3 space-y-1.5">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           {/* Score arrow */}
           {ev.metadata.prev_score != null && ev.metadata.new_score != null && (
             <div className="flex items-center gap-1">
-              <span className="font-mono text-[11px] font-semibold text-zinc-400">{ev.metadata.prev_score}</span>
-              <span className="text-zinc-300 text-[10px]">→</span>
-              <span className="font-mono text-[12.5px] font-bold text-indigo-600">{ev.metadata.new_score}</span>
+              <span className="font-mono text-xs font-semibold text-on-surface-muted">{ev.metadata.prev_score}</span>
+              <span className="text-on-surface-muted text-xs">→</span>
+              <span className="font-mono text-sm font-bold text-tertiary">{ev.metadata.new_score}</span>
             </div>
           )}
           {/* Segment change */}
           {hasSegChange && (
             <span className="font-label text-[10px] flex items-center gap-0.5">
-              <span className={cn("px-1 rounded bg-zinc-100", SEG_TEXT_COLOR[ev.from_segment!])}>{ev.from_segment}</span>
-              <span className="text-zinc-300">→</span>
-              <span className={cn("px-1 rounded font-bold bg-zinc-100", SEG_TEXT_COLOR[ev.to_segment!])}>{ev.to_segment}</span>
+              <span className={SEG_TEXT_COLOR[ev.from_segment!]}>{ev.from_segment}</span>
+              <span className="text-on-surface-muted">→</span>
+              <span className={cn("font-bold", SEG_TEXT_COLOR[ev.to_segment!])}>{ev.to_segment}</span>
             </span>
           )}
         </div>
         {/* Channel + time */}
         <div className="flex items-center gap-1.5 shrink-0">
           {ch && (
-            <span className="font-label text-[9px] px-1 py-0.5 rounded bg-zinc-50 border border-zinc-200/50 text-zinc-500 uppercase font-semibold">
+            <span className="font-label text-[10px] px-1.5 py-0.5 rounded bg-surface-mid text-on-surface-muted">
               {CHANNEL_BADGE[ch] ?? ch}
             </span>
           )}
-          <span className="font-label text-[9px] text-zinc-400 font-medium">{timeAgo(ev.created_at)}</span>
+          <span className="font-label text-[10px] text-on-surface-muted">{timeAgo(ev.created_at)}</span>
         </div>
       </div>
-      {/* Composite breakdown */}
+      {/* Composite breakdown — only shown when v2 data is present */}
       {ev.metadata.arc_score != null && (
-        <div className="flex items-center gap-1 flex-wrap pt-0.5">
-          <span className="font-mono text-[9px] px-1 py-0.5 rounded bg-zinc-50 border border-zinc-100 text-zinc-500">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-surface-mid text-on-surface-muted">
             arc {ev.metadata.arc_score}
           </span>
           {ev.metadata.intent_delta != null && ev.metadata.intent_delta !== 0 && (
             <span className={cn(
-              "font-mono text-[9px] px-1 py-0.5 rounded border",
-              ev.metadata.intent_delta > 0 ? "bg-emerald-50/50 border-emerald-100 text-emerald-700" : "bg-red-50/50 border-red-100 text-red-600"
+              "font-mono text-[10px] px-1.5 py-0.5 rounded",
+              ev.metadata.intent_delta > 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"
             )}>
               {ev.metadata.intent_delta > 0 ? "+" : ""}{ev.metadata.intent_delta} intent
             </span>
           )}
           {ev.metadata.engagement_delta != null && ev.metadata.engagement_delta !== 0 && (
-            <span className="font-mono text-[9px] px-1 py-0.5 rounded bg-amber-50/50 border border-amber-100 text-amber-700">
+            <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">
               {ev.metadata.engagement_delta} eng
             </span>
           )}
           {ev.metadata.intent_reason && ev.metadata.intent_reason !== "neutral" && (
-            <span className="font-label text-[9.5px] text-zinc-400 italic">
+            <span className="font-label text-[10px] text-on-surface-muted italic">
               {ev.metadata.intent_reason.replace(/_/g, " ")}
             </span>
+          )}
+          {ev.metadata.arc_updated && (
+            <span className="font-label text-[10px] text-purple-500">⚡ arc</span>
           )}
         </div>
       )}
       {ev.metadata.message_snippet && (
-        <p className="font-body text-[10.5px] text-zinc-500 italic leading-normal line-clamp-2 pt-0.5 border-t border-zinc-50 mt-1">
+        <p className="font-body text-[11px] text-on-surface-muted italic leading-snug line-clamp-2">
           &ldquo;{ev.metadata.message_snippet}&rdquo;
         </p>
       )}
@@ -376,65 +379,23 @@ export function LeadDetailsPanel({ lead, onCollapse, onLeadUpdate }: LeadDetails
               </p>
             </Section>
 
-            <Section icon={<TrendingUp size={12} />} title="Score & Segment">
-              <div className="space-y-3 bg-zinc-50/50 p-3 rounded-xl border border-zinc-200/40">
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-label text-[10.5px] text-zinc-500">Lead Score:</span>
-                    <select
-                      value={lead.score}
-                      onChange={async (e) => {
-                        const newScore = parseInt(e.target.value);
-                        try {
-                          const updated = await api.leads.update(lead.id, { score: newScore });
-                          onLeadUpdate?.(updated);
-                          toast.success(`Score updated to ${newScore}/10`);
-                        } catch {
-                          toast.error("Failed to update score");
-                        }
-                      }}
-                      className="font-mono text-xs font-bold text-zinc-800 bg-white border border-zinc-200/80 rounded-lg px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-tertiary cursor-pointer"
-                    >
-                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((s) => (
-                        <option key={s} value={s}>{s}/10</option>
-                      ))}
-                    </select>
+            <Section icon={<TrendingUp size={12} />} title="Score">
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-2 rounded-full bg-surface-mid overflow-hidden">
+                    <div
+                      className={cn("h-full rounded-full transition-all", scoreBarColor(lead.score))}
+                      style={{ width: `${lead.score * 10}%` }}
+                    />
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex-grow h-2 rounded-full bg-zinc-200/80 overflow-hidden">
-                      <div
-                        className={cn("h-full rounded-full transition-all", scoreBarColor(lead.score))}
-                        style={{ width: `${lead.score * 10}%` }}
-                      />
-                    </div>
-                  </div>
+                  <span className="font-display text-base font-bold text-on-surface w-6 text-right">{lead.score}</span>
                 </div>
-
-                <div className="flex items-center justify-between border-t border-zinc-200/50 pt-2.5">
-                  <span className="font-label text-[10.5px] text-zinc-500">Segment:</span>
-                  <select
-                    value={lead.segment}
-                    onChange={async (e) => {
-                      const newSegment = e.target.value as "A" | "B" | "C" | "D";
-                      try {
-                        const updated = await api.leads.update(lead.id, { segment: newSegment });
-                        onLeadUpdate?.(updated);
-                        toast.success(`Segment updated to ${SEG_LABEL[newSegment]}`);
-                      } catch {
-                        toast.error("Failed to update segment");
-                      }
-                    }}
-                    className={cn(
-                      "font-label text-[11px] font-semibold px-2.5 py-0.5 rounded-full border cursor-pointer focus:outline-none focus:ring-1 focus:ring-tertiary font-medium bg-white text-zinc-800",
-                      SEG_STYLE[lead.segment] ?? "bg-gray-100 text-gray-500 border-gray-200"
-                    )}
-                  >
-                    <option value="A">Hot (A)</option>
-                    <option value="B">Warm (B)</option>
-                    <option value="C">Cold (C)</option>
-                    <option value="D">Disqualified (D)</option>
-                  </select>
-                </div>
+                <span className={cn(
+                  "font-label text-[11px] font-semibold px-2 py-0.5 rounded-full border",
+                  SEG_STYLE[lead.segment] ?? "bg-gray-100 text-gray-500"
+                )}>
+                  Segment {lead.segment} · {SEG_LABEL[lead.segment] ?? ""}
+                </span>
               </div>
             </Section>
 

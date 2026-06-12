@@ -9,16 +9,8 @@ import {
   Bot, User, CheckCircle2, Send, PowerOff, Power,
   AlertTriangle, Pencil, MessageCircle, Trash2,
   Plus, Mic, MicOff, FileText, Image as ImageIcon,
-  Music, Video, Download, X, Eraser, MoreVertical, Zap,
+  Music, Video, Download, X, Eraser, MoreVertical,
 } from "lucide-react";
-
-const QUICK_REPLIES = [
-  { label: "👋 Greeting", text: "Hello! How can we help you today?" },
-  { label: "✨ Intro", text: "Hi! Thanks for reaching out. How can I help you find what you're looking for?" },
-  { label: "📅 Follow-up", text: "Hi! Just checking in — do you have any questions, or would you like to schedule a call?" },
-  { label: "💳 Pricing", text: "Happy to share our pricing details. Would you like me to send the full breakdown?" },
-  { label: "🤝 Thank You", text: "Thank you for reaching out! Please let us know if there's anything else we can help with." },
-];
 
 const AVATAR_COLORS = [
   "bg-violet-500", "bg-blue-500", "bg-indigo-500", "bg-cyan-500",
@@ -146,26 +138,24 @@ function MediaBubble({ msg }: { msg: Message }) {
 // ─── Single message bubble (memoized — only re-renders when this message changes) ─
 const MessageBubble = memo(function MessageBubble({ msg }: { msg: Message }) {
   return (
-    <div className={cn("flex gap-2.5 animate-in fade-in duration-200", msg.direction === "outbound" && "flex-row-reverse")}>
+    <div className={cn("flex gap-2", msg.direction === "outbound" && "flex-row-reverse")}>
       <div className={cn(
-        "w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 shadow-sm border",
+        "w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5",
         msg.direction === "outbound"
-          ? (msg.is_ai_generated ? "bg-violet-50 border-violet-100" : "bg-indigo-50 border-indigo-100")
-          : "bg-zinc-100 border-zinc-200"
+          ? (msg.is_ai_generated ? "bg-secondary/10" : "bg-tertiary/10")
+          : "bg-surface-mid"
       )}>
         {msg.direction === "outbound" ? (
-          msg.is_ai_generated ? <Bot size={13} className="text-violet-600" /> : <User size={13} className="text-indigo-600" />
+          msg.is_ai_generated ? <Bot size={14} className="text-secondary" /> : <User size={14} className="text-tertiary" />
         ) : (
-          <User size={13} className="text-zinc-500" />
+          <User size={14} className="text-on-surface-muted" />
         )}
       </div>
       <div className={cn(
-        "max-w-[70%] px-4 py-3 rounded-2xl font-body text-[13.5px] leading-relaxed shadow-sm",
+        "max-w-[70%] px-4 py-2.5 rounded-2xl font-body text-sm",
         msg.direction === "outbound"
-          ? msg.is_ai_generated
-            ? "bg-gradient-to-br from-violet-600 to-indigo-600 text-white rounded-tr-none"
-            : "bg-gradient-to-br from-indigo-600 to-indigo-500 text-white rounded-tr-none"
-          : "bg-surface text-on-surface border border-surface-mid/60 rounded-tl-none"
+          ? "bg-tertiary text-white rounded-tr-sm"
+          : "bg-surface text-on-surface shadow-card rounded-tl-sm"
       )}>
         {msg.media_type && <MediaBubble msg={msg} />}
         {msg.content && !(msg.media_type && msg.content.startsWith("[")) && (
@@ -252,31 +242,10 @@ export function ChatThread({
   const [fileCaption, setFileCaption] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
-  const [showQuickReplies, setShowQuickReplies] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const quickRepliesRef = useRef<HTMLDivElement>(null);
-
-  // Close the quick-replies popover on Escape or outside click
-  useEffect(() => {
-    if (!showQuickReplies) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setShowQuickReplies(false);
-    };
-    const onClick = (e: MouseEvent) => {
-      if (quickRepliesRef.current && !quickRepliesRef.current.contains(e.target as Node)) {
-        setShowQuickReplies(false);
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    document.addEventListener("mousedown", onClick);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onClick);
-    };
-  }, [showQuickReplies]);
 
   useEffect(() => {
     setCurrent(lead);
@@ -622,11 +591,8 @@ export function ChatThread({
             Loading messages…
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-zinc-400 space-y-3">
-            <div className="w-12 h-12 rounded-xl bg-zinc-100 flex items-center justify-center">
-              <MessageCircle size={22} className="opacity-60" />
-            </div>
-            <p className="font-body text-xs">No messages yet. Send a message to start the conversation.</p>
+          <div className="flex items-center justify-center h-full text-on-surface-muted font-body text-sm">
+            No messages yet
           </div>
         ) : (
           messages.map((msg) => <MessageBubble key={msg.id} msg={msg} />)
@@ -687,102 +653,58 @@ export function ChatThread({
           </div>
         ) : (
           /* Main input bar */
-          <div className="relative flex-1" ref={quickRepliesRef}>
-            {showQuickReplies && (
-              <div className="absolute bottom-full left-0 right-0 mb-3 bg-white/95 backdrop-blur-md border border-zinc-200/80 rounded-2xl shadow-xl p-3.5 z-30 animate-in fade-in slide-in-from-bottom-2 duration-250">
-                <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-zinc-100">
-                  <span className="font-display text-[11px] font-bold text-indigo-600 uppercase tracking-wider flex items-center gap-1.5">
-                    <Zap size={11} className="fill-current" /> Quick Replies
-                  </span>
-                  <button 
-                    onClick={() => setShowQuickReplies(false)}
-                    className="text-zinc-400 hover:text-zinc-600 p-0.5 rounded-full hover:bg-zinc-100 transition-colors"
-                  >
-                    <X size={11} />
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
-                  {QUICK_REPLIES.map((reply, i) => (
-                    <button
-                      key={i}
-                      onClick={() => {
-                        setDraft((prev) => (prev ? prev + " " + reply.text : reply.text));
-                        setShowQuickReplies(false);
-                      }}
-                      className="w-full text-left p-2.5 rounded-xl bg-zinc-50 hover:bg-indigo-50/50 hover:text-indigo-900 border border-zinc-200/50 hover:border-indigo-200 text-xs transition-all flex flex-col gap-0.5 group"
-                    >
-                      <span className="font-bold text-zinc-800 group-hover:text-indigo-600 transition-colors">{reply.label}</span>
-                      <span className="text-zinc-500 text-[11px] line-clamp-1 group-hover:text-indigo-950/80 transition-colors">{reply.text}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            
-            <div className="flex items-center gap-2 bg-surface-low border border-surface-mid rounded-2xl px-3 py-2 focus-within:border-tertiary focus-within:ring-2 focus-within:ring-tertiary/15 transition-all">
-              {canSendMedia ? (
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isRecording}
-                  title="Attach file"
-                  className="p-1 text-on-surface-muted hover:text-tertiary transition-colors disabled:opacity-40 shrink-0"
-                >
-                  <Plus size={18} />
-                </button>
-              ) : (
-                <div className="w-1" />
-              )}
-
+          <div className="flex items-center gap-2 bg-surface-low border border-surface-mid rounded-2xl px-3 py-2 focus-within:border-tertiary focus-within:ring-2 focus-within:ring-tertiary/15 transition-all">
+            {canSendMedia ? (
               <button
-                onClick={() => setShowQuickReplies(!showQuickReplies)}
-                title="Quick Replies"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isRecording}
+                title="Attach file"
+                className="p-1 text-on-surface-muted hover:text-tertiary transition-colors disabled:opacity-40 shrink-0"
+              >
+                <Plus size={18} />
+              </button>
+            ) : (
+              <div className="w-1" />
+            )}
+
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply(); }
+              }}
+              placeholder={isRecording ? "Recording… tap 🔴 to stop" : "Type a message…"}
+              rows={1}
+              disabled={sending || isRecording}
+              className="flex-1 bg-transparent font-body text-[13.5px] resize-none focus:outline-none disabled:opacity-50 max-h-28 leading-relaxed"
+              style={{ minHeight: "24px" }}
+              onInput={(e) => {
+                const t = e.currentTarget;
+                t.style.height = "auto";
+                t.style.height = `${Math.min(t.scrollHeight, 112)}px`;
+              }}
+            />
+
+            {canSendMedia && (
+              <button
+                onClick={isRecording ? stopRecording : startRecording}
+                title={isRecording ? "Stop recording" : "Voice note"}
                 className={cn(
-                  "p-1 rounded-lg transition-colors shrink-0",
-                  showQuickReplies ? "text-tertiary bg-tertiary/10" : "text-on-surface-muted hover:text-tertiary"
+                  "p-1.5 rounded-full transition-colors shrink-0",
+                  isRecording ? "text-red-600 bg-red-50 animate-pulse" : "text-on-surface-muted hover:text-tertiary"
                 )}
               >
-                <Zap size={16} />
+                {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
               </button>
+            )}
 
-              <textarea
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply(); }
-                }}
-                placeholder={isRecording ? "Recording… tap 🔴 to stop" : "Type a message…"}
-                rows={1}
-                disabled={sending || isRecording}
-                className="flex-1 bg-transparent font-body text-[13.5px] resize-none focus:outline-none disabled:opacity-50 max-h-28 leading-relaxed"
-                style={{ minHeight: "24px" }}
-                onInput={(e) => {
-                  const t = e.currentTarget;
-                  t.style.height = "auto";
-                  t.style.height = `${Math.min(t.scrollHeight, 112)}px`;
-                }}
-              />
-
-              {canSendMedia && (
-                <button
-                  onClick={isRecording ? stopRecording : startRecording}
-                  title={isRecording ? "Stop recording" : "Voice note"}
-                  className={cn(
-                    "p-1.5 rounded-full transition-colors shrink-0",
-                    isRecording ? "text-red-600 bg-red-50 animate-pulse" : "text-on-surface-muted hover:text-tertiary"
-                  )}
-                >
-                  {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
-                </button>
-              )}
-
-              <button
-                onClick={sendReply}
-                disabled={sending || !draft.trim() || isRecording}
-                className="w-8 h-8 rounded-full bg-tertiary text-white flex items-center justify-center shrink-0 hover:bg-tertiary/90 disabled:opacity-40 transition-colors"
-              >
-                <Send size={13} />
-              </button>
-            </div>
+            <button
+              onClick={sendReply}
+              disabled={sending || !draft.trim() || isRecording}
+              className="w-8 h-8 rounded-full bg-tertiary text-white flex items-center justify-center shrink-0 hover:bg-tertiary/90 disabled:opacity-40 transition-colors"
+            >
+              <Send size={13} />
+            </button>
           </div>
         )}
 

@@ -141,15 +141,10 @@ export default function ConversationsPage() {
           onLeadUpdate={(updated) => setSelected(updated)}
         />
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center text-on-surface-muted gap-4 bg-zinc-50/20">
-          <div className="w-16 h-16 rounded-2xl bg-white border border-zinc-200/60 shadow-sm flex items-center justify-center text-zinc-400">
-            <MessageSquare size={26} className="opacity-80" />
-          </div>
-          <div className="text-center max-w-sm px-4">
-            <p className="font-display font-semibold text-[15px] text-zinc-800">No conversation selected</p>
-            <p className="font-body text-xs mt-1.5 text-zinc-500 leading-relaxed">Select a conversation from the left panel to view the chat history and start managing lead interactions.</p>
-          </div>
-          {error && <p className="font-body text-xs text-red-500 mt-2 bg-red-50 px-3 py-1 rounded-full border border-red-100">Failed to load conversations. Retrying…</p>}
+        <div className="flex-1 flex flex-col items-center justify-center text-on-surface-muted gap-3">
+          <MessageSquare size={48} className="opacity-20" />
+          <p className="font-body text-sm">Select a conversation to view messages</p>
+          {error && <p className="font-body text-sm text-red-500">Failed to load conversations. Retrying…</p>}
         </div>
       )}
 
