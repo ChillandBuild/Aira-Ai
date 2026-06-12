@@ -60,8 +60,48 @@ def _clean_text(value: str | None) -> str | None:
     return text or None
 
 
+# Meta error codes that recur across broadcasts — mapped before keyword matching.
+_META_CODE_REASONS: dict[int, str] = {
+    131058: "test_template_only",       # hello_world etc. — only from Public Test Numbers
+    131049: "ecosystem_cap",            # per-user marketing cap (async; not a send-time fail)
+    131047: "re_engagement_required",   # 24h window closed, needs template
+    131030: "recipient_not_allowed",    # number not in dev/test allow-list
+    131026: "undeliverable",            # no WhatsApp / cannot receive
+    133010: "number_not_registered",    # sender number not registered on Cloud API
+    190:    "token_invalid",            # OAuth token expired/invalid
+    200:    "permission_denied",        # token missing whatsapp permission
+    10:     "permission_denied",
+    100:    "bad_request",              # malformed param / object id
+}
+
+
+def _meta_error_code(error_msg: str) -> int | None:
+    """Pull the numeric Meta error code out of a raw error string / JSON blob."""
+    if not error_msg:
+        return None
+    m = re.search(r'"code"\s*:\s*(\d+)', error_msg) or re.search(r"\(#(\d+)\)", error_msg)
+    return int(m.group(1)) if m else None
+
+
+def _meta_error_detail(error_msg: str) -> str:
+    """Human-readable Meta error for the failed CSV — '(#code) message', else trimmed raw."""
+    if not error_msg:
+        return ""
+    msg = None
+    m = re.search(r'"message"\s*:\s*"((?:[^"\\]|\\.)*)"', error_msg)
+    if m:
+        msg = m.group(1).encode().decode("unicode_escape")
+    if not msg:
+        msg = error_msg.strip()
+    msg = re.sub(r"^\d{3}:\s*", "", msg)  # strip leading "400: " from HTTPException str
+    return msg[:300]
+
+
 def _map_meta_error(error_msg: str) -> str:
     """Map Meta API error message to a short failure reason code."""
+    code = _meta_error_code(error_msg)
+    if code in _META_CODE_REASONS:
+        return _META_CODE_REASONS[code]
     error_lower = (error_msg or "").lower()
     if "invalid_phone" in error_lower or "invalid phone" in error_lower or ("phone number" in error_lower and "invalid" in error_lower):
         return "invalid_number"
@@ -971,6 +1011,7 @@ async def bulk_send(body: BulkSendRequest, tenant_id: str = Depends(get_tenant_i
             }
             if _has_fail_reason:
                 row["fail_reason"] = fail_reason
+            row["fail_detail"] = _meta_error_detail(str(e))
             recipient_rows.append(row)
 
     # Track invalid phone numbers separately so they appear in failed CSV
@@ -1217,10 +1258,19 @@ def _classify_broadcast_outcomes(
     except Exception:
         has_opted_out_at = False
 
+    # Check fail_detail column exists (migration 105 compat)
+    has_fail_detail = True
+    try:
+        db.table("broadcast_recipients").select("fail_detail").limit(1).execute()
+    except Exception:
+        has_fail_detail = False
+
     base_cols = "lead_id, phone, name, send_status, created_at"
     select_cols = base_cols
     if has_fail_reason:
         select_cols += ", fail_reason"
+    if has_fail_detail:
+        select_cols += ", fail_detail"
     if has_opted_out_at:
         select_cols += ", opted_out_at"
     recipients_resp = db.table("broadcast_recipients") \
@@ -1428,6 +1478,7 @@ def _classify_broadcast_outcomes(
                 "name": name,
                 "reason": reason,
                 "fail_reason": fail_reason or "",
+                "fail_detail": r.get("fail_detail") or "",
                 "opted_out_at": opted_out_at or "",
             })
 
@@ -1506,23 +1557,23 @@ async def get_failed_csv(
                     lead_ids_fb = [r["lead_id"] for r in failed_msgs.data if r.get("lead_id")]
                     leads_fb = db.table("leads").select("id,phone,name").in_("id", lead_ids_fb).eq("tenant_id", tenant_id).execute()
                     output = io.StringIO()
-                    writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "fail_reason", "broadcast_id", "broadcast_timestamp"])
+                    writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "fail_reason", "fail_detail", "broadcast_id", "broadcast_timestamp"])
                     writer.writeheader()
                     for lead in (leads_fb.data or []):
-                        writer.writerow({"phone": lead.get("phone", ""), "name": lead.get("name", ""), "reason": "failed", "fail_reason": "delivery_failed", "broadcast_id": broadcast_id, "broadcast_timestamp": broadcast_ts})
+                        writer.writerow({"phone": lead.get("phone", ""), "name": lead.get("name", ""), "reason": "failed", "fail_reason": "delivery_failed", "fail_detail": "", "broadcast_id": broadcast_id, "broadcast_timestamp": broadcast_ts})
                     return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=failed_{broadcast_id[:8]}.csv"})
         except Exception as e:
             logger.warning(f"Fallback failed-csv lookup failed: {e}")
         # Return empty CSV instead of 404 JSON
         output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "fail_reason", "broadcast_id", "broadcast_timestamp"])
+        writer = csv.DictWriter(output, fieldnames=["phone", "name", "reason", "fail_reason", "fail_detail", "broadcast_id", "broadcast_timestamp"])
         writer.writeheader()
         return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=failed_{broadcast_id[:8]}.csv"})
 
     output = io.StringIO()
     writer = csv.DictWriter(
         output,
-        fieldnames=["phone", "name", "reason", "fail_reason", "broadcast_id", "broadcast_timestamp"],
+        fieldnames=["phone", "name", "reason", "fail_reason", "fail_detail", "broadcast_id", "broadcast_timestamp"],
     )
     writer.writeheader()
     for row in outcome["failures"]:
@@ -1533,6 +1584,7 @@ async def get_failed_csv(
             "name": row.get("name", ""),
             "reason": row.get("reason", "failed"),
             "fail_reason": row.get("fail_reason", ""),
+            "fail_detail": row.get("fail_detail", ""),
             "broadcast_id": broadcast_id,
             "broadcast_timestamp": broadcast_timestamp,
         })

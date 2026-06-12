@@ -29,6 +29,16 @@ def _clean_text(val: str | None) -> str:
     return (val or "").strip()
 
 
+def _meta_error_detail(error_msg: str) -> str:
+    """Human-readable Meta error for the failed CSV — '(#code) message', else trimmed raw."""
+    if not error_msg:
+        return ""
+    m = _re.search(r'"message"\s*:\s*"((?:[^"\\]|\\.)*)"', error_msg)
+    msg = m.group(1).encode().decode("unicode_escape") if m else error_msg.strip()
+    msg = _re.sub(r"^\d{3}:\s*", "", msg)
+    return msg[:300]
+
+
 async def execute_broadcast(row: dict) -> dict:
     """Run a single scheduled_broadcasts row and return a result dict."""
     row_id = row["id"]
@@ -231,6 +241,7 @@ async def execute_broadcast(row: dict) -> dict:
                     "name": lead_name,
                     "send_status": "failed",
                     "tag_id": tag_id,
+                    "fail_detail": _meta_error_detail(str(e)),
                 })
 
         # Persist broadcast_recipients
