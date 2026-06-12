@@ -1,7 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { api, AnalyticsOverview } from "@/lib/api";
+import { AnalyticsOverview } from "@/lib/api";
+import { useOverview } from "@/hooks/useApi";
 import {
   MessageSquare,
   Sparkles,
@@ -155,8 +156,8 @@ function TodaySnapshot({ overview }: { overview: AnalyticsOverview | null }) {
 export default function DashboardPage() {
   const { role, loading: roleLoading } = useAuthRole();
   const router = useRouter();
-  const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Only owners fetch admin data; SWR caches it and revalidates on focus.
+  const { data: overview, isLoading: loading } = useOverview(role === "owner");
 
   // Redirect callers to their profile page
   useEffect(() => {
@@ -164,16 +165,6 @@ export default function DashboardPage() {
       router.replace("/dashboard/profile");
     }
   }, [role, roleLoading, router]);
-
-  useEffect(() => {
-    if (role !== "owner") return; // only owners fetch admin data
-    api.analytics.overview()
-      .then((o) => {
-        setOverview(o);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [role]);
 
   if (roleLoading || role !== "owner") {
     return (
@@ -296,7 +287,7 @@ export default function DashboardPage() {
             </div>
 
             <div>
-              <TodaySnapshot overview={overview} />
+              <TodaySnapshot overview={overview ?? null} />
             </div>
           </div>
 

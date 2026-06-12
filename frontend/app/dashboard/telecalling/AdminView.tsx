@@ -1,11 +1,12 @@
 "use client";
 import { toast } from "sonner";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import {
   Phone, RefreshCw, TrendingUp,
   Users, Coffee, ChevronDown, Settings, Eye, X, Calendar, Copy, Tag, Target, StickyNote
 } from "lucide-react";
 import { api, Caller, Lead } from "@/lib/api";
+import { useAdminDashboard } from "@/hooks/useApi";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import LiveNotesPane from "./components/live-notes-pane";
 import { useActiveCall } from "../contexts/ActiveCallContext";
@@ -27,15 +28,17 @@ function ScoreBar({ score }: { score: number }) {
 }
 
 export default function AdminView() {
-  const [callers, setCallers] = useState<Caller[]>([]);
+  // Cached + auto-revalidating (focus/reconnect + 30s) admin dashboard data.
+  const { data: dashboard, mutate: refreshDashboard } = useAdminDashboard();
+  const callers: Caller[] = dashboard?.callers ?? [];
+  const topLeads: Lead[] = dashboard?.topLeads ?? [];
+  const totalCallsToday = dashboard?.totalCallsToday ?? 0;
+  const totalConversionsToday = dashboard?.totalConversionsToday ?? 0;
+
   const [selectedCallerId, setSelectedCallerId] = useState<string | null>(null);
   const [showConfigModal, setShowConfigModal] = useState(false);
 
-  const [totalCallsToday, setTotalCallsToday] = useState(0);
-  const [totalConversionsToday, setTotalConversionsToday] = useState(0);
-
   const { activeCall: activeCallCtx, setActiveCall: setActiveCallCtx } = useActiveCall();
-  const [topLeads, setTopLeads] = useState<Lead[]>([]);
   const [dialingLeadId, setDialingLeadId] = useState<string | null>(null);
 
   const [manualPhone, setManualPhone] = useState("");
@@ -85,23 +88,6 @@ export default function AdminView() {
       });
   }, [viewingLeadId]);
 
-  const loadData = useCallback(async () => {
-    try {
-      const [rows, leads, stats] = await Promise.all([
-        api.callers.list(),
-        api.leads.list({ limit: 5 }),
-        api.calls.statsToday().catch(() => ({ calls_today: 0, conversions_today: 0 })),
-      ]);
-      setCallers(rows);
-      setTopLeads(leads);
-      setTotalCallsToday(stats.calls_today);
-      setTotalConversionsToday(stats.conversions_today);
-    } catch (err) {
-      console.error("AdminView load error:", err);
-    }
-  }, []);
-
-  useEffect(() => { loadData(); }, [loadData]);
 
   async function manualDial() {
     if (!manualPhone.trim()) return;
@@ -110,6 +96,7 @@ export default function AdminView() {
       const res = await api.calls.initiate({ phone: manualPhone.trim() }, selectedCallerId ?? undefined);
       setActiveCallCtx({ leadId: res.lead_id ?? null, name: res.lead_name ?? null, phone: manualPhone.trim(), callLogId: res.call_log_id ?? null });
       setManualPhone("");
+      refreshDashboard();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Call failed");
     } finally { setManualDialing(false); }
@@ -120,6 +107,7 @@ export default function AdminView() {
     try {
       const res = await api.calls.initiate({ leadId: lead.id }, selectedCallerId ?? undefined);
       setActiveCallCtx({ leadId: res.lead_id ?? lead.id, name: res.lead_name ?? lead.name ?? null, phone: lead.phone ?? "", callLogId: res.call_log_id ?? null });
+      refreshDashboard();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Call failed");
     } finally { setDialingLeadId(null); }

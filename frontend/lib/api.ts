@@ -487,10 +487,29 @@ export interface FunnelAnalyticsExtended {
   hot_lead_aging: { bucket: string; count: number }[];
 }
 
-async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
+// Transient statuses worth a retry: server waking / restarting / behind a proxy.
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+// Cold-start (Render spin-up) can take 30–50s; give GETs room, keep mutations tight.
+const GET_TIMEOUT_MS = 30_000;
+const MUTATION_TIMEOUT_MS = 15_000;
+const RETRY_DELAYS_MS = [600, 1800];
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Marks failures safe to retry (network/timeout/transient status) vs. real errors.
+class RetryableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RetryableError";
+  }
+}
+
+async function apiFetchOnce<T>(path: string, opts: RequestInit, timeoutMs: number): Promise<T> {
   const authHeaders = await getAuthHeaders();
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15_000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(`${API_URL}${path}`, {
       ...opts,
@@ -505,6 +524,9 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
       if (res.status === 401 && typeof window !== "undefined") {
         window.location.href = "/login";
       }
+      if (RETRYABLE_STATUS.has(res.status)) {
+        throw new RetryableError(`Server unavailable (${res.status})`);
+      }
       const err = await res.json().catch(() => ({ detail: "Request failed" }));
       const error = new Error(err.detail || "Request failed") as Error & { status?: number };
       error.status = res.status;
@@ -513,15 +535,43 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
     return res.json();
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {
-      throw new Error("Request timed out — server took too long to respond");
+      throw new RetryableError("Request timed out — server took too long to respond");
     }
     if (err instanceof TypeError && err.message.toLowerCase().includes("fetch")) {
-      throw new Error("Cannot reach server — it may be restarting. Try again in 30 seconds.");
+      throw new RetryableError("Cannot reach server — it may be restarting.");
     }
     throw err;
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
+  const method = (opts.method ?? "GET").toUpperCase();
+  // Only idempotent reads are retried — retrying a POST/PATCH/DELETE could
+  // double-send a broadcast/message/assignment if the first reached the server.
+  const idempotent = method === "GET" || method === "HEAD";
+  const timeoutMs = idempotent ? GET_TIMEOUT_MS : MUTATION_TIMEOUT_MS;
+  const maxAttempts = idempotent ? RETRY_DELAYS_MS.length + 1 : 1;
+
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await apiFetchOnce<T>(path, opts, timeoutMs);
+    } catch (err) {
+      lastErr = err;
+      if (!(err instanceof RetryableError) || attempt === maxAttempts - 1) break;
+      await delay(RETRY_DELAYS_MS[attempt]);
+    }
+  }
+  if (lastErr instanceof RetryableError) {
+    throw new Error(
+      lastErr.message.includes("timed out")
+        ? lastErr.message
+        : "Cannot reach server — it may be restarting. Try again in 30 seconds.",
+    );
+  }
+  throw lastErr;
 }
 
 export interface AppNotification {
