@@ -11,7 +11,7 @@ import { format, differenceInSeconds, subDays, startOfDay, isSameDay } from "dat
 
 import AssignmentLog from "../telecalling/components/assignment-log";
 import PerformanceView from "../telecalling/components/performance-view";
-import AttendanceCalendar from "./AttendanceCalendar";
+import AttendanceHeatmap from "./AttendanceHeatmap";
 
 /* ────────────────────────────── types ────────────────────────────── */
 interface StatusSummary {
@@ -317,9 +317,6 @@ function TeamProfilePanel({ callerId, callerName }: { callerId: string, callerNa
         </div>
       </div>
 
-      {/* ATTENDANCE CALENDAR */}
-      <AttendanceCalendar callerId={callerId} />
-
       {/* METRICS ROW */}
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-100 p-4">
@@ -351,6 +348,9 @@ function TeamProfilePanel({ callerId, callerName }: { callerId: string, callerNa
           <p className="font-display text-xl font-bold text-ink">{avgScore}</p>
         </div>
       </div>
+
+      {/* ATTENDANCE */}
+      <AttendanceHeatmap callerId={callerId} />
 
       {/* CHARTS */}
       <div className="grid grid-cols-1 gap-4">
