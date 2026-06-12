@@ -1,9 +1,12 @@
 import logging
+from datetime import date, datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 
 from app.db.supabase import get_supabase
 from app.dependencies.tenant import get_tenant_and_role
+from app.services.attendance import build_attendance_map, compute_team_summary, date_range
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -15,6 +18,11 @@ class InvitePayload(BaseModel):
     name: str | None = None
     phone: str | None = None
     telecmi_agent_id: str | None = None
+
+
+class AttendancePayload(BaseModel):
+    date: str
+    status: str
 
 
 @router.get("/me")
@@ -170,3 +178,186 @@ def remove_member(user_id: str, ctx: dict = Depends(get_tenant_and_role)):
     db.table("tenant_users").delete().eq("user_id", user_id).eq("tenant_id", ctx["tenant_id"]).execute()
     db.table("callers").delete().eq("user_id", user_id).eq("tenant_id", ctx["tenant_id"]).execute()
     return {"removed": True}
+
+
+@router.get("/attendance")
+def get_team_attendance(month: str | None = None, ctx: dict = Depends(get_tenant_and_role)):
+    if ctx["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Only owners can view attendance")
+    db = get_supabase()
+    today = datetime.utcnow().date()
+
+    if month:
+        try:
+            year_str, mon_str = month.split("-")
+            month_start = date(int(year_str), int(mon_str), 1)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="month must be in YYYY-MM format")
+    else:
+        month_start = today.replace(day=1)
+
+    if month_start.month == 12:
+        next_month = date(month_start.year + 1, 1, 1)
+    else:
+        next_month = date(month_start.year, month_start.month + 1, 1)
+    month_end = next_month - timedelta(days=1)
+
+    members = (
+        db.table("tenant_users")
+        .select("user_id")
+        .eq("tenant_id", ctx["tenant_id"])
+        .execute()
+    )
+    user_ids = [m["user_id"] for m in (members.data or [])]
+    callers: list[dict] = []
+    if user_ids:
+        caller_rows = (
+            db.table("callers")
+            .select("id, name")
+            .in_("user_id", user_ids)
+            .eq("tenant_id", ctx["tenant_id"])
+            .execute()
+        )
+        callers = caller_rows.data or []
+    caller_ids = [c["id"] for c in callers]
+
+    days = date_range(month_start, month_end)
+    overrides_by_caller: dict[str, dict[str, str]] = {cid: {} for cid in caller_ids}
+    active_by_caller: dict[str, set[str]] = {cid: set() for cid in caller_ids}
+
+    if caller_ids:
+        override_rows = (
+            db.table("caller_attendance_overrides")
+            .select("caller_id, date, status")
+            .in_("caller_id", caller_ids)
+            .gte("date", month_start.isoformat())
+            .lte("date", month_end.isoformat())
+            .execute()
+        )
+        for r in (override_rows.data or []):
+            overrides_by_caller.setdefault(r["caller_id"], {})[r["date"]] = r["status"]
+
+        log_rows = (
+            db.table("caller_status_logs")
+            .select("caller_id, started_at")
+            .in_("caller_id", caller_ids)
+            .gte("started_at", f"{month_start.isoformat()}T00:00:00")
+            .lt("started_at", f"{(month_end + timedelta(days=1)).isoformat()}T00:00:00")
+            .execute()
+        )
+        for r in (log_rows.data or []):
+            active_by_caller.setdefault(r["caller_id"], set()).add(r["started_at"][:10])
+
+    grid = {
+        cid: build_attendance_map(days, today, overrides_by_caller.get(cid, {}), active_by_caller.get(cid, set()))
+        for cid in caller_ids
+    }
+    summary = compute_team_summary(grid, today.isoformat())
+
+    return {
+        "data": {
+            "callers": [{"caller_id": c["id"], "name": c["name"]} for c in callers],
+            "days": [d.isoformat() for d in days],
+            "grid": grid,
+            "summary": summary,
+        }
+    }
+
+
+@router.get("/attendance/{caller_id}")
+def get_caller_attendance(caller_id: str, months: int = 4, ctx: dict = Depends(get_tenant_and_role)):
+    if ctx["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Only owners can view attendance")
+    db = get_supabase()
+
+    caller = (
+        db.table("callers")
+        .select("id")
+        .eq("id", caller_id)
+        .eq("tenant_id", ctx["tenant_id"])
+        .limit(1)
+        .execute()
+    )
+    if not caller.data:
+        raise HTTPException(status_code=404, detail="Caller not found")
+
+    today = datetime.utcnow().date()
+    start = today - timedelta(days=30 * months)
+    days = date_range(start, today)
+
+    override_rows = (
+        db.table("caller_attendance_overrides")
+        .select("date, status")
+        .eq("caller_id", caller_id)
+        .gte("date", start.isoformat())
+        .lte("date", today.isoformat())
+        .execute()
+    )
+    overrides = {r["date"]: r["status"] for r in (override_rows.data or [])}
+
+    log_rows = (
+        db.table("caller_status_logs")
+        .select("started_at")
+        .eq("caller_id", caller_id)
+        .gte("started_at", f"{start.isoformat()}T00:00:00")
+        .lt("started_at", f"{(today + timedelta(days=1)).isoformat()}T00:00:00")
+        .execute()
+    )
+    active_dates = {r["started_at"][:10] for r in (log_rows.data or [])}
+
+    day_map = build_attendance_map(days, today, overrides, active_dates)
+
+    return {
+        "data": {
+            "caller_id": caller_id,
+            "days": [{"date": d, "status": s} for d, s in day_map.items()],
+            "today_status": day_map.get(today.isoformat(), "absent"),
+        }
+    }
+
+
+@router.post("/attendance/{caller_id}")
+def mark_attendance(caller_id: str, payload: AttendancePayload, ctx: dict = Depends(get_tenant_and_role)):
+    if ctx["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Only owners can mark attendance")
+    if payload.status not in ("present", "absent"):
+        raise HTTPException(status_code=400, detail="status must be 'present' or 'absent'")
+    try:
+        date.fromisoformat(payload.date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date must be in YYYY-MM-DD format")
+
+    db = get_supabase()
+    caller = (
+        db.table("callers")
+        .select("id")
+        .eq("id", caller_id)
+        .eq("tenant_id", ctx["tenant_id"])
+        .limit(1)
+        .execute()
+    )
+    if not caller.data:
+        raise HTTPException(status_code=404, detail="Caller not found")
+
+    existing = (
+        db.table("caller_attendance_overrides")
+        .select("id")
+        .eq("caller_id", caller_id)
+        .eq("date", payload.date)
+        .limit(1)
+        .execute()
+    )
+    row = {
+        "tenant_id": ctx["tenant_id"],
+        "caller_id": caller_id,
+        "date": payload.date,
+        "status": payload.status,
+        "marked_by": ctx["user_id"],
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+    if existing.data:
+        db.table("caller_attendance_overrides").update(row).eq("id", existing.data[0]["id"]).execute()
+    else:
+        db.table("caller_attendance_overrides").insert(row).execute()
+
+    return {"data": {"date": payload.date, "status": payload.status}}
