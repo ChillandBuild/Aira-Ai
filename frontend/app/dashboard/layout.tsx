@@ -1,6 +1,12 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { serverFetchJson } from "@/lib/serverApi";
 import { ClientLayout } from "./ClientLayout";
+
+interface OnboardingStatus {
+  has_tenant: boolean;
+  is_system_admin?: boolean;
+}
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -13,24 +19,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const { data: { session } } = await supabase.auth.getSession();
   const token = session?.access_token;
 
-  if (token) {
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const res = await fetch(`${apiUrl}/api/v1/onboarding/status`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (!data.has_tenant) {
-          // Operator accounts are system_admins with no tenant — send them
-          // to the operator console, not the client onboarding flow.
-          redirect(data.is_system_admin ? "/operator" : "/dashboard/onboarding");
-        }
-      }
-    } catch {
-      // Backend down
-    }
+  // Timeout-guarded so a cold backend can't hang SSR into a white screen.
+  // null (backend down/slow) → fall through to the dashboard, never block.
+  const status = await serverFetchJson<OnboardingStatus>("/api/v1/onboarding/status", token);
+
+  // redirect() must live OUTSIDE any try/catch — it throws NEXT_REDIRECT, and
+  // the previous catch {} swallowed it, silently breaking onboarding routing.
+  if (status && !status.has_tenant) {
+    // Operator accounts are system_admins with no tenant — send them to the
+    // operator console, not the client onboarding flow.
+    redirect(status.is_system_admin ? "/operator" : "/dashboard/onboarding");
   }
 
   return (

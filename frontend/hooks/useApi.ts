@@ -10,11 +10,11 @@ const defaultConfig: SWRConfiguration = {
   errorRetryCount: 2,
 };
 
-export function useOverview(enabled = true) {
+export function useOverview(enabled = true, fallbackData?: AnalyticsOverview) {
   return useSWR<AnalyticsOverview>(
     enabled ? "analytics/overview" : null,
     () => api.analytics.overview(),
-    defaultConfig,
+    { ...defaultConfig, fallbackData },
   );
 }
 
