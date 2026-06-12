@@ -64,8 +64,6 @@ const SECTIONS: SectionDef[] = [
     ],
     toggles: [
       { key: "ai_auto_reply_enabled", label: "AI Auto-Reply", description: "Automatically reply to inbound WhatsApp messages using AI", defaultEnabled: true },
-      { key: "bot_auto_reply_enabled", label: "Bot Auto-Reply", description: "Automatically run bot flows on inbound WhatsApp messages", defaultEnabled: false },
-      { key: "autopilot_enabled", label: "Autopilot", description: "Let AI fully own inbound conversations end-to-end — qualify, reply, book, and escalate hot leads to a human automatically. Supersedes AI Auto-Reply when on.", defaultEnabled: false },
     ],
   },
 ];

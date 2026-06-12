@@ -52,7 +52,7 @@ def test_telecmi_webhook_secret_is_dynamic_setting():
 
 
 def test_owner_only_gated_routers():
-    for router_file in ["upload.py", "automations.py", "knowledge.py", "numbers.py"]:
+    for router_file in ["upload.py", "knowledge.py", "numbers.py"]:
         source = read(f"app/routes/{router_file}")
         assert "require_owner" in source
         assert "APIRouter(dependencies=[Depends(require_owner)])" in source

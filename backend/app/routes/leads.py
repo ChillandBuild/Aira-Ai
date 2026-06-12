@@ -5,7 +5,6 @@ import logging
 from datetime import datetime, timezone, timedelta
 from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from app.services.automation_triggers import fire_trigger
 from fastapi.responses import StreamingResponse
 from groq import Groq
 from pydantic import BaseModel
@@ -806,7 +805,6 @@ async def compose_new_message(payload: ComposeMessage, background_tasks: Backgro
         new_lead = db.table("leads").insert(insert_data).execute()
         lead_id = new_lead.data[0]["id"]
         record_stage_event(lead_id, to_segment="C", event_type="created", metadata={"source": "manual"}, tenant_id=tenant_id, db=db)
-        fire_trigger(background_tasks, lead_id, tenant_id, "lead_created", db=db)
 
     sid = await send_whatsapp(phone, content, tenant_id=tenant_id)
     if not sid:

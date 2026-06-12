@@ -8,7 +8,7 @@ from app.dependencies.auth import get_current_user
 
 import os
 from app.config import settings
-from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team, media, todos, bookings, conversations, operator, chat_handovers, telegram, instagram, facebook, automations, tags, inbound_leads, reengagement, notifications, assignment_log
+from app.routes import webhook, leads, messages, analytics, upload, segments, calls, callers, ai_tune, knowledge, system, follow_ups, numbers, incidents, lead_notes, voice_numbers, app_settings, templates, onboarding, team, media, todos, bookings, conversations, operator, chat_handovers, telegram, instagram, facebook, tags, inbound_leads, reengagement, notifications, assignment_log
 from app.routes.calls import public_router as calls_public_router
 
 # Configure logging
@@ -32,20 +32,7 @@ from datetime import datetime, timezone, timedelta
 _startup_time = datetime.now(timezone.utc)
 _heartbeats = {
     "scheduled-broadcasts": None,
-    "automation-pending": None,
 }
-
-
-async def _process_automation_waits() -> None:
-    """APScheduler job: resume automation wait-step executions that are due."""
-    _heartbeats["automation-pending"] = datetime.now(timezone.utc)
-    try:
-        from app.services.automation_engine import resume_due_flow_runs
-        count = await resume_due_flow_runs()
-        if count:
-            logger.info(f"Automation scheduler: resumed {count} flow run(s)")
-    except Exception as e:
-        logger.error(f"Automation scheduler error: {e}")
 
 
 async def _process_scheduled_broadcasts() -> None:
@@ -426,14 +413,6 @@ async def lifespan(app: FastAPI):
     logger.info(f"Supabase: {settings.supabase_url}")
     logger.info("Voice: TeleCMI")
 
-    # Schedule automation wait-step processing every 5 minutes
-    _scheduler.add_job(
-        _process_automation_waits,
-        trigger="interval",
-        minutes=5,
-        id="automation-pending",
-        replace_existing=True,
-    )
     _scheduler.add_job(
         _process_scheduled_broadcasts,
         trigger="interval",
@@ -484,7 +463,7 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
     )
     _scheduler.start()
-    logger.info("Schedulers started: automation(5m) + broadcasts(1m) + broadcast-retries(5m) + token-health(24h) + engagement-decay(6h) + reengagement(1m) + callback-reassignment(1m) + assignment-sweep(2m)")
+    logger.info("Schedulers started: broadcasts(1m) + broadcast-retries(5m) + token-health(24h) + engagement-decay(6h) + reengagement(1m) + callback-reassignment(1m) + assignment-sweep(2m)")
 
     yield
 
@@ -546,32 +525,17 @@ async def health():
         if (now - _startup_time).total_seconds() <= 180:
             sb_ok = True
 
-    # automation-pending (runs every 5 minutes)
-    ap_heartbeat = _heartbeats["automation-pending"]
-    ap_ok = False
-    if ap_heartbeat is not None:
-        if (now - ap_heartbeat).total_seconds() <= 600: # 10 minutes threshold
-            ap_ok = True
-    else:
-        # Grace period since startup
-        if (now - _startup_time).total_seconds() <= 600:
-            ap_ok = True
-
     details = {
         "database": "ok" if db_ok else f"error: {db_error}",
         "scheduler_jobs": {
             "scheduled-broadcasts": {
                 "status": "healthy" if sb_ok else "unhealthy",
                 "last_heartbeat": sb_heartbeat.isoformat() if sb_heartbeat else None,
-            },
-            "automation-pending": {
-                "status": "healthy" if ap_ok else "unhealthy",
-                "last_heartbeat": ap_heartbeat.isoformat() if ap_heartbeat else None,
             }
         }
     }
 
-    if db_ok and sb_ok and ap_ok:
+    if db_ok and sb_ok:
         return {
             "status": "healthy",
             "service": "aira-ai",
@@ -628,7 +592,6 @@ app.include_router(bookings.router, prefix="/api/v1/bookings", tags=["bookings"]
 app.include_router(conversations.router, prefix="/api/v1/conversations", tags=["conversations"], dependencies=_auth)
 app.include_router(operator.router, prefix="/api/v1/operator", tags=["operator"])
 app.include_router(chat_handovers.router, prefix="/api/v1/chat-handovers", tags=["chat-handovers"], dependencies=_auth)
-app.include_router(automations.router, prefix="/api/v1/automations", tags=["automations"], dependencies=_auth)
 app.include_router(tags.router, prefix="/api/v1/broadcast-tags", tags=["broadcast-tags"], dependencies=_auth)
 app.include_router(inbound_leads.router, prefix="/api/v1/inbound-leads", tags=["inbound-leads"], dependencies=_auth)
 app.include_router(reengagement.router, prefix="/api/v1/reengagement", tags=["reengagement"], dependencies=_auth)

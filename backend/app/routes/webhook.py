@@ -6,7 +6,6 @@ from app.db.supabase import get_supabase
 from app.config import settings
 from app.services.growth import record_stage_event
 from app.services.failover import update_number_quality, handle_quality_red, handle_quality_yellow
-from app.services.automation_triggers import fire_trigger
 from app.services.meta_webhook_verify import verify_meta_signature
 
 logger = logging.getLogger(__name__)
@@ -328,7 +327,6 @@ async def whatsapp_webhook(
                             maybe_assign_lead(lead_id, tenant_id, "C", "whatsapp", reason="created")
                         except Exception as e:
                             logger.warning(f"Auto-assign failed for lead {lead_id}: {e}")
-                        fire_trigger(background_tasks, lead_id, tenant_id, "lead_created", db=db)
 
                     # CTWA: capture Click-to-WhatsApp ad referral on first contact
                     referral = msg.get("referral")
@@ -411,20 +409,7 @@ async def whatsapp_webhook(
                         except Exception:
                             pass
 
-                    # Bot Flow: if a flow run is waiting on this lead's reply, it
-                    # owns this message — capture it and skip BOTH the trigger
-                    # fan-out and the AI reply pipeline below.
-                    if body:
-                        from app.services.flow_runtime import resume_for_inbound
-                        if await resume_for_inbound(lead_id, tenant_id, body, db):
-                            try:
-                                from app.services.scoring_engine import compute_score as _bot_score
-                                await _bot_score(message=body, lead_id=str(lead_id), db=db, tenant_id=tenant_id)
-                            except Exception as _se:
-                                logger.warning(f"Bot-flow scoring failed for lead {lead_id}: {_se}")
-                            continue
-
-                    # Booking state machine: takes priority over bot triggers + AI.
+                    # Booking state machine: takes priority over AI.
                     # If a booking is in progress OR booking intent is detected,
                     # the state machine owns this message.
                     if body:
@@ -436,20 +421,6 @@ async def whatsapp_webhook(
                             except Exception as _bk_se:
                                 logger.warning(f"Booking-flow scoring failed for lead {lead_id}: {_bk_se}")
                             continue
-
-                    # Autopilot: tenant-opt-in autonomous agent. OFF by default — returns
-                    # False instantly when disabled, leaving the pipeline below untouched.
-                    if body:
-                        from app.services.autopilot import run_autopilot
-                        if await run_autopilot(lead_id, tenant_id, body, "whatsapp", db):
-                            continue
-
-                    if body:
-                        fire_trigger(
-                            background_tasks, lead_id, tenant_id,
-                            "new_message_received", message=body,
-                            is_first_message=is_first_message, db=db,
-                        )
 
                     # Update conversation state counters
                     from app.services.booking_flow import get_or_create_state

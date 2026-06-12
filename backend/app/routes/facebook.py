@@ -7,7 +7,6 @@ from app.config_dynamic import get_setting
 from app.services.growth import record_stage_event, get_or_create_campaign
 from app.services.ai_reply import generate_reply
 from app.services.meta_webhook_verify import verify_meta_signature, resolve_tenant_for_page
-from app.services.automation_triggers import fire_trigger
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -144,7 +143,6 @@ async def facebook_webhook(tenant_id: str, request: Request, background_tasks: B
                     maybe_assign_lead(lead_id, tenant_id, "C", "facebook", reason="created")
                 except Exception as e:
                     logger.warning(f"Auto-assign failed for Facebook lead {lead_id}: {e}")
-                fire_trigger(background_tasks, lead_id, tenant_id, "lead_created", db=db)
 
             # ── Meta Ad attribution (Click-to-Messenger) ────────────────────
             # Only runs when referral.source_type == "ad" (user clicked a Messenger ad)
@@ -213,31 +211,12 @@ async def facebook_webhook(tenant_id: str, request: Request, background_tasks: B
             except Exception:
                 pass
 
-            # Bot Flow: a flow run waiting on this lead's reply owns this message —
-            # capture it and skip both the trigger fan-out and the AI reply below.
-            if text:
-                from app.services.flow_runtime import resume_for_inbound
-                if await resume_for_inbound(lead_id, tenant_id, text, db):
-                    continue
-
-            # Booking state machine: takes priority over bot triggers + AI.
+            # Booking state machine: takes priority over AI.
             if text:
                 from app.services.booking_flow import route_booking_intent
                 phone = (db.table("leads").select("phone").eq("id", lead_id).maybe_single().execute().data or {}).get("phone", "")
                 if phone and await route_booking_intent(lead_id, tenant_id, phone, text, db):
                     continue
-
-            # Autopilot: OFF by default — returns False instantly when disabled.
-            if text:
-                from app.services.autopilot import run_autopilot
-                if await run_autopilot(lead_id, tenant_id, text, "facebook", db):
-                    continue
-
-            fire_trigger(
-                background_tasks, lead_id, tenant_id,
-                "new_message_received", message=text,
-                is_first_message=is_first_message, db=db,
-            )
 
             # Step 4: Update conversation activity state
             try:

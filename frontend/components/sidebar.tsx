@@ -7,7 +7,7 @@ import { API_URL, getAuthHeaders } from "@/lib/api";
 import {
   LayoutDashboard, MessageSquare, Users, Settings, Phone,
   BarChart2, Upload, BookOpen, Layers, FileCheck, StickyNote,
-  Inbox, Zap, ChevronDown, ChevronRight, RadioTower, Calendar,
+  Inbox, ChevronDown, ChevronRight, RadioTower, Calendar,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AiraLogo } from "./logo";
@@ -265,22 +265,6 @@ export function Sidebar({ className }: { className?: string }) {
           >
             <BookOpen size={16} className={pathname.startsWith("/dashboard/knowledge") ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
             <span>Knowledge Base</span>
-          </Link>
-        )}
-
-        {/* TOP LEVEL: Automations */}
-        {role === "owner" && (
-          <Link
-            href="/dashboard/automations"
-            className={cn(
-              "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-150 group",
-              pathname.startsWith("/dashboard/automations")
-                ? "bg-zinc-200/70 text-zinc-950"
-                : "text-zinc-700 hover:bg-zinc-200/40 hover:text-zinc-950"
-            )}
-          >
-            <Zap size={16} className={pathname.startsWith("/dashboard/automations") ? "text-zinc-900" : "text-zinc-500 group-hover:text-zinc-700"} />
-            <span>Bot Flows</span>
           </Link>
         )}
 
