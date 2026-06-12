@@ -909,18 +909,34 @@ export default function OutboundLeadsPage() {
     }
   }
 
+  // Excel uploads are converted to CSV in the browser so the rest of the pipeline
+  // (server parse + client-side row split) stays unchanged. xlsx is dynamically
+  // imported so it only loads when an Excel file is actually chosen.
+  async function toCsvFile(file: File): Promise<File> {
+    const lower = file.name.toLowerCase();
+    if (!lower.endsWith(".xlsx") && !lower.endsWith(".xls")) return file;
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    if (!ws) throw new Error("The spreadsheet has no sheets");
+    const csv = XLSX.utils.sheet_to_csv(ws, { blankrows: false, rawNumbers: false });
+    return new File([csv], file.name.replace(/\.(xlsx|xls)$/i, ".csv"), { type: "text/csv" });
+  }
+
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0] ?? null;
-    setCsvFile(f);
+    const picked = e.target.files?.[0] ?? null;
+    setCsvFile(null);
     setParsedData(null);
     setParseError(null);
     setCsvFileUrl(null);
     setCsvFilePath(null);
     setCsvFileName(null);
-    if (!f) return;
+    if (!picked) return;
 
     setParseLoading(true);
     try {
+      const f = await toCsvFile(picked);
+      setCsvFile(f);
       const auth = await getAuthHeaders();
       const fd = new FormData();
       fd.append("file", f);
@@ -1126,7 +1142,7 @@ export default function OutboundLeadsPage() {
               {currentStep === 1 && (
                 <div className="space-y-6">
                   <div>
-                    <h2 className="font-display text-2xl font-bold text-on-surface mb-1">Upload your CSV</h2>
+                    <h2 className="font-display text-2xl font-bold text-on-surface mb-1">Upload your CSV or Excel</h2>
                     <p className="font-body text-sm text-on-surface-muted">We&apos;ll detect column mappings automatically.</p>
                   </div>
 
@@ -1138,12 +1154,12 @@ export default function OutboundLeadsPage() {
                     </div>
                     <div className="text-center px-4">
                       <p className="font-display text-lg font-bold text-on-surface truncate max-w-md mx-auto">
-                        {csvFile ? csvFile.name : "Drop your CSV file here"}
+                        {csvFile ? csvFile.name : "Drop your CSV or Excel file here"}
                       </p>
                       <p className="font-body text-xs text-on-surface-muted mt-1.5">
                         {csvFile
                           ? `${(csvFile.size / 1024).toFixed(1)} KB · click to change file`
-                          : "or click to browse — .csv files only · name and phone columns required"}
+                          : "or click to browse — .csv, .xlsx, .xls · name and phone columns required"}
                       </p>
                     </div>
                     {!csvFile && (
@@ -1153,7 +1169,7 @@ export default function OutboundLeadsPage() {
                         <span>✓ Indian numbers formatted</span>
                       </div>
                     )}
-                    <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleFileSelect} />
+                    <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFileSelect} />
                   </label>
 
                   {parseLoading && (
