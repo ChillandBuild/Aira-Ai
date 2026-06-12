@@ -772,7 +772,8 @@ export default function TeamPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border-subtle bg-surface-subtle/50">
-                    <th className="px-5 py-3 text-left stat-label">Member</th>
+                    <th className="px-5 py-3 text-left stat-label">Telecaller</th>
+                    <th className="px-5 py-3 text-left stat-label">Contact</th>
                     <th className="px-5 py-3 text-left stat-label">Status</th>
                     <th className="px-5 py-3 text-left stat-label">Role</th>
                     <th className="px-5 py-3 text-left stat-label">Score</th>
@@ -781,19 +782,21 @@ export default function TeamPage() {
                 </thead>
                 <tbody className="divide-y divide-border-subtle">
                   {filteredMembers.map((m) => (
-                    <tr 
-                      key={m.user_id} 
+                    <tr
+                      key={m.user_id}
                       onClick={() => setSelectedMemberId(m.user_id)}
                       className={`cursor-pointer transition-colors ${selectedMemberId === m.user_id ? "bg-primary/5" : "hover:bg-surface-subtle"}`}
                     >
-                      <td className="px-5 py-3">
+                      <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white font-display text-xs font-bold">
+                          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white font-display text-sm font-bold flex-shrink-0">
                             {initials(m.displayName)}
                           </div>
                           <div>
                             {m.caller_profile?.id ? (
-                              <InlineEditCell callerId={m.caller_profile.id} initial={m.caller_profile.name ?? null} field="name" placeholder="Name" onUpdate={load} />
+                              <div className="font-label font-semibold text-ink text-sm">
+                                <InlineEditCell callerId={m.caller_profile.id} initial={m.caller_profile.name ?? null} field="name" placeholder="Name" onUpdate={load} />
+                              </div>
                             ) : (
                               <p className="font-label font-semibold text-ink text-sm">{m.displayName}</p>
                             )}
@@ -801,21 +804,45 @@ export default function TeamPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-5 py-3">
+                      <td className="px-5 py-4">
+                        <div className="flex flex-col gap-1 text-xs font-body">
+                          <div className="flex items-center gap-1.5">
+                            <Phone size={11} className="text-ink-muted" />
+                            {m.caller_profile?.id ? (
+                              <InlineEditCell callerId={m.caller_profile.id} initial={m.caller_profile.phone ?? null} field="phone" placeholder="+91xxxxxxxxxx" onUpdate={load} />
+                            ) : <span className="text-ink-muted">—</span>}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-label text-ink-muted bg-surface-subtle px-1 rounded">ID</span>
+                            {m.caller_profile?.id ? (
+                              <InlineEditCell callerId={m.caller_profile.id} initial={m.caller_profile.telecmi_agent_id ?? null} field="telecmi_agent_id" placeholder="e.g. 102_33335739" onUpdate={load} />
+                            ) : <span className="text-ink-muted">—</span>}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4">
                         <div className="flex items-center gap-1.5">
                           <span className={`w-2 h-2 rounded-full ${m.computedStatus === 'active' ? 'bg-emerald-500' : m.computedStatus === 'break' ? 'bg-amber-500' : 'bg-slate-400'}`} />
                           <span className="text-xs font-body text-ink capitalize">{m.computedStatus}</span>
                         </div>
                       </td>
-                      <td className="px-5 py-3">
+                      <td className="px-5 py-4">
                         <span className={`badge ${m.role === "owner" ? "badge-green" : "badge-yellow"}`}>
                           {m.role === "owner" ? "admin" : "caller"}
                         </span>
                       </td>
-                      <td className="px-5 py-3">
-                        <span className="font-body text-sm text-ink">{m.caller_profile?.overall_score ?? "—"}</span>
+                      <td className="px-5 py-4 w-32">
+                        <div className="flex items-center justify-between text-xs font-body mb-1">
+                          <span className="font-semibold text-ink">{m.caller_profile?.overall_score ?? "—"}/10</span>
+                        </div>
+                        <div className="w-full bg-surface-subtle h-1.5 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-primary rounded-full transition-all"
+                            style={{ width: `${(m.caller_profile?.overall_score || 0) * 10}%` }}
+                          />
+                        </div>
                       </td>
-                      <td className="px-5 py-3 flex items-center justify-end gap-2">
+                      <td className="px-5 py-4 flex items-center justify-end gap-2">
                         {m.role !== "owner" && (
                           <button onClick={(e) => { e.stopPropagation(); handleRemove(m.user_id); }} className="p-1.5 rounded-lg hover:bg-red-50 text-ink-muted hover:text-red-500 transition-colors">
                             <Trash2 size={16} />
