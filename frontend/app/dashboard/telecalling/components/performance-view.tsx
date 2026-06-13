@@ -12,6 +12,8 @@ import LiveAgentStatus from "./sections/LiveAgentStatus";
 import PerformanceHeadline from "./sections/PerformanceHeadline";
 import PerformanceKpis from "./sections/PerformanceKpis";
 import PerformanceInsights from "./sections/PerformanceInsights";
+import OutcomeBreakdown from "./sections/OutcomeBreakdown";
+import CallsPerHour from "./sections/CallsPerHour";
 import ShiftTimeline from "./sections/ShiftTimeline";
 import QaReviewFeed from "./sections/QaReviewFeed";
 import BulkAssignment from "./sections/BulkAssignment";
@@ -45,6 +47,9 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
 
   // Lead profile modal
   const [viewingLeadId, setViewingLeadId] = useState<string | null>(null);
+
+  // Tools zone (collapsed by default — keeps the report clean)
+  const [toolsOpen, setToolsOpen] = useState(false);
 
   const loadPerformanceStats = useCallback(async () => {
     setLoadingStats(true);
@@ -203,7 +208,15 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
         showDeltas={isTodayView}
       />
 
-      {/* 3. Auto-insights row (team view only) */}
+      {/* 3. Results — team-level outcome distribution + hourly volume (team view only) */}
+      {!selectedCallerId && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <OutcomeBreakdown stats={stats} />
+          <CallsPerHour stats={stats} />
+        </div>
+      )}
+
+      {/* 4. Auto-insights row (team view only) */}
       {!selectedCallerId && <PerformanceInsights stats={stats} showComparison={isTodayView} />}
 
       {/* 4. Agent Leaderboard (unchanged sortable table) */}
@@ -337,10 +350,24 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
         </div>
       )}
 
-      {/* QA + Bulk assignment */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <QaReviewFeed onViewLead={setViewingLeadId} />
-        <BulkAssignment callers={callersList} />
+      {/* 6. Tools — collapsed by default to keep the report clean */}
+      <div className="bg-surface rounded-card shadow-card ring-1 ring-[#c4c7c7]/15 overflow-hidden">
+        <button
+          onClick={() => setToolsOpen((o) => !o)}
+          className="w-full flex items-center justify-between px-6 py-4 hover:bg-slate-50/50 transition-colors"
+        >
+          <div className="text-left">
+            <h2 className="font-display text-base font-bold text-tertiary">Tools</h2>
+            <p className="font-label text-xs text-on-surface-muted">QA call review &amp; bulk lead assignment.</p>
+          </div>
+          {toolsOpen ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+        </button>
+        {toolsOpen && (
+          <div className="px-6 pb-6 grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <QaReviewFeed onViewLead={setViewingLeadId} />
+            <BulkAssignment callers={callersList} />
+          </div>
+        )}
       </div>
 
       {/* Lead profile modal */}
