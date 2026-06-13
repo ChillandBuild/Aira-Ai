@@ -1,130 +1,287 @@
 "use client";
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { format, parseISO } from "date-fns";
-import { Loader2, CalendarCheck, UserCheck, UserX, Percent } from "lucide-react";
+import { format, parseISO, subMonths } from "date-fns";
+import { Loader2, CalendarCheck, UserCheck, UserX, Percent, Download } from "lucide-react";
 import { api, AttendanceDay } from "@/lib/api";
-import { dotColorClass, WEEKDAY_LABELS, buildMiniMonths } from "./helpers";
+import { WEEKDAY_LABELS, buildMiniMonths } from "./helpers";
 
-export default function AttendanceMini({ callerId }: { callerId: string }) {
+interface AttendanceMiniProps {
+  callerId: string;
+  readOnly?: boolean;
+}
+
+export default function AttendanceMini({ callerId, readOnly = false }: AttendanceMiniProps) {
+  const today = format(new Date(), "yyyy-MM-dd");
   const [days, setDays] = useState<AttendanceDay[]>([]);
   const [loading, setLoading] = useState(true);
-  const [markDate, setMarkDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  const [markDate, setMarkDate] = useState(today);
   const [saving, setSaving] = useState<"present" | "absent" | null>(null);
+
+  // Date filters states
+  const [fromFilter, setFromFilter] = useState(() => format(subMonths(new Date(), 5), "yyyy-MM-dd"));
+  const [toFilter, setToFilter] = useState(today);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.team.attendanceForCaller(callerId, 3);
+      // Fetch past 6 months to allow sufficient date filtering
+      const res = await api.team.attendanceForCaller(callerId, 6);
       setDays(res.data.days);
+    } catch (err) {
+      console.error("Failed to load caller attendance:", err);
+      setDays([]);
     } finally {
       setLoading(false);
     }
   }, [callerId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   async function mark(status: "present" | "absent") {
+    if (readOnly || saving !== null) return;
     setSaving(status);
     try {
       await api.team.markAttendance(callerId, markDate, status);
       await load();
+    } catch (err) {
+      console.error("Failed to mark attendance:", err);
     } finally {
       setSaving(null);
     }
   }
 
-  const currentMonth = format(new Date(), "yyyy-MM");
-  const { presentCount, absentCount, rate } = useMemo(() => {
-    const monthDays = days.filter((d) => d.date.startsWith(currentMonth));
-    const present = monthDays.filter((d) => d.status === "present").length;
-    const absent = monthDays.filter((d) => d.status === "absent").length;
-    const total = present + absent;
-    return { presentCount: present, absentCount: absent, rate: total > 0 ? Math.round((present / total) * 100) : 0 };
-  }, [days, currentMonth]);
+  // Filtered days based on fromFilter and toFilter
+  const filteredDays = useMemo(() => {
+    return days.filter((d) => {
+      if (fromFilter && d.date < fromFilter) return false;
+      if (toFilter && d.date > toFilter) return false;
+      return true;
+    });
+  }, [days, fromFilter, toFilter]);
 
-  const markDayStatus = days.find((d) => d.date === markDate)?.status;
-  const months = useMemo(() => buildMiniMonths(days, 3), [days]);
+  // KPIs derived from the filtered range
+  const { presentCount, absentCount, rate } = useMemo(() => {
+    const present = filteredDays.filter((d) => d.status === "present").length;
+    const absent = filteredDays.filter((d) => d.status === "absent").length;
+    const total = present + absent;
+    return {
+      presentCount: present,
+      absentCount: absent,
+      rate: total > 0 ? Math.round((present / total) * 100) : 0,
+    };
+  }, [filteredDays]);
+
+  const markDayStatus = useMemo(() => {
+    return days.find((d) => d.date === markDate)?.status;
+  }, [days, markDate]);
+
+  const months = useMemo(() => buildMiniMonths(filteredDays, 6), [filteredDays]);
+
+  const handleExportCsv = () => {
+    if (filteredDays.length === 0) return;
+    const header = "Date,Status";
+    const rowsCsv = filteredDays.map((d) => `${d.date},${d.status}`);
+    const csv = [header, ...rowsCsv].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `attendance_report_${callerId}_${fromFilter || "start"}_to_${toFilter || "end"}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   if (loading) {
     return (
-      <div className="card p-5 flex items-center justify-center h-32">
-        <Loader2 className="animate-spin text-primary" size={20} />
+      <div className="bg-surface rounded-card p-6 border border-border-subtle shadow-card flex items-center justify-center h-48">
+        <Loader2 className="animate-spin text-primary" size={24} />
       </div>
     );
   }
 
   return (
-    <div className="card p-5">
-      <div className="flex items-center gap-2 mb-3">
-        <CalendarCheck size={14} className="text-primary" />
-        <h3 className="font-display font-semibold text-ink text-xs">Attendance</h3>
+    <div className="bg-surface rounded-card p-6 border border-border-subtle shadow-card">
+      {/* Header with Title and Filters */}
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-4 border-b border-border-subtle pb-4">
+        <div className="flex items-center gap-2">
+          <CalendarCheck size={18} className="text-primary" />
+          <h3 className="font-display font-bold text-tertiary text-sm">Attendance Log</h3>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Filters */}
+          <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+            <span className="font-label text-[10px] text-slate-500 font-bold uppercase pl-1">Filter:</span>
+            <input
+              type="date"
+              value={fromFilter}
+              max={toFilter}
+              onChange={(e) => setFromFilter(e.target.value)}
+              className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
+            />
+            <span className="text-slate-400 text-xs">to</span>
+            <input
+              type="date"
+              value={toFilter}
+              min={fromFilter}
+              max={today}
+              onChange={(e) => setToFilter(e.target.value)}
+              className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
+            />
+            {filteredDays.length > 0 && (
+              <button
+                onClick={handleExportCsv}
+                title="Download CSV"
+                className="flex items-center gap-1 px-2.5 py-1 bg-primary text-white rounded-lg hover:bg-primary/90 font-label text-[11px] font-bold transition-colors ml-1"
+              >
+                <Download size={11} /> CSV
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 mb-4">
-        <div className="bg-emerald-50 rounded-lg p-2 border border-emerald-100">
-          <div className="p-1 rounded-md bg-emerald-100 w-fit mb-1 text-emerald-600"><UserCheck size={12} /></div>
-          <span className="block text-base font-display font-black text-slate-800">{presentCount}</span>
-          <span className="text-emerald-700 font-label text-[9px] uppercase font-bold tracking-wider block">Present</span>
+      {/* KPI Stats Cards */}
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100 flex flex-col justify-between shadow-sm">
+          <div className="p-1.5 rounded-lg bg-emerald-100 w-fit mb-2 text-emerald-600">
+            <UserCheck size={16} />
+          </div>
+          <div>
+            <span className="block text-2xl font-display font-black text-slate-800 leading-none">
+              {presentCount}
+            </span>
+            <span className="text-emerald-700 font-label text-[10px] uppercase font-bold tracking-wider mt-1.5 block">
+              Days Present
+            </span>
+          </div>
         </div>
-        <div className="bg-rose-50 rounded-lg p-2 border border-rose-100">
-          <div className="p-1 rounded-md bg-rose-100 w-fit mb-1 text-rose-600"><UserX size={12} /></div>
-          <span className="block text-base font-display font-black text-slate-800">{absentCount}</span>
-          <span className="text-rose-700 font-label text-[9px] uppercase font-bold tracking-wider block">Absent</span>
+
+        <div className="bg-rose-50 rounded-2xl p-4 border border-rose-100 flex flex-col justify-between shadow-sm">
+          <div className="p-1.5 rounded-lg bg-rose-100 w-fit mb-2 text-rose-600">
+            <UserX size={16} />
+          </div>
+          <div>
+            <span className="block text-2xl font-display font-black text-slate-800 leading-none">
+              {absentCount}
+            </span>
+            <span className="text-rose-700 font-label text-[10px] uppercase font-bold tracking-wider mt-1.5 block">
+              Days Absent
+            </span>
+          </div>
         </div>
-        <div className="bg-indigo-50 rounded-lg p-2 border border-indigo-100">
-          <div className="p-1 rounded-md bg-indigo-100 w-fit mb-1 text-indigo-600"><Percent size={12} /></div>
-          <span className="block text-base font-display font-black text-slate-800">{rate}%</span>
-          <span className="text-indigo-700 font-label text-[9px] uppercase font-bold tracking-wider block">Rate (Month)</span>
+
+        <div className="bg-indigo-50 rounded-2xl p-4 border border-indigo-100 flex flex-col justify-between shadow-sm">
+          <div className="p-1.5 rounded-lg bg-indigo-100 w-fit mb-2 text-indigo-600">
+            <Percent size={16} />
+          </div>
+          <div>
+            <span className="block text-2xl font-display font-black text-slate-800 leading-none">
+              {rate}%
+            </span>
+            <span className="text-indigo-700 font-label text-[10px] uppercase font-bold tracking-wider mt-1.5 block">
+              Attendance Rate
+            </span>
+          </div>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 mb-4 p-2.5 rounded-xl bg-surface-subtle">
-        <input
-          type="date"
-          value={markDate}
-          max={format(new Date(), "yyyy-MM-dd")}
-          onChange={(e) => setMarkDate(e.target.value)}
-          className="input h-8 px-2 text-xs w-auto"
-        />
-        <button
-          onClick={() => mark("present")}
-          disabled={saving !== null}
-          className={`px-3 py-1.5 rounded-lg text-xs font-label font-semibold border transition-colors ${markDayStatus === "present" ? "bg-emerald-500 text-white border-emerald-500" : "bg-white text-emerald-600 border-emerald-200 hover:bg-emerald-50"}`}
-        >
-          {saving === "present" ? <Loader2 size={12} className="animate-spin" /> : "Present"}
-        </button>
-        <button
-          onClick={() => mark("absent")}
-          disabled={saving !== null}
-          className={`px-3 py-1.5 rounded-lg text-xs font-label font-semibold border transition-colors ${markDayStatus === "absent" ? "bg-rose-500 text-white border-rose-500" : "bg-white text-rose-600 border-rose-200 hover:bg-rose-50"}`}
-        >
-          {saving === "absent" ? <Loader2 size={12} className="animate-spin" /> : "Absent"}
-        </button>
-      </div>
+      {/* Admin Attendance Marker Panel */}
+      {!readOnly && (
+        <div className="flex flex-wrap items-center gap-2 mb-6 p-3 rounded-2xl bg-slate-50 border border-slate-200/60 shadow-inner">
+          <span className="font-label text-[10px] text-slate-500 font-bold uppercase pl-1">Mark Attendance:</span>
+          <input
+            type="date"
+            value={markDate}
+            max={today}
+            onChange={(e) => setMarkDate(e.target.value)}
+            className="input h-8 px-2.5 text-xs w-auto border border-slate-200 focus:outline-none rounded-xl"
+          />
+          <button
+            onClick={() => mark("present")}
+            disabled={saving !== null}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-label font-bold border transition-colors flex items-center gap-1 ${
+              markDayStatus === "present"
+                ? "bg-emerald-500 text-white border-emerald-500"
+                : "bg-white text-emerald-600 border-emerald-200 hover:bg-emerald-55"
+            }`}
+          >
+            {saving === "present" && <Loader2 size={12} className="animate-spin" />}
+            Present
+          </button>
+          <button
+            onClick={() => mark("absent")}
+            disabled={saving !== null}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-label font-bold border transition-colors flex items-center gap-1 ${
+              markDayStatus === "absent"
+                ? "bg-rose-500 text-white border-rose-500"
+                : "bg-white text-rose-600 border-rose-200 hover:bg-rose-55"
+            }`}
+          >
+            {saving === "absent" && <Loader2 size={12} className="animate-spin" />}
+            Absent
+          </button>
+        </div>
+      )}
 
+      {/* Dynamic Monthly Calendar Grid */}
       {months.length === 0 ? (
-        <div className="text-center py-4 text-xs text-ink-muted font-body">No attendance history yet.</div>
+        <div className="text-center py-8 text-xs text-ink-muted font-body">No attendance records in this range.</div>
       ) : (
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {months.map((m) => (
-            <div key={m.key} className="rounded-xl border border-border-subtle p-2">
-              <div className="text-center text-[10px] font-label font-semibold text-ink-muted mb-1">{m.label}</div>
-              <div className="grid grid-cols-7 gap-[2px] mb-1">
+            <div key={m.key} className="rounded-2xl border border-border-subtle/80 bg-surface p-3 shadow-sm hover:shadow-md transition-shadow">
+              <div className="text-center text-[11px] font-label font-bold text-tertiary mb-2.5 tracking-wide bg-slate-50 py-1 rounded-lg border border-slate-100">
+                {m.label}
+              </div>
+              <div className="grid grid-cols-7 gap-1.5 mb-1.5">
                 {WEEKDAY_LABELS.map((d, i) => (
-                  <div key={i} className="text-center text-[8px] text-ink-muted/60">{d}</div>
+                  <div key={i} className="text-center text-[8px] font-semibold text-ink-muted/50 uppercase">
+                    {d}
+                  </div>
                 ))}
               </div>
               {m.weeks.map((week, wi) => (
-                <div key={wi} className="grid grid-cols-7 gap-[2px] mb-[2px]">
-                  {week.map((cell, di) => cell ? (
-                    <span
-                      key={cell.date}
-                      title={`${format(parseISO(cell.date), "MMM d, yyyy")}: ${cell.status}`}
-                      className={`block w-full aspect-square rounded-sm ${dotColorClass(cell.status)}`}
-                    />
-                  ) : (
-                    <span key={`pad-${wi}-${di}`} className="block w-full aspect-square" />
-                  ))}
+                <div key={wi} className="grid grid-cols-7 gap-1.5 mb-1.5">
+                  {week.map((cell, di) => {
+                    if (!cell) {
+                      return <span key={`pad-${wi}-${di}`} className="block w-full aspect-square" />;
+                    }
+
+                    let cellClass = "";
+                    let textClass = "";
+
+                    if (cell.status === "present") {
+                      cellClass =
+                        "bg-gradient-to-br from-emerald-400 to-emerald-500 border border-emerald-500/20 shadow-[0_1px_2.5px_rgba(16,185,129,0.2)] hover:from-emerald-500 hover:to-emerald-600 hover:scale-105 transition-all cursor-pointer";
+                      textClass = "text-white font-bold";
+                    } else if (cell.status === "absent") {
+                      cellClass =
+                        "bg-gradient-to-br from-rose-400 to-rose-500 border border-rose-500/20 shadow-[0_1px_2.5px_rgba(244,63,94,0.2)] hover:from-rose-500 hover:to-rose-600 hover:scale-105 transition-all cursor-pointer";
+                      textClass = "text-white font-bold";
+                    } else if (cell.status === "holiday") {
+                      cellClass =
+                        "bg-gradient-to-br from-sky-400 to-sky-500 border border-sky-500/20 shadow-[0_1px_2.5px_rgba(14,165,233,0.2)] hover:from-sky-500 hover:to-sky-600 hover:scale-105 transition-all cursor-pointer";
+                      textClass = "text-white font-bold";
+                    } else {
+                      cellClass = "bg-slate-50 border border-slate-100 hover:bg-slate-100";
+                      textClass = "text-slate-400 font-medium";
+                    }
+
+                    return (
+                      <span
+                        key={cell.date}
+                        title={`${format(parseISO(cell.date), "MMM d, yyyy")}: ${cell.status}`}
+                        className={`relative flex items-center justify-center w-full aspect-square rounded-[6px] select-none text-[9px] sm:text-[10px] ${cellClass}`}
+                      >
+                        <span className={textClass}>{format(parseISO(cell.date), "d")}</span>
+                      </span>
+                    );
+                  })}
                 </div>
               ))}
             </div>
@@ -132,10 +289,20 @@ export default function AttendanceMini({ callerId }: { callerId: string }) {
         </div>
       )}
 
-      <div className="flex items-center gap-4 mt-3 pt-3 border-t border-border-subtle text-[10px] text-ink-muted font-body">
-        <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Present</div>
-        <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-rose-400 inline-block" /> Absent</div>
-        <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-surface-mid/30 inline-block" /> Future</div>
+      {/* Legend */}
+      <div className="flex items-center gap-4 mt-5 pt-4 border-t border-border-subtle text-[10px] text-ink-muted font-body">
+        <div className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded bg-gradient-to-br from-emerald-400 to-emerald-500 inline-block border border-emerald-500/10 shadow-sm" /> Present
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded bg-gradient-to-br from-rose-400 to-rose-500 inline-block border border-rose-500/10 shadow-sm" /> Absent
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded bg-gradient-to-br from-sky-400 to-sky-500 inline-block border border-sky-500/10 shadow-sm" /> Holiday
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded bg-slate-50 inline-block border border-slate-100" /> Future / No Data
+        </div>
       </div>
     </div>
   );

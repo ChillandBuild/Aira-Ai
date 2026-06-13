@@ -2,51 +2,42 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Phone, Clock, Loader2 } from "lucide-react";
-import { eachDayOfInterval, format } from "date-fns";
+
 import { api, type TimelineEvent } from "@/lib/api";
 import { formatPhone, formatIST } from "@/lib/utils";
 
 interface ShiftTimelineProps {
   callerId: string;
   statsFrom: string;
-  statsTo: string;
+  statsTo?: string;
 }
 
 const START_HOUR = 9;
 const END_HOUR = 19;
 const TOTAL_SECONDS = (END_HOUR - START_HOUR) * 3600;
 
-export default function ShiftTimeline({ callerId, statsFrom, statsTo }: ShiftTimelineProps) {
+export default function ShiftTimeline({ callerId, statsFrom }: ShiftTimelineProps) {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(false);
-  const [from, setFrom] = useState(statsFrom);
-  const [to, setTo] = useState(statsTo);
+  const [date, setDate] = useState(statsFrom);
+
+  useEffect(() => {
+    setDate(statsFrom);
+  }, [statsFrom]);
 
   const load = useCallback(async () => {
     if (!callerId) return;
     setLoading(true);
     try {
-      let fromDate = new Date(from);
-      const toDate = new Date(to);
-      const maxDays = 31;
-      const dayMs = 24 * 60 * 60 * 1000;
-      if ((toDate.getTime() - fromDate.getTime()) / dayMs > maxDays - 1) {
-        fromDate = new Date(toDate.getTime() - (maxDays - 1) * dayMs);
-      }
-      const days = fromDate.getTime() <= toDate.getTime()
-        ? eachDayOfInterval({ start: fromDate, end: toDate })
-        : [toDate];
-      const results = await Promise.all(
-        days.map((d) => api.analytics.callerTimeline(callerId, format(d, "yyyy-MM-dd")))
-      );
-      setEvents(results.flatMap((res) => res.data || []));
+      const res = await api.analytics.callerTimeline(callerId, date);
+      setEvents(res.data || []);
     } catch (err) {
       console.error("Failed to load timeline events:", err);
       setEvents([]);
     } finally {
       setLoading(false);
     }
-  }, [callerId, from, to]);
+  }, [callerId, date]);
 
   useEffect(() => {
     load();
@@ -79,10 +70,8 @@ export default function ShiftTimeline({ callerId, statsFrom, statsTo }: ShiftTim
           <p className="font-label text-xs text-on-surface-muted">Analyze live calling activity blocks, status transitions, and gaps.</p>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
-          <span className="font-label text-[10px] text-slate-500 font-bold uppercase pl-1">Range:</span>
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none" />
-          <span className="text-slate-400 text-xs">to</span>
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none" />
+          <span className="font-label text-[10px] text-slate-500 font-bold uppercase pl-1">Date:</span>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none" />
         </div>
       </div>
 

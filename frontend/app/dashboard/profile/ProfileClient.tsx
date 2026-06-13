@@ -16,6 +16,7 @@ import { api } from "@/lib/api";
 import type { CallerStats, CallLog } from "@/lib/api";
 import { toast } from "sonner";
 import { useMyStats, useMyPerformance, useCallerLogs } from "@/hooks/useApi";
+import AttendanceMini from "../team/AttendanceMini";
 
 export interface ProfileClientProps {
   fallbackStats: CallerStats | null;
@@ -156,7 +157,7 @@ export function ProfileClient({
               <span className="font-display text-2xl font-bold text-primary">
                 {stats.name
                   ?.split(" ")
-                  .map((n) => n[0])
+                  .map((n: string) => n[0])
                   .join("")
                   .toUpperCase() || "?"}
               </span>
@@ -348,6 +349,11 @@ export function ProfileClient({
         </div>
       </div>
 
+      {/* Attendance History */}
+      <div className="mb-8">
+        <AttendanceMini callerId={stats.caller_id} readOnly={true} />
+      </div>
+
       {/* AI Coaching */}
       <div className="mb-8 bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
         <div className="flex items-center justify-between mb-3">
@@ -410,7 +416,7 @@ export function ProfileClient({
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-low">
-                {logs.map((log) => (
+                {logs.map((log: CallLog) => (
                   <tr key={log.id} className="hover:bg-surface-low transition-colors">
                     <td className="py-3 pr-4">
                       <span className="font-body text-sm font-semibold text-on-surface">

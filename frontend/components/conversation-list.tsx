@@ -532,7 +532,7 @@ export function ConversationList({ leads, selectedId, onSelect, onDeleted, platf
                       <MoreHorizontal size={15} />
                     </button>
                     {cardMenuId === lead.id && (
-                      <div className="absolute right-0 bottom-full mb-1 w-40 bg-surface border border-surface-mid rounded-xl shadow-xl overflow-hidden z-30 py-1">
+                      <div className="absolute right-0 top-full mt-1 w-40 bg-surface border border-surface-mid rounded-xl shadow-xl overflow-hidden z-50 py-1">
                         {onArchive && (
                           <button onClick={() => { setCardMenuId(null); onArchive(lead.id); }} className="w-full flex items-center gap-2 px-3 py-2 text-left font-body text-[12.5px] text-on-surface hover:bg-surface-low transition-colors">
                             <Archive size={14} className="text-on-surface-muted" />
