@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR, EVENT_JOB_MISSED
 from app.dependencies.auth import get_current_user
 
 import os
@@ -407,6 +408,33 @@ async def _process_callback_reassignments() -> None:
 _scheduler = AsyncIOScheduler()
 
 
+def _record_scheduler_event(event) -> None:
+    """Persist every job run to scheduler_runs for the operator Scheduler Health
+    view. Best-effort: must never raise into the scheduler."""
+    try:
+        if event.code == EVENT_JOB_ERROR:
+            status = "error"
+            error = str(getattr(event, "exception", "") or "")[:2000]
+        elif event.code == EVENT_JOB_MISSED:
+            status, error = "missed", None
+        else:
+            status, error = "success", None
+        scheduled = getattr(event, "scheduled_run_time", None)
+        ran_at = datetime.now(timezone.utc)
+        lateness_ms = int((ran_at - scheduled).total_seconds() * 1000) if scheduled else None
+        from app.db.supabase import get_supabase
+        get_supabase().table("scheduler_runs").insert({
+            "job_id": event.job_id,
+            "status": status,
+            "scheduled_at": scheduled.isoformat() if scheduled else None,
+            "ran_at": ran_at.isoformat(),
+            "lateness_ms": lateness_ms,
+            "error": error,
+        }).execute()
+    except Exception as e:
+        logger.warning(f"scheduler_runs record failed (non-fatal): {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Aira AI backend starting up...")
@@ -461,6 +489,10 @@ async def lifespan(app: FastAPI):
         minutes=2,
         id="assignment-sweep",
         replace_existing=True,
+    )
+    _scheduler.add_listener(
+        _record_scheduler_event,
+        EVENT_JOB_EXECUTED | EVENT_JOB_ERROR | EVENT_JOB_MISSED,
     )
     _scheduler.start()
     logger.info("Schedulers started: broadcasts(1m) + broadcast-retries(5m) + token-health(24h) + engagement-decay(6h) + reengagement(1m) + callback-reassignment(1m) + assignment-sweep(2m)")

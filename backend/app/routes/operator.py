@@ -290,3 +290,59 @@ async def reset_password(tenant_id: str, _admin: dict = Depends(get_system_admin
         metadata={"tenant_id": tenant_id},
     )
     return {"temp_password": temp_pw}
+
+
+@router.get("/scheduler-health")
+def scheduler_health(_admin: dict = Depends(get_system_admin)):
+    """System-wide APScheduler health: each global job's next run, last run
+    status/lag, recent error count, plus recent failures. Operator-only —
+    the jobs are platform-level (not per tenant)."""
+    from datetime import datetime, timezone, timedelta
+    from app.main import _scheduler
+
+    db = get_supabase()
+    now = datetime.now(timezone.utc)
+    day_ago = (now - timedelta(hours=24)).isoformat()
+
+    jobs_out = []
+    for job in _scheduler.get_jobs():
+        last = (
+            db.table("scheduler_runs")
+            .select("status, ran_at, lateness_ms, error")
+            .eq("job_id", job.id)
+            .order("ran_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        last_row = (last.data or [None])[0]
+        errs = (
+            db.table("scheduler_runs")
+            .select("id", count="exact")
+            .eq("job_id", job.id)
+            .eq("status", "error")
+            .gte("ran_at", day_ago)
+            .execute()
+        )
+        jobs_out.append({
+            "id": job.id,
+            "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
+            "last_status": last_row["status"] if last_row else None,
+            "last_run": last_row["ran_at"] if last_row else None,
+            "last_lateness_ms": last_row["lateness_ms"] if last_row else None,
+            "last_error": last_row["error"] if last_row else None,
+            "errors_24h": errs.count or 0,
+        })
+
+    recent_failures = (
+        db.table("scheduler_runs")
+        .select("job_id, status, ran_at, error")
+        .in_("status", ["error", "missed"])
+        .order("ran_at", desc=True)
+        .limit(20)
+        .execute()
+    )
+    return {
+        "jobs": jobs_out,
+        "recent_failures": recent_failures.data or [],
+        "server_time": now.isoformat(),
+    }

@@ -33,6 +33,14 @@ export default async function OperatorLayout({ children }: { children: React.Rea
           <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest border border-gray-200 rounded px-2 py-0.5">
             Operator Console
           </span>
+          <nav className="flex items-center gap-1 ml-4">
+            <a href="/operator" className="text-sm text-gray-500 hover:text-gray-900 px-3 py-1.5 rounded-lg hover:bg-gray-100">
+              Clients
+            </a>
+            <a href="/operator/scheduler" className="text-sm text-gray-500 hover:text-gray-900 px-3 py-1.5 rounded-lg hover:bg-gray-100">
+              Schedulers
+            </a>
+          </nav>
         </div>
         <a href="/login" className="text-sm text-gray-500 hover:text-gray-800">
           ← Back to Client Login
