@@ -6,7 +6,6 @@ import {
 import { api, TimelineEvent, CallLog } from "@/lib/api";
 import { format, differenceInSeconds, subDays, startOfDay, isSameDay } from "date-fns";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
-import AttendanceHeatmap from "./AttendanceHeatmap";
 import { formatDuration, initials } from "./helpers";
 
 interface StatusSummary {
@@ -242,9 +241,6 @@ export default function TeamProfilePanel({ callerId, callerName }: { callerId: s
           <p className="font-display text-xl font-bold text-ink">{conversionRate}%</p>
         </div>
       </div>
-
-      {/* ATTENDANCE */}
-      <AttendanceHeatmap callerId={callerId} />
 
       {/* CHARTS */}
       <div className="grid grid-cols-1 gap-4">
