@@ -142,7 +142,7 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
     setLoadingTimeline(true);
     try {
       let fromDate = new Date(timelineFrom);
-      let toDate = new Date(timelineTo);
+      const toDate = new Date(timelineTo);
 
       // Cap the range at 31 days to avoid excessive requests
       const maxDays = 31;
