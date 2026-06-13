@@ -3,16 +3,20 @@ import { toast } from "sonner";
 import { useEffect, useState } from "react";
 import {
   Phone, RefreshCw, TrendingUp,
-  Users, Coffee, ChevronDown, Settings, Eye, X, Calendar, Copy, Tag, Target, StickyNote
+  Users, ChevronDown, Settings, Eye, X, Calendar, StickyNote
 } from "lucide-react";
-import { api, Caller, Lead } from "@/lib/api";
-import { useAdminDashboard, AdminDashboardData } from "@/hooks/useApi";
+import { api } from "@/lib/api";
+import type { Caller, Lead } from "@/lib/api";
+import { useAdminDashboard, useLeads } from "@/hooks/useApi";
+import type { AdminDashboardData } from "@/hooks/useApi";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import LiveNotesPane from "./components/live-notes-pane";
 import { useActiveCall } from "../contexts/ActiveCallContext";
 import { TelecallingConfigPanel } from "../settings/TelecallingConfigPanel";
 import { fetchNotes } from "./lib/notes-api";
 import type { NotesResponse, Note } from "./types";
+import NumpadDialer from "./components/NumpadDialer";
+import LeadAttribution from "./components/LeadAttribution";
 
 function ScoreBar({ score }: { score: number }) {
   const pct = Math.round((score / 10) * 100);
@@ -32,7 +36,6 @@ export default function AdminView({ fallbackData }: { fallbackData?: AdminDashbo
   // seeded from the server on first paint when available.
   const { data: dashboard, mutate: refreshDashboard } = useAdminDashboard(fallbackData);
   const callers: Caller[] = dashboard?.callers ?? [];
-  const topLeads: Lead[] = dashboard?.topLeads ?? [];
   const totalCallsToday = dashboard?.totalCallsToday ?? 0;
   const totalConversionsToday = dashboard?.totalConversionsToday ?? 0;
 
@@ -50,6 +53,30 @@ export default function AdminView({ fallbackData }: { fallbackData?: AdminDashbo
   const [viewingLead, setViewingLead] = useState<Lead | null>(null);
   const [viewingLeadNotes, setViewingLeadNotes] = useState<NotesResponse | null>(null);
   const [viewingLeadLoading, setViewingLeadLoading] = useState(false);
+
+  // Queue Filters state
+  const [queueSegment, setQueueSegment] = useState<string>("all");
+  const [queueStatus, setQueueStatus] = useState<string>("all");
+  const [queueAssignedTo, setQueueAssignedTo] = useState<string>("all");
+
+  const { data: queueLeadsData, mutate: refreshQueueLeads } = useLeads({
+    segment: queueSegment !== "all" ? queueSegment : undefined,
+    assigned_to: (queueAssignedTo !== "all" && queueAssignedTo !== "unassigned") ? queueAssignedTo : undefined,
+    limit: 50,
+  });
+
+  const queueLeads = queueLeadsData ?? [];
+
+  // Client-side filtering for call_status and unassigned
+  const filteredQueueLeads = queueLeads.filter((lead) => {
+    if (queueStatus !== "all" && lead.call_status !== queueStatus) {
+      return false;
+    }
+    if (queueAssignedTo === "unassigned" && lead.assigned_to) {
+      return false;
+    }
+    return true;
+  });
 
   // Lock body scroll when modals are open to prevent double scrollbars
   useEffect(() => {
@@ -98,6 +125,7 @@ export default function AdminView({ fallbackData }: { fallbackData?: AdminDashbo
       setActiveCallCtx({ leadId: res.lead_id ?? null, name: res.lead_name ?? null, phone: manualPhone.trim(), callLogId: res.call_log_id ?? null });
       setManualPhone("");
       refreshDashboard();
+      refreshQueueLeads();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Call failed");
     } finally { setManualDialing(false); }
@@ -109,13 +137,12 @@ export default function AdminView({ fallbackData }: { fallbackData?: AdminDashbo
       const res = await api.calls.initiate({ leadId: lead.id }, selectedCallerId ?? undefined);
       setActiveCallCtx({ leadId: res.lead_id ?? lead.id, name: res.lead_name ?? lead.name ?? null, phone: lead.phone ?? "", callLogId: res.call_log_id ?? null });
       refreshDashboard();
+      refreshQueueLeads();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Call failed");
     } finally { setDialingLeadId(null); }
   }
 
-  const activeCallers = callers.filter((c) => (c.status || "active") === "active");
-  const breakCallers = callers.filter((c) => c.status === "break");
   const selectedCallerName = callers.find((c) => c.id === selectedCallerId)?.name ?? "Admin (me)";
 
   return (
@@ -159,7 +186,7 @@ export default function AdminView({ fallbackData }: { fallbackData?: AdminDashbo
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 gap-4 mb-8">
         <div className="bg-surface rounded-card p-5 shadow-card ring-1 ring-[#c4c7c7]/15">
           <div className="p-2 rounded-xl bg-primary/10 w-fit mb-2"><Phone size={16} className="text-primary" /></div>
           <span className="font-display text-3xl font-bold text-on-surface">{totalCallsToday}</span>
@@ -170,36 +197,86 @@ export default function AdminView({ fallbackData }: { fallbackData?: AdminDashbo
           <span className="font-display text-3xl font-bold text-on-surface">{totalConversionsToday}</span>
           <span className="block font-label text-xs text-on-surface-muted mt-1">Conversions Today</span>
         </div>
-        <div className="bg-surface rounded-card p-5 shadow-card ring-1 ring-[#c4c7c7]/15">
-          <div className="p-2 rounded-xl bg-green-100 w-fit mb-2"><Users size={16} className="text-green-600" /></div>
-          <span className="font-display text-3xl font-bold text-green-600">{activeCallers.length}</span>
-          <span className="block font-label text-xs text-on-surface-muted mt-1">Active Callers</span>
-        </div>
-        <div className="bg-surface rounded-card p-5 shadow-card ring-1 ring-[#c4c7c7]/15">
-          <div className="p-2 rounded-xl bg-amber-100 w-fit mb-2"><Coffee size={16} className="text-amber-600" /></div>
-          <span className="font-display text-3xl font-bold text-amber-600">{breakCallers.length}</span>
-          <span className="block font-label text-xs text-on-surface-muted mt-1">On Break</span>
-        </div>
       </div>
 
-      {/* Top Leads + Manual Dial */}
+      {/* Lead Queue + Manual Dial */}
       <div className="grid grid-cols-3 gap-6">
-        {/* Top 5 leads by score */}
+        {/* Filterable Lead Queue */}
         <div className="col-span-2 bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
-          <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
             <h2 className="font-display text-sm font-bold text-tertiary flex items-center gap-2">
-              <TrendingUp size={14} className="text-red-500" /> Top Leads
+              <TrendingUp size={14} className="text-red-500" /> Lead Queue
             </h2>
             <span className="font-label text-[10px] text-on-surface-muted uppercase tracking-widest">
               Calling as <span className="text-primary font-semibold">{selectedCallerName}</span>
             </span>
           </div>
 
-          {topLeads.length === 0 ? (
-            <p className="font-body text-sm text-on-surface-muted">No leads yet.</p>
+          {/* Filter Controls */}
+          <div className="grid grid-cols-3 gap-3 mb-5 p-4 bg-slate-50 border border-slate-200/60 rounded-2xl">
+            <div>
+              <label className="block font-label text-[9px] text-on-surface-muted uppercase tracking-widest mb-1.5 font-extrabold">Segment</label>
+              <div className="relative">
+                <select
+                  value={queueSegment}
+                  onChange={(e) => setQueueSegment(e.target.value)}
+                  className="w-full appearance-none pl-3 pr-8 py-2 rounded-xl bg-white border border-slate-200/80 font-body text-xs text-on-surface focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer font-semibold"
+                >
+                  <option value="all">All Segments</option>
+                  <option value="A">Segment A</option>
+                  <option value="B">Segment B</option>
+                  <option value="C">Segment C</option>
+                  <option value="D">Segment D</option>
+                </select>
+                <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-muted pointer-events-none" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-label text-[9px] text-on-surface-muted uppercase tracking-widest mb-1.5 font-extrabold">Call Status</label>
+              <div className="relative">
+                <select
+                  value={queueStatus}
+                  onChange={(e) => setQueueStatus(e.target.value)}
+                  className="w-full appearance-none pl-3 pr-8 py-2 rounded-xl bg-white border border-slate-200/80 font-body text-xs text-on-surface focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer font-semibold"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="new">New</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="callback">Callback</option>
+                  <option value="converted">Converted</option>
+                  <option value="not_interested">Not Interested</option>
+                  <option value="dnc">Do Not Call (DNC)</option>
+                  <option value="unreachable">Unreachable</option>
+                </select>
+                <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-muted pointer-events-none" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-label text-[9px] text-on-surface-muted uppercase tracking-widest mb-1.5 font-extrabold">Assigned To</label>
+              <div className="relative">
+                <select
+                  value={queueAssignedTo}
+                  onChange={(e) => setQueueAssignedTo(e.target.value)}
+                  className="w-full appearance-none pl-3 pr-8 py-2 rounded-xl bg-white border border-slate-200/80 font-body text-xs text-on-surface focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer font-semibold"
+                >
+                  <option value="all">All Callers</option>
+                  <option value="unassigned">Unassigned</option>
+                  {callers.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-muted pointer-events-none" />
+              </div>
+            </div>
+          </div>
+
+          {filteredQueueLeads.length === 0 ? (
+            <p className="font-body text-sm text-on-surface-muted text-center py-6">No leads match the filters.</p>
           ) : (
-            <div className="space-y-2">
-              {topLeads.map((lead, i) => {
+            <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+              {filteredQueueLeads.map((lead, i) => {
                 const assignedCaller = callers.find((c) => c.id === lead.assigned_to);
                 const isDialing = dialingLeadId === lead.id;
                 return (
@@ -235,27 +312,21 @@ export default function AdminView({ fallbackData }: { fallbackData?: AdminDashbo
         </div>
 
         {/* Manual Dial */}
-        <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15 self-start">
-          <h2 className="font-display text-sm font-bold text-tertiary mb-1 flex items-center gap-2">
-            <Phone size={14} className="text-secondary" /> Manual Dial
-          </h2>
-          <p className="font-label text-[10px] text-on-surface-muted mb-4">
-            Calling as <span className="text-primary font-semibold">{selectedCallerName}</span>
-          </p>
-          <div className="flex gap-2">
-            <input
-              type="tel"
-              placeholder="e.g. +919942497199"
-              value={manualPhone}
-              onChange={(e) => setManualPhone(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && manualDial()}
-              className="flex-1 px-3 py-2 rounded-lg bg-surface-low border border-surface-mid font-body text-sm focus:outline-none focus:ring-2 focus:ring-tertiary"
-            />
-            <button onClick={manualDial} disabled={manualDialing || !manualPhone.trim()}
-              className="px-3 py-2 bg-tertiary text-white rounded-lg font-label text-xs font-semibold hover:bg-tertiary/90 disabled:opacity-50 transition-colors">
-              {manualDialing ? <RefreshCw size={14} className="animate-spin" /> : <Phone size={14} />}
-            </button>
+        <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15 self-start flex flex-col gap-3">
+          <div>
+            <h2 className="font-display text-sm font-bold text-tertiary flex items-center gap-2">
+              <Phone size={14} className="text-secondary" /> Manual Dial
+            </h2>
+            <p className="font-label text-[10px] text-on-surface-muted mt-1">
+              Calling as <span className="text-primary font-semibold">{selectedCallerName}</span>
+            </p>
           </div>
+          <NumpadDialer 
+            value={manualPhone}
+            onChange={setManualPhone}
+            onDial={manualDial}
+            dialing={manualDialing}
+          />
         </div>
       </div>
 
@@ -349,65 +420,7 @@ export default function AdminView({ fallbackData }: { fallbackData?: AdminDashbo
                   </div>
 
                   {/* Marketing Attribution Widget */}
-                  {viewingLead.broadcast_id || viewingLead.template_name ? (
-                    // Outbound campaign attribution
-                    <div className="bg-gradient-to-br from-purple-50/50 to-indigo-50/20 border border-purple-100/60 rounded-3xl p-5 shadow-sm space-y-4">
-                      <span className="font-display text-[11px] font-black text-purple-800 uppercase tracking-widest flex items-center gap-1.5">
-                        <Target size={12} className="text-purple-500" /> Outbound Campaign
-                      </span>
-                      <div className="space-y-3.5">
-                        <div className="bg-white/90 backdrop-blur-sm border border-purple-100/65 rounded-xl p-3.5 relative shadow-sm">
-                          <span className="font-label text-[9px] text-purple-700/60 uppercase font-extrabold block">Broadcast Campaign ID</span>
-                          <p className="font-mono text-xs text-slate-800 font-bold mt-1.5 truncate pr-8 select-all">
-                            {viewingLead.broadcast_id || "None"}
-                          </p>
-                          {viewingLead.broadcast_id && (
-                            <button 
-                              onClick={() => { navigator.clipboard.writeText(viewingLead.broadcast_id || ""); toast.success("Copied Campaign ID"); }}
-                              className="absolute right-3 bottom-3 p-1.5 text-purple-400 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition-colors"
-                              title="Copy ID"
-                            >
-                              <Copy size={11} />
-                            </button>
-                          )}
-                        </div>
-
-                        <div className="bg-white/90 backdrop-blur-sm border border-purple-100/65 rounded-xl p-3.5 shadow-sm">
-                          <span className="font-label text-[9px] text-purple-700/60 uppercase font-extrabold block">Message Template</span>
-                          <p className="font-body text-xs text-slate-850 font-bold mt-1.5 truncate">
-                            {viewingLead.template_name || "N/A"}
-                          </p>
-                        </div>
-
-                        {viewingLead.tag_name && (
-                          <div className="bg-white/90 backdrop-blur-sm border border-purple-100/65 rounded-xl p-3.5 shadow-sm flex items-center gap-1.5">
-                            <Tag size={11} className="text-purple-500" />
-                            <div>
-                              <span className="font-label text-[9px] text-purple-700/60 uppercase font-extrabold block">Campaign Tag</span>
-                              <span className="text-xs font-bold text-purple-700 mt-0.5 inline-block">{viewingLead.tag_name}</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    // Inbound lead attribution
-                    <div className="bg-gradient-to-br from-emerald-50/50 to-teal-50/20 border border-emerald-100/60 rounded-3xl p-5 shadow-sm space-y-4">
-                      <span className="font-display text-[11px] font-black text-emerald-800 uppercase tracking-widest flex items-center gap-1.5">
-                        <Target size={12} className="text-emerald-500" /> Inbound Origin
-                      </span>
-                      <div className="grid grid-cols-2 gap-3.5">
-                        <div className="bg-white/90 backdrop-blur-sm border border-emerald-100/65 rounded-xl p-3.5 shadow-sm">
-                          <span className="font-label text-[9px] text-emerald-700/60 uppercase font-extrabold block">Ad Campaign</span>
-                          <p className="font-body text-xs text-slate-850 font-bold mt-1 truncate">{viewingLead.ad_campaign_name || "Organic Traffic"}</p>
-                        </div>
-                        <div className="bg-white/90 backdrop-blur-sm border border-emerald-100/65 rounded-xl p-3.5 shadow-sm">
-                          <span className="font-label text-[9px] text-emerald-700/60 uppercase font-extrabold block">Channel Source</span>
-                          <p className="font-body text-xs text-slate-850 font-bold mt-1 capitalize truncate">{viewingLead.channel || viewingLead.source || "Organic"}</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                  <LeadAttribution lead={viewingLead} />
                 </div>
 
                 {/* Right Column: Interaction Logs */}

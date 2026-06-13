@@ -1,10 +1,10 @@
 "use client";
 import React, { useState } from "react";
-import { Sparkles, Phone, StickyNote, Copy, Tag, Target, Inbox, User, RefreshCw, MessageSquare, CalendarClock } from "lucide-react";
+import { Sparkles, Phone, StickyNote, Tag, Inbox, User, RefreshCw, MessageSquare, CalendarClock } from "lucide-react";
 import { Lead, Message, CallLog } from "@/lib/api";
 import type { NotesResponse, ActiveCallCtx } from "../types";
 import { formatPhone, timeAgo } from "@/lib/utils";
-import { toast } from "sonner";
+import LeadAttribution from "./LeadAttribution";
 
 export const QUICK_NOTE_TAGS = [
   "Meeting scheduled",
@@ -110,11 +110,6 @@ export default function LeadDetailPanel({
     if (CALLBACK_TAGS.has(tag) && !isSelected) {
       setShowCallbackPicker(true);
     }
-  };
-
-  const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success(`${label} copied to clipboard`);
   };
 
   if (selectedLeadLoading || !selectedLead) {
@@ -538,50 +533,7 @@ export default function LeadDetailPanel({
             </div>
 
             {/* ── Campaign Attribution ── */}
-            {(selectedLead.broadcast_id || selectedLead.template_name || selectedLead.ad_campaign_name) && (
-              <div className={`border rounded-2xl p-4 shadow-sm space-y-3 ${
-                selectedLead.broadcast_id || selectedLead.template_name
-                  ? "bg-purple-50/50 border-purple-100"
-                  : "bg-emerald-50/40 border-emerald-100"
-              }`}>
-                <h3 className={`font-display text-xs font-black tracking-widest uppercase flex items-center gap-1.5 ${
-                  selectedLead.broadcast_id ? "text-purple-700" : "text-emerald-700"
-                }`}>
-                  <Target size={12} />
-                  {selectedLead.broadcast_id || selectedLead.template_name ? "Campaign Attribution" : "Inbound Attribution"}
-                </h3>
-                <div className="grid grid-cols-2 gap-2.5">
-                  {selectedLead.broadcast_id && (
-                    <div className="bg-white border border-purple-100/60 rounded-xl p-3 relative">
-                      <span className="font-label text-[9px] text-purple-600/60 uppercase font-extrabold tracking-wider block">Broadcast ID</span>
-                      <p className="font-mono text-[10px] text-slate-800 font-bold mt-1 truncate pr-6">{selectedLead.broadcast_id}</p>
-                      <button onClick={() => copyToClipboard(selectedLead.broadcast_id!, "Broadcast ID")}
-                        className="absolute right-2.5 bottom-2.5 p-1 text-purple-400 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition-all">
-                        <Copy size={10} />
-                      </button>
-                    </div>
-                  )}
-                  {selectedLead.template_name && (
-                    <div className="bg-white border border-purple-100/60 rounded-xl p-3">
-                      <span className="font-label text-[9px] text-purple-600/60 uppercase font-extrabold tracking-wider block">Template</span>
-                      <p className="font-body text-xs text-slate-800 font-extrabold mt-1 truncate">{selectedLead.template_name}</p>
-                    </div>
-                  )}
-                  {selectedLead.ad_campaign_name && (
-                    <div className="bg-white border border-emerald-100/60 rounded-xl p-3">
-                      <span className="font-label text-[9px] text-emerald-600/60 uppercase font-extrabold tracking-wider block">Ad Campaign</span>
-                      <p className="font-body text-xs text-slate-800 font-extrabold mt-1 truncate">{selectedLead.ad_campaign_name}</p>
-                    </div>
-                  )}
-                  {selectedLead.tag_name && (
-                    <div className="bg-white border border-purple-100/60 rounded-xl p-3 flex items-center gap-1.5">
-                      <Tag size={11} className="text-purple-400 shrink-0" />
-                      <p className="font-body text-xs text-purple-700 font-extrabold truncate">{selectedLead.tag_name}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            <LeadAttribution lead={selectedLead} variant="compact" />
 
             {/* ── Engagement Signal + Call Trail ── */}
             <div className="grid grid-cols-2 gap-3">
