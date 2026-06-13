@@ -27,22 +27,14 @@ import {
   api,
   AnalyticsOverviewExtended,
   MessagingAnalytics,
-  TelecallingAnalyticsExtended,
   FunnelAnalyticsExtended,
   TemplatePerformanceRow,
 } from "@/lib/api";
 
 type DateRange = "today" | "7d" | "30d";
-type Tab = "overview" | "channels" | "telecalling" | "templates" | "pipeline" | "inbound";
+type Tab = "overview" | "channels" | "templates" | "pipeline" | "inbound";
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
-
-function formatMinutes(min: number): string {
-  if (min < 60) return `${min}m`;
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
-}
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -427,298 +419,6 @@ function ChannelsTab({ range }: { range: DateRange }) {
   );
 }
 
-// ─── Telecalling Tab ──────────────────────────────────────────────────────────
-
-function slotToLabel(index: number): string {
-  const totalMins = 9 * 60 + index * 30;
-  const h = Math.floor(totalMins / 60);
-  const m = totalMins % 60;
-  const ampm = h >= 12 ? "PM" : "AM";
-  const displayH = h > 12 ? h - 12 : h;
-  return m === 0 ? `${displayH}${ampm}` : `${displayH}:30${ampm}`;
-}
-
-function computeCallerPeriods(
-  slotCounts: number[]
-): { activePeriods: string[]; idlePeriods: string[] } {
-  const n = slotCounts.length;
-  const activePeriods: string[] = [];
-  const idlePeriods: string[] = [];
-  const isActive = slotCounts.map((c) => c > 0);
-  let i = 0;
-  while (i < n) {
-    const state = isActive[i];
-    let j = i;
-    while (j < n && isActive[j] === state) j++;
-    const range = `${slotToLabel(i)}–${slotToLabel(j)}`;
-    if (state) activePeriods.push(range);
-    else idlePeriods.push(range);
-    i = j;
-  }
-  return { activePeriods, idlePeriods };
-}
-
-function CallerTimelineStrip({ data }: { data: TelecallingAnalyticsExtended }) {
-  const { per_caller: callers, calls_per_slot: slots } = data;
-
-  if (callers.length === 0) {
-    return <p className="font-label text-sm text-on-surface-muted">No caller data for today.</p>;
-  }
-
-  const maxCount = Math.max(
-    ...slots.flatMap((s) => Object.values(s.caller_counts) as number[]),
-    1
-  );
-
-  return (
-    <div>
-      <div className="space-y-2">
-        {callers.map((caller) => {
-          const slotCounts = slots.map((s) => s.caller_counts[caller.caller_id] ?? 0);
-          const totalCalls = slotCounts.reduce((a, b) => a + b, 0);
-
-          return (
-            <div key={caller.caller_id} className="flex items-center gap-3">
-              <span className="font-label text-xs text-on-surface-muted w-20 text-right shrink-0 truncate">
-                {caller.name}
-              </span>
-              <div className="flex-1 h-8 rounded-lg overflow-hidden flex gap-px bg-surface-mid">
-                {slotCounts.map((count, i) => {
-                  const opacity = count > 0 ? 0.35 + 0.65 * (count / maxCount) : 0;
-                  return (
-                    <div
-                      key={i}
-                      style={{
-                        flex: 1,
-                        backgroundColor: count > 0 ? `rgba(16,185,129,${opacity})` : undefined,
-                      }}
-                      title={
-                        count > 0
-                          ? `${slotToLabel(i)}: ${count} call${count !== 1 ? "s" : ""}`
-                          : `${slotToLabel(i)}: Idle`
-                      }
-                    />
-                  );
-                })}
-              </div>
-              <span className="font-label text-xs text-on-surface-muted w-24 shrink-0">
-                {totalCalls} calls · {formatMinutes(caller.total_minutes_today)}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-      {/* X-axis: hour label at every even slot (0,2,4…) */}
-      <div
-        className="mt-1"
-        style={{ marginLeft: 92, marginRight: 100, display: "grid", gridTemplateColumns: "repeat(18, 1fr)" }}
-      >
-        {Array.from({ length: 18 }, (_, i) => (
-          <span key={i} className="text-[9px] text-on-surface-muted text-center">
-            {i % 2 === 0 ? slotToLabel(i) : ""}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function CallerSummaryCards({ data }: { data: TelecallingAnalyticsExtended }) {
-  const { per_caller: callers, calls_per_slot: slots } = data;
-  if (callers.length === 0) return null;
-
-  return (
-    <div className="grid grid-cols-3 gap-3 mt-5">
-      {callers.map((caller) => {
-        const slotCounts = slots.map((s) => s.caller_counts[caller.caller_id] ?? 0);
-        const { activePeriods, idlePeriods } = computeCallerPeriods(slotCounts);
-        const hasActivity = caller.calls_today > 0;
-
-        return (
-          <div
-            key={caller.caller_id}
-            className="bg-surface-low rounded-xl p-4 ring-1 ring-[#c4c7c7]/15"
-          >
-            <div className="flex items-start justify-between mb-3">
-              <p className="font-body text-sm font-bold text-on-surface">{caller.name}</p>
-              <div className="text-right">
-                <p className="font-label text-xs font-semibold text-on-surface">
-                  {caller.calls_today} calls
-                </p>
-                <p className="font-label text-xs text-on-surface-muted">
-                  {formatMinutes(caller.total_minutes_today)}
-                </p>
-              </div>
-            </div>
-
-            {!hasActivity ? (
-              <p className="font-label text-xs text-on-surface-muted italic">No activity today</p>
-            ) : (
-              <div className="space-y-2">
-                {activePeriods.length > 0 && (
-                  <div>
-                    <p className="font-label text-[10px] font-semibold text-emerald-700 uppercase tracking-wider mb-1">
-                      Active
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      {activePeriods.map((p, i) => (
-                        <span
-                          key={i}
-                          className="font-label text-xs bg-emerald-50 text-emerald-700 rounded px-2 py-0.5 ring-1 ring-emerald-100"
-                        >
-                          {p}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {idlePeriods.length > 0 && (
-                  <div>
-                    <p className="font-label text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                      Idle
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      {idlePeriods.map((p, i) => (
-                        <span
-                          key={i}
-                          className="font-label text-xs bg-slate-50 text-slate-500 rounded px-2 py-0.5 ring-1 ring-slate-100"
-                        >
-                          {p}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function TelecallingTab() {
-  const [data, setData] = useState<TelecallingAnalyticsExtended | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    api.analytics
-      .telecallingExtended()
-      .then(setData)
-      .catch((e: unknown) => setErr(e instanceof Error ? e.message : "Failed to load"));
-  }, []);
-
-  if (err) return <ErrorBox message={err} />;
-  if (!data) return <SkeletonGrid cols={4} />;
-
-  const totalCalls = data.calls_today;
-  const converted = data.outcome_breakdown.converted;
-  const convRate = totalCalls === 0 ? 0 : Math.round((converted / totalCalls) * 100);
-
-  const outcomes = [
-    { label: "Converted", value: data.outcome_breakdown.converted, color: "text-emerald-700 bg-emerald-50 ring-emerald-100" },
-    { label: "Callback", value: data.outcome_breakdown.callback, color: "text-blue-700 bg-blue-50 ring-blue-100" },
-    { label: "Not Interested", value: data.outcome_breakdown.not_interested, color: "text-red-700 bg-red-50 ring-red-100" },
-    { label: "No Answer", value: data.outcome_breakdown.no_answer, color: "text-amber-700 bg-amber-50 ring-amber-100" },
-  ];
-
-  return (
-    <div className="space-y-6">
-      {/* KPI row */}
-      <div className="grid grid-cols-4 gap-4">
-        <KpiCard label="Calls Today" value={data.calls_today.toLocaleString()} />
-        <KpiCard label="Calls This Week" value={data.calls_this_week.toLocaleString()} />
-        <KpiCard label="Talk Time Today" value={formatMinutes(data.total_minutes_today)} />
-        <KpiCard label="Team Conv. Rate" value={`${convRate}%`} sub={`${converted} converted`} />
-      </div>
-
-      {/* Caller activity — timeline + summary cards */}
-      <SectionCard title="Who worked and when — today">
-        <CallerTimelineStrip data={data} />
-        <CallerSummaryCards data={data} />
-      </SectionCard>
-
-      {/* Outcome + calls per hour */}
-      <div className="grid grid-cols-2 gap-6">
-        <SectionCard title="Outcome Breakdown">
-          <div className="grid grid-cols-2 gap-3">
-            {outcomes.map((o) => (
-              <div key={o.label} className={`rounded-2xl px-4 py-4 ring-1 ${o.color}`}>
-                <p className="font-label text-xs uppercase tracking-wider opacity-70">{o.label}</p>
-                <p className="font-display text-3xl font-bold mt-1">{o.value}</p>
-              </div>
-            ))}
-          </div>
-        </SectionCard>
-
-        <SectionCard title="Calls Per Hour">
-          <div role="img" aria-label="Calls per hour chart">
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={data.calls_per_hour} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
-                <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#a1a1aa" }} />
-                <YAxis tick={{ fontSize: 10, fill: "#a1a1aa" }} allowDecimals={false} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e4e4e7" }} />
-                <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="Calls" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </SectionCard>
-      </div>
-
-      {/* Caller leaderboard */}
-      <SectionCard title="Caller Leaderboard">
-        {data.per_caller.length === 0 ? (
-          <p className="font-label text-sm text-on-surface-muted">No active callers today.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-surface-mid">
-                  {["Name", "Calls Today", "Talk Time", "Conv. Rate", "Score"].map((h) => (
-                    <th key={h} className="pb-3 pr-4 font-label text-xs font-semibold text-on-surface-muted uppercase tracking-wider">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {[...data.per_caller]
-                  .sort((a, b) => b.calls_today - a.calls_today)
-                  .map((c) => {
-                    const scoreColor =
-                      c.overall_score === null
-                        ? "text-on-surface-muted"
-                        : c.overall_score >= 7
-                        ? "text-emerald-600"
-                        : c.overall_score >= 4
-                        ? "text-amber-600"
-                        : "text-red-600";
-
-                    return (
-                      <tr key={c.caller_id} className="border-b border-surface-mid/50 hover:bg-surface-low transition-colors">
-                        <td className="py-3 pr-4 font-body text-sm font-semibold text-on-surface">{c.name}</td>
-                        <td className="py-3 pr-4 font-label text-sm text-on-surface">{c.calls_today}</td>
-                        <td className="py-3 pr-4 font-label text-sm text-on-surface">{formatMinutes(c.total_minutes_today)}</td>
-                        <td className="py-3 pr-4 font-label text-sm text-on-surface">
-                          {c.conversion_rate !== null ? `${Math.round(c.conversion_rate * 100)}%` : "—"}
-                        </td>
-                        <td className={`py-3 font-label text-sm font-bold ${scoreColor}`}>
-                          {c.overall_score !== null ? c.overall_score.toFixed(1) : "—"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </SectionCard>
-    </div>
-  );
-}
-
 // ─── Leads Pipeline Tab ───────────────────────────────────────────────────────
 
 const SOURCE_CONFIG: { key: keyof FunnelAnalyticsExtended["by_source"]; label: string; Icon: React.ElementType }[] = [
@@ -1016,7 +716,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "channels", label: "Channels" },
   { id: "inbound", label: "Inbound" },
-  { id: "telecalling", label: "Telecalling" },
   { id: "templates", label: "Templates" },
   { id: "pipeline", label: "Leads Pipeline" },
 ];
@@ -1038,7 +737,7 @@ export default function AnalyticsPage() {
         <div>
           <h1 className="font-display text-3xl font-bold text-tertiary">Analytics</h1>
           <p className="font-body text-on-surface-muted mt-1">
-            Service metrics across all channels, telecalling, and lead funnel
+            Service metrics across all channels and the lead funnel
           </p>
         </div>
         {/* Date range pills */}
@@ -1080,7 +779,6 @@ export default function AnalyticsPage() {
       {activeTab === "overview" && <OverviewTab range={range} />}
       {activeTab === "channels" && <ChannelsTab range={range} />}
       {activeTab === "inbound" && <InboundTab range={range} />}
-      {activeTab === "telecalling" && <TelecallingTab />}
       {activeTab === "templates" && <TemplatesTab />}
       {activeTab === "pipeline" && <PipelineTab />}
     </div>
