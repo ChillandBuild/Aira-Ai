@@ -20,8 +20,6 @@ import {
   AtSign,
   Tv2,
   Send,
-  Upload,
-  Users,
 } from "lucide-react";
 import {
   api,
@@ -32,7 +30,7 @@ import {
 } from "@/lib/api";
 
 type DateRange = "today" | "7d" | "30d";
-type Tab = "overview" | "channels" | "templates" | "pipeline" | "inbound";
+type Tab = "overview" | "channels" | "templates" | "inbound";
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
 
@@ -183,6 +181,7 @@ function SegmentBars({
 
 function OverviewTab({ range }: { range: DateRange }) {
   const [data, setData] = useState<AnalyticsOverviewExtended | null>(null);
+  const [funnel, setFunnel] = useState<FunnelAnalyticsExtended | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -196,8 +195,17 @@ function OverviewTab({ range }: { range: DateRange }) {
     return () => { isCurrent = false; };
   }, [range]);
 
+  // Pipeline-state metrics (all-time, not range-bound): avg score + hot-lead aging.
+  useEffect(() => {
+    let isCurrent = true;
+    api.analytics.funnelExtended()
+      .then((d) => { if (isCurrent) setFunnel(d); })
+      .catch(() => {});
+    return () => { isCurrent = false; };
+  }, []);
+
   if (err) return <ErrorBox message={err} />;
-  if (!data) return <SkeletonGrid cols={5} />;
+  if (!data) return <SkeletonGrid cols={6} />;
 
   const total = data.total_leads;
   const hotCount = data.by_segment.A ?? 0;
@@ -210,7 +218,7 @@ function OverviewTab({ range }: { range: DateRange }) {
   return (
     <div className="space-y-6">
       {/* KPI row */}
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-6 gap-4">
         <KpiCard label="Total Leads" value={total.toLocaleString()} sub={channelSub} />
         <KpiCard
           label="Hot Leads"
@@ -228,6 +236,7 @@ function OverviewTab({ range }: { range: DateRange }) {
           valueClass={data.unreplied_24h > 0 ? "text-red-600" : "text-emerald-600"}
         />
         <KpiCard label="AI Automation" value={`${aiPct}%`} sub={`${data.ai_vs_human.ai} AI · ${data.ai_vs_human.human} human`} />
+        <KpiCard label="Avg Score" value={funnel?.avg_score != null ? funnel.avg_score.toFixed(1) : "—"} sub="lead quality" />
       </div>
 
       {/* Charts row 1 */}
@@ -280,6 +289,13 @@ function OverviewTab({ range }: { range: DateRange }) {
           <SegmentBars bySegment={data.by_segment} total={total} />
         </SectionCard>
       </div>
+
+      {/* Hot-lead aging — the one actionable signal kept from the old Pipeline tab */}
+      {funnel && funnel.hot_lead_aging.length > 0 && (
+        <SectionCard title="Hot Leads (Segment A) — time without conversion">
+          <HotLeadAging aging={funnel.hot_lead_aging} />
+        </SectionCard>
+      )}
     </div>
   );
 }
@@ -419,16 +435,7 @@ function ChannelsTab({ range }: { range: DateRange }) {
   );
 }
 
-// ─── Leads Pipeline Tab ───────────────────────────────────────────────────────
-
-const SOURCE_CONFIG: { key: keyof FunnelAnalyticsExtended["by_source"]; label: string; Icon: React.ElementType }[] = [
-  { key: "whatsapp", label: "WhatsApp", Icon: MessageCircle },
-  { key: "instagram", label: "Instagram", Icon: AtSign },
-  { key: "facebook", label: "Facebook", Icon: Tv2 },
-  { key: "telegram", label: "Telegram", Icon: Send },
-  { key: "upload", label: "Upload", Icon: Upload },
-  { key: "manual", label: "Manual", Icon: Users },
-];
+// ─── Hot-lead aging (used by the Overview tab) ────────────────────────────────
 
 const HOT_AGING_COLORS = ["bg-emerald-500", "bg-amber-400", "bg-orange-500", "bg-red-600"];
 
@@ -451,109 +458,6 @@ function HotLeadAging({ aging }: { aging: FunnelAnalyticsExtended["hot_lead_agin
           </div>
         );
       })}
-    </div>
-  );
-}
-
-function PipelineTab() {
-  const [data, setData] = useState<FunnelAnalyticsExtended | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    api.analytics
-      .funnelExtended()
-      .then(setData)
-      .catch((e: unknown) => setErr(e instanceof Error ? e.message : "Failed to load"));
-  }, []);
-
-  if (err) return <ErrorBox message={err} />;
-  if (!data) return <SkeletonGrid cols={4} />;
-
-  const segTotal = data.total_leads;
-  const srcTotal = Object.values(data.by_source).reduce((a, b) => a + b, 0);
-
-  const segs: { key: "A" | "B" | "C" | "D"; label: string; color: string }[] = [
-    { key: "A", label: "Hot (A)", color: "bg-emerald-500" },
-    { key: "B", label: "Warm (B)", color: "bg-blue-500" },
-    { key: "C", label: "Cold (C)", color: "bg-amber-500" },
-    { key: "D", label: "Disqualified (D)", color: "bg-red-400" },
-  ];
-
-  return (
-    <div className="space-y-6">
-      {/* KPI row */}
-      <div className="grid grid-cols-4 gap-4">
-        <KpiCard label="Total Leads" value={data.total_leads.toLocaleString()} />
-        <KpiCard label="New This Week" value={data.leads_this_week.toLocaleString()} />
-        <KpiCard label="Avg Score" value={data.avg_score !== null ? data.avg_score.toFixed(1) : "—"} />
-        <KpiCard label="Disqualified" value={(data.by_segment.D ?? 0).toLocaleString()} />
-      </div>
-
-      <div className="grid grid-cols-2 gap-6">
-        {/* Segment distribution */}
-        <SectionCard title="Segment Distribution">
-          <div className="space-y-3">
-            {segs.map(({ key, label, color }) => {
-              const count = data.by_segment[key] ?? 0;
-              const pct = segTotal === 0 ? 0 : Math.round((count / segTotal) * 100);
-              return (
-                <div key={key} className="flex items-center gap-3">
-                  <span className="font-label text-xs text-on-surface-muted w-28 shrink-0">{label}</span>
-                  <div className="flex-1 bg-surface-mid rounded-full h-4 overflow-hidden">
-                    <div className={`h-4 rounded-full ${color} transition-all`} style={{ width: `${pct}%` }} />
-                  </div>
-                  <span className="font-label text-xs text-on-surface w-8 text-right shrink-0">{count}</span>
-                  <span className="font-label text-xs text-on-surface-muted w-8 shrink-0">{pct}%</span>
-                </div>
-              );
-            })}
-          </div>
-        </SectionCard>
-
-        {/* Source breakdown */}
-        <SectionCard title="Source Breakdown">
-          <div className="space-y-3">
-            {SOURCE_CONFIG.map(({ key, label, Icon }) => {
-              const count = data.by_source[key] ?? 0;
-              const pct = srcTotal === 0 ? 0 : Math.round((count / srcTotal) * 100);
-              return (
-                <div key={key} className="flex items-center gap-3">
-                  <div className="flex items-center gap-1.5 w-28 shrink-0">
-                    <Icon size={12} className="text-on-surface-muted shrink-0" />
-                    <span className="font-label text-xs text-on-surface-muted truncate">{label}</span>
-                  </div>
-                  <div className="flex-1 bg-surface-mid rounded-full h-4 overflow-hidden">
-                    <div className="h-4 rounded-full bg-indigo-400 transition-all" style={{ width: `${pct}%` }} />
-                  </div>
-                  <span className="font-label text-xs text-on-surface w-8 text-right shrink-0">{count}</span>
-                </div>
-              );
-            })}
-          </div>
-        </SectionCard>
-      </div>
-
-      <div className="grid grid-cols-2 gap-6">
-        {/* Score histogram */}
-        <SectionCard title="Score Distribution">
-          <div role="img" aria-label="Score distribution chart">
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={data.score_histogram} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
-                <XAxis dataKey="range" tick={{ fontSize: 10, fill: "#a1a1aa" }} />
-                <YAxis tick={{ fontSize: 10, fill: "#a1a1aa" }} allowDecimals={false} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e4e4e7" }} />
-                <Bar dataKey="count" radius={[4, 4, 0, 0]} name="Leads" fill="#6366f1" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </SectionCard>
-
-        {/* Hot lead aging */}
-        <SectionCard title="Segment A — Time without conversion">
-          <HotLeadAging aging={data.hot_lead_aging} />
-        </SectionCard>
-      </div>
     </div>
   );
 }
@@ -716,8 +620,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "channels", label: "Channels" },
   { id: "inbound", label: "Inbound" },
-  { id: "templates", label: "Templates" },
-  { id: "pipeline", label: "Leads Pipeline" },
+  { id: "templates", label: "Outbound" },
 ];
 
 const RANGES: { id: DateRange; label: string }[] = [
@@ -780,7 +683,6 @@ export default function AnalyticsPage() {
       {activeTab === "channels" && <ChannelsTab range={range} />}
       {activeTab === "inbound" && <InboundTab range={range} />}
       {activeTab === "templates" && <TemplatesTab />}
-      {activeTab === "pipeline" && <PipelineTab />}
     </div>
   );
 }
