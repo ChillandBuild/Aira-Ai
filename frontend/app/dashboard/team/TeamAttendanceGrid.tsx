@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { format, parseISO, startOfMonth } from "date-fns";
-import { Loader2, CalendarCheck, UserCheck, UserX, Percent, CheckCircle2, XCircle, Download } from "lucide-react";
+import { Loader2, CalendarCheck, UserCheck, UserX, Percent, CheckCircle2, XCircle, Download, Sun } from "lucide-react";
 import { api, TeamAttendanceGridData } from "@/lib/api";
 import { dotColorClass, WEEKDAY_LABELS, buildMiniMonths } from "./helpers";
 
@@ -102,7 +102,7 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
 
   const sixMonths = useMemo(() => buildMiniMonths(sixMonthDays, 6), [sixMonthDays]);
 
-  const handleMark = async (status: "present" | "absent") => {
+  const handleMark = async (status: "present" | "absent" | "holiday") => {
     if (!selectedCallerId || marking) return;
     setMarking(true);
     try {
@@ -159,14 +159,14 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
           <CalendarCheck size={16} className="text-primary" /> Team Attendance
         </h2>
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
+          <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
             <span className="font-label text-[10px] text-slate-500 font-bold uppercase pl-1">Export Attendance:</span>
             <input
               type="date"
               value={from}
               max={to}
               onChange={(e) => setFrom(e.target.value)}
-              className="px-2 py-1 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
+              className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
             />
             <span className="text-slate-400 text-xs">to</span>
             <input
@@ -175,7 +175,7 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
               min={from}
               max={today}
               onChange={(e) => setTo(e.target.value)}
-              className="px-2 py-1 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
+              className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
             />
             <button
               onClick={handleExportCsv}
@@ -217,6 +217,13 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
             className="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 font-label text-[11px] font-bold disabled:opacity-50 transition-colors"
           >
             <XCircle size={12} /> Absent
+          </button>
+          <button
+            onClick={() => handleMark("holiday")}
+            disabled={marking}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 font-label text-[11px] font-bold disabled:opacity-50 transition-colors"
+          >
+            <Sun size={12} /> Holiday
           </button>
           {marking && <Loader2 className="animate-spin text-primary" size={12} />}
         </div>
@@ -284,6 +291,7 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
       <div className="flex items-center gap-4 mt-4 pt-3 border-t border-border-subtle text-[10px] text-ink-muted font-body">
         <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Present</div>
         <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Absent</div>
+        <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sky-500 inline-block" /> Holiday</div>
         <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-surface-mid/30 inline-block" /> Future</div>
       </div>
 
@@ -325,7 +333,7 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
                         >
                           <span
                             className={`text-[7px] sm:text-[8px] leading-none font-semibold select-none ${
-                              cell.status === "present" || cell.status === "absent" ? "text-white" : "text-ink-muted/40"
+                              cell.status === "present" || cell.status === "absent" || cell.status === "holiday" ? "text-white" : "text-ink-muted/40"
                             }`}
                           >
                             {format(parseISO(cell.date), "d")}

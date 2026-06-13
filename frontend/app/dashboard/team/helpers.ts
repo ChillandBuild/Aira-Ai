@@ -14,6 +14,7 @@ export function initials(name: string): string {
 export function dotColorClass(status: string | undefined): string {
   if (status === "present") return "bg-emerald-500";
   if (status === "absent") return "bg-red-500";
+  if (status === "holiday") return "bg-sky-500";
   return "bg-surface-mid/30";
 }
 

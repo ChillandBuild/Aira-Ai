@@ -335,8 +335,8 @@ def get_caller_attendance(caller_id: str, months: int = 4, ctx: dict = Depends(g
 def mark_attendance(caller_id: str, payload: AttendancePayload, ctx: dict = Depends(get_tenant_and_role)):
     if ctx["role"] != "owner":
         raise HTTPException(status_code=403, detail="Only owners can mark attendance")
-    if payload.status not in ("present", "absent"):
-        raise HTTPException(status_code=400, detail="status must be 'present' or 'absent'")
+    if payload.status not in ("present", "absent", "holiday"):
+        raise HTTPException(status_code=400, detail="status must be 'present', 'absent', or 'holiday'")
     try:
         date.fromisoformat(payload.date)
     except ValueError:

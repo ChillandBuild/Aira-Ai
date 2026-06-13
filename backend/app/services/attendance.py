@@ -14,7 +14,7 @@ def resolve_day_status(
     """
     if target_date > today:
         return "future"
-    if override_status in ("present", "absent"):
+    if override_status in ("present", "absent", "holiday"):
         return override_status
     return "present" if has_activity else "absent"
 

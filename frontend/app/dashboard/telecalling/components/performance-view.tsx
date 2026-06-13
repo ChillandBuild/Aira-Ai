@@ -32,15 +32,8 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
   // Timeline state
-  const [selectedCallerForTimeline, setSelectedCallerForTimeline] = useState<string>("");
   const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
   const [loadingTimeline, setLoadingTimeline] = useState(false);
-  const [timelineFrom, setTimelineFrom] = useState<string>(
-    new Date().toISOString().split("T")[0]
-  );
-  const [timelineTo, setTimelineTo] = useState<string>(
-    new Date().toISOString().split("T")[0]
-  );
 
   // Overall stats date-range filter state
   const [statsFrom, setStatsFrom] = useState<string>(
@@ -101,13 +94,10 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
     try {
       const data = await api.callers.list();
       setCallersList(data);
-      if (data.length > 0 && !selectedCallerForTimeline) {
-        setSelectedCallerForTimeline(data[0].id);
-      }
     } catch (err) {
       console.error("Failed to load callers:", err);
     }
-  }, [selectedCallerForTimeline]);
+  }, []);
 
   // Fetch QA Queue
   const loadQaQueue = useCallback(async () => {
@@ -136,13 +126,15 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
     }
   }, []);
 
-  // Fetch timeline events for selected caller across a date range
+  // Fetch timeline events for the selected (or first) caller, driven by the overall stats date range
+  const timelineCallerId = selectedCallerId ?? callersList[0]?.id ?? "";
+
   const loadTimelineEvents = useCallback(async () => {
-    if (!selectedCallerForTimeline) return;
+    if (!timelineCallerId) return;
     setLoadingTimeline(true);
     try {
-      let fromDate = new Date(timelineFrom);
-      const toDate = new Date(timelineTo);
+      let fromDate = new Date(statsFrom);
+      const toDate = new Date(statsTo);
 
       // Cap the range at 31 days to avoid excessive requests
       const maxDays = 31;
@@ -156,7 +148,7 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
         : [toDate];
 
       const results = await Promise.all(
-        days.map((d) => api.analytics.callerTimeline(selectedCallerForTimeline, format(d, "yyyy-MM-dd")))
+        days.map((d) => api.analytics.callerTimeline(timelineCallerId, format(d, "yyyy-MM-dd")))
       );
 
       const allEvents = results.flatMap((res) => res.data || []);
@@ -167,7 +159,7 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
     } finally {
       setLoadingTimeline(false);
     }
-  }, [selectedCallerForTimeline, timelineFrom, timelineTo]);
+  }, [timelineCallerId, statsFrom, statsTo]);
 
   // Load initial data
   useEffect(() => {
@@ -181,13 +173,6 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
   useEffect(() => {
     loadTimelineEvents();
   }, [loadTimelineEvents]);
-
-  // Sync timeline dropdown to newly selected caller (without locking it)
-  useEffect(() => {
-    if (selectedCallerId) {
-      setSelectedCallerForTimeline(selectedCallerId);
-    }
-  }, [selectedCallerId]);
 
   // Fetch full details for the viewing lead modal
   useEffect(() => {
@@ -391,6 +376,15 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
   const activeAgents = callersList.filter(c => (c.status || "active") === "active");
   const offlineAgents = callersList.filter(c => c.status === "logged_out");
   
+  // Format average talk time, rounding to avoid floating-point second overflow
+  const formatTalkTime = (seconds?: number | null) => {
+    if (!seconds) return "0s";
+    const total = Math.round(seconds);
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return `${m}m ${s}s`;
+  };
+
   // Timeline calculations
   const startHour = 9;
   const endHour = 19;
@@ -427,20 +421,20 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
           <h2 className="font-display text-sm font-bold text-tertiary flex items-center gap-2">
             <Users size={16} className="text-primary" /> Live Agent Status
           </h2>
-          <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
+          <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
             <span className="font-label text-[10px] text-slate-500 font-bold uppercase pl-1">Range:</span>
             <input
               type="date"
               value={statsFrom}
               onChange={(e) => setStatsFrom(e.target.value)}
-              className="px-2 py-1 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
+              className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
             />
             <span className="text-slate-400 text-xs">to</span>
             <input
               type="date"
               value={statsTo}
               onChange={(e) => setStatsTo(e.target.value)}
-              className="px-2 py-1 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
+              className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
             />
           </div>
         </div>
@@ -491,57 +485,60 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
                   {c.status_changed_at && (
                     <span className="block text-[10px] text-slate-400 font-medium">Since {timeAgo(c.status_changed_at)}</span>
                   )}
-                  <span className="block text-xs text-slate-500 mt-0.5">{c.phone || "—"}</span>
-                  {editingAgentIdFor === c.id ? (
-                    <div className="flex items-center gap-1 mt-0.5" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="text"
-                        value={agentIdInputValue}
-                        onChange={(e) => setAgentIdInputValue(e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        autoFocus
-                        className="w-20 px-1 py-0.5 rounded bg-white border border-slate-200 text-[11px] text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary"
-                      />
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSaveAgentId(c.id);
-                        }}
-                        disabled={savingAgentId === c.id}
-                        className="p-0.5 text-emerald-600 hover:bg-emerald-50 rounded border border-emerald-200"
-                        title="Save Agent ID"
-                      >
-                        {savingAgentId === c.id ? <Loader2 className="animate-spin" size={10} /> : <Check size={10} />}
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingAgentIdFor(null);
-                          setAgentIdInputValue("");
-                        }}
-                        disabled={savingAgentId === c.id}
-                        className="p-0.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded border border-slate-200"
-                        title="Cancel"
-                      >
-                        <X size={10} />
-                      </button>
-                    </div>
-                  ) : (
-                    <span className="flex items-center gap-1 text-xs text-slate-500">
-                      {c.telecmi_agent_id || "—"}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingAgentIdFor(c.id);
-                          setAgentIdInputValue(c.telecmi_agent_id || "");
-                        }}
-                        className="p-0.5 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded"
-                        title="Edit TeleCMI Agent ID"
-                      >
-                        <Pencil size={9} />
-                      </button>
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-0.5">
+                    <span>{c.phone || "—"}</span>
+                    <span className="text-slate-300">·</span>
+                    {editingAgentIdFor === c.id ? (
+                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="text"
+                          value={agentIdInputValue}
+                          onChange={(e) => setAgentIdInputValue(e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          autoFocus
+                          className="w-20 px-1 py-0.5 rounded bg-white border border-slate-200 text-[11px] text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSaveAgentId(c.id);
+                          }}
+                          disabled={savingAgentId === c.id}
+                          className="p-0.5 text-emerald-600 hover:bg-emerald-50 rounded border border-emerald-200"
+                          title="Save Agent ID"
+                        >
+                          {savingAgentId === c.id ? <Loader2 className="animate-spin" size={10} /> : <Check size={10} />}
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingAgentIdFor(null);
+                            setAgentIdInputValue("");
+                          }}
+                          disabled={savingAgentId === c.id}
+                          className="p-0.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded border border-slate-200"
+                          title="Cancel"
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="flex items-center gap-1">
+                        {c.telecmi_agent_id || "—"}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingAgentIdFor(c.id);
+                            setAgentIdInputValue(c.telecmi_agent_id || "");
+                          }}
+                          className="p-0.5 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded"
+                          title="Edit TeleCMI Agent ID"
+                        >
+                          <Pencil size={9} />
+                        </button>
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold shrink-0 ${statusColor}`}>
                   {st === "logged_out" ? "Offline" : st}
@@ -590,8 +587,8 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
           <span className="block text-2xl font-display font-black text-slate-800">
             {loadingStats ? <Loader2 className="animate-spin text-slate-400" size={20} /> : (
               selectedCallerId
-                ? (callerStats?.avg_talk_seconds ? `${Math.floor(callerStats.avg_talk_seconds / 60)}m ${callerStats.avg_talk_seconds % 60}s` : "0s")
-                : (stats?.avg_talk_seconds ? `${Math.floor(stats.avg_talk_seconds / 60)}m ${stats.avg_talk_seconds % 60}s` : "0s")
+                ? formatTalkTime(callerStats?.avg_talk_seconds)
+                : formatTalkTime(stats?.avg_talk_seconds)
             )}
           </span>
           <span className="text-slate-400 font-label text-[10px] uppercase font-bold tracking-wider mt-1 block">Avg Talk Time</span>
@@ -656,20 +653,20 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
           </div>
           
           {/* Export section */}
-          <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
+          <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
             <span className="font-label text-[10px] text-slate-500 font-bold uppercase pl-1">Export Performance:</span>
-            <input 
+            <input
               type="date"
               value={exportSince}
               onChange={(e) => setExportSince(e.target.value)}
-              className="px-2 py-1 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
+              className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
             />
             <span className="text-slate-400 text-xs">to</span>
-            <input 
+            <input
               type="date"
               value={exportUntil}
               onChange={(e) => setExportUntil(e.target.value)}
-              className="px-2 py-1 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
+              className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
             />
             <button
               onClick={handleExportCsv}
@@ -740,7 +737,7 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
                         {row.connect_rate ? `${Math.round(row.connect_rate * 100)}%` : "0%"}
                       </td>
                       <td className="py-3.5 px-4 text-slate-600 font-medium">
-                        {row.avg_talk_seconds ? `${Math.floor(row.avg_talk_seconds / 60)}m ${row.avg_talk_seconds % 60}s` : "0s"}
+                        {formatTalkTime(row.avg_talk_seconds)}
                       </td>
                       <td className="py-3.5 px-4 text-slate-650 font-medium">
                         {row.idle_minutes_today ? `${Math.round(row.idle_minutes_today)} min` : "0 min"}
@@ -795,33 +792,12 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
         <div className="flex items-center justify-between mb-5 flex-wrap gap-4">
           <div>
             <h2 className="font-display text-base font-bold text-tertiary">Shift Timeline Visualizer</h2>
-            <p className="font-label text-xs text-on-surface-muted">Analyze live calling activity blocks, status transitions, and gaps.</p>
-          </div>
-          
-          <div className="flex items-center gap-2 flex-wrap">
-            <select
-              value={selectedCallerForTimeline}
-              onChange={(e) => setSelectedCallerForTimeline(e.target.value)}
-              className="px-3 py-1.5 rounded-xl bg-white border border-slate-250 text-xs font-bold focus:outline-none"
-            >
-              {callersList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-            <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
-              <span className="font-label text-[10px] text-slate-500 font-bold uppercase pl-1">From</span>
-              <input
-                type="date"
-                value={timelineFrom}
-                onChange={(e) => setTimelineFrom(e.target.value)}
-                className="px-2 py-1 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
-              />
-              <span className="text-slate-400 text-xs">to</span>
-              <input
-                type="date"
-                value={timelineTo}
-                onChange={(e) => setTimelineTo(e.target.value)}
-                className="px-2 py-1 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
-              />
-            </div>
+            <p className="font-label text-xs text-on-surface-muted">
+              Analyze live calling activity blocks, status transitions, and gaps
+              {timelineCallerId && (
+                <> for <span className="font-bold text-slate-600">{callersList.find(c => c.id === timelineCallerId)?.name}</span></>
+              )}.
+            </p>
           </div>
         </div>
 
