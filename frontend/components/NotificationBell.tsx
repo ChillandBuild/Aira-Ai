@@ -31,20 +31,16 @@ export function NotificationBell() {
       case "missed_callback":
       case "sentiment_critical":
         return {
-          bg: "bg-rose-50/70 hover:bg-rose-100/70 border-rose-200/60 dark:bg-rose-950/20 dark:border-rose-900/40",
-          iconBg: "bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-400",
-          titleColor: "text-rose-900 dark:text-rose-200",
-          descColor: "text-rose-700/80 dark:text-rose-300/85",
+          bg: "bg-slate-50/65 hover:bg-slate-100/65 border-slate-200/50 border-l-4 border-l-rose-500 dark:bg-slate-800/30 dark:hover:bg-slate-800/60 dark:border-slate-800 dark:border-l-rose-500",
+          iconBg: "bg-rose-100 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400",
           icon: <AlertCircle size={14} />,
         };
       case "handover_new":
       case "callback_claimable":
       case "break_overtime":
         return {
-          bg: "bg-amber-50/70 hover:bg-amber-100/70 border-amber-200/60 dark:bg-amber-950/20 dark:border-amber-900/40",
-          iconBg: "bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-400",
-          titleColor: "text-amber-900 dark:text-amber-200",
-          descColor: "text-amber-700/80 dark:text-amber-300/85",
+          bg: "bg-slate-50/65 hover:bg-slate-100/65 border-slate-200/50 border-l-4 border-l-amber-500 dark:bg-slate-800/30 dark:hover:bg-slate-800/60 dark:border-slate-800 dark:border-l-amber-500",
+          iconBg: "bg-amber-100 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400",
           icon: <Clock size={14} />,
         };
       case "lead_assigned":
@@ -52,10 +48,8 @@ export function NotificationBell() {
       case "callback_taken_over":
       default:
         return {
-          bg: "bg-indigo-50/70 hover:bg-indigo-100/70 border-indigo-200/60 dark:bg-indigo-950/20 dark:border-indigo-900/40",
-          iconBg: "bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400",
-          titleColor: "text-indigo-900 dark:text-indigo-200",
-          descColor: "text-indigo-700/80 dark:text-indigo-300/85",
+          bg: "bg-slate-50/65 hover:bg-slate-100/65 border-slate-200/50 border-l-4 border-l-indigo-500 dark:bg-slate-800/30 dark:hover:bg-slate-800/60 dark:border-slate-800 dark:border-l-indigo-500",
+          iconBg: "bg-indigo-100 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400",
           icon: <Info size={14} />,
         };
     }
@@ -128,22 +122,22 @@ export function NotificationBell() {
                           <div
                             key={cb.id}
                             onClick={handleCallbackClick}
-                            className="p-3.5 bg-amber-50/65 dark:bg-amber-950/15 hover:bg-amber-100/65 dark:hover:bg-amber-900/20 border border-amber-200/50 dark:border-amber-900/35 rounded-2xl transition-all flex gap-3 cursor-pointer group"
+                            className="p-3.5 bg-slate-50/65 hover:bg-slate-100/65 border border-slate-200/50 border-l-4 border-l-amber-500 dark:bg-slate-800/30 dark:hover:bg-slate-800/60 dark:border-slate-800 dark:border-l-amber-500 rounded-2xl transition-all flex gap-3 cursor-pointer group"
                           >
                             <div className="mt-0.5 shrink-0">
-                              <div className="w-7 h-7 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                              <div className="w-7 h-7 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center">
                                 <Clock size={13} />
                               </div>
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="font-display text-xs font-black text-amber-900 dark:text-amber-200 truncate">
+                              <p className="font-display text-xs font-black text-slate-800 dark:text-slate-100 truncate">
                                 {cb.lead?.name || "Unnamed Lead"}
                               </p>
-                              <p className="font-body text-[11px] text-amber-700/80 dark:text-amber-300/85 mt-0.5 truncate">
+                              <p className="font-body text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                                 {cb.lead?.phone || "No phone"}
                               </p>
                               {cb.message_preview && (
-                                <p className="font-body text-[10px] text-amber-700/60 dark:text-amber-400/60 mt-1 italic line-clamp-1">
+                                <p className="font-body text-[10px] text-slate-500/80 dark:text-slate-400/85 mt-1 italic line-clamp-1">
                                   &quot;{cb.message_preview}&quot;
                                 </p>
                               )}
@@ -207,10 +201,10 @@ export function NotificationBell() {
                                 </div>
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className={`font-display text-xs font-black truncate ${style.titleColor}`}>
+                                <p className="font-display text-xs font-black text-slate-800 dark:text-slate-100 truncate">
                                   {n.title}
                                 </p>
-                                <p className={`font-body text-[11px] mt-0.5 leading-relaxed ${style.descColor}`}>
+                                <p className="font-body text-[11px] mt-0.5 leading-relaxed text-slate-650 dark:text-slate-300">
                                   {cleanMessage}
                                 </p>
                                 <p className="font-label text-[8px] text-slate-400 dark:text-slate-500 mt-1.5">
@@ -224,7 +218,7 @@ export function NotificationBell() {
                               </div>
                               <button
                                 onClick={(e) => handleMarkRead(n.id, e)}
-                                className="shrink-0 self-center p-1.5 text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-slate-850 rounded-lg opacity-0 group-hover:opacity-100 transition-all shadow-xs"
+                                className="shrink-0 self-center p-1.5 text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-slate-800 rounded-lg opacity-0 group-hover:opacity-100 transition-all shadow-xs"
                                 title="Dismiss"
                               >
                                 <CheckCircle2 size={16} />

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { format, parseISO, subMonths } from "date-fns";
+import { format, parseISO, subMonths, startOfMonth } from "date-fns";
 import { Loader2, CalendarCheck, UserCheck, UserX, Percent, Download } from "lucide-react";
 import { api, AttendanceDay } from "@/lib/api";
 import { WEEKDAY_LABELS, buildMiniMonths } from "./helpers";
@@ -18,7 +18,11 @@ export default function AttendanceMini({ callerId, readOnly = false }: Attendanc
   const [saving, setSaving] = useState<"present" | "absent" | null>(null);
 
   // Date filters states
-  const [fromFilter, setFromFilter] = useState(() => format(subMonths(new Date(), 5), "yyyy-MM-dd"));
+  const [fromFilter, setFromFilter] = useState(() =>
+    readOnly
+      ? format(startOfMonth(new Date()), "yyyy-MM-dd")
+      : format(subMonths(new Date(), 5), "yyyy-MM-dd")
+  );
   const [toFilter, setToFilter] = useState(today);
 
   const load = useCallback(async () => {
@@ -104,86 +108,96 @@ export default function AttendanceMini({ callerId, readOnly = false }: Attendanc
   }
 
   return (
-    <div className="bg-surface rounded-card p-6 border border-border-subtle shadow-card">
+    <div className={`bg-surface rounded-card border border-border-subtle shadow-card ${
+      readOnly ? "p-4 max-w-xl mx-auto" : "p-6"
+    }`}>
       {/* Header with Title and Filters */}
-      <div className="flex items-center justify-between mb-5 flex-wrap gap-4 border-b border-border-subtle pb-4">
+      <div className={`flex items-center justify-between flex-wrap gap-4 border-b border-border-subtle pb-4 ${
+        readOnly ? "mb-4" : "mb-5"
+      }`}>
         <div className="flex items-center gap-2">
-          <CalendarCheck size={18} className="text-primary" />
-          <h3 className="font-display font-bold text-tertiary text-sm">Attendance Log</h3>
+          <CalendarCheck size={readOnly ? 16 : 18} className="text-primary" />
+          <h3 className={`font-display font-bold text-tertiary ${readOnly ? "text-xs" : "text-sm"}`}>Attendance Log</h3>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
           {/* Filters */}
           <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
-            <span className="font-label text-[10px] text-slate-500 font-bold uppercase pl-1">Filter:</span>
+            <span className="font-label text-[9px] text-slate-500 font-bold uppercase pl-1">Filter:</span>
             <input
               type="date"
               value={fromFilter}
               max={toFilter}
               onChange={(e) => setFromFilter(e.target.value)}
-              className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
+              className="px-1 py-0.5 rounded bg-white border border-slate-200 font-body text-[10px] text-slate-800 focus:outline-none w-24"
             />
-            <span className="text-slate-400 text-xs">to</span>
+            <span className="text-slate-400 text-[10px]">to</span>
             <input
               type="date"
               value={toFilter}
               min={fromFilter}
               max={today}
               onChange={(e) => setToFilter(e.target.value)}
-              className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
+              className="px-1 py-0.5 rounded bg-white border border-slate-200 font-body text-[10px] text-slate-800 focus:outline-none w-24"
             />
             <button
               onClick={handleExportCsv}
               disabled={filteredDays.length === 0}
               title="Download CSV"
-              className="flex items-center gap-1.5 px-2.5 py-1 bg-primary text-white rounded-lg hover:bg-primary/95 disabled:opacity-50 disabled:cursor-not-allowed font-label text-[11px] font-bold transition-colors ml-1 shadow-sm"
+              className="flex items-center gap-1 px-2.5 py-1 bg-primary text-white rounded-lg hover:bg-primary/95 disabled:opacity-50 disabled:cursor-not-allowed font-label text-[10px] font-bold transition-colors ml-1 shadow-sm"
             >
-              <Download size={11} /> CSV
+              <Download size={10} /> CSV
             </button>
           </div>
         </div>
       </div>
 
       {/* KPI Stats Cards (Horizontal, Compact, and Beautiful) */}
-      <div className="grid grid-cols-3 gap-3 mb-5">
-        <div className="bg-emerald-55/40 rounded-xl p-3 border border-emerald-100 flex items-center gap-3 shadow-sm hover:shadow transition-shadow">
-          <div className="p-2 rounded-lg bg-emerald-100 text-emerald-600 shrink-0">
-            <UserCheck size={14} />
+      <div className={`grid grid-cols-3 gap-3 ${readOnly ? "mb-4" : "mb-5"}`}>
+        <div className={`bg-emerald-55/40 rounded-xl border border-emerald-100 flex items-center shadow-sm hover:shadow transition-shadow ${
+          readOnly ? "p-2.5 gap-2" : "p-3 gap-3"
+        }`}>
+          <div className={`rounded-lg bg-emerald-100 text-emerald-600 shrink-0 ${readOnly ? "p-1.5" : "p-2"}`}>
+            <UserCheck size={readOnly ? 12 : 14} />
           </div>
           <div>
-            <span className="block text-lg font-display font-black text-slate-850 leading-none">
+            <span className={`block font-display font-black text-slate-850 leading-none ${readOnly ? "text-sm" : "text-lg"}`}>
               {presentCount}
             </span>
-            <span className="text-emerald-700 font-label text-[9px] uppercase font-bold tracking-wider mt-1 block">
-              Days Present
+            <span className="text-emerald-700 font-label text-[8px] uppercase font-bold tracking-wider mt-0.5 block">
+              Present
             </span>
           </div>
         </div>
 
-        <div className="bg-rose-55/40 rounded-xl p-3 border border-rose-100 flex items-center gap-3 shadow-sm hover:shadow transition-shadow">
-          <div className="p-2 rounded-lg bg-rose-100 text-rose-600 shrink-0">
-            <UserX size={14} />
+        <div className={`bg-rose-55/40 rounded-xl border border-rose-100 flex items-center shadow-sm hover:shadow transition-shadow ${
+          readOnly ? "p-2.5 gap-2" : "p-3 gap-3"
+        }`}>
+          <div className={`rounded-lg bg-rose-100 text-rose-600 shrink-0 ${readOnly ? "p-1.5" : "p-2"}`}>
+            <UserX size={readOnly ? 12 : 14} />
           </div>
           <div>
-            <span className="block text-lg font-display font-black text-slate-855 leading-none">
+            <span className={`block font-display font-black text-slate-855 leading-none ${readOnly ? "text-sm" : "text-lg"}`}>
               {absentCount}
             </span>
-            <span className="text-rose-700 font-label text-[9px] uppercase font-bold tracking-wider mt-1 block">
-              Days Absent
+            <span className="text-rose-700 font-label text-[8px] uppercase font-bold tracking-wider mt-0.5 block">
+              Absent
             </span>
           </div>
         </div>
 
-        <div className="bg-indigo-55/40 rounded-xl p-3 border border-indigo-100 flex items-center gap-3 shadow-sm hover:shadow transition-shadow">
-          <div className="p-2 rounded-lg bg-indigo-100 text-indigo-600 shrink-0">
-            <Percent size={14} />
+        <div className={`bg-indigo-55/40 rounded-xl border border-indigo-100 flex items-center shadow-sm hover:shadow transition-shadow ${
+          readOnly ? "p-2.5 gap-2" : "p-3 gap-3"
+        }`}>
+          <div className={`rounded-lg bg-indigo-100 text-indigo-600 shrink-0 ${readOnly ? "p-1.5" : "p-2"}`}>
+            <Percent size={readOnly ? 12 : 14} />
           </div>
           <div>
-            <span className="block text-lg font-display font-black text-slate-860 leading-none">
+            <span className={`block font-display font-black text-slate-860 leading-none ${readOnly ? "text-sm" : "text-lg"}`}>
               {rate}%
             </span>
-            <span className="text-indigo-700 font-label text-[9px] uppercase font-bold tracking-wider mt-1 block">
-              Attendance Rate
+            <span className="text-indigo-700 font-label text-[8px] uppercase font-bold tracking-wider mt-0.5 block">
+              Rate
             </span>
           </div>
         </div>
@@ -231,7 +245,9 @@ export default function AttendanceMini({ callerId, readOnly = false }: Attendanc
       {months.length === 0 ? (
         <div className="text-center py-8 text-xs text-ink-muted font-body">No attendance records in this range.</div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className={`grid gap-4 ${
+          readOnly ? "grid-cols-1 max-w-sm mx-auto" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+        }`}>
           {months.map((m) => (
             <div key={m.key} className="rounded-2xl border border-border-subtle/80 bg-surface p-3 shadow-sm hover:shadow-md transition-shadow">
               <div className="text-center text-[11px] font-label font-bold text-tertiary mb-2.5 tracking-wide bg-slate-50 py-1 rounded-lg border border-slate-100">
@@ -289,7 +305,9 @@ export default function AttendanceMini({ callerId, readOnly = false }: Attendanc
       )}
 
       {/* Legend */}
-      <div className="flex items-center gap-4 mt-5 pt-4 border-t border-border-subtle text-[10px] text-ink-muted font-body">
+      <div className={`flex items-center flex-wrap gap-x-4 gap-y-2 mt-5 pt-4 border-t border-border-subtle text-[10px] text-ink-muted font-body ${
+        readOnly ? "justify-center" : ""
+      }`}>
         <div className="flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded bg-gradient-to-br from-emerald-400 to-emerald-500 inline-block border border-emerald-500/10 shadow-sm" /> Present
         </div>
