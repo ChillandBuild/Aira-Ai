@@ -5,8 +5,9 @@ import {
 } from "lucide-react";
 import { api, TimelineEvent, CallLog } from "@/lib/api";
 import { format, differenceInSeconds, subDays, startOfDay, isSameDay } from "date-fns";
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar } from "recharts";
 import { formatDuration, initials } from "./helpers";
+import AttendanceMini from "./AttendanceMini";
 
 interface StatusSummary {
   active_minutes_today: number;
@@ -121,6 +122,15 @@ export default function TeamProfilePanel({ callerId, callerName }: { callerId: s
   }, [callLogs]);
   const outcomeTotal = useMemo(() => Object.values(outcomeBreakdown).reduce((a, b) => a + b, 0), [outcomeBreakdown]);
 
+  const hourlyDistribution = useMemo(() => {
+    const hours = Array.from({ length: 24 }, (_, h) => ({ hour: `${h}`, calls: 0 }));
+    callLogs.forEach((log) => {
+      const h = new Date(log.created_at).getHours();
+      hours[h].calls++;
+    });
+    return hours;
+  }, [callLogs]);
+
   const timeDist = useMemo(() => {
     if (!summary) return { active: 0, breakPct: 0, idle: 0 };
     const total = summary.active_minutes_today + summary.break_minutes_today + summary.idle_minutes_today;
@@ -219,28 +229,31 @@ export default function TeamProfilePanel({ callerId, callerName }: { callerId: s
 
       {/* METRICS ROW */}
       <div className="grid grid-cols-3 gap-3">
-        <div className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-100 p-4">
+        <div className="rounded-xl bg-sky-50 dark:bg-sky-950/30 border border-sky-100 p-4">
           <div className="flex items-center gap-2 mb-1">
-            <Phone size={14} className="text-amber-600" />
-            <span className="text-[11px] font-label text-amber-700">Calls Today</span>
+            <Phone size={14} className="text-sky-600" />
+            <span className="text-[11px] font-label text-sky-700">Calls Today</span>
           </div>
           <p className="font-display text-xl font-bold text-ink">{todayCallEvents.length}</p>
         </div>
-        <div className="rounded-xl bg-orange-50 dark:bg-orange-950/30 border border-orange-100 p-4">
+        <div className="rounded-xl bg-violet-50 dark:bg-violet-950/30 border border-violet-100 p-4">
           <div className="flex items-center gap-2 mb-1">
-            <Clock size={14} className="text-orange-600" />
-            <span className="text-[11px] font-label text-orange-700">Duration</span>
+            <Clock size={14} className="text-violet-600" />
+            <span className="text-[11px] font-label text-violet-700">Duration</span>
           </div>
           <p className="font-display text-xl font-bold text-ink">{formatDuration(totalDurationSeconds)}</p>
         </div>
-        <div className="rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-100 p-4">
+        <div className="rounded-xl bg-fuchsia-50 dark:bg-fuchsia-950/30 border border-fuchsia-100 p-4">
           <div className="flex items-center gap-2 mb-1">
-            <TrendingUp size={14} className="text-rose-600" />
-            <span className="text-[11px] font-label text-rose-700">Conversion</span>
+            <TrendingUp size={14} className="text-fuchsia-600" />
+            <span className="text-[11px] font-label text-fuchsia-700">Conversion</span>
           </div>
           <p className="font-display text-xl font-bold text-ink">{conversionRate}%</p>
         </div>
       </div>
+
+      {/* ATTENDANCE */}
+      <AttendanceMini callerId={callerId} />
 
       {/* CHARTS */}
       <div className="grid grid-cols-1 gap-4">
@@ -288,6 +301,29 @@ export default function TeamProfilePanel({ callerId, callerName }: { callerId: s
                 );
               })}
             </div>
+          )}
+        </div>
+
+        <div className="card p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Clock size={14} className="text-indigo-600" />
+            <h3 className="font-display font-semibold text-ink text-xs">Calls by Hour of Day</h3>
+          </div>
+          {callLogs.length === 0 ? (
+            <p className="text-center py-4 text-[11px] text-ink-muted font-body">No calls logged yet.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={160}>
+              <BarChart data={hourlyDistribution} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
+                <XAxis dataKey="hour" tick={{ fontSize: 9, fill: "#a1a1aa" }} interval={1} />
+                <YAxis tick={{ fontSize: 10, fill: "#a1a1aa" }} allowDecimals={false} />
+                <Tooltip
+                  contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e4e4e7" }}
+                  labelFormatter={(h) => `${h}:00`}
+                />
+                <Bar dataKey="calls" fill="#6366f1" radius={[4, 4, 0, 0]} name="Calls" />
+              </BarChart>
+            </ResponsiveContainer>
           )}
         </div>
       </div>
