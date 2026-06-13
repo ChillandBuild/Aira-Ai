@@ -1,14 +1,14 @@
 "use client";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { format, parseISO, startOfMonth, addDays } from "date-fns";
-import { Loader2, CalendarCheck, UserCheck, UserX, Percent, CheckCircle2, XCircle, Download, Sun } from "lucide-react";
+import { Loader2, CalendarCheck, UserCheck, UserX, Percent, CheckCircle2, XCircle, Download, Sun, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api, TeamAttendanceGridData } from "@/lib/api";
 import { dotColorClass, WEEKDAY_LABELS, buildMiniMonths } from "./helpers";
 
 interface TeamAttendanceGridProps {
   selectedCallerId?: string | null;
-  selectedCallerName?: string;
+  selectedCallerName?: string | null;
 }
 
 export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerName }: TeamAttendanceGridProps) {
@@ -48,17 +48,25 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
     return () => { cancelled = true; };
   }, [from, to]);
 
+  // Compute how many holidays are in the current days range
+  const holidayCount = useMemo(() => {
+    if (!data) return 0;
+    const holidayDays = data.days.filter((d) => {
+      return data.callers.some((c) => data.grid[c.caller_id]?.[d] === "holiday");
+    });
+    return holidayDays.length;
+  }, [data]);
+
   const rows = useMemo(() => {
     if (!data) return [];
-    if (selectedCallerId) return data.callers.filter((c) => c.caller_id === selectedCallerId);
     return data.callers;
-  }, [data, selectedCallerId]);
+  }, [data]);
 
-  // Resolve which caller's 6-month calendar to show
+  // Resolve which caller's 6-month calendar to show (only if selected)
   const sixMonthCallerId = useMemo(() => {
     if (selectedCallerId) return selectedCallerId;
-    return data?.callers[0]?.caller_id ?? null;
-  }, [data, selectedCallerId]);
+    return null;
+  }, [selectedCallerId]);
 
   const fetchSixMonth = useCallback(() => {
     if (!sixMonthCallerId) {
@@ -264,23 +272,43 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
-        <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
-          <div className="p-1.5 rounded-lg bg-emerald-100 w-fit mb-1.5 text-emerald-600"><UserCheck size={14} /></div>
-          <span className="block text-lg font-display font-black text-slate-800">{data?.summary.present_today ?? 0}</span>
-          <span className="text-emerald-700 font-label text-[10px] uppercase font-bold tracking-wider mt-0.5 block">Present Today</span>
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
+        <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 flex flex-col justify-between shadow-sm">
+          <div className="p-1.5 rounded-lg bg-slate-100 w-fit mb-1 text-slate-600"><Users size={14} /></div>
+          <div>
+            <span className="block text-base font-display font-black text-slate-800 leading-tight">{data?.callers.length ?? 0}</span>
+            <span className="text-slate-500 font-label text-[9px] uppercase font-bold tracking-wider mt-0.5 block">Total Team</span>
+          </div>
         </div>
-        <div className="bg-rose-50 rounded-xl p-3 border border-rose-100">
-          <div className="p-1.5 rounded-lg bg-rose-100 w-fit mb-1.5 text-rose-600"><UserX size={14} /></div>
-          <span className="block text-lg font-display font-black text-slate-800">{data?.summary.absent_today ?? 0}</span>
-          <span className="text-rose-700 font-label text-[10px] uppercase font-bold tracking-wider mt-0.5 block">Absent Today</span>
+        <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100 flex flex-col justify-between shadow-sm">
+          <div className="p-1.5 rounded-lg bg-emerald-100 w-fit mb-1 text-emerald-600"><UserCheck size={14} /></div>
+          <div>
+            <span className="block text-base font-display font-black text-slate-800 leading-tight">{data?.summary.present_today ?? 0}</span>
+            <span className="text-emerald-700 font-label text-[9px] uppercase font-bold tracking-wider mt-0.5 block">Present Today</span>
+          </div>
         </div>
-        <div className="bg-indigo-50 rounded-xl p-3 border border-indigo-100">
-          <div className="p-1.5 rounded-lg bg-indigo-100 w-fit mb-1.5 text-indigo-600"><Percent size={14} /></div>
-          <span className="block text-lg font-display font-black text-slate-800">
-            {data ? Math.round(data.summary.attendance_rate_month * 100) : 0}%
-          </span>
-          <span className="text-indigo-700 font-label text-[10px] uppercase font-bold tracking-wider mt-0.5 block">Attendance Rate (Month)</span>
+        <div className="bg-rose-50 rounded-xl p-3 border border-rose-100 flex flex-col justify-between shadow-sm">
+          <div className="p-1.5 rounded-lg bg-rose-100 w-fit mb-1 text-rose-600"><UserX size={14} /></div>
+          <div>
+            <span className="block text-base font-display font-black text-slate-800 leading-tight">{data?.summary.absent_today ?? 0}</span>
+            <span className="text-rose-700 font-label text-[9px] uppercase font-bold tracking-wider mt-0.5 block">Absent Today</span>
+          </div>
+        </div>
+        <div className="bg-sky-50 rounded-xl p-3 border border-sky-100 flex flex-col justify-between shadow-sm">
+          <div className="p-1.5 rounded-lg bg-sky-100 w-fit mb-1 text-sky-600"><Sun size={14} /></div>
+          <div>
+            <span className="block text-base font-display font-black text-slate-800 leading-tight">{holidayCount}</span>
+            <span className="text-sky-700 font-label text-[9px] uppercase font-bold tracking-wider mt-0.5 block">Holidays (Range)</span>
+          </div>
+        </div>
+        <div className="bg-indigo-50 rounded-xl p-3 border border-indigo-100 flex flex-col justify-between shadow-sm">
+          <div className="p-1.5 rounded-lg bg-indigo-100 w-fit mb-1 text-indigo-600"><Percent size={14} /></div>
+          <div>
+            <span className="block text-base font-display font-black text-slate-800 leading-tight">
+              {data ? Math.round(data.summary.attendance_rate_month * 100) : 0}%
+            </span>
+            <span className="text-indigo-700 font-label text-[9px] uppercase font-bold tracking-wider mt-0.5 block">Attendance (Month)</span>
+          </div>
         </div>
       </div>
 
@@ -302,22 +330,34 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
               </tr>
             </thead>
             <tbody>
-              {rows.map((c) => (
-                <tr key={c.caller_id} className="border-t border-border-subtle">
-                  <td className="px-2 py-1.5 font-label font-semibold text-ink whitespace-nowrap sticky left-0 bg-surface">{c.name}</td>
-                  {data.days.map((d) => {
-                    const status = data.grid[c.caller_id]?.[d] ?? "future";
-                    return (
-                      <td key={d} className="px-0.5 py-1.5 text-center">
-                        <span
-                          title={`${c.name} — ${format(new Date(`${d}T00:00:00`), "MMM d")}: ${status}`}
-                          className={`inline-block w-2.5 h-2.5 rounded-full ${dotColorClass(status)}`}
-                        />
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+              {rows.map((c) => {
+                const isSelected = selectedCallerId === c.caller_id;
+                return (
+                  <tr
+                    key={c.caller_id}
+                    className={`border-t border-border-subtle transition-colors ${
+                      isSelected ? "bg-primary/5 font-bold animate-pulse" : "hover:bg-slate-50/40"
+                    }`}
+                  >
+                    <td className={`px-2 py-1.5 font-label font-semibold whitespace-nowrap sticky left-0 transition-colors ${
+                      isSelected ? "bg-primary/10 text-primary font-extrabold" : "bg-surface text-ink"
+                    }`}>
+                      {c.name}
+                    </td>
+                    {data.days.map((d) => {
+                      const status = data.grid[c.caller_id]?.[d] ?? "future";
+                      return (
+                        <td key={d} className="px-0.5 py-1.5 text-center">
+                          <span
+                            title={`${c.name} — ${format(new Date(`${d}T00:00:00`), "MMM d")}: ${status}`}
+                            className={`inline-block w-3.5 h-3.5 rounded-full border border-black/5 shadow-sm transition-transform hover:scale-110 cursor-pointer ${dotColorClass(status)}`}
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -331,13 +371,16 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
       </div>
 
       {/* 6-Month Overview */}
-      {!loading && data && data.callers.length > 0 && (
-        <div className="mt-5 pt-4 border-t border-border-subtle">
+      {selectedCallerId && !loading && data && data.callers.length > 0 && (
+        <div className="mt-5 pt-4 border-t border-border-subtle bg-slate-50/30 rounded-xl p-3">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-            <h3 className="font-display text-xs font-bold text-tertiary">6-Month Overview</h3>
-            {!selectedCallerId && sixMonthCallerName && (
+            <h3 className="font-display text-xs font-bold text-tertiary flex items-center gap-1.5">
+              <span className="w-1.5 h-3 bg-primary rounded-full inline-block" />
+              6-Month Overview
+            </h3>
+            {sixMonthCallerName && (
               <p className="text-[10px] text-ink-muted font-body">
-                Showing 6-month attendance for {sixMonthCallerName}.
+                Showing 6-month history for <span className="font-semibold text-primary">{sixMonthCallerName}</span>.
               </p>
             )}
           </div>
@@ -350,9 +393,9 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
               {sixMonths.map((m) => (
                 <div
                   key={m.key}
-                  className="rounded-xl border border-border-subtle bg-surface p-1.5 sm:p-2 shadow-sm hover:shadow-md hover:border-primary/30 transition-all duration-150"
+                  className="rounded-xl border border-border-subtle/80 bg-surface p-1.5 sm:p-2 shadow-sm hover:shadow-md hover:border-primary/20 transition-all duration-150"
                 >
-                  <div className="text-center text-[10px] font-label font-bold text-tertiary mb-1.5 tracking-wide">{m.label}</div>
+                  <div className="text-center text-[10px] font-label font-bold text-tertiary mb-1.5 tracking-wide bg-slate-50 py-0.5 rounded-md border border-slate-100">{m.label}</div>
                   <div className="grid grid-cols-7 gap-[1.5px] mb-1">
                     {WEEKDAY_LABELS.map((d, i) => (
                       <div key={i} className="text-center text-[7px] font-label font-semibold text-ink-muted/50 uppercase">{d}</div>
@@ -360,23 +403,40 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
                   </div>
                   {m.weeks.map((week, wi) => (
                     <div key={wi} className="grid grid-cols-7 gap-[1.5px] mb-[1.5px]">
-                      {week.map((cell, di) => cell ? (
-                        <span
-                          key={cell.date}
-                          title={`${format(parseISO(cell.date), "MMM d, yyyy")}: ${cell.status}`}
-                          className={`relative flex items-center justify-center w-full aspect-square rounded-[3px] ${dotColorClass(cell.status)}`}
-                        >
+                      {week.map((cell, di) => {
+                        if (!cell) {
+                          return <span key={`pad-${wi}-${di}`} className="block w-full aspect-square" />;
+                        }
+
+                        let cellClass = "";
+                        let textClass = "";
+
+                        if (cell.status === "present") {
+                          cellClass = "bg-gradient-to-br from-emerald-400 to-emerald-500 border border-emerald-500/20 shadow-[0_1px_2px_rgba(16,185,129,0.15)] hover:from-emerald-500 hover:to-emerald-600";
+                          textClass = "text-white font-bold";
+                        } else if (cell.status === "absent") {
+                          cellClass = "bg-gradient-to-br from-rose-400 to-rose-500 border border-rose-500/20 shadow-[0_1px_2px_rgba(244,63,94,0.15)] hover:from-rose-500 hover:to-rose-600";
+                          textClass = "text-white font-bold";
+                        } else if (cell.status === "holiday") {
+                          cellClass = "bg-gradient-to-br from-sky-400 to-sky-500 border border-sky-500/20 shadow-[0_1px_2px_rgba(14,165,233,0.15)] hover:from-sky-500 hover:to-sky-600";
+                          textClass = "text-white font-bold";
+                        } else {
+                          cellClass = "bg-slate-50 border border-slate-100 hover:bg-slate-100";
+                          textClass = "text-slate-400/80 font-medium";
+                        }
+
+                        return (
                           <span
-                            className={`text-[7px] sm:text-[8px] leading-none font-semibold select-none ${
-                              cell.status === "present" || cell.status === "absent" || cell.status === "holiday" ? "text-white" : "text-ink-muted/40"
-                            }`}
+                            key={cell.date}
+                            title={`${format(parseISO(cell.date), "MMM d, yyyy")}: ${cell.status}`}
+                            className={`relative flex items-center justify-center w-full aspect-square rounded-[4px] transition-all duration-150 cursor-default select-none ${cellClass}`}
                           >
-                            {format(parseISO(cell.date), "d")}
+                            <span className={`text-[7px] sm:text-[8px] leading-none ${textClass}`}>
+                              {format(parseISO(cell.date), "d")}
+                            </span>
                           </span>
-                        </span>
-                      ) : (
-                        <span key={`pad-${wi}-${di}`} className="block w-full aspect-square" />
-                      ))}
+                        );
+                      })}
                     </div>
                   ))}
                 </div>

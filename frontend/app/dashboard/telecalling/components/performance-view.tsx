@@ -342,10 +342,14 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
         </div>
       </div>
 
-      {/* 5. Per-caller drill-down — only when a caller is selected */}
+      {/* 5. Team Attendance Grid — always visible */}
+      <div className="mt-8">
+        <TeamAttendanceGrid selectedCallerId={selectedCallerId} selectedCallerName={selectedCallerName} />
+      </div>
+
+      {/* 6. Per-caller drill-down — only when a caller is selected */}
       {selectedCallerId && (
-        <div className="space-y-8">
-          <TeamAttendanceGrid selectedCallerId={selectedCallerId} selectedCallerName={selectedCallerName} />
+        <div className="mt-8 space-y-8">
           <ShiftTimeline callerId={selectedCallerId} statsFrom={statsFrom} statsTo={statsTo} />
         </div>
       )}
