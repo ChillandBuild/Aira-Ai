@@ -36,8 +36,6 @@ export default function AdminView({ fallbackData }: { fallbackData?: AdminDashbo
   // seeded from the server on first paint when available.
   const { data: dashboard, mutate: refreshDashboard } = useAdminDashboard(fallbackData);
   const callers: Caller[] = dashboard?.callers ?? [];
-  const totalCallsToday = dashboard?.totalCallsToday ?? 0;
-  const totalConversionsToday = dashboard?.totalConversionsToday ?? 0;
 
   const [selectedCallerId, setSelectedCallerId] = useState<string | null>(null);
   const [showConfigModal, setShowConfigModal] = useState(false);
@@ -182,20 +180,6 @@ export default function AdminView({ fallbackData }: { fallbackData?: AdminDashbo
               Config
             </button>
           </div>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-4 mb-8">
-        <div className="bg-surface rounded-card p-5 shadow-card ring-1 ring-[#c4c7c7]/15">
-          <div className="p-2 rounded-xl bg-primary/10 w-fit mb-2"><Phone size={16} className="text-primary" /></div>
-          <span className="font-display text-3xl font-bold text-on-surface">{totalCallsToday}</span>
-          <span className="block font-label text-xs text-on-surface-muted mt-1">Total Calls Today</span>
-        </div>
-        <div className="bg-surface rounded-card p-5 shadow-card ring-1 ring-[#c4c7c7]/15">
-          <div className="p-2 rounded-xl bg-green-100 w-fit mb-2"><TrendingUp size={16} className="text-green-600" /></div>
-          <span className="font-display text-3xl font-bold text-on-surface">{totalConversionsToday}</span>
-          <span className="block font-label text-xs text-on-surface-muted mt-1">Conversions Today</span>
         </div>
       </div>
 
