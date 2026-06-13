@@ -10,11 +10,17 @@ def resolve_day_status(
 ) -> str:
     """Resolve a single day's attendance status.
 
-    Priority: future dates > admin override > activity-derived presence.
+    Priority: holiday override > future dates > admin override > activity-derived presence.
+    A holiday override wins even on future dates (so admins can pre-mark upcoming
+    holidays) and even if the caller later logs in that day (login/logout activity
+    is still recorded as usual, but the attendance status stays "holiday" unless an
+    admin manually overrides it to "present"/"absent").
     """
+    if override_status == "holiday":
+        return "holiday"
     if target_date > today:
         return "future"
-    if override_status in ("present", "absent", "holiday"):
+    if override_status in ("present", "absent"):
         return override_status
     return "present" if has_activity else "absent"
 

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { format, parseISO, startOfMonth } from "date-fns";
+import { format, parseISO, startOfMonth, addDays } from "date-fns";
 import { Loader2, CalendarCheck, UserCheck, UserX, Percent, CheckCircle2, XCircle, Download, Sun } from "lucide-react";
 import { toast } from "sonner";
 import { api, TeamAttendanceGridData } from "@/lib/api";
@@ -28,6 +28,7 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
 
   const [holidayDate, setHolidayDate] = useState(today);
   const [markingHoliday, setMarkingHoliday] = useState(false);
+  const maxHolidayDate = format(addDays(new Date(), 14), "yyyy-MM-dd");
 
   const fetchGrid = useCallback(() => {
     setLoading(true);
@@ -209,7 +210,7 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
             <input
               type="date"
               value={holidayDate}
-              max={today}
+              max={maxHolidayDate}
               onChange={(e) => setHolidayDate(e.target.value)}
               className="px-1.5 py-0.5 rounded bg-white border border-sky-200 font-body text-xs text-slate-800 focus:outline-none"
             />

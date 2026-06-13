@@ -340,9 +340,11 @@ def mark_holiday(payload: MarkHolidayPayload, ctx: dict = Depends(get_tenant_and
     if ctx["role"] != "owner":
         raise HTTPException(status_code=403, detail="Only owners can mark holidays")
     try:
-        date.fromisoformat(payload.date)
+        holiday_date = date.fromisoformat(payload.date)
     except ValueError:
         raise HTTPException(status_code=400, detail="date must be in YYYY-MM-DD format")
+    if holiday_date > datetime.utcnow().date() + timedelta(days=14):
+        raise HTTPException(status_code=400, detail="Holidays can only be marked up to 14 days in advance")
 
     db = get_supabase()
 
