@@ -467,12 +467,21 @@ export interface MessagingAnalytics {
   daily_messages: { day: string; inbound: number; outbound: number }[];
 }
 
+export interface TelecallingComparisonMetrics {
+  calls: number;
+  connect_rate: number;
+  conversions: number;
+  avg_talk_seconds: number;
+  idle_minutes: number;
+}
+
 export interface TelecallingAnalyticsExtended {
   calls_today: number;
   calls_this_week: number;
   avg_duration_seconds: number | null;
   total_minutes_today: number;
   outcome_breakdown: { converted: number; callback: number; not_interested: number; no_answer: number };
+  conversions_today?: number;
   per_caller: {
     caller_id: string;
     name: string;
@@ -500,6 +509,10 @@ export interface TelecallingAnalyticsExtended {
   longest_idle_seconds?: number | null;
   speed_to_lead_min?: number | null;
   quality_avg?: number | null;
+  comparison?: {
+    yesterday: TelecallingComparisonMetrics;
+    avg_7d: TelecallingComparisonMetrics;
+  };
 }
 
 export interface FunnelAnalyticsExtended {

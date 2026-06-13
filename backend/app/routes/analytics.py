@@ -65,6 +65,95 @@ def _ist_today_start_utc() -> datetime:
     return midnight_ist - IST_OFFSET
 
 
+def _is_connected(log: dict) -> bool:
+    """A call is 'connected' if it had talk time or a non-no_answer outcome."""
+    return (log.get("duration_seconds") or 0) > 0 or (
+        log.get("outcome") is not None and log.get("outcome") != "no_answer"
+    )
+
+
+def _caller_idle_minutes(
+    caller_logs: list[dict],
+    caller_status_logs: list[dict],
+    window_start: datetime,
+    window_end: datetime,
+) -> float:
+    """Idle minutes for one caller in [window_start, window_end): merged 'active'
+    interval minutes minus talk minutes. Mirrors the per-caller logic in the main
+    telecalling endpoint."""
+    intervals = []
+    for sl in caller_status_logs:
+        if sl.get("status") != "active":
+            continue
+        s_time = datetime.fromisoformat(sl["started_at"].replace("Z", "+00:00"))
+        s_time = max(s_time, window_start)
+        e_time = (
+            datetime.fromisoformat(sl["ended_at"].replace("Z", "+00:00"))
+            if sl.get("ended_at")
+            else window_end
+        )
+        e_time = min(e_time, window_end)
+        if s_time < e_time:
+            intervals.append((s_time, e_time))
+
+    intervals.sort(key=lambda x: x[0])
+    merged: list[tuple[datetime, datetime]] = []
+    for start, end in intervals:
+        if not merged or start > merged[-1][1]:
+            merged.append((start, end))
+        else:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+
+    active_minutes = sum((e - s).total_seconds() for s, e in merged) / 60.0
+    talk_seconds = sum(l["duration_seconds"] for l in caller_logs if l.get("duration_seconds") is not None)
+    talk_minutes = talk_seconds / 60.0
+    return max(0.0, active_minutes - talk_minutes)
+
+
+def _window_aggregate(
+    logs: list[dict],
+    status_logs: list[dict],
+    caller_ids: list[str],
+    window_start: datetime,
+    window_end: datetime,
+    day_count: int,
+) -> dict:
+    """Aggregate metrics for a window, comparable in magnitude to the daily 'today'
+    headline. Count metrics (calls, conversions, idle_minutes) are divided by
+    day_count to yield a per-day figure; rate/mean metrics are window-wide."""
+    win_logs = [
+        l for l in logs
+        if window_start <= datetime.fromisoformat(l["created_at"].replace("Z", "+00:00")) < window_end
+    ]
+    win_status = [
+        sl for sl in status_logs
+        if window_start <= datetime.fromisoformat(sl["started_at"].replace("Z", "+00:00")) < window_end
+    ]
+
+    calls = len(win_logs)
+    connected = sum(1 for l in win_logs if _is_connected(l))
+    connect_rate = round(connected / calls, 4) if calls > 0 else 0.0
+    conversions = sum(1 for l in win_logs if l.get("outcome") == "converted")
+
+    durations = [l["duration_seconds"] for l in win_logs if l.get("duration_seconds") is not None]
+    avg_talk_seconds = round(sum(durations) / len(durations), 1) if durations else 0.0
+
+    total_idle = 0.0
+    for cid in caller_ids:
+        c_logs = [l for l in win_logs if str(l.get("caller_id")) == cid]
+        c_status = [sl for sl in win_status if str(sl.get("caller_id")) == cid]
+        total_idle += _caller_idle_minutes(c_logs, c_status, window_start, window_end)
+
+    days = max(day_count, 1)
+    return {
+        "calls": round(calls / days, 1),
+        "connect_rate": connect_rate,
+        "conversions": round(conversions / days, 1),
+        "avg_talk_seconds": avg_talk_seconds,
+        "idle_minutes": round(total_idle / days, 1),
+    }
+
+
 @router.get("/whatsapp")
 async def whatsapp_analytics(tenant_id: str = Depends(get_owner_tenant_id)):
     db = get_supabase()
@@ -171,6 +260,7 @@ async def telecalling_analytics(
 
     calls_today = len(logs_today_res)
     calls_this_week = len(logs_week_res)
+    conversions_today = sum(1 for l in logs_today_res if l.get("outcome") == "converted")
 
     durations = [l["duration_seconds"] for l in all_logs_res if l.get("duration_seconds") is not None]
     avg_duration_seconds = round(sum(durations) / len(durations)) if durations else None
@@ -404,6 +494,42 @@ async def telecalling_analytics(
             "quality_avg": c_quality_avg,
         })
 
+    # Comparison block — fixed daily-report baselines anchored to REAL today (UTC),
+    # independent of the from/to reporting window. yesterday = the day before today;
+    # avg_7d = trailing 7 full days before today (today excluded), per-day averaged.
+    caller_id_strs = [str(c["id"]) for c in callers_res]
+    comp_window_start = today_start - timedelta(days=7)
+    comp_window_start_iso = comp_window_start.isoformat()
+    yesterday_start = today_start - timedelta(days=1)
+
+    comp_logs = (
+        db.table("call_logs")
+        .select("id,duration_seconds,outcome,caller_id,created_at")
+        .eq("tenant_id", tenant_id)
+        .gte("created_at", comp_window_start_iso)
+        .lt("created_at", today_start.isoformat())
+        .execute()
+        .data or []
+    )
+    comp_status = (
+        db.table("caller_status_logs")
+        .select("id,caller_id,status,started_at,ended_at")
+        .eq("tenant_id", tenant_id)
+        .gte("started_at", comp_window_start_iso)
+        .lt("started_at", today_start.isoformat())
+        .execute()
+        .data or []
+    )
+
+    comparison = {
+        "yesterday": _window_aggregate(
+            comp_logs, comp_status, caller_id_strs, yesterday_start, today_start, 1
+        ),
+        "avg_7d": _window_aggregate(
+            comp_logs, comp_status, caller_id_strs, comp_window_start, today_start, 7
+        ),
+    }
+
     team_idle_minutes_today = round(sum(all_idle_minutes), 1) if all_idle_minutes else 0.0
     team_avg_gap_seconds = round(sum(all_gaps) / len(all_gaps), 1) if all_gaps else 0.0
     team_longest_idle_seconds = round(max(all_longest_idles), 1) if all_longest_idles else 0.0
@@ -416,6 +542,7 @@ async def telecalling_analytics(
         "calls_this_week": calls_this_week,
         "avg_duration_seconds": avg_duration_seconds,
         "outcome_breakdown": outcome_breakdown,
+        "conversions_today": conversions_today,
         "per_caller": per_caller,
         "total_minutes_today": team_talk_minutes_today,
         "calls_per_hour": calls_per_hour,
@@ -429,6 +556,7 @@ async def telecalling_analytics(
         "bunking_flag": team_bunking_flag,
         "speed_to_lead_min": team_speed_to_lead_min,
         "quality_avg": team_quality_avg,
+        "comparison": comparison,
     }
 
 
