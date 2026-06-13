@@ -1365,6 +1365,10 @@ export const api = {
       apiFetch<{ success: boolean; data: AppNotification }>(`/api/v1/notifications/${id}/read`, {
         method: "PATCH",
       }),
+    markAllRead: () =>
+      apiFetch<{ success: boolean }>("/api/v1/notifications/read", {
+        method: "PATCH",
+      }),
   },
   chatHandovers: {
     assign: (handoverId: string, callerId: string) =>

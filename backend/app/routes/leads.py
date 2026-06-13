@@ -292,7 +292,7 @@ async def assign_lead(
     db = get_supabase()
     
     # Fetch current lead info to check previous caller and other meta
-    lead = db.table("leads").select("segment, score, assigned_to").eq("id", lead_id).eq("tenant_id", ctx["tenant_id"]).maybe_single().execute()
+    lead = db.table("leads").select("name, segment, score, assigned_to").eq("id", lead_id).eq("tenant_id", ctx["tenant_id"]).maybe_single().execute()
     if not lead.data:
         raise HTTPException(status_code=404, detail="Lead not found")
         
@@ -334,6 +334,48 @@ async def assign_lead(
             prev_caller_name=prev_caller_name,
             db=db
         )
+        try:
+            new_caller_uid = None
+            new_caller_res = db.table("callers").select("user_id").eq("id", payload.caller_id).eq("tenant_id", ctx["tenant_id"]).maybe_single().execute()
+            if new_caller_res.data:
+                new_caller_uid = new_caller_res.data.get("user_id")
+
+            prev_caller_uid = None
+            if prev_caller_id:
+                prev_caller_res = db.table("callers").select("user_id").eq("id", prev_caller_id).eq("tenant_id", ctx["tenant_id"]).maybe_single().execute()
+                if prev_caller_res.data:
+                    prev_caller_uid = prev_caller_res.data.get("user_id")
+
+            from app.services.notify import notify_user
+            lead_name = lead.data.get("name") or "Unknown Lead"
+            
+            if new_caller_uid:
+                notify_user(
+                    ctx["tenant_id"],
+                    new_caller_uid,
+                    "lead_assigned",
+                    "New Lead Assigned" if event_type == "assigned" else "Lead Reassigned",
+                    f"Lead '{lead_name}' was assigned to you by Admin." if event_type == "assigned" else f"Lead '{lead_name}' was reassigned to you by Admin.",
+                    db=db,
+                )
+                
+            if prev_caller_uid and prev_caller_uid != new_caller_uid:
+                notify_user(
+                    ctx["tenant_id"],
+                    prev_caller_uid,
+                    "lead_reassigned",
+                    "Lead Reassigned",
+                    f"Lead '{lead_name}' has been reassigned to another caller.",
+                    db=db,
+                )
+        except Exception as notify_err:
+            logger.warning(f"Failed to notify caller on manual assign: {notify_err}")
+
+    try:
+        from app.services.notify import clear_pool_notifications_for_lead
+        clear_pool_notifications_for_lead(ctx["tenant_id"], lead_id, db=db)
+    except Exception:
+        pass
         
     return {"success": True}
 
@@ -397,6 +439,28 @@ async def bulk_assign(
                 prev_caller_name=prev_caller_names.get(prev_caller_id),
                 db=db
             )
+            try:
+                from app.services.notify import clear_pool_notifications_for_lead
+                clear_pool_notifications_for_lead(tenant_id, lead_id, db=db)
+            except Exception:
+                pass
+            
+    if payload.caller_id and leads:
+        try:
+            caller_res = db.table("callers").select("user_id").eq("id", payload.caller_id).eq("tenant_id", tenant_id).maybe_single().execute()
+            if caller_res.data and caller_res.data.get("user_id"):
+                from app.services.notify import notify_user
+                count = len(leads)
+                notify_user(
+                    tenant_id,
+                    caller_res.data["user_id"],
+                    "lead_assigned",
+                    "New Leads Assigned",
+                    f"You have been assigned {count} leads by Admin." if count > 1 else f"You have been assigned a lead by Admin.",
+                    db=db,
+                )
+        except Exception as e:
+            logger.warning(f"Bulk assign notification failed: {e}")
             
     return {"success": True, "count": len(leads)}
 
@@ -1172,5 +1236,11 @@ async def takeover_lead(lead_id: UUID, ctx: dict = Depends(get_tenant_and_role))
             "title": "Callback Claimed",
             "message": f"{me_name} claimed your callback for '{lead_data.get('name') or 'Unknown'}'.",
         }).execute()
+
+    try:
+        from app.services.notify import clear_pool_notifications_for_lead
+        clear_pool_notifications_for_lead(tenant_id, str(lead_id), db=db)
+    except Exception:
+        pass
 
     return {"success": True, "assigned_to": caller_id}

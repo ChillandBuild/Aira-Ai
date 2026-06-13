@@ -142,3 +142,13 @@ def notify_pool(
             }).execute()
     except Exception as e:
         logger.warning(f"notify_pool failed (type={type}): {e}")
+
+
+def clear_pool_notifications_for_lead(tenant_id: str, lead_id: str, *, db=None) -> None:
+    """Mark handover/pool notifications for a lead as read for all users when claimed/resolved."""
+    db = db or get_supabase()
+    try:
+        db.table("app_notifications").update({"is_read": True}).eq("tenant_id", tenant_id).in_("type", ["handover_new", "callback_claimable"]).like("message", f"%{lead_id}%").execute()
+    except Exception as e:
+        logger.warning(f"clear_pool_notifications_for_lead failed for lead {lead_id}: {e}")
+

@@ -30,6 +30,17 @@ async def list_notifications(
     
     return {"data": rows.data or []}
 
+@router.patch("/read")
+async def mark_all_notifications_read(
+    tenant_id: str = Depends(get_tenant_id),
+    user: dict = Depends(get_current_user)
+):
+    """Mark all unread notifications as read for the current user."""
+    db = get_supabase()
+    db.table("app_notifications").update({"is_read": True}).eq("tenant_id", tenant_id).eq("user_id", user["user_id"]).eq("is_read", False).execute()
+    return {"success": True}
+
+
 @router.patch("/{notification_id}/read")
 async def mark_notification_read(
     notification_id: str,

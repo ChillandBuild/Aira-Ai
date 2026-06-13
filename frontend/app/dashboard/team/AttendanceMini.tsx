@@ -132,58 +132,57 @@ export default function AttendanceMini({ callerId, readOnly = false }: Attendanc
               onChange={(e) => setToFilter(e.target.value)}
               className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
             />
-            {filteredDays.length > 0 && (
-              <button
-                onClick={handleExportCsv}
-                title="Download CSV"
-                className="flex items-center gap-1 px-2.5 py-1 bg-primary text-white rounded-lg hover:bg-primary/90 font-label text-[11px] font-bold transition-colors ml-1"
-              >
-                <Download size={11} /> CSV
-              </button>
-            )}
+            <button
+              onClick={handleExportCsv}
+              disabled={filteredDays.length === 0}
+              title="Download CSV"
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-primary text-white rounded-lg hover:bg-primary/95 disabled:opacity-50 disabled:cursor-not-allowed font-label text-[11px] font-bold transition-colors ml-1 shadow-sm"
+            >
+              <Download size={11} /> CSV
+            </button>
           </div>
         </div>
       </div>
 
-      {/* KPI Stats Cards */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100 flex flex-col justify-between shadow-sm">
-          <div className="p-1.5 rounded-lg bg-emerald-100 w-fit mb-2 text-emerald-600">
-            <UserCheck size={16} />
+      {/* KPI Stats Cards (Horizontal, Compact, and Beautiful) */}
+      <div className="grid grid-cols-3 gap-3 mb-5">
+        <div className="bg-emerald-55/40 rounded-xl p-3 border border-emerald-100 flex items-center gap-3 shadow-sm hover:shadow transition-shadow">
+          <div className="p-2 rounded-lg bg-emerald-100 text-emerald-600 shrink-0">
+            <UserCheck size={14} />
           </div>
           <div>
-            <span className="block text-2xl font-display font-black text-slate-800 leading-none">
+            <span className="block text-lg font-display font-black text-slate-850 leading-none">
               {presentCount}
             </span>
-            <span className="text-emerald-700 font-label text-[10px] uppercase font-bold tracking-wider mt-1.5 block">
+            <span className="text-emerald-700 font-label text-[9px] uppercase font-bold tracking-wider mt-1 block">
               Days Present
             </span>
           </div>
         </div>
 
-        <div className="bg-rose-50 rounded-2xl p-4 border border-rose-100 flex flex-col justify-between shadow-sm">
-          <div className="p-1.5 rounded-lg bg-rose-100 w-fit mb-2 text-rose-600">
-            <UserX size={16} />
+        <div className="bg-rose-55/40 rounded-xl p-3 border border-rose-100 flex items-center gap-3 shadow-sm hover:shadow transition-shadow">
+          <div className="p-2 rounded-lg bg-rose-100 text-rose-600 shrink-0">
+            <UserX size={14} />
           </div>
           <div>
-            <span className="block text-2xl font-display font-black text-slate-800 leading-none">
+            <span className="block text-lg font-display font-black text-slate-855 leading-none">
               {absentCount}
             </span>
-            <span className="text-rose-700 font-label text-[10px] uppercase font-bold tracking-wider mt-1.5 block">
+            <span className="text-rose-700 font-label text-[9px] uppercase font-bold tracking-wider mt-1 block">
               Days Absent
             </span>
           </div>
         </div>
 
-        <div className="bg-indigo-50 rounded-2xl p-4 border border-indigo-100 flex flex-col justify-between shadow-sm">
-          <div className="p-1.5 rounded-lg bg-indigo-100 w-fit mb-2 text-indigo-600">
-            <Percent size={16} />
+        <div className="bg-indigo-55/40 rounded-xl p-3 border border-indigo-100 flex items-center gap-3 shadow-sm hover:shadow transition-shadow">
+          <div className="p-2 rounded-lg bg-indigo-100 text-indigo-600 shrink-0">
+            <Percent size={14} />
           </div>
           <div>
-            <span className="block text-2xl font-display font-black text-slate-800 leading-none">
+            <span className="block text-lg font-display font-black text-slate-860 leading-none">
               {rate}%
             </span>
-            <span className="text-indigo-700 font-label text-[10px] uppercase font-bold tracking-wider mt-1.5 block">
+            <span className="text-indigo-700 font-label text-[9px] uppercase font-bold tracking-wider mt-1 block">
               Attendance Rate
             </span>
           </div>

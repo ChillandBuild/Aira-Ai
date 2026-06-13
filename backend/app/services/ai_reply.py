@@ -213,6 +213,25 @@ async def send_whatsapp(to_phone: str, message: str, tenant_id: str | None = Non
             err_msg = str(e.detail)[:500]
         _LAST_SEND_ERROR = err_msg
         logger.error(f"Meta send failed to {to_phone}: {err_msg}")
+        if tenant_id:
+            try:
+                from app.services.notify import notify_user
+                from app.db.supabase import get_supabase
+                db = get_supabase()
+                owner = db.table("tenant_users").select("user_id").eq("tenant_id", tenant_id).eq("role", "owner").limit(1).execute()
+                owner_uid = (owner.data[0] if owner.data else {}).get("user_id")
+                if owner_uid:
+                    notify_user(
+                        tenant_id,
+                        owner_uid,
+                        "system_error",
+                        "System API Failure",
+                        f"WhatsApp Cloud API send failed: {err_msg}",
+                        db=db,
+                        dedupe_lead_id="whatsapp_send_failed",
+                    )
+            except Exception as notify_err:
+                logger.warning(f"Failed to notify owner of API failure: {notify_err}")
         return None
 
 async def send_instagram(ig_user_id: str, message: str, tenant_id: str | None = None) -> str | None:
@@ -436,13 +455,14 @@ def _trigger_chat_escalation(
         "ai_enabled": False,
     }).eq("id", lead_id).execute()
 
-    db.table("chat_handovers").insert({
+    handover_res = db.table("chat_handovers").insert({
         "tenant_id": tenant_id,
         "lead_id": lead_id,
         "assigned_to": assigned_to,
         "reason": reason,
         "status": "pending",
     }).execute()
+    handover_id = handover_res.data[0]["id"] if (handover_res and handover_res.data) else "Unknown"
     logger.info(f"Chat handover created for lead {lead_id} — reason: {reason[:60]}")
     try:
         from app.services.notify import notify_pool
@@ -454,7 +474,7 @@ def _trigger_chat_escalation(
             tenant_id,
             "handover_new",
             "New handover in pool",
-            f"Lead '{lead_name or 'Unknown'}' needs a human — unclaimed.",
+            f"Lead '{lead_name or 'Unknown'}' needs a human — unclaimed. [handover_id:{handover_id}] [lead_id:{lead_id}]",
             db=db,
         )
     except Exception:

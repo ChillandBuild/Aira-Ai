@@ -93,6 +93,13 @@ def assign_handover(handover_id: str, body: AssignBody, tenant_id: str = Depends
     )
     if not result.data:
         raise HTTPException(status_code=404, detail="Handover not found")
+    try:
+        from app.services.notify import clear_pool_notifications_for_lead
+        lead_id = result.data[0].get("lead_id")
+        if lead_id:
+            clear_pool_notifications_for_lead(tenant_id, lead_id, db=db)
+    except Exception:
+        pass
     return {"assigned": True}
 
 
@@ -109,6 +116,11 @@ def resolve_handover(handover_id: str, tenant_id: str = Depends(get_tenant_id)):
 
     lead_id = result.data[0].get("lead_id")
     if lead_id:
+        try:
+            from app.services.notify import clear_pool_notifications_for_lead
+            clear_pool_notifications_for_lead(tenant_id, lead_id, db=db)
+        except Exception:
+            pass
         remaining = (
             db.table("chat_handovers")
             .select("id", count="exact")

@@ -344,7 +344,7 @@ async def _process_callback_reassignments() -> None:
                             tid,
                             "callback_claimable",
                             "Callback available to claim",
-                            f"Callback for '{lead_name}' is unassigned and ready to claim.",
+                            f"Callback for '{lead_name}' is unassigned and ready to claim. [lead_id:{job['lead_id']}]",
                             db=db,
                             segments=cfg.get("segments"),
                             exclude_user_ids=[caller.data["user_id"]] if (caller and caller.data and caller.data.get("user_id")) else None,
@@ -391,7 +391,7 @@ async def _process_callback_reassignments() -> None:
                         tid,
                         "callback_claimable",
                         "Callback needs attention",
-                        f"Callback for '{lead_name}' was missed and is open in the pool.",
+                        f"Callback for '{lead_name}' was missed and is open in the pool. [lead_id:{job['lead_id']}]",
                         db=db,
                     )
                 except Exception:

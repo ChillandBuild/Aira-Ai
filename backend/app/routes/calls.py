@@ -325,6 +325,42 @@ async def telecmi_cdr(request: Request, background_tasks: BackgroundTasks):
         db.table("call_logs").update({"score": score}).eq("id", call_log_id).execute()
         if row.get("caller_id"):
             recompute_caller_score(row["caller_id"], db)
+            
+        # Target achievement milestone check
+        if updates.get("status") == "completed" and row.get("caller_id") and row.get("tenant_id"):
+            try:
+                from datetime import datetime, timezone
+                today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+                achieved_res = (
+                    db.table("call_logs")
+                    .select("id", count="exact")
+                    .eq("caller_id", row["caller_id"])
+                    .eq("tenant_id", row["tenant_id"])
+                    .eq("status", "completed")
+                    .gte("created_at", today_start)
+                    .execute()
+                )
+                achieved = achieved_res.count or 0
+                
+                from app.services.assignment import get_telecalling_config
+                cfg = get_telecalling_config(row["tenant_id"])
+                targets = cfg.get("targets") or {}
+                target = targets.get(str(row["caller_id"])) or targets.get(row["caller_id"]) or targets.get("daily_calls", 50)
+                
+                if achieved == target:
+                    caller_res = db.table("callers").select("user_id, name").eq("id", row["caller_id"]).maybe_single().execute()
+                    if caller_res.data and caller_res.data.get("user_id"):
+                        from app.services.notify import notify_user
+                        notify_user(
+                            row["tenant_id"],
+                            caller_res.data["user_id"],
+                            "milestone_achieved",
+                            "Milestone Achieved! 🎉",
+                            f"Congratulations {caller_res.data['name']}! You have achieved your daily target of {target} calls today.",
+                            db=db,
+                        )
+            except Exception as milestone_err:
+                logger.warning(f"Failed to verify milestone target completed: {milestone_err}")
 
     return {"ok": True}
 
