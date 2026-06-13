@@ -17,6 +17,7 @@ import { fetchNotes } from "./lib/notes-api";
 import type { NotesResponse, Note } from "./types";
 import NumpadDialer from "./components/NumpadDialer";
 import LeadAttribution from "./components/LeadAttribution";
+import CallWrapup from "./components/CallWrapup";
 
 function ScoreBar({ score }: { score: number }) {
   const pct = Math.round((score / 10) * 100);
@@ -455,6 +456,9 @@ export default function AdminView({ fallbackData }: { fallbackData?: AdminDashbo
           </div>
         </div>
       )}
+
+      {/* Mandatory post-call wrap-up — identical flow to the telecaller cockpit */}
+      <CallWrapup />
     </div>
   );
 }
