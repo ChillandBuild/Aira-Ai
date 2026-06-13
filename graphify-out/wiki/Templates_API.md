@@ -1,20 +1,16 @@
 # Templates API
 
-> 25 nodes · cohesion 0.14
+> 23 nodes · cohesion 0.13
 
 ## Key Concepts
 
-- **get_setting()** (27 connections) — `backend/app/config_dynamic.py`
-- **templates.py** (19 connections) — `backend/app/routes/templates.py`
-- **TemplateContentExistsError** (12 connections) — `backend/app/services/meta_cloud.py`
-- **upload_template_media()** (12 connections) — `backend/app/routes/templates.py`
-- **str** (10 connections) — `backend/app/routes/templates.py`
-- **CreateTemplate** (9 connections) — `backend/app/routes/templates.py`
-- **config_dynamic.py** (7 connections) — `backend/app/config_dynamic.py`
-- **sync_template_status()** (7 connections) — `backend/app/routes/templates.py`
-- **sync_templates_from_meta()** (7 connections) — `backend/app/routes/templates.py`
+- **templates.py** (20 connections) — `backend/app/routes/templates.py`
+- **TemplateContentExistsError** (13 connections) — `backend/app/services/meta_cloud.py`
+- **str** (12 connections) — `backend/app/routes/templates.py`
+- **sync_template_status()** (8 connections) — `backend/app/routes/templates.py`
+- **sync_templates_from_meta()** (8 connections) — `backend/app/routes/templates.py`
+- **template_status_webhook()** (7 connections) — `backend/app/routes/templates.py`
 - **delete_template()** (6 connections) — `backend/app/routes/templates.py`
-- **template_status_webhook()** (6 connections) — `backend/app/routes/templates.py`
 - **update_template_variations()** (5 connections) — `backend/app/routes/templates.py`
 - **VariationsPayload** (4 connections) — `backend/app/routes/templates.py`
 - **get_template_variations()** (4 connections) — `backend/app/routes/templates.py`
@@ -27,34 +23,30 @@
 - **Pull all templates from Meta and upsert into local DB. Returns added/updated cou** (1 connections) — `backend/app/routes/templates.py`
 - **Meta calls this when template status changes (APPROVED/REJECTED). No auth.** (1 connections) — `backend/app/routes/templates.py`
 - **Raised when Meta rejects template creation because name+language already exists.** (1 connections) — `backend/app/services/meta_cloud.py`
-- **Upload a media file for use in template headers. Returns the Meta header_handle.** (1 connections) — `backend/app/routes/templates.py`
-- **Upload media for template headers using Meta's Resumable Upload API.      Step 1** (1 connections) — `backend/app/services/meta_cloud.py`
+- **Pull current status from Meta API and update the local record.** (1 connections) — `backend/app/routes/templates.py`
+- **Pull all templates from Meta and upsert into local DB. Returns added/updated cou** (1 connections) — `backend/app/routes/templates.py`
+- **Meta calls this when template status changes (APPROVED/REJECTED). No auth.** (1 connections) — `backend/app/routes/templates.py`
+- **Raised when Meta rejects template creation because name+language already exists.** (1 connections) — `backend/app/services/meta_cloud.py`
 
 ## Relationships
 
-- [[Meta Cloud API Client]] (10 shared connections)
-- [[Reengagement API]] (9 shared connections)
-- [[Leads API]] (8 shared connections)
-- [[Meta Cloud Service]] (7 shared connections)
-- [[Autopilot & AI Agent Runtime]] (4 shared connections)
-- [[AI Reply Pipeline (Groq)]] (4 shared connections)
-- [[Pydantic Schemas]] (4 shared connections)
-- [[Calls API (TeleCMI dialer)]] (3 shared connections)
-- [[Facebook / Webhook Verification]] (3 shared connections)
-- [[Instagram Channel]] (2 shared connections)
-- [[Telegram Channel]] (2 shared connections)
-- [[Booking Flow]] (2 shared connections)
+- [[Meta Cloud Service]] (14 shared connections)
+- [[Meta Cloud API Client]] (13 shared connections)
+- [[Callers CRUD & Coaching]] (7 shared connections)
+- [[Pydantic Schemas]] (3 shared connections)
+- [[Analytics Page]] (2 shared connections)
+- [[App Entry & Schedulers]] (1 shared connections)
+- [[Templates Page]] (1 shared connections)
 
 ## Source Files
 
-- `backend/app/config_dynamic.py`
 - `backend/app/routes/templates.py`
 - `backend/app/services/meta_cloud.py`
 
 ## Audit Trail
 
-- EXTRACTED: 106 (69%)
-- INFERRED: 48 (31%)
+- EXTRACTED: 77 (71%)
+- INFERRED: 31 (29%)
 - AMBIGUOUS: 0 (0%)
 
 ---

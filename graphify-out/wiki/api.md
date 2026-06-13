@@ -1,8 +1,8 @@
 # api
 
-> God node · 29 connections · `frontend/lib/api.ts`
+> God node · 48 connections · `frontend/lib/api.ts`
 
-**Community:** [[Notes Page]]
+**Community:** [[API Client (frontend)]]
 
 ## Connections by Relation
 
@@ -11,25 +11,25 @@
 
 ### imports
 - [[page.tsx]] `EXTRACTED`
-- [[CallerView.tsx]] `EXTRACTED`
-- [[conversations.py]] `EXTRACTED`
 - [[page.tsx]] `EXTRACTED`
-- [[page.tsx]] `EXTRACTED`
-- [[lead-details-panel.tsx]] `EXTRACTED`
-- [[AdminView.tsx]] `EXTRACTED`
-- [[chat-thread.tsx]] `EXTRACTED`
-- [[page.tsx]] `EXTRACTED`
+- [[useApi.ts]] `EXTRACTED`
+- [[NotesClient.tsx]] `EXTRACTED`
+- [[shared.tsx]] `EXTRACTED`
 - [[performance-view.tsx]] `EXTRACTED`
 - [[page.tsx]] `EXTRACTED`
-- [[assignment_log.py]] `EXTRACTED`
+- [[AdminView.tsx]] `EXTRACTED`
+- [[CallerView.tsx]] `EXTRACTED`
+- [[CallerView.tsx]] `EXTRACTED`
+- [[conversations.py]] `EXTRACTED`
+- [[LeadsClient.tsx]] `EXTRACTED`
+- [[TeamClient.tsx]] `EXTRACTED`
 - [[page.tsx]] `EXTRACTED`
+- [[conversation-list.tsx]] `EXTRACTED`
+- [[lead-details-panel.tsx]] `EXTRACTED`
 - [[page.tsx]] `EXTRACTED`
-- [[notifications.py]] `EXTRACTED`
-- [[live-notes-pane.tsx]] `EXTRACTED`
-- [[CallbackNotifier.tsx]] `EXTRACTED`
+- [[InboundLeadsClient.tsx]] `EXTRACTED`
 - [[page.tsx]] `EXTRACTED`
-- [[page.tsx]] `EXTRACTED`
-- [[page.tsx]] `EXTRACTED`
+- [[chat-thread.tsx]] `EXTRACTED`
 
 ---
 

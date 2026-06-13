@@ -1,40 +1,40 @@
 # Templates Page
 
-> 45 nodes · cohesion 0.07
+> 52 nodes · cohesion 0.07
 
 ## Key Concepts
 
 - **page.tsx** (18 connections) — `frontend/app/dashboard/templates/page.tsx`
+- **types.ts** (13 connections) — `frontend/app/dashboard/templates/types.ts`
 - **page.tsx** (12 connections) — `frontend/app/dashboard/templates/[id]/page.tsx`
-- **template-card.tsx** (11 connections) — `frontend/app/dashboard/templates/components/template-card.tsx`
+- **button-builder.tsx** (12 connections) — `frontend/app/dashboard/templates/components/button-builder.tsx`
+- **template-card.tsx** (12 connections) — `frontend/app/dashboard/templates/components/template-card.tsx`
+- **page.tsx** (12 connections) — `frontend/app/dashboard/templates/[id]/page.tsx`
 - **page.tsx** (11 connections) — `frontend/app/dashboard/templates/new/page.tsx`
-- **types.ts** (11 connections) — `frontend/app/dashboard/templates/types.ts`
-- **button-builder.tsx** (8 connections) — `frontend/app/dashboard/templates/components/button-builder.tsx`
-- **whatsapp-preview.tsx** (6 connections) — `frontend/app/dashboard/templates/components/whatsapp-preview.tsx`
-- **variable-inserter.tsx** (5 connections) — `frontend/app/dashboard/templates/components/variable-inserter.tsx`
-- **LANGUAGES** (5 connections) — `frontend/app/dashboard/templates/types.ts`
-- **Template** (4 connections) — `frontend/app/dashboard/templates/types.ts`
-- **STATUS_COLORS** (4 connections) — `frontend/app/dashboard/templates/types.ts`
+- **page.tsx** (11 connections) — `frontend/app/dashboard/templates/new/page.tsx`
+- **whatsapp-preview.tsx** (9 connections) — `frontend/app/dashboard/templates/components/whatsapp-preview.tsx`
+- **variable-inserter.tsx** (8 connections) — `frontend/app/dashboard/templates/components/variable-inserter.tsx`
+- **LANGUAGES** (7 connections) — `frontend/app/dashboard/templates/types.ts`
+- **Button** (5 connections) — `frontend/app/dashboard/templates/types.ts`
+- **Template** (5 connections) — `frontend/app/dashboard/templates/types.ts`
+- **STATUS_COLORS** (5 connections) — `frontend/app/dashboard/templates/types.ts`
+- **TemplateCard()** (4 connections) — `frontend/app/dashboard/templates/components/template-card.tsx`
 - **TemplatesPage()** (3 connections) — `frontend/app/dashboard/templates/page.tsx`
-- **Button** (3 connections) — `frontend/app/dashboard/templates/types.ts`
-- **toTemplateName()** (2 connections) — `frontend/app/dashboard/templates/page.tsx`
-- **renderPreview()** (2 connections) — `frontend/app/dashboard/templates/page.tsx`
-- **apiFetch()** (2 connections) — `frontend/app/dashboard/templates/page.tsx`
+- **CATEGORIES** (3 connections) — `frontend/app/dashboard/templates/types.ts`
+- **hasEmoji()** (2 connections) — `frontend/app/dashboard/templates/[id]/page.tsx`
+- **TemplateDetailsPage()** (2 connections) — `frontend/app/dashboard/templates/[id]/page.tsx`
+- **hasMixedTypes()** (2 connections) — `frontend/app/dashboard/templates/components/button-builder.tsx`
 - **typeLabel()** (2 connections) — `frontend/app/dashboard/templates/components/button-builder.tsx`
 - **TypeBadge()** (2 connections) — `frontend/app/dashboard/templates/components/button-builder.tsx`
-- **detectVariables()** (2 connections) — `frontend/app/dashboard/templates/components/variable-inserter.tsx`
-- **nextVariableNumber()** (2 connections) — `frontend/app/dashboard/templates/components/variable-inserter.tsx`
-- **CATEGORIES** (2 connections) — `frontend/app/dashboard/templates/types.ts`
-- **CATEGORY_COLORS** (2 connections) — `frontend/app/dashboard/templates/types.ts`
-- **Button** (1 connections) — `frontend/app/dashboard/templates/page.tsx`
-- **STATUS_CONFIG** (1 connections) — `frontend/app/dashboard/templates/page.tsx`
-- **CATEGORY_OPTIONS** (1 connections) — `frontend/app/dashboard/templates/page.tsx`
-- *... and 20 more nodes in this community*
+- **ButtonBuilder()** (2 connections) — `frontend/app/dashboard/templates/components/button-builder.tsx`
+- **renderMiniPreview()** (2 connections) — `frontend/app/dashboard/templates/components/template-card.tsx`
+- **formatDate()** (2 connections) — `frontend/app/dashboard/templates/components/template-card.tsx`
+- *... and 27 more nodes in this community*
 
 ## Relationships
 
-- [[Settings Page]] (4 shared connections)
-- [[API Client (frontend)]] (3 shared connections)
+- [[Notes Api (frontend)]] (6 shared connections)
+- [[Api (frontend)]] (5 shared connections)
 - [[Templates API]] (1 shared connections)
 
 ## Source Files
@@ -50,7 +50,7 @@
 
 ## Audit Trail
 
-- EXTRACTED: 142 (100%)
+- EXTRACTED: 204 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

@@ -1,57 +1,55 @@
 # Analytics Page
 
-> 59 nodes · cohesion 0.05
+> 33 nodes · cohesion 0.07
 
 ## Key Concepts
 
-- **page.tsx** (37 connections) — `frontend/app/dashboard/analytics/page.tsx`
-- **analytics.py** (20 connections) — `backend/app/routes/analytics.py`
-- **str** (13 connections) — `backend/app/routes/analytics.py`
-- **TelecallingAnalytics** (8 connections) — `frontend/lib/api.ts`
-- **_range_params()** (7 connections) — `backend/app/routes/analytics.py`
-- **MessagingAnalytics** (6 connections) — `frontend/lib/api.ts`
-- **caller_timeline()** (6 connections) — `backend/app/routes/analytics.py`
-- **inbound_analytics()** (6 connections) — `backend/app/routes/analytics.py`
-- **_ist_hour()** (5 connections) — `backend/app/routes/analytics.py`
-- **overview_analytics()** (5 connections) — `backend/app/routes/analytics.py`
-- **TemplatePerformanceRow** (5 connections) — `frontend/lib/api.ts`
-- **_week_start()** (4 connections) — `backend/app/routes/analytics.py`
-- **_ist_today_start_utc()** (4 connections) — `backend/app/routes/analytics.py`
+- **page.tsx** (41 connections) — `frontend/app/dashboard/analytics/page.tsx`
 - **TelecallingTab()** (4 connections) — `frontend/app/dashboard/analytics/page.tsx`
-- **WhatsAppAnalytics** (4 connections) — `frontend/lib/api.ts`
-- **FunnelAnalytics** (4 connections) — `frontend/lib/api.ts`
-- **_today_start()** (3 connections) — `backend/app/routes/analytics.py`
-- **datetime** (3 connections) — `backend/app/routes/analytics.py`
-- **AdPerformanceSummary** (3 connections) — `frontend/lib/api.ts`
-- **qa_queue()** (3 connections) — `backend/app/routes/analytics.py`
-- **int** (2 connections) — `backend/app/routes/analytics.py`
+- **pct()** (3 connections) — `frontend/app/dashboard/analytics/page.tsx`
+- **TemplatesTab()** (2 connections) — `frontend/app/dashboard/analytics/page.tsx`
+- **AnalyticsOverviewExtended** (2 connections) — `frontend/lib/api.ts`
+- **FunnelAnalyticsExtended** (2 connections) — `frontend/lib/api.ts`
 - **formatMinutes()** (2 connections) — `frontend/app/dashboard/analytics/page.tsx`
 - **slotToLabel()** (2 connections) — `frontend/app/dashboard/analytics/page.tsx`
 - **computeCallerPeriods()** (2 connections) — `frontend/app/dashboard/analytics/page.tsx`
-- **FunnelAnalyticsExtended** (2 connections) — `frontend/lib/api.ts`
-- *... and 34 more nodes in this community*
+- **DateRange** (1 connections) — `frontend/app/dashboard/analytics/page.tsx`
+- **Tab** (1 connections) — `frontend/app/dashboard/analytics/page.tsx`
+- **KpiCard()** (1 connections) — `frontend/app/dashboard/analytics/page.tsx`
+- **COL_CLASS** (1 connections) — `frontend/app/dashboard/analytics/page.tsx`
+- **SkeletonGrid()** (1 connections) — `frontend/app/dashboard/analytics/page.tsx`
+- **ErrorBox()** (1 connections) — `frontend/app/dashboard/analytics/page.tsx`
+- **SectionCard()** (1 connections) — `frontend/app/dashboard/analytics/page.tsx`
+- **FunnelSteps()** (1 connections) — `frontend/app/dashboard/analytics/page.tsx`
+- **SegmentBars()** (1 connections) — `frontend/app/dashboard/analytics/page.tsx`
+- **OverviewTab()** (1 connections) — `frontend/app/dashboard/analytics/page.tsx`
+- **ChannelFilter** (1 connections) — `frontend/app/dashboard/analytics/page.tsx`
+- **CHANNEL_OPTIONS** (1 connections) — `frontend/app/dashboard/analytics/page.tsx`
+- **ReplySourceBar()** (1 connections) — `frontend/app/dashboard/analytics/page.tsx`
+- **ChannelsTab()** (1 connections) — `frontend/app/dashboard/analytics/page.tsx`
+- **HOT_AGING_COLORS** (1 connections) — `frontend/app/dashboard/analytics/page.tsx`
+- **HotLeadAging()** (1 connections) — `frontend/app/dashboard/analytics/page.tsx`
+- *... and 8 more nodes in this community*
 
 ## Relationships
 
-- [[API Client (frontend)]] (9 shared connections)
-- [[Leads API]] (5 shared connections)
-- [[Notes Page]] (3 shared connections)
+- [[Analytics API]] (4 shared connections)
+- [[Api (frontend)]] (3 shared connections)
 - [[Templates API]] (2 shared connections)
-- [[App Entry & Schedulers]] (1 shared connections)
-- [[Upload Page]] (1 shared connections)
-- [[Reengagement API]] (1 shared connections)
-- [[Inbound Lead Reporting]] (1 shared connections)
+- [[Winnerbanner (frontend)]] (2 shared connections)
+- [[API Client (frontend)]] (1 shared connections)
+- [[Performancekpis Component]] (1 shared connections)
+- [[Knowledge Page]] (1 shared connections)
 
 ## Source Files
 
-- `backend/app/routes/analytics.py`
 - `frontend/app/dashboard/analytics/page.tsx`
 - `frontend/lib/api.ts`
 
 ## Audit Trail
 
-- EXTRACTED: 190 (96%)
-- INFERRED: 7 (4%)
+- EXTRACTED: 84 (100%)
+- INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 
 ---

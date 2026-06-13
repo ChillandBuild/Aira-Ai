@@ -1,13 +1,11 @@
 # Channels Page
 
-> 21 nodes · cohesion 0.10
+> 19 nodes · cohesion 0.11
 
 ## Key Concepts
 
 - **page.tsx** (24 connections) — `frontend/app/dashboard/channels/page.tsx`
-- **str** (3 connections) — `backend/app/config_dynamic.py`
-- **saveSettings()** (3 connections) — `frontend/app/dashboard/channels/page.tsx`
-- **invalidate_cache()** (2 connections) — `backend/app/config_dynamic.py`
+- **ChannelConfig** (2 connections) — `frontend/app/dashboard/channels/page.tsx`
 - **fetchSettings()** (2 connections) — `frontend/app/dashboard/channels/page.tsx`
 - **ChannelsHubPage()** (2 connections) — `frontend/app/dashboard/channels/page.tsx`
 - **InstagramIcon()** (1 connections) — `frontend/app/dashboard/channels/page.tsx`
@@ -28,22 +26,20 @@
 
 ## Relationships
 
-- [[Upload Page]] (3 shared connections)
-- [[Settings Page]] (3 shared connections)
-- [[App Settings API]] (2 shared connections)
-- [[Templates API]] (1 shared connections)
+- [[Inboundleadsclient (frontend)]] (3 shared connections)
+- [[Notes Api (frontend)]] (2 shared connections)
+- [[App Settings API]] (1 shared connections)
+- [[Api (frontend)]] (1 shared connections)
 - [[API Client (frontend)]] (1 shared connections)
-- [[Notes Page]] (1 shared connections)
 
 ## Source Files
 
-- `backend/app/config_dynamic.py`
 - `frontend/app/dashboard/channels/page.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 50 (98%)
-- INFERRED: 1 (2%)
+- EXTRACTED: 45 (100%)
+- INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 
 ---

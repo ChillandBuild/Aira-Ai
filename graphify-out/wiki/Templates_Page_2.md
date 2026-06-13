@@ -13,8 +13,8 @@
 
 ## Relationships
 
-- [[API Client (frontend)]] (1 shared connections)
-- [[Settings Page]] (1 shared connections)
+- [[Api (frontend)]] (1 shared connections)
+- [[Notes Api (frontend)]] (1 shared connections)
 
 ## Source Files
 

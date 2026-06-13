@@ -1,32 +1,38 @@
 # get_supabase()
 
-> God node · 178 connections · `backend/app/db/supabase.py`
+> God node · 257 connections · `/Users/prem/Documents/Aira Ai/backend/app/db/supabase.py`
 
-**Community:** [[Leads API]]
+**Community:** [[Callers CRUD & Coaching]]
 
 ## Connections by Relation
 
 ### calls
 - [[generate_reply()]] `INFERRED`
+- [[get_setting()]] `INFERRED`
 - [[whatsapp_webhook()]] `INFERRED`
 - [[send_whatsapp()]] `INFERRED`
+- [[get_telecalling_config()]] `INFERRED`
 - [[auto_assign_lead()]] `INFERRED`
 - [[facebook_webhook()]] `INFERRED`
-- [[instagram_webhook()]] `INFERRED`
-- [[get_telecalling_config()]] `INFERRED`
-- [[telegram_webhook()]] `INFERRED`
-- [[UpdateTemplate]] `INFERRED`
-- [[record_stage_event()]] `INFERRED`
 - [[bulk_send()]] `INFERRED`
-- [[is_round_robin_enabled()]] `INFERRED`
-- [[get_or_create_state()]] `INFERRED`
-- [[sync_follow_up_jobs()]] `INFERRED`
-- [[get_knowledge_context()]] `INFERRED`
-- [[record_assignment_event()]] `INFERRED`
-- [[_drive_run()]] `INFERRED`
 - [[_apply_engagement_decay()]] `INFERRED`
-- [[upload_leads()]] `INFERRED`
-- [[set_outcome()]] `INFERRED`
+- [[instagram_webhook()]] `INFERRED`
+- [[UpdateTemplate]] `INFERRED`
+- [[get_or_create_state()]] `INFERRED`
+- [[telegram_webhook()]] `INFERRED`
+- [[is_round_robin_enabled()]] `INFERRED`
+- [[build_scorer_context()]] `INFERRED`
+- [[record_stage_event()]] `INFERRED`
+- [[sync_follow_up_jobs()]] `INFERRED`
+- [[send_media_to_lead()]] `INFERRED`
+- [[execute_broadcast()]] `INFERRED`
+- [[compose_new_message()]] `INFERRED`
+
+### contains
+- [[supabase.py]] `EXTRACTED`
+
+### references
+- [[Client]] `EXTRACTED`
 
 ---
 

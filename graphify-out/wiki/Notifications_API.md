@@ -1,19 +1,22 @@
 # Notifications API
 
-> 5 nodes · cohesion 0.40
+> 8 nodes · cohesion 0.25
 
 ## Key Concepts
 
+- **list_pool_items()** (5 connections) — `backend/app/routes/notifications.py`
 - **list_notifications()** (4 connections) — `backend/app/routes/notifications.py`
 - **mark_notification_read()** (4 connections) — `backend/app/routes/notifications.py`
-- **str** (2 connections) — `backend/app/routes/notifications.py`
+- **str** (3 connections) — `backend/app/routes/notifications.py`
 - **Fetch unread notifications for the current user.** (1 connections) — `backend/app/routes/notifications.py`
 - **Mark a specific notification as read.** (1 connections) — `backend/app/routes/notifications.py`
+- **Currently-actionable shared-pool items for the claim banner.      Reflects live** (1 connections) — `backend/app/routes/notifications.py`
+- **Currently-actionable shared-pool items for the claim banner.      Reflects live** (1 connections) — `backend/app/routes/notifications.py`
 
 ## Relationships
 
-- [[Leads API]] (2 shared connections)
-- [[Notes Page]] (2 shared connections)
+- [[Callers CRUD & Coaching]] (3 shared connections)
+- [[Notes Api (frontend)]] (3 shared connections)
 
 ## Source Files
 
@@ -21,8 +24,8 @@
 
 ## Audit Trail
 
-- EXTRACTED: 10 (83%)
-- INFERRED: 2 (17%)
+- EXTRACTED: 17 (85%)
+- INFERRED: 3 (15%)
 - AMBIGUOUS: 0 (0%)
 
 ---

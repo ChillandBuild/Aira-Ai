@@ -1,27 +1,42 @@
 # Spec: Telecaller Dialer Redesign
 
-> 5 nodes · cohesion 0.70
+> 21 nodes · cohesion 0.10
 
 ## Key Concepts
 
-- **Telecaller Dialer Redesign Spec** (5 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
-- **Telecaller Dashboard Redesign Mockup v2** (4 connections) — `frontend/public/telecaller-redesign-mockup.html`
-- **3-Column Command Center Layout** (2 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
-- **Circular SVG Progress Ring** (2 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
-- **Phone Numpad Dialer Grid** (2 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **Telecaller Dialer Page — Redesign Spec** (8 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **New Features (frontend-only, no new API calls)** (7 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **Implementation Plan** (7 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **2026-06-10-telecaller-dialer-redesign.md** (1 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **Layout — 2-Column (kept, refined)** (1 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **What Changes** (1 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **1. Circular SVG Progress Ring** (1 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **2. Phone Numpad Dialer** (1 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **3. Inline Dial Button on Lead Cards** (1 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **4. Remove Standalone Callbacks Card** (1 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **5. Tabbed Right Panel** (1 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **6. Outcome Chips in Notes & Log Tab** (1 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **Files to Change** (1 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **Phase 1 — Remove Callbacks card + add Callbacks sub-tab badge** (1 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **Phase 2 — Circular SVG progress ring** (1 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **Phase 3 — Numpad Dialer component** (1 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **Phase 4 — Inline dial button on lead cards** (1 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **Phase 5 — Tabbed right panel** (1 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **Phase 6 — Polish** (1 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **What Does NOT Change** (1 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
+- **Approximate Effort** (1 connections) — `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
 
 ## Relationships
 
-- [[Notes Page]] (1 shared connections)
+- No strong cross-community connections detected
 
 ## Source Files
 
 - `docs/superpowers/specs/2026-06-10-telecaller-dialer-redesign.md`
-- `frontend/public/telecaller-redesign-mockup.html`
 
 ## Audit Trail
 
-- EXTRACTED: 15 (100%)
+- EXTRACTED: 40 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 
