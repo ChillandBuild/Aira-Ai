@@ -1,59 +1,30 @@
 "use client";
-import { toast } from "sonner";
-import { useEffect, useState } from "react";
-import {
-  Phone, RefreshCw, TrendingUp,
-  Users, ChevronDown, Settings, Eye, X, Calendar, StickyNote
-} from "lucide-react";
-import { api } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
+import { Phone, ChevronDown, Settings, Sparkles, User, Inbox, Clock } from "lucide-react";
 import type { Caller, Lead } from "@/lib/api";
 import { useAdminDashboard, useLeads } from "@/hooks/useApi";
 import type { AdminDashboardData } from "@/hooks/useApi";
-import { formatPhone, timeAgo } from "@/lib/utils";
-import LiveNotesPane from "./components/live-notes-pane";
-import { useActiveCall } from "../contexts/ActiveCallContext";
+import { formatPhone } from "@/lib/utils";
 import { TelecallingConfigPanel } from "../settings/TelecallingConfigPanel";
-import { fetchNotes } from "./lib/notes-api";
-import type { NotesResponse, Note } from "./types";
+import NotesHistoryModal from "./components/notes-history-modal";
+import LeadDetailPanel from "./components/LeadDetailPanel";
+import CockpitModals from "./components/CockpitModals";
 import NumpadDialer from "./components/NumpadDialer";
-import LeadAttribution from "./components/LeadAttribution";
-import CallWrapup from "./components/CallWrapup";
-
-function ScoreBar({ score }: { score: number }) {
-  const pct = Math.round((score / 10) * 100);
-  const color = score >= 8 ? "bg-emerald-500" : score >= 6 ? "bg-amber-400" : "bg-gray-300";
-  return (
-    <div className="flex items-center gap-2">
-      <div className="w-16 h-1.5 bg-surface-mid rounded-full overflow-hidden">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="font-label text-xs font-semibold text-on-surface-muted w-4">{score}</span>
-    </div>
-  );
-}
+import { useCallingCockpit } from "./lib/useCallingCockpit";
 
 export default function AdminView({ fallbackData }: { fallbackData?: AdminDashboardData }) {
-  // Cached + auto-revalidating (focus/reconnect + 30s) admin dashboard data,
-  // seeded from the server on first paint when available.
   const { data: dashboard, mutate: refreshDashboard } = useAdminDashboard(fallbackData);
   const callers: Caller[] = dashboard?.callers ?? [];
 
+  // Who the call dials as (null = admin self).
   const [selectedCallerId, setSelectedCallerId] = useState<string | null>(null);
   const [showConfigModal, setShowConfigModal] = useState(false);
 
-  const { activeCall: activeCallCtx, setActiveCall: setActiveCallCtx } = useActiveCall();
-  const [dialingLeadId, setDialingLeadId] = useState<string | null>(null);
+  // Left-panel: Queue vs Manual Dial
+  const [leftTab, setLeftTab] = useState<"queue" | "dialer">("queue");
+  const [historyLead, setHistoryLead] = useState<Lead | null>(null);
 
-  const [manualPhone, setManualPhone] = useState("");
-  const [manualDialing, setManualDialing] = useState(false);
-
-  // Profile modal state
-  const [viewingLeadId, setViewingLeadId] = useState<string | null>(null);
-  const [viewingLead, setViewingLead] = useState<Lead | null>(null);
-  const [viewingLeadNotes, setViewingLeadNotes] = useState<NotesResponse | null>(null);
-  const [viewingLeadLoading, setViewingLeadLoading] = useState(false);
-
-  // Queue Filters state
+  // Queue filters
   const [queueSegment, setQueueSegment] = useState<string>("all");
   const [queueStatus, setQueueStatus] = useState<string>("all");
   const [queueAssignedTo, setQueueAssignedTo] = useState<string>("all");
@@ -64,401 +35,221 @@ export default function AdminView({ fallbackData }: { fallbackData?: AdminDashbo
     limit: 50,
   });
 
-  const queueLeads = queueLeadsData ?? [];
+  const refreshQueue = useCallback(() => {
+    refreshQueueLeads();
+    refreshDashboard();
+  }, [refreshQueueLeads, refreshDashboard]);
 
-  // Client-side filtering for call_status and unassigned
-  const filteredQueueLeads = queueLeads.filter((lead) => {
-    if (queueStatus !== "all" && lead.call_status !== queueStatus) {
-      return false;
-    }
-    if (queueAssignedTo === "unassigned" && lead.assigned_to) {
-      return false;
-    }
+  const cockpit = useCallingCockpit({ callerId: selectedCallerId, blockingWrapups: false, refreshQueue });
+
+  const filteredQueueLeads = (queueLeadsData ?? []).filter((lead) => {
+    if (queueStatus !== "all" && lead.call_status !== queueStatus) return false;
+    if (queueAssignedTo === "unassigned" && lead.assigned_to) return false;
     return true;
   });
 
-  // Lock body scroll when modals are open to prevent double scrollbars
+  // Lock body scroll when the config modal is open
   useEffect(() => {
-    if (showConfigModal || viewingLeadId) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, [showConfigModal, viewingLeadId]);
-
-  // Fetch full details for the viewing lead
-  useEffect(() => {
-    if (!viewingLeadId) {
-      setViewingLead(null);
-      setViewingLeadNotes(null);
-      return;
-    }
-    setViewingLeadLoading(true);
-    
-    Promise.all([
-      api.leads.get(viewingLeadId),
-      fetchNotes(viewingLeadId).catch(() => ({ pinned: [], notes: [] }))
-    ])
-      .then(([leadData, notesData]) => {
-        setViewingLead(leadData);
-        setViewingLeadNotes(notesData);
-      })
-      .catch((err) => {
-        toast.error("Failed to load lead profile");
-        console.error(err);
-      })
-      .finally(() => {
-        setViewingLeadLoading(false);
-      });
-  }, [viewingLeadId]);
-
-
-  async function manualDial() {
-    if (!manualPhone.trim()) return;
-    setManualDialing(true);
-    try {
-      const res = await api.calls.initiate({ phone: manualPhone.trim() }, selectedCallerId ?? undefined);
-      setActiveCallCtx({ leadId: res.lead_id ?? null, name: res.lead_name ?? null, phone: manualPhone.trim(), callLogId: res.call_log_id ?? null });
-      setManualPhone("");
-      refreshDashboard();
-      refreshQueueLeads();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Call failed");
-    } finally { setManualDialing(false); }
-  }
-
-  async function callLead(lead: Lead) {
-    setDialingLeadId(lead.id);
-    try {
-      const res = await api.calls.initiate({ leadId: lead.id }, selectedCallerId ?? undefined);
-      setActiveCallCtx({ leadId: res.lead_id ?? lead.id, name: res.lead_name ?? lead.name ?? null, phone: lead.phone ?? "", callLogId: res.call_log_id ?? null });
-      refreshDashboard();
-      refreshQueueLeads();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Call failed");
-    } finally { setDialingLeadId(null); }
-  }
+    document.body.style.overflow = showConfigModal ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [showConfigModal]);
 
   const selectedCallerName = callers.find((c) => c.id === selectedCallerId)?.name ?? "Admin (me)";
 
   return (
-    <div>
-      {/* Header */}
-      <div className="mb-8 flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="font-display text-3xl font-bold text-tertiary">Telecalling</h1>
-          <p className="font-body text-on-surface-muted mt-1">Team management & performance</p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Universal caller selector */}
-          <div className="relative">
-            <label className="block font-label text-[10px] text-on-surface-muted uppercase tracking-widest mb-1">Calling as</label>
-            <div className="relative">
-              <select
-                value={selectedCallerId || ""}
-                onChange={(e) => setSelectedCallerId(e.target.value || null)}
-                className="appearance-none pl-3 pr-8 py-2 rounded-xl bg-surface border border-surface-mid font-body text-sm font-medium text-on-surface focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer min-w-[140px]"
+    <div className="flex flex-col h-[calc(100vh-4rem)] bg-transparent">
+      <div className="flex-1 grid grid-cols-12 gap-4 min-h-0 pb-4">
+        {/* Left Side: Admin Queue (4/12) */}
+        <div className="col-span-4 flex flex-col gap-5 min-h-0 pr-1">
+          <div className="flex-1 bg-slate-50 rounded-3xl p-5 shadow-sm border border-slate-200 flex flex-col min-h-0">
+            {/* Header: title + Calling as + Config */}
+            <div className="flex items-start justify-between mb-4 shrink-0 gap-2">
+              <div>
+                <h2 className="font-display text-xl font-extrabold text-slate-900 tracking-tight">Lead Queue</h2>
+                <p className="font-body text-xs text-slate-500 mt-0.5">
+                  Calling as <span className="text-indigo-600 font-semibold">{selectedCallerName}</span>
+                </p>
+              </div>
+              <button
+                onClick={() => setShowConfigModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200/80 hover:border-amber-300 hover:text-amber-600 font-label text-xs font-bold transition-colors shadow-sm shrink-0"
               >
-                <option value="">Admin (me)</option>
-                {callers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-muted pointer-events-none" />
+                <Settings size={13} /> Config
+              </button>
             </div>
-          </div>
 
-          {/* Telecalling routing config */}
-          <div>
-            <label className="block font-label text-[10px] text-on-surface-muted uppercase tracking-widest mb-1">Routing Rules</label>
-            <button
-              onClick={() => setShowConfigModal(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-surface-mid hover:text-amber-600 hover:border-amber-300 font-label text-sm font-semibold transition-colors"
-            >
-              <Settings size={14} />
-              Config
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Lead Queue + Manual Dial */}
-      <div className="grid grid-cols-3 gap-6">
-        {/* Filterable Lead Queue */}
-        <div className="col-span-2 bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
-          <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
-            <h2 className="font-display text-sm font-bold text-tertiary flex items-center gap-2">
-              <TrendingUp size={14} className="text-red-500" /> Lead Queue
-            </h2>
-            <span className="font-label text-[10px] text-on-surface-muted uppercase tracking-widest">
-              Calling as <span className="text-primary font-semibold">{selectedCallerName}</span>
-            </span>
-          </div>
-
-          {/* Filter Controls */}
-          <div className="grid grid-cols-3 gap-3 mb-5 p-4 bg-slate-50 border border-slate-200/60 rounded-2xl">
-            <div>
-              <label className="block font-label text-[9px] text-on-surface-muted uppercase tracking-widest mb-1.5 font-extrabold">Segment</label>
+            {/* Calling as selector */}
+            <div className="mb-3 shrink-0">
+              <label className="block font-label text-[9px] text-slate-400 uppercase tracking-widest mb-1 font-extrabold">Calling as</label>
               <div className="relative">
                 <select
-                  value={queueSegment}
-                  onChange={(e) => setQueueSegment(e.target.value)}
-                  className="w-full appearance-none pl-3 pr-8 py-2 rounded-xl bg-white border border-slate-200/80 font-body text-xs text-on-surface focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer font-semibold"
+                  value={selectedCallerId || ""}
+                  onChange={(e) => setSelectedCallerId(e.target.value || null)}
+                  className="w-full appearance-none pl-3 pr-8 py-2 rounded-xl bg-white border border-slate-200/80 font-body text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
                 >
-                  <option value="all">All Segments</option>
-                  <option value="A">Segment A</option>
-                  <option value="B">Segment B</option>
-                  <option value="C">Segment C</option>
-                  <option value="D">Segment D</option>
+                  <option value="">Admin (me)</option>
+                  {callers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
-                <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-muted pointer-events-none" />
+                <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               </div>
             </div>
 
-            <div>
-              <label className="block font-label text-[9px] text-on-surface-muted uppercase tracking-widest mb-1.5 font-extrabold">Call Status</label>
-              <div className="relative">
-                <select
-                  value={queueStatus}
-                  onChange={(e) => setQueueStatus(e.target.value)}
-                  className="w-full appearance-none pl-3 pr-8 py-2 rounded-xl bg-white border border-slate-200/80 font-body text-xs text-on-surface focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer font-semibold"
+            {/* Queue / Manual Dial tabs */}
+            <div className="flex gap-0.5 p-0.5 bg-slate-200/60 rounded-2xl shrink-0 mb-4">
+              {[
+                { id: "queue", label: "Queue" },
+                { id: "dialer", label: "Manual Dial" },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setLeftTab(tab.id as typeof leftTab)}
+                  className={`flex-1 py-1.5 rounded-xl font-label text-[11px] font-extrabold text-center transition-all ${
+                    leftTab === tab.id ? "bg-white text-orange-600 shadow-sm" : "text-amber-700/70 hover:text-slate-800"
+                  }`}
                 >
-                  <option value="all">All Statuses</option>
-                  <option value="new">New</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="callback">Callback</option>
-                  <option value="converted">Converted</option>
-                  <option value="not_interested">Not Interested</option>
-                  <option value="dnc">Do Not Call (DNC)</option>
-                  <option value="unreachable">Unreachable</option>
-                </select>
-                <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-muted pointer-events-none" />
-              </div>
+                  {tab.label}
+                </button>
+              ))}
             </div>
 
-            <div>
-              <label className="block font-label text-[9px] text-on-surface-muted uppercase tracking-widest mb-1.5 font-extrabold">Assigned To</label>
-              <div className="relative">
-                <select
-                  value={queueAssignedTo}
-                  onChange={(e) => setQueueAssignedTo(e.target.value)}
-                  className="w-full appearance-none pl-3 pr-8 py-2 rounded-xl bg-white border border-slate-200/80 font-body text-xs text-on-surface focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer font-semibold"
-                >
-                  <option value="all">All Callers</option>
-                  <option value="unassigned">Unassigned</option>
-                  {callers.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+            {leftTab === "dialer" ? (
+              <div className="flex-1 overflow-y-auto flex flex-col items-center pt-4 pb-2">
+                <NumpadDialer value={cockpit.manualPhone} onChange={cockpit.setManualPhone} onDial={cockpit.manualDialWithGuard} dialing={cockpit.manualDialing} />
+              </div>
+            ) : (
+              <>
+                {/* Filters */}
+                <div className="grid grid-cols-3 gap-2 mb-4 shrink-0">
+                  {[
+                    { value: queueSegment, set: setQueueSegment, label: "Segment", opts: [["all", "All Seg"], ["A", "A"], ["B", "B"], ["C", "C"], ["D", "D"]] },
+                    { value: queueStatus, set: setQueueStatus, label: "Status", opts: [["all", "All"], ["new", "New"], ["in_progress", "In Prog"], ["callback", "Callback"], ["converted", "Converted"], ["not_interested", "Not Int."], ["dnc", "DNC"], ["unreachable", "Unreach."]] },
+                    { value: queueAssignedTo, set: setQueueAssignedTo, label: "Assigned", opts: [["all", "All"], ["unassigned", "Unassigned"], ...callers.map((c) => [c.id, c.name] as [string, string])] },
+                  ].map((f) => (
+                    <div key={f.label}>
+                      <label className="block font-label text-[8px] text-slate-400 uppercase tracking-widest mb-1 font-extrabold">{f.label}</label>
+                      <div className="relative">
+                        <select
+                          value={f.value}
+                          onChange={(e) => f.set(e.target.value)}
+                          className="w-full appearance-none pl-2 pr-6 py-1.5 rounded-lg bg-white border border-slate-200/80 font-body text-[11px] font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                        >
+                          {f.opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        </select>
+                        <ChevronDown size={11} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                      </div>
+                    </div>
                   ))}
-                </select>
-                <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-muted pointer-events-none" />
-              </div>
-            </div>
-          </div>
+                </div>
 
-          {filteredQueueLeads.length === 0 ? (
-            <p className="font-body text-sm text-on-surface-muted text-center py-6">No leads match the filters.</p>
-          ) : (
-            <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
-              {filteredQueueLeads.map((lead, i) => {
-                const assignedCaller = callers.find((c) => c.id === lead.assigned_to);
-                const isDialing = dialingLeadId === lead.id;
-                return (
-                  <div key={lead.id} className="flex items-center gap-4 p-3 bg-surface-low rounded-xl hover:bg-surface-mid transition-colors">
-                    <span className="font-label text-xs text-on-surface-muted w-5 text-center shrink-0">#{i + 1}</span>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-body text-sm font-semibold text-on-surface truncate">{lead.name || formatPhone(lead.phone)}</p>
-                      <p className="font-label text-xs text-on-surface-muted truncate">{formatPhone(lead.phone)}</p>
+                {/* Lead cards */}
+                {filteredQueueLeads.length === 0 ? (
+                  <div className="text-center py-12 flex-1 flex flex-col justify-center items-center">
+                    <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 border border-slate-100 mb-3">
+                      <Inbox size={18} />
                     </div>
-                    <ScoreBar score={lead.score ?? 0} />
-                    <span className="font-label text-xs text-on-surface-muted hidden sm:block shrink-0">
-                      {assignedCaller ? assignedCaller.name : <span className="text-amber-500">Unassigned</span>}
-                    </span>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        onClick={() => setViewingLeadId(lead.id)}
-                        className="p-1.5 rounded-lg hover:bg-surface-mid transition-colors text-on-surface-muted border border-transparent hover:border-surface-mid"
-                        title="View Profile Details"
-                      >
-                        <Eye size={13} />
-                      </button>
-                      <button onClick={() => callLead(lead)} disabled={isDialing}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 rounded-lg font-label text-xs font-semibold transition-colors">
-                        {isDialing ? <RefreshCw size={11} className="animate-spin" /> : <Phone size={11} />}
-                        {isDialing ? "Dialing…" : "Call"}
-                      </button>
-                    </div>
+                    <p className="font-body text-sm font-semibold text-slate-500">No leads match the filters</p>
+                    <p className="font-label text-xs text-slate-400 mt-1">Adjust segment, status, or assignment above.</p>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                ) : (
+                  <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                    {filteredQueueLeads.map((lead) => {
+                      const assignedCaller = callers.find((c) => c.id === lead.assigned_to);
+                      const isSelected = cockpit.selectedLeadId === lead.id;
+
+                      let borderAccent = "border-l-indigo-400";
+                      let avatarBg = "bg-indigo-500";
+                      let callBtnBg = "bg-emerald-500 hover:bg-emerald-600";
+                      if (lead.score >= 8) {
+                        borderAccent = "border-l-red-500"; avatarBg = "bg-red-500"; callBtnBg = "bg-rose-500 hover:bg-rose-600";
+                      } else if (lead.call_status === "callback") {
+                        borderAccent = "border-l-amber-500"; avatarBg = "bg-amber-500"; callBtnBg = "bg-amber-500 hover:bg-amber-600";
+                      } else if (lead.call_status && ["converted", "not_interested", "dnc", "unreachable"].includes(lead.call_status)) {
+                        borderAccent = "border-l-slate-350"; avatarBg = "bg-slate-400"; callBtnBg = "bg-slate-450 hover:bg-slate-500";
+                      }
+
+                      return (
+                        <div
+                          key={lead.id}
+                          onClick={() => cockpit.setSelectedLeadId(lead.id)}
+                          className={`rounded-2xl border-y border-r border-l-[6px] transition-all duration-200 cursor-pointer p-3 flex items-center justify-between gap-3 ${borderAccent} ${
+                            isSelected
+                              ? "bg-gradient-to-r from-indigo-50/70 to-purple-50/20 border-indigo-200 shadow-[0_4px_15px_rgba(99,102,241,0.06)] ring-1 ring-indigo-500/10 translate-x-1"
+                              : "bg-slate-50/30 border-slate-100 hover:bg-slate-50 hover:shadow-sm"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <div className={`w-9 h-9 rounded-full flex items-center justify-center font-display text-xs font-bold text-white shrink-0 ${avatarBg}`}>
+                              {lead.name ? lead.name.charAt(0).toUpperCase() : <User size={14} />}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <p className="font-body text-sm font-bold text-slate-800 truncate">{lead.name || formatPhone(lead.phone)}</p>
+                                {lead.score >= 7 && <span className="px-1.5 py-0.5 bg-rose-100 text-rose-600 rounded font-label text-[8px] font-black uppercase tracking-wider">HOT</span>}
+                                <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded font-label text-[8px] font-black uppercase">SEG {lead.segment}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <p className="font-label text-xs text-slate-500">{lead.name ? formatPhone(lead.phone) + " · " : ""}Score {lead.score}/10</p>
+                              </div>
+                              <div className="flex items-center gap-1 text-[10px] text-slate-400 mt-0.5">
+                                <Clock size={10} />
+                                <span>{assignedCaller ? assignedCaller.name : <span className="text-amber-500">Unassigned</span>}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); cockpit.dialWithGuard(lead.id, lead); }}
+                            disabled={cockpit.dialing === lead.id}
+                            className={`p-2.5 rounded-xl transition-all shadow-sm shrink-0 flex items-center justify-center text-white ${callBtnBg} hover:scale-105 active:scale-95`}
+                          >
+                            <Phone size={14} className="fill-white" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
-        {/* Manual Dial */}
-        <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15 self-start flex flex-col gap-3">
-          <div>
-            <h2 className="font-display text-sm font-bold text-tertiary flex items-center gap-2">
-              <Phone size={14} className="text-secondary" /> Manual Dial
-            </h2>
-            <p className="font-label text-[10px] text-on-surface-muted mt-1">
-              Calling as <span className="text-primary font-semibold">{selectedCallerName}</span>
-            </p>
+        {/* Right Side: Lead Profile (8/12) — identical to telecaller cockpit */}
+        <div className="col-span-8 flex flex-col min-h-0 bg-slate-50 rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="flex-1 overflow-y-auto">
+            {!cockpit.selectedLeadId ? (
+              <div className="min-h-full flex flex-col items-center justify-center p-12 text-center bg-gradient-to-br from-slate-50/40 to-indigo-50/10">
+                <div className="relative mb-6">
+                  <div className="absolute inset-0 bg-indigo-400/5 blur-2xl rounded-full scale-150 animate-pulse" />
+                  <div className="relative p-6 rounded-3xl bg-white border border-slate-150 shadow-md text-indigo-500">
+                    <Sparkles size={38} className="text-indigo-500" />
+                  </div>
+                </div>
+                <h3 className="font-display text-xl font-extrabold text-slate-900 tracking-tight">Lead Profile Workspace</h3>
+                <p className="font-body text-sm text-slate-500 max-w-md mt-2 leading-relaxed">
+                  Pick a lead from the queue on the left to review attribution, call history, and log feedback — then dial as {selectedCallerName}.
+                </p>
+              </div>
+            ) : (
+              <LeadDetailPanel {...cockpit.leadDetailProps} setHistoryLead={setHistoryLead} />
+            )}
           </div>
-          <NumpadDialer 
-            value={manualPhone}
-            onChange={setManualPhone}
-            onDial={manualDial}
-            dialing={manualDialing}
-          />
         </div>
       </div>
 
-      {activeCallCtx && (
-        <div className="mt-6">
-          <LiveNotesPane ctx={activeCallCtx} onClose={() => setActiveCallCtx(null)} />
-        </div>
-      )}
+      {historyLead && <NotesHistoryModal lead={historyLead} onClose={() => setHistoryLead(null)} />}
 
       {showConfigModal && (
-        <div 
+        <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm cursor-pointer"
           onClick={() => setShowConfigModal(false)}
         >
-          <div 
-            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto cursor-default"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto cursor-default" onClick={(e) => e.stopPropagation()}>
             <TelecallingConfigPanel />
           </div>
         </div>
       )}
 
-      {/* Profile Detail Modal */}
-      {viewingLeadId && (
-        <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/45 backdrop-blur-sm cursor-pointer"
-          onClick={() => setViewingLeadId(null)}
-        >
-          <div 
-            className="w-full max-w-4xl bg-white rounded-3xl p-7 shadow-2xl max-h-[90vh] overflow-y-auto cursor-default border border-slate-200/50 flex flex-col gap-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <h3 className="font-display text-lg font-bold text-slate-800 flex items-center gap-2">
-                🔍 Lead Attribution profile
-              </h3>
-              <button 
-                onClick={() => setViewingLeadId(null)} 
-                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-50 rounded-xl transition-all"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            
-            {viewingLeadLoading ? (
-              <div className="py-12 flex flex-col items-center justify-center">
-                <RefreshCw size={28} className="animate-spin text-indigo-500 mb-2" />
-                <p className="text-xs text-slate-500 font-medium">Fetching lead history...</p>
-              </div>
-            ) : viewingLead ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-                {/* Left Column: Demographics & Attribution */}
-                <div className="space-y-6">
-                  {/* Demographics Card */}
-                  <div className="bg-slate-50/50 border border-slate-100 p-5 rounded-2xl">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-xl bg-indigo-500 text-white font-display text-lg font-bold flex items-center justify-center">
-                        {viewingLead.name ? viewingLead.name.charAt(0).toUpperCase() : <Users size={18} />}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-body text-base font-extrabold text-slate-850">{viewingLead.name || "Unnamed Lead"}</p>
-                          <span className={`px-2 py-0.5 rounded font-label text-[9px] font-black uppercase ${
-                            viewingLead.segment === "A" ? "bg-emerald-50 text-emerald-700 border border-emerald-100" :
-                            viewingLead.segment === "B" ? "bg-blue-50 text-blue-700 border border-blue-100" :
-                            viewingLead.segment === "C" ? "bg-amber-50 text-amber-700 border border-amber-100" :
-                            "bg-slate-100 text-slate-700"
-                          }`}>
-                            Seg {viewingLead.segment}
-                          </span>
-                        </div>
-                        <p className="font-label text-xs text-slate-500 mt-1 select-all">
-                          {formatPhone(viewingLead.phone)} · Score {viewingLead.score}/10
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Assignment Card */}
-                  <div className="bg-white border border-slate-200/60 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
-                    <Calendar size={16} className="text-indigo-500 shrink-0" />
-                    <div>
-                      <p className="font-label text-[9px] text-slate-400 uppercase tracking-wider font-extrabold">Queue Assignment Timestamp</p>
-                      <p className="font-body text-xs text-slate-800 font-bold mt-0.5">
-                        {viewingLead.assigned_at 
-                          ? new Date(viewingLead.assigned_at).toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' })
-                          : "Unknown (Assigned prior to tracking)"}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Marketing Attribution Widget */}
-                  <LeadAttribution lead={viewingLead} />
-                </div>
-
-                {/* Right Column: Interaction Logs */}
-                <div className="space-y-4">
-                  <h4 className="font-display text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-1.5">
-                    <StickyNote size={12} className="text-indigo-500" /> Lead Interaction Timeline
-                  </h4>
-
-                  {/* Pinned notes */}
-                  {viewingLeadNotes?.pinned && viewingLeadNotes.pinned.length > 0 && (
-                    <div className="space-y-1.5">
-                      <p className="font-label text-[9px] text-slate-400 uppercase tracking-wider font-extrabold">📌 Pinned Notes</p>
-                      {viewingLeadNotes.pinned.map((n: Note) => (
-                        <div key={n.id} className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl text-xs text-slate-700 font-semibold shadow-sm">
-                          {n.content}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Notes Feed */}
-                  <div className="space-y-3">
-                    <p className="font-label text-[9px] text-slate-400 uppercase tracking-wider font-extrabold">📝 Recent Notes</p>
-                    {viewingLeadNotes?.notes && viewingLeadNotes.notes.length > 0 ? (
-                      <div className="relative border-l border-slate-100 pl-4 ml-2.5 max-h-[350px] overflow-y-auto pr-1 space-y-4">
-                        {viewingLeadNotes.notes.slice(0, 5).map((n: Note) => (
-                          <div key={n.id} className="relative">
-                            <span className="absolute -left-[21px] top-1 w-2 h-2 rounded-full bg-indigo-400 border-2 border-white ring-4 ring-white" />
-                            <div className="flex justify-between items-center text-[9px] text-slate-450 font-bold mb-1">
-                              <span>{timeAgo(n.created_at)}</span>
-                              {n.is_pinned && <span className="text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-black text-[8px]">PINNED</span>}
-                            </div>
-                            <p className="font-body text-xs text-slate-600 bg-slate-50 border border-slate-100/80 p-3 rounded-2xl leading-relaxed break-words">
-                              {n.content}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-slate-400 text-center py-8 bg-slate-50/60 border border-slate-100 rounded-2xl">
-                        No prior interaction notes logged.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      )}
-
-      {/* Mandatory post-call wrap-up — identical flow to the telecaller cockpit */}
-      <CallWrapup />
+      <CockpitModals cockpit={cockpit} />
     </div>
   );
 }

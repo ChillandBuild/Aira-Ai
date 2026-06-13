@@ -1,124 +1,33 @@
 "use client";
-import { toast } from "sonner";
 import { useEffect, useState, useCallback } from "react";
-import { Phone, RefreshCw, Check, Download, Inbox, User, Sparkles, Search, Clock, AlertCircle, Star } from "lucide-react";
-import { api, Caller, Lead, CallLog, Message } from "@/lib/api";
+import { Phone, RefreshCw, Download, Inbox, User, Sparkles, Search, Clock } from "lucide-react";
+import { api, Caller, Lead } from "@/lib/api";
 import { formatPhone, timeAgo } from "@/lib/utils";
+import { toast } from "sonner";
 import NotesHistoryModal from "./components/notes-history-modal";
-import { fetchNotes, fetchTodayCallbacks, saveNote, createCallback } from "./lib/notes-api";
-import type { CallbackJob, NotesResponse } from "./types";
-import { usePolling } from "@/hooks/usePolling";
-import { useActiveCall } from "../contexts/ActiveCallContext";
 import NumpadDialer from "./components/NumpadDialer";
-import LeadDetailPanel, { QUICK_NOTE_TAGS } from "./components/LeadDetailPanel";
+import LeadDetailPanel from "./components/LeadDetailPanel";
+import CockpitModals from "./components/CockpitModals";
+import { useCallingCockpit } from "./lib/useCallingCockpit";
 
 export default function CallerView({ callerId }: { callerId: string | null }) {
-  // caller profile
-  const [myCaller, setMyCaller] = useState<Caller | null>(null);
+  // caller profile + my assigned queue
   const [myStatus, setMyStatus] = useState<"active" | "break" | "logged_out">("active");
-
-  // my leads (assigned to me, sorted by score desc)
   const [myLeads, setMyLeads] = useState<Lead[]>([]);
   const [lastCalledMap, setLastCalledMap] = useState<Record<string, string>>({});
   const [exporting, setExporting] = useState(false);
-
-  // search query for leads
   const [searchQuery, setSearchQuery] = useState("");
-
-  // callbacks
-  const [todayCallbacks, setTodayCallbacks] = useState<CallbackJob[]>([]);
-
-  // Selected Lead Profile
-  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [selectedLeadNotes, setSelectedLeadNotes] = useState<NotesResponse | null>(null);
-  const [selectedLeadMessages, setSelectedLeadMessages] = useState<Message[]>([]);
-  const [selectedLeadCallLogs, setSelectedLeadCallLogs] = useState<CallLog[]>([]);
-  const [selectedLeadBrief, setSelectedLeadBrief] = useState<{ brief: string; opener: string } | null>(null);
-  const [briefLoading, setBriefLoading] = useState(false);
-  const [selectedLeadLoading, setSelectedLeadLoading] = useState(false);
-  const [selectedCallbackJobId, setSelectedCallbackJobId] = useState<string | null>(null);
-  const [activeProfileTab, setActiveProfileTab] = useState<"overview" | "notes" | "attribution">("overview");
-
-  // dialing
-  const [dialing, setDialing] = useState<string | null>(null);
-  const [confirmRelease, setConfirmRelease] = useState<string | null>(null);
-  const [manualPhone, setManualPhone] = useState("");
-  const [manualDialing, setManualDialing] = useState(false);
-
-  // quick-note on selected lead
-  const [quickNoteTitle, setQuickNoteTitle] = useState("");
-  const [quickNoteContent, setQuickNoteContent] = useState("");
-  const [quickNoteSaving, setQuickNoteSaving] = useState(false);
-  const [quickNoteTags, setQuickNoteTags] = useState<string[]>([]);
-  const [quickNotePinned, setQuickNotePinned] = useState(false);
-  const [showCallbackPicker, setShowCallbackPicker] = useState(false);
-  const [callbackDate, setCallbackDate] = useState("");
-  const [callbackTime, setCallbackTime] = useState("");
-
-  // modals
-  const [historyLead, setHistoryLead] = useState<Lead | null>(null);
-  const { activeCall: activeCallCtx, setActiveCall: setActiveCallCtx } = useActiveCall();
-
-  // Accidental-dial Guard
-  const [dialCountdown, setDialCountdown] = useState<number | null>(null);
-  const [dialTarget, setDialTarget] = useState<{ leadId?: string; lead?: Lead; phone?: string } | null>(null);
-
-  // Live Call Card & Polling
-  const [callDuration, setCallDuration] = useState<number>(0);
-  const [callStatus, setCallStatus] = useState<"ringing" | "connected" | "ended" | null>(null);
-
-  // Mandatory Wrap-up Form
-  const [showWrapupModal, setShowWrapupModal] = useState(false);
-  const [wrapupOutcome, setWrapupOutcome] = useState<string>("");
-  const [wrapupNotes, setWrapupNotes] = useState<string>("");
-  const [wrapupSaving, setWrapupSaving] = useState(false);
-  const [wrapupTags, setWrapupTags] = useState<string[]>([]);
-  const [wrapupQualityRating, setWrapupQualityRating] = useState(0);
-
-  // Blocking Pending-Wrapups list
-  const [pendingWrapups, setPendingWrapups] = useState<CallLog[]>([]);
-
-  // Call Next
-  const [dialingNext, setDialingNext] = useState(false);
-
-  // Queue status sub-tabs
   const [queueSubTab, setQueueSubTab] = useState<"new" | "callback" | "in_progress" | "closed" | "dialer">("new");
+  const [historyLead, setHistoryLead] = useState<Lead | null>(null);
 
-  // Live Script Panel
-  const [telecallingConfig, setTelecallingConfig] = useState<{ scripts?: Record<string, string> } | null>(null);
-  const [scriptExpanded, setScriptExpanded] = useState(true);
-
-  const loadCallbacks = useCallback(() => {
-    fetchTodayCallbacks().then(setTodayCallbacks).catch(() => {});
-  }, []);
-
-  const loadPendingWrapups = useCallback(async () => {
-    try {
-      const wrapups = await api.calls.getPendingWrapups();
-      setPendingWrapups(wrapups);
-    } catch (err) {
-      console.error("Failed to load pending wrapups:", err);
-    }
-  }, []);
-
-  const loadTelecallingConfig = useCallback(async () => {
-    try {
-      const config = await api.settings.getTelecallingConfig();
-      setTelecallingConfig(config);
-    } catch (err) {
-      console.error("Failed to load telecalling config:", err);
-    }
-  }, []);
-
-  const loadData = useCallback(async () => {
+  // Load my assigned leads (the cockpit owns callbacks/config/wrap-ups itself).
+  const loadQueue = useCallback(async () => {
     try {
       const [callers, leads] = await Promise.all([
         api.callers.list(),
         api.leads.list({ assigned_to: callerId || undefined, limit: 100 }),
       ]);
       const me = callers.find((c: Caller) => c.id === callerId) || null;
-      setMyCaller(me);
       if (me) setMyStatus((me.status as "active" | "break" | "logged_out") || "active");
 
       const dialable = leads.filter((l: Lead) => l != null && l.phone && l.phone.trim() !== "");
@@ -127,239 +36,14 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
 
       const ids = sorted.map((l: Lead) => l.id).filter(Boolean);
       if (ids.length) api.calls.recentByLeads(ids).then(setLastCalledMap).catch(() => {});
-
-      loadCallbacks();
-      loadPendingWrapups();
-      loadTelecallingConfig();
     } catch (err) {
       console.error("CallerView load error:", err);
     }
-  }, [callerId, loadCallbacks, loadPendingWrapups, loadTelecallingConfig]);
+  }, [callerId]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { loadQueue(); }, [loadQueue]);
 
-  // auto-refresh callbacks every 5 minutes
-  usePolling(loadCallbacks, 5 * 60 * 1000);
-
-  // Accidental-dial countdown effect
-  useEffect(() => {
-    if (dialCountdown === null) return;
-    if (dialCountdown === 0) {
-      if (dialTarget) {
-        if (dialTarget.leadId && dialTarget.lead) {
-          executeDial(dialTarget.leadId, dialTarget.lead);
-        } else if (dialTarget.phone) {
-          executeManualDial(dialTarget.phone);
-        }
-      }
-      setDialCountdown(null);
-      setDialTarget(null);
-      return;
-    }
-    const timer = setTimeout(() => {
-      setDialCountdown(dialCountdown - 1);
-    }, 1000);
-    return () => clearTimeout(timer);
-    // executeDial/executeManualDial intentionally omitted: the countdown fires
-    // the dial for the dialTarget captured when it started; including them would
-    // reset the timer on unrelated re-renders.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dialCountdown, dialTarget]);
-
-  // Active call status polling
-  useEffect(() => {
-    if (!activeCallCtx || !activeCallCtx.callLogId) {
-      setCallStatus(null);
-      setCallDuration(0);
-      return;
-    }
-
-    setCallStatus("ringing");
-    setCallDuration(0);
-
-    const pollInterval = setInterval(async () => {
-      try {
-        const log = await api.calls.getLog(activeCallCtx.callLogId!);
-        if (log.status === "completed") {
-          setCallStatus("ended");
-          setShowWrapupModal(true);
-          clearInterval(pollInterval);
-        } else if (log.status === "no_answer" || log.status === "failed") {
-          setCallStatus("ended");
-          setActiveCallCtx(null);
-          clearInterval(pollInterval);
-          loadData();
-        } else if (log.status === "initiated") {
-          setCallStatus((cur) => (cur === "ringing" ? "connected" : cur));
-        }
-      } catch (err) {
-        console.error("Error polling call log:", err);
-      }
-    }, 3000);
-
-    return () => clearInterval(pollInterval);
-  }, [activeCallCtx, loadData, setActiveCallCtx]);
-
-  // Call duration timer
-  useEffect(() => {
-    if (callStatus !== "connected") return;
-    const timer = setInterval(() => {
-      setCallDuration((prev) => prev + 1);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [callStatus]);
-
-  // Fetch full details when lead is selected
-  useEffect(() => {
-    if (!selectedLeadId) {
-      setSelectedLead(null);
-      setSelectedLeadNotes(null);
-      setSelectedLeadMessages([]);
-      setSelectedLeadCallLogs([]);
-      setSelectedLeadBrief(null);
-      setSelectedCallbackJobId(null);
-      return;
-    }
-    setActiveProfileTab("overview");
-    setSelectedLeadLoading(true);
-
-    Promise.all([
-      api.leads.get(selectedLeadId),
-      fetchNotes(selectedLeadId).catch(() => ({ pinned: [], notes: [] })),
-      api.leads.messages(selectedLeadId).catch(() => []),
-      api.leads.callLogs(selectedLeadId).catch(() => []),
-    ])
-      .then(([leadData, notesData, messagesData, callLogsData]) => {
-        setSelectedLead(leadData);
-        setSelectedLeadNotes(notesData);
-        setSelectedLeadMessages(messagesData);
-        setSelectedLeadCallLogs(callLogsData);
-      })
-      .catch((err) => {
-        toast.error("Failed to load lead profile");
-        console.error(err);
-      })
-      .finally(() => {
-        setSelectedLeadLoading(false);
-      });
-  }, [selectedLeadId]);
-
-  // Auto-link pending callback job for selected lead
-  useEffect(() => {
-    if (selectedLeadId && todayCallbacks.length > 0) {
-      const cb = todayCallbacks.find((c) => c.lead.id === selectedLeadId && c.status === "pending");
-      if (cb) {
-        setSelectedCallbackJobId(cb.id);
-      } else {
-        setSelectedCallbackJobId(null);
-      }
-    } else {
-      setSelectedCallbackJobId(null);
-    }
-  }, [selectedLeadId, todayCallbacks]);
-
-  // actions
-
-  async function executeDial(leadId: string, lead: Lead) {
-    if (!myCaller) { toast.error("Caller profile not found"); return; }
-    setDialing(leadId);
-    setSelectedLeadId(leadId);
-    try {
-      const res = await api.calls.initiate({ leadId, callbackJobId: selectedCallbackJobId ?? undefined }, myCaller.id);
-      setActiveCallCtx({
-        leadId: res.lead_id ?? leadId,
-        name: res.lead_name ?? lead.name,
-        phone: lead.phone,
-        callLogId: res.call_log_id ?? null
-      });
-      generatePreCallBrief(leadId);
-      toast.success(`Calling ${lead.name || lead.phone}...`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Call failed");
-    } finally { setDialing(null); }
-  }
-
-  async function executeManualDial(phone: string) {
-    if (!myCaller) return;
-    setManualDialing(true);
-    try {
-      const res = await api.calls.initiate({ phone }, myCaller.id);
-      setActiveCallCtx({
-        leadId: res.lead_id ?? null,
-        name: res.lead_name ?? null,
-        phone,
-        callLogId: res.call_log_id ?? null
-      });
-      setManualPhone("");
-      toast.success(`Calling ${phone}...`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Call failed");
-    } finally { setManualDialing(false); }
-  }
-
-  function composeNoteContent() {
-    const title = quickNoteTitle.trim();
-    const body = quickNoteContent.trim();
-    return title ? `${title}\n\n${body}` : body;
-  }
-
-  async function saveQuickNote(leadId: string) {
-    const hasNote = quickNoteContent.trim().length > 0 || quickNoteTitle.trim().length > 0 || quickNoteTags.length > 0;
-    const hasCallback = showCallbackPicker && !!callbackDate && !!callbackTime;
-    if (!hasNote && !hasCallback) return;
-    setQuickNoteSaving(true);
-    try {
-      if (hasNote) {
-        await saveNote(leadId, composeNoteContent(), quickNotePinned, quickNoteTags);
-      }
-      if (hasCallback) {
-        await createCallback(leadId, new Date(`${callbackDate}T${callbackTime}`).toISOString(), composeNoteContent());
-      }
-      setQuickNoteTitle("");
-      setQuickNoteContent("");
-      setQuickNoteTags([]);
-      setQuickNotePinned(false);
-      setCallbackDate("");
-      setCallbackTime("");
-      setShowCallbackPicker(false);
-      toast.success(hasCallback ? "Callback scheduled" : "Note saved");
-      // Refresh notes & callbacks
-      fetchNotes(leadId).then(setSelectedLeadNotes).catch(() => {});
-      loadCallbacks();
-      if (hasCallback) loadData();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save note");
-    } finally { setQuickNoteSaving(false); }
-  }
-
-  async function generatePreCallBrief(leadId: string) {
-    setBriefLoading(true);
-    try {
-      const res = await api.leads.preCallBrief(leadId);
-      setSelectedLeadBrief(res);
-    } catch {
-      toast.error("Failed to generate brief");
-    } finally { setBriefLoading(false); }
-  }
-
-  async function handleRelease(leadId: string) {
-    if (confirmRelease !== leadId) {
-      setConfirmRelease(leadId);
-      setTimeout(() => setConfirmRelease((cur) => cur === leadId ? null : cur), 3000);
-      return;
-    }
-    setConfirmRelease(null);
-    try {
-      await api.leads.release(leadId);
-      setMyLeads((prev) => prev.filter((l) => l.id !== leadId));
-      if (selectedLeadId === leadId) {
-        setSelectedLeadId(null);
-      }
-      toast.success("Lead released successfully");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to release lead");
-    }
-  }
+  const cockpit = useCallingCockpit({ callerId, blockingWrapups: true, refreshQueue: loadQueue });
 
   async function handleDownloadCSV() {
     setExporting(true);
@@ -373,122 +57,6 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
       setExporting(false);
     }
   }
-
-
-
-  const dialWithGuard = (leadId: string, lead: Lead) => {
-    if (dialCountdown !== null) return;
-    setDialTarget({ leadId, lead });
-    setDialCountdown(3);
-  };
-
-  const manualDialWithGuard = () => {
-    if (dialCountdown !== null || !manualPhone.trim()) return;
-    setDialTarget({ phone: manualPhone.trim() });
-    setDialCountdown(3);
-  };
-
-  const handleCallNext = async () => {
-    if (!myCaller) {
-      toast.error("Caller profile not found");
-      return;
-    }
-    setDialingNext(true);
-    try {
-      const nextLd = await api.calls.nextLead(myCaller.id);
-      toast.success(`Found next lead: ${nextLd.name || nextLd.phone}. Preparing to dial...`);
-      setSelectedLeadId(nextLd.id);
-      setDialTarget({ leadId: nextLd.id, lead: nextLd });
-      setDialCountdown(3);
-    } catch (err: unknown) {
-      const errorObj = err as { status?: number; message?: string };
-      if (errorObj?.status === 404) {
-        toast.error("No leads available in queue");
-      } else {
-        toast.error(err instanceof Error ? err.message : "Failed to fetch next lead");
-      }
-    } finally {
-      setDialingNext(false);
-    }
-  };
-
-  const handleWrapupSubmit = async () => {
-    if (!activeCallCtx || !activeCallCtx.callLogId) return;
-    if (!wrapupOutcome) {
-      toast.error("Outcome is required");
-      return;
-    }
-    setWrapupSaving(true);
-    try {
-      await api.calls.setOutcome(
-        activeCallCtx.callLogId,
-        wrapupOutcome as NonNullable<CallLog["outcome"]>,
-        {
-          notes: wrapupNotes.trim() || undefined,
-          qualityRating: wrapupQualityRating || undefined,
-        }
-      );
-
-      if (wrapupOutcome === "converted" && activeCallCtx.leadId) {
-        await api.leads.convert(activeCallCtx.leadId, wrapupNotes);
-      } else if (wrapupOutcome !== "converted" && activeCallCtx.leadId && (wrapupNotes.trim() || wrapupTags.length > 0)) {
-        await saveNote(activeCallCtx.leadId, wrapupNotes, false, wrapupTags);
-      }
-
-      toast.success("Wrap-up completed");
-      setShowWrapupModal(false);
-      setWrapupOutcome("");
-      setWrapupNotes("");
-      setWrapupTags([]);
-      setWrapupQualityRating(0);
-      setActiveCallCtx(null);
-      loadData();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to submit wrap-up");
-    } finally {
-      setWrapupSaving(false);
-    }
-  };
-
-  const toggleWrapupTag = (tag: string) => {
-    setWrapupTags((tags) => (tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag]));
-  };
-
-  const handleQuickOutcome = async (outcome: string) => {
-    if (!selectedLead) return;
-    if (!activeCallCtx?.callLogId) {
-      toast.error("Please call the lead first to log an outcome.");
-      return;
-    }
-
-    setQuickNoteSaving(true);
-    try {
-      await api.calls.setOutcome(
-        activeCallCtx.callLogId,
-        outcome as NonNullable<CallLog["outcome"]>,
-        { notes: quickNoteContent.trim() || undefined }
-      );
-      if (outcome === "converted") {
-        await api.leads.convert(selectedLead.id, composeNoteContent());
-      } else if (quickNoteContent.trim() || quickNoteTitle.trim() || quickNoteTags.length > 0) {
-        await saveNote(selectedLead.id, composeNoteContent(), quickNotePinned, quickNoteTags);
-      }
-      setActiveCallCtx(null);
-      toast.success(`Outcome "${outcome.replace('_', ' ')}" logged successfully`);
-      setQuickNoteTitle("");
-      setQuickNoteContent("");
-      setQuickNoteTags([]);
-      setQuickNotePinned(false);
-      setCallbackDate("");
-      setCallbackTime("");
-      setShowCallbackPicker(false);
-      loadData();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save outcome");
-    } finally {
-      setQuickNoteSaving(false);
-    }
-  };
 
   const filteredLeads = myLeads.filter((lead) => {
     if (!lead) return false;
@@ -513,21 +81,14 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-transparent">
-      {/* Main Split Layout */}
       <div className="flex-1 grid grid-cols-12 gap-4 min-h-0 pb-4">
-        {/* Left Side: Lead List (4/12 columns) */}
+        {/* Left Side: Lead List (4/12) */}
         <div className="col-span-4 flex flex-col gap-5 min-h-0 pr-1">
-          {/* Lead List Card */}
           <div className="flex-1 bg-slate-50 rounded-3xl p-5 shadow-sm border border-slate-200 flex flex-col min-h-0">
-            {/* Header / Title */}
             <div className="flex items-center justify-between mb-4 shrink-0">
               <div>
-                <h2 className="font-display text-xl font-extrabold text-slate-900 tracking-tight">
-                  Lead Queue
-                </h2>
-                <p className="font-body text-xs text-slate-500 mt-0.5">
-                  {myLeads.length} leads assigned
-                </p>
+                <h2 className="font-display text-xl font-extrabold text-slate-900 tracking-tight">Lead Queue</h2>
+                <p className="font-body text-xs text-slate-500 mt-0.5">{myLeads.length} leads assigned</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -540,18 +101,18 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                   Export CSV
                 </button>
                 <button
-                  onClick={handleCallNext}
-                  disabled={dialingNext || myStatus !== "active"}
+                  onClick={cockpit.handleCallNext}
+                  disabled={cockpit.dialingNext || myStatus !== "active"}
                   className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-2xl font-label text-xs font-bold transition-all shadow-sm hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
                   title="Call next hot lead in queue"
                 >
-                  {dialingNext ? <RefreshCw size={12} className="animate-spin mr-1" /> : <Sparkles size={12} className="mr-1 fill-white text-white" />}
+                  {cockpit.dialingNext ? <RefreshCw size={12} className="animate-spin mr-1" /> : <Sparkles size={12} className="mr-1 fill-white text-white" />}
                   Call Next
                 </button>
               </div>
             </div>
 
-            {/* Search leads */}
+            {/* Search */}
             <div className="mb-4 shrink-0">
               <div className="relative">
                 <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -565,7 +126,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
               </div>
             </div>
 
-            {/* Tabs for To Call, Callbacks, In Prog, Closed, Manual Dial */}
+            {/* Sub-tabs */}
             <div className="flex gap-0.5 p-0.5 bg-slate-200/60 rounded-2xl shrink-0 mb-4">
               {[
                 { id: "new", label: `To Call (${newLeads.length})` },
@@ -578,9 +139,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                   key={tab.id}
                   onClick={() => setQueueSubTab(tab.id as typeof queueSubTab)}
                   className={`flex-1 py-1.5 px-0 rounded-xl font-label text-[9.5px] font-extrabold text-center whitespace-nowrap transition-all ${
-                    queueSubTab === tab.id
-                      ? "bg-white text-orange-600 shadow-sm"
-                      : "text-amber-700/70 hover:text-slate-800"
+                    queueSubTab === tab.id ? "bg-white text-orange-600 shadow-sm" : "text-amber-700/70 hover:text-slate-800"
                   }`}
                 >
                   {tab.label}
@@ -588,15 +147,10 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
               ))}
             </div>
 
-            {/* Lead Cards List or Numpad Dialer */}
+            {/* Lead cards or numpad */}
             {queueSubTab === "dialer" ? (
               <div className="flex-1 overflow-y-auto flex flex-col items-center pt-4 pb-2">
-                <NumpadDialer
-                  value={manualPhone}
-                  onChange={setManualPhone}
-                  onDial={manualDialWithGuard}
-                  dialing={manualDialing}
-                />
+                <NumpadDialer value={cockpit.manualPhone} onChange={cockpit.setManualPhone} onDial={cockpit.manualDialWithGuard} dialing={cockpit.manualDialing} />
               </div>
             ) : myLeads.length === 0 ? (
               <div className="text-center py-12 flex-1 flex flex-col justify-center items-center">
@@ -618,13 +172,12 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
               <div className="flex-1 overflow-y-auto space-y-2 pr-1">
                 {activeSubTabLeads.map((lead) => {
                   if (!lead) return null;
-                  const isSelected = selectedLeadId === lead.id;
-                  
-                  // Left border and circle color matches the status of lead
+                  const isSelected = cockpit.selectedLeadId === lead.id;
+
                   let borderAccent = "border-l-indigo-400";
                   let avatarBg = "bg-indigo-500";
                   let callBtnBg = "bg-emerald-500 hover:bg-emerald-600";
-                  
+
                   if (lead.score >= 8) {
                     borderAccent = "border-l-red-500";
                     avatarBg = "bg-red-500";
@@ -642,7 +195,7 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                   return (
                     <div
                       key={lead.id}
-                      onClick={() => setSelectedLeadId(lead.id)}
+                      onClick={() => cockpit.setSelectedLeadId(lead.id)}
                       className={`rounded-2xl border-y border-r border-l-[6px] transition-all duration-200 cursor-pointer p-3 flex items-center justify-between gap-3 ${borderAccent} ${
                         isSelected
                           ? "bg-gradient-to-r from-indigo-50/70 to-purple-50/20 border-indigo-200 shadow-[0_4px_15px_rgba(99,102,241,0.06)] ring-1 ring-indigo-500/10 translate-x-1"
@@ -650,33 +203,23 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0 flex-1">
-                        {/* Initial Circle Avatar */}
                         <div className={`w-9 h-9 rounded-full flex items-center justify-center font-display text-xs font-bold text-white shrink-0 ${avatarBg}`}>
                           {lead.name ? lead.name.charAt(0).toUpperCase() : <User size={14} />}
                         </div>
-
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <p className="font-body text-sm font-bold text-slate-800 truncate">
-                              {lead.name || formatPhone(lead.phone)}
-                            </p>
+                            <p className="font-body text-sm font-bold text-slate-800 truncate">{lead.name || formatPhone(lead.phone)}</p>
                             {lead.score >= 7 && (
                               <span className="px-1.5 py-0.5 bg-rose-100 text-rose-600 rounded font-label text-[8px] font-black uppercase tracking-wider">HOT</span>
                             )}
-                            <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded font-label text-[8px] font-black uppercase">
-                              SEG {lead.segment}
-                            </span>
+                            <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded font-label text-[8px] font-black uppercase">SEG {lead.segment}</span>
                             {lead.call_status === "callback" && (
                               <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded font-label text-[8px] font-black uppercase">CALLBACK</span>
                             )}
                           </div>
                           <div className="flex items-center gap-1.5 mt-0.5">
-                            <p className="font-label text-xs text-slate-500">
-                              {lead.name ? formatPhone(lead.phone) + " · " : ""}Score {lead.score}/10
-                            </p>
+                            <p className="font-label text-xs text-slate-500">{lead.name ? formatPhone(lead.phone) + " · " : ""}Score {lead.score}/10</p>
                           </div>
-
-                          {/* Third line showing action status/time */}
                           <div className="flex items-center gap-1 text-[10px] text-slate-400 mt-0.5">
                             <Clock size={10} />
                             {lead.call_status === "callback" ? (
@@ -690,13 +233,12 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                         </div>
                       </div>
 
-                      {/* Direct phone call button */}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          dialWithGuard(lead.id, lead);
+                          cockpit.dialWithGuard(lead.id, lead);
                         }}
-                        disabled={dialing === lead.id}
+                        disabled={cockpit.dialing === lead.id}
                         className={`p-2.5 rounded-xl transition-all shadow-sm shrink-0 flex items-center justify-center text-white ${callBtnBg} hover:scale-105 active:scale-95`}
                       >
                         <Phone size={14} className="fill-white" />
@@ -707,15 +249,12 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
               </div>
             )}
           </div>
-          
         </div>
 
-        {/* Right Side: Detailed Profile Page (8/12 columns) */}
+        {/* Right Side: Lead Profile (8/12) */}
         <div className="col-span-8 flex flex-col min-h-0 bg-slate-50 rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-          {/* Single scrollable area — profile */}
           <div className="flex-1 overflow-y-auto">
-            {!selectedLeadId ? (
-              // Empty State
+            {!cockpit.selectedLeadId ? (
               <div className="min-h-full flex flex-col items-center justify-center p-12 text-center bg-gradient-to-br from-slate-50/40 to-indigo-50/10">
                 <div className="relative mb-6">
                   <div className="absolute inset-0 bg-indigo-400/5 blur-2xl rounded-full scale-150 animate-pulse" />
@@ -734,303 +273,19 @@ export default function CallerView({ callerId }: { callerId: string | null }) {
                   </div>
                   <div className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm text-left">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Today Callbacks</span>
-                    <span className="text-xl font-bold text-slate-800 mt-1 block">{todayCallbacks.length}</span>
+                    <span className="text-xl font-bold text-slate-800 mt-1 block">{cockpit.todayCallbacks.length}</span>
                   </div>
                 </div>
               </div>
             ) : (
-              <LeadDetailPanel
-              selectedLead={selectedLead!}
-              selectedLeadNotes={selectedLeadNotes}
-              selectedLeadMessages={selectedLeadMessages}
-              selectedLeadCallLogs={selectedLeadCallLogs}
-              selectedLeadBrief={selectedLeadBrief}
-              briefLoading={briefLoading}
-              generatePreCallBrief={generatePreCallBrief}
-              selectedLeadLoading={selectedLeadLoading}
-              activeProfileTab={activeProfileTab}
-              setActiveProfileTab={setActiveProfileTab}
-              activeCallCtx={activeCallCtx}
-              callStatus={callStatus}
-              callDuration={callDuration}
-              quickNoteTitle={quickNoteTitle}
-              setQuickNoteTitle={setQuickNoteTitle}
-              quickNoteContent={quickNoteContent}
-              setQuickNoteContent={setQuickNoteContent}
-              quickNoteSaving={quickNoteSaving}
-              saveQuickNote={saveQuickNote}
-              handleQuickOutcome={handleQuickOutcome}
-              quickNoteTags={quickNoteTags}
-              setQuickNoteTags={setQuickNoteTags}
-              quickNotePinned={quickNotePinned}
-              setQuickNotePinned={setQuickNotePinned}
-              showCallbackPicker={showCallbackPicker}
-              setShowCallbackPicker={setShowCallbackPicker}
-              callbackDate={callbackDate}
-              setCallbackDate={setCallbackDate}
-              callbackTime={callbackTime}
-              setCallbackTime={setCallbackTime}
-              confirmRelease={confirmRelease}
-              handleRelease={handleRelease}
-              dialWithGuard={dialWithGuard}
-              dialing={dialing}
-              telecallingConfig={telecallingConfig}
-              scriptExpanded={scriptExpanded}
-              setScriptExpanded={setScriptExpanded}
-              setHistoryLead={setHistoryLead}
-            />
+              <LeadDetailPanel {...cockpit.leadDetailProps} setHistoryLead={setHistoryLead} />
             )}
           </div>
         </div>
       </div>
 
-      {/* Notes History Modal */}
-      {historyLead && (
-        <NotesHistoryModal lead={historyLead} onClose={() => setHistoryLead(null)} />
-      )}
-
-      {/* Accidental-dial Guard countdown overlay */}
-      {dialCountdown !== null && dialTarget && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-3xl p-8 max-w-sm w-full mx-4 shadow-2xl border border-slate-200 text-center animate-in fade-in zoom-in-95">
-            <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
-              <Phone size={24} />
-            </div>
-            <h3 className="font-display text-lg font-bold text-slate-800">Calling in {dialCountdown}s...</h3>
-            <p className="font-body text-sm text-slate-500 mt-1.5">
-              Target: {"lead" in dialTarget ? (dialTarget.lead?.name || dialTarget.lead?.phone) : dialTarget.phone}
-            </p>
-            <button
-              onClick={() => {
-                setDialCountdown(null);
-                setDialTarget(null);
-              }}
-              className="mt-6 w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-label text-sm font-bold rounded-2xl transition-all border border-red-200"
-            >
-              Cancel Dial
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Mandatory Wrap-Up Form modal */}
-      {showWrapupModal && activeCallCtx && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl p-7 max-w-lg w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
-            <div className="text-center mb-6">
-              <span className="px-3 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full font-label text-[10px] font-black uppercase tracking-wider">
-                Call Completed
-              </span>
-              <h3 className="font-display text-xl font-bold text-slate-900 mt-2">
-                Mandatory Call Wrap-up
-              </h3>
-              <p className="font-body text-xs text-slate-400 mt-1">
-                Please log feedback for the call with <span className="font-semibold text-slate-700">{activeCallCtx.name || activeCallCtx.phone}</span>.
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="font-label text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block mb-2">
-                  Call Outcome / Disposition *
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setWrapupOutcome("converted")}
-                    className={`px-3 py-2.5 rounded-xl font-label text-xs font-bold border transition-all text-center ${
-                      wrapupOutcome === "converted"
-                        ? "bg-indigo-600 border-indigo-600 text-white"
-                        : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
-                    }`}
-                  >
-                    Converted
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setWrapupOutcome("in_progress")}
-                    className={`px-3 py-2.5 rounded-xl font-label text-xs font-bold border transition-all text-center ${
-                      wrapupOutcome === "in_progress"
-                        ? "bg-indigo-600 border-indigo-600 text-white"
-                        : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
-                    }`}
-                  >
-                    In Progress
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setWrapupOutcome("not_interested")}
-                    className={`px-3 py-2.5 rounded-xl font-label text-xs font-bold border transition-all text-center ${
-                      wrapupOutcome === "not_interested"
-                        ? "bg-indigo-600 border-indigo-600 text-white"
-                        : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
-                    }`}
-                  >
-                    Not Interested (Nurture)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setWrapupOutcome("no_answer")}
-                    className={`px-3 py-2.5 rounded-xl font-label text-xs font-bold border transition-all text-center ${
-                      wrapupOutcome === "no_answer"
-                        ? "bg-indigo-600 border-indigo-600 text-white"
-                        : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
-                    }`}
-                  >
-                    No Answer
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setWrapupOutcome("do_not_call")}
-                    className={`px-3 py-2.5 rounded-xl font-label text-xs font-bold border transition-all text-center ${
-                      wrapupOutcome === "do_not_call"
-                        ? "bg-red-600 border-red-600 text-white"
-                        : "bg-slate-50 hover:bg-red-50 text-red-700 border-red-200"
-                    }`}
-                  >
-                    Do Not Call
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setWrapupOutcome("do_not_contact")}
-                    className={`px-3 py-2.5 rounded-xl font-label text-xs font-bold border transition-all text-center ${
-                      wrapupOutcome === "do_not_contact"
-                        ? "bg-red-700 border-red-700 text-white"
-                        : "bg-slate-50 hover:bg-red-50 text-red-800 border-red-200"
-                    }`}
-                  >
-                    Do Not Contact at All
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="font-label text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block mb-1.5">
-                  Interaction Note / Comments
-                </label>
-                <textarea
-                  value={wrapupNotes}
-                  onChange={(e) => setWrapupNotes(e.target.value)}
-                  placeholder="Summarize customer feedback and key discussion points..."
-                  rows={4}
-                  className="w-full px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 font-body text-xs focus:outline-none focus:ring-2 focus:ring-indigo-600 resize-none shadow-inner"
-                />
-              </div>
-
-              <div>
-                <label className="font-label text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block mb-1.5">
-                  Tags
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {QUICK_NOTE_TAGS.map((tag) => {
-                    const selected = wrapupTags.includes(tag);
-                    return (
-                      <button
-                        key={tag}
-                        type="button"
-                        onClick={() => toggleWrapupTag(tag)}
-                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all ${
-                          selected
-                            ? "bg-indigo-600 border-indigo-600 text-white"
-                            : "bg-slate-50 border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600"
-                        }`}
-                      >
-                        {tag}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <label className="font-label text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block mb-1.5">
-                  How did this call go?
-                </label>
-                <div className="flex gap-1">
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => setWrapupQualityRating(wrapupQualityRating === n ? 0 : n)}
-                      className="p-1 transition-transform hover:scale-110"
-                    >
-                      <Star
-                        size={20}
-                        className={n <= wrapupQualityRating ? "fill-amber-400 text-amber-400" : "text-slate-300"}
-                      />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 flex gap-3">
-              <button
-                type="button"
-                onClick={handleWrapupSubmit}
-                disabled={wrapupSaving || !wrapupOutcome}
-                className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-label text-xs font-black shadow-md hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 transition-all flex items-center justify-center gap-1.5"
-              >
-                {wrapupSaving ? (
-                  <RefreshCw size={14} className="animate-spin" />
-                ) : (
-                  <Check size={14} />
-                )}
-                <span>Complete Wrap-up</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Blocking Pending-Wrapups list fullscreen overlay */}
-      {pendingWrapups.length > 0 && !showWrapupModal && (
-        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl p-8 max-w-2xl w-full max-h-[80vh] shadow-2xl flex flex-col border border-slate-200">
-            <div className="text-center mb-6 shrink-0">
-              <div className="w-12 h-12 bg-amber-50 border border-amber-200 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-3">
-                <AlertCircle size={24} />
-              </div>
-              <h2 className="font-display text-xl font-extrabold text-slate-900">
-                Action Required: Pending Call Wrap-ups
-              </h2>
-              <p className="font-body text-xs text-slate-400 mt-1.5">
-                You have {pendingWrapups.length} completed call(s) that require outcome feedback. Please submit feedback to unlock dashboard.
-              </p>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-3 mb-6 pr-1">
-              {pendingWrapups.map((log) => (
-                <div key={log.id} className="border border-slate-150 rounded-2xl p-4 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="font-body text-sm font-bold text-slate-800 truncate">
-                      {log.leads?.name || "Unnamed Lead"} ({formatPhone(log.leads?.phone || "")})
-                    </p>
-                    <p className="font-label text-xs text-slate-500 mt-1">
-                      Duration: {log.duration_seconds || 0}s · Completed {new Date(log.created_at).toLocaleString()}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setActiveCallCtx({
-                        leadId: log.lead_id,
-                        name: log.leads?.name || null,
-                        phone: log.leads?.phone || null,
-                        callLogId: log.id
-                      });
-                      setCallStatus("ended");
-                      setShowWrapupModal(true);
-                    }}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-label text-xs font-bold transition-all shadow-sm shrink-0"
-                  >
-                    Wrap Up
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      {historyLead && <NotesHistoryModal lead={historyLead} onClose={() => setHistoryLead(null)} />}
+      <CockpitModals cockpit={cockpit} />
     </div>
   );
 }

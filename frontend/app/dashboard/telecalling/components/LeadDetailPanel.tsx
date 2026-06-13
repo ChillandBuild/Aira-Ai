@@ -18,7 +18,7 @@ export const QUICK_NOTE_TAGS = [
 
 const CALLBACK_TAGS = new Set(["Meeting scheduled"]);
 
-interface LeadDetailPanelProps {
+export interface LeadDetailPanelProps {
   selectedLead: Lead;
   selectedLeadNotes: NotesResponse | null;
   selectedLeadMessages: Message[];
