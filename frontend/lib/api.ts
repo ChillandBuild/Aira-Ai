@@ -367,13 +367,13 @@ export interface TeamMember {
 
 export interface AttendanceDay {
   date: string;
-  status: "present" | "absent" | "future";
+  status: "present" | "absent" | "holiday" | "future";
 }
 
 export interface CallerAttendance {
   caller_id: string;
   days: AttendanceDay[];
-  today_status: "present" | "absent" | "future";
+  today_status: "present" | "absent" | "holiday" | "future";
 }
 
 export interface TeamAttendanceSummary {
@@ -385,7 +385,7 @@ export interface TeamAttendanceSummary {
 export interface TeamAttendanceGridData {
   callers: { caller_id: string; name: string }[];
   days: string[];
-  grid: Record<string, Record<string, "present" | "absent" | "future">>;
+  grid: Record<string, Record<string, "present" | "absent" | "holiday" | "future">>;
   summary: TeamAttendanceSummary;
 }
 
@@ -1270,10 +1270,15 @@ export const api = {
     },
     attendanceForCaller: (callerId: string, months: number = 4) =>
       apiFetch<{ data: CallerAttendance }>(`/api/v1/team/attendance/${callerId}?months=${months}`),
-    markAttendance: (callerId: string, date: string, status: "present" | "absent" | "holiday") =>
+    markAttendance: (callerId: string, date: string, status: "present" | "absent") =>
       apiFetch<{ data: AttendanceDay }>(`/api/v1/team/attendance/${callerId}`, {
         method: "POST",
         body: JSON.stringify({ date, status }),
+      }),
+    markHoliday: (date: string) =>
+      apiFetch<{ data: { date: string; status: string; caller_count: number } }>("/api/v1/team/attendance/holiday", {
+        method: "POST",
+        body: JSON.stringify({ date }),
       }),
   },
   todos: {

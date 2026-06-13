@@ -19,13 +19,15 @@ const TOTAL_SECONDS = (END_HOUR - START_HOUR) * 3600;
 export default function ShiftTimeline({ callerId, statsFrom, statsTo }: ShiftTimelineProps) {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(false);
+  const [from, setFrom] = useState(statsFrom);
+  const [to, setTo] = useState(statsTo);
 
   const load = useCallback(async () => {
     if (!callerId) return;
     setLoading(true);
     try {
-      let fromDate = new Date(statsFrom);
-      const toDate = new Date(statsTo);
+      let fromDate = new Date(from);
+      const toDate = new Date(to);
       const maxDays = 31;
       const dayMs = 24 * 60 * 60 * 1000;
       if ((toDate.getTime() - fromDate.getTime()) / dayMs > maxDays - 1) {
@@ -44,7 +46,7 @@ export default function ShiftTimeline({ callerId, statsFrom, statsTo }: ShiftTim
     } finally {
       setLoading(false);
     }
-  }, [callerId, statsFrom, statsTo]);
+  }, [callerId, from, to]);
 
   useEffect(() => {
     load();
@@ -75,6 +77,12 @@ export default function ShiftTimeline({ callerId, statsFrom, statsTo }: ShiftTim
         <div>
           <h2 className="font-display text-base font-bold text-tertiary">Shift Timeline Visualizer</h2>
           <p className="font-label text-xs text-on-surface-muted">Analyze live calling activity blocks, status transitions, and gaps.</p>
+        </div>
+        <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+          <span className="font-label text-[10px] text-slate-500 font-bold uppercase pl-1">Range:</span>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none" />
+          <span className="text-slate-400 text-xs">to</span>
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none" />
         </div>
       </div>
 

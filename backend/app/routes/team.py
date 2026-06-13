@@ -25,6 +25,10 @@ class AttendancePayload(BaseModel):
     status: str
 
 
+class MarkHolidayPayload(BaseModel):
+    date: str
+
+
 @router.get("/me")
 def get_me(ctx: dict = Depends(get_tenant_and_role)):
     db = get_supabase()
@@ -331,12 +335,72 @@ def get_caller_attendance(caller_id: str, months: int = 4, ctx: dict = Depends(g
     }
 
 
+@router.post("/attendance/holiday")
+def mark_holiday(payload: MarkHolidayPayload, ctx: dict = Depends(get_tenant_and_role)):
+    if ctx["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Only owners can mark holidays")
+    try:
+        date.fromisoformat(payload.date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date must be in YYYY-MM-DD format")
+
+    db = get_supabase()
+
+    members = (
+        db.table("tenant_users")
+        .select("user_id")
+        .eq("tenant_id", ctx["tenant_id"])
+        .execute()
+    )
+    user_ids = [m["user_id"] for m in (members.data or [])]
+    caller_ids: list[str] = []
+    if user_ids:
+        caller_rows = (
+            db.table("callers")
+            .select("id")
+            .in_("user_id", user_ids)
+            .eq("tenant_id", ctx["tenant_id"])
+            .execute()
+        )
+        caller_ids = [c["id"] for c in (caller_rows.data or [])]
+
+    if not caller_ids:
+        return {"data": {"date": payload.date, "status": "holiday", "caller_count": 0}}
+
+    existing = (
+        db.table("caller_attendance_overrides")
+        .select("id, caller_id")
+        .in_("caller_id", caller_ids)
+        .eq("date", payload.date)
+        .execute()
+    )
+    existing_by_caller = {r["caller_id"]: r["id"] for r in (existing.data or [])}
+
+    for cid in caller_ids:
+        row = {
+            "tenant_id": ctx["tenant_id"],
+            "caller_id": cid,
+            "date": payload.date,
+            "status": "holiday",
+            "marked_by": ctx["user_id"],
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+        existing_id = existing_by_caller.get(cid)
+        if existing_id:
+            db.table("caller_attendance_overrides").update(row).eq("id", existing_id).execute()
+        else:
+            db.table("caller_attendance_overrides").insert(row).execute()
+
+    logger.info(f"Marked holiday {payload.date} for {len(caller_ids)} callers in tenant {ctx['tenant_id']}")
+    return {"data": {"date": payload.date, "status": "holiday", "caller_count": len(caller_ids)}}
+
+
 @router.post("/attendance/{caller_id}")
 def mark_attendance(caller_id: str, payload: AttendancePayload, ctx: dict = Depends(get_tenant_and_role)):
     if ctx["role"] != "owner":
         raise HTTPException(status_code=403, detail="Only owners can mark attendance")
-    if payload.status not in ("present", "absent", "holiday"):
-        raise HTTPException(status_code=400, detail="status must be 'present', 'absent', or 'holiday'")
+    if payload.status not in ("present", "absent"):
+        raise HTTPException(status_code=400, detail="status must be 'present' or 'absent'")
     try:
         date.fromisoformat(payload.date)
     except ValueError:

@@ -2,6 +2,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { format, parseISO, startOfMonth } from "date-fns";
 import { Loader2, CalendarCheck, UserCheck, UserX, Percent, CheckCircle2, XCircle, Download, Sun } from "lucide-react";
+import { toast } from "sonner";
 import { api, TeamAttendanceGridData } from "@/lib/api";
 import { dotColorClass, WEEKDAY_LABELS, buildMiniMonths } from "./helpers";
 
@@ -24,6 +25,9 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
 
   const [markDate, setMarkDate] = useState(today);
   const [marking, setMarking] = useState(false);
+
+  const [holidayDate, setHolidayDate] = useState(today);
+  const [markingHoliday, setMarkingHoliday] = useState(false);
 
   const fetchGrid = useCallback(() => {
     setLoading(true);
@@ -102,7 +106,7 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
 
   const sixMonths = useMemo(() => buildMiniMonths(sixMonthDays, 6), [sixMonthDays]);
 
-  const handleMark = async (status: "present" | "absent" | "holiday") => {
+  const handleMark = async (status: "present" | "absent") => {
     if (!selectedCallerId || marking) return;
     setMarking(true);
     try {
@@ -112,6 +116,20 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
       // ignore
     } finally {
       setMarking(false);
+    }
+  };
+
+  const handleMarkHoliday = async () => {
+    if (markingHoliday) return;
+    setMarkingHoliday(true);
+    try {
+      const res = await api.team.markHoliday(holidayDate);
+      toast.success(`Marked ${holidayDate} as a holiday for all ${res.data.caller_count} telecallers`);
+      await Promise.all([fetchGrid(), fetchSixMonth()]);
+    } catch {
+      toast.error("Failed to mark holiday");
+    } finally {
+      setMarkingHoliday(false);
     }
   };
 
@@ -186,6 +204,25 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
             </button>
           </div>
 
+          <div className="flex items-center gap-1.5 bg-sky-50 p-1.5 rounded-xl border border-sky-200">
+            <span className="font-label text-[10px] text-sky-600 font-bold uppercase pl-1">Mark Holiday:</span>
+            <input
+              type="date"
+              value={holidayDate}
+              max={today}
+              onChange={(e) => setHolidayDate(e.target.value)}
+              className="px-1.5 py-0.5 rounded bg-white border border-sky-200 font-body text-xs text-slate-800 focus:outline-none"
+            />
+            <button
+              onClick={handleMarkHoliday}
+              disabled={markingHoliday}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-500 text-white rounded-lg hover:bg-sky-600 disabled:opacity-50 font-label text-xs font-semibold transition-colors"
+            >
+              {markingHoliday ? <Loader2 className="animate-spin" size={12} /> : <Sun size={12} />}
+              Whole Team
+            </button>
+          </div>
+
           {selectedCallerId && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 text-primary font-label text-[11px] font-bold">
               Showing: {selectedCallerName ?? "Telecaller"}
@@ -217,13 +254,6 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
             className="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 font-label text-[11px] font-bold disabled:opacity-50 transition-colors"
           >
             <XCircle size={12} /> Absent
-          </button>
-          <button
-            onClick={() => handleMark("holiday")}
-            disabled={marking}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 font-label text-[11px] font-bold disabled:opacity-50 transition-colors"
-          >
-            <Sun size={12} /> Holiday
           </button>
           {marking && <Loader2 className="animate-spin text-primary" size={12} />}
         </div>
