@@ -6,7 +6,7 @@ import {
   Users, Coffee, ChevronDown, Settings, Eye, X, Calendar, Copy, Tag, Target, StickyNote
 } from "lucide-react";
 import { api, Caller, Lead } from "@/lib/api";
-import { useAdminDashboard } from "@/hooks/useApi";
+import { useAdminDashboard, AdminDashboardData } from "@/hooks/useApi";
 import { formatPhone, timeAgo } from "@/lib/utils";
 import LiveNotesPane from "./components/live-notes-pane";
 import { useActiveCall } from "../contexts/ActiveCallContext";
@@ -27,9 +27,10 @@ function ScoreBar({ score }: { score: number }) {
   );
 }
 
-export default function AdminView() {
-  // Cached + auto-revalidating (focus/reconnect + 30s) admin dashboard data.
-  const { data: dashboard, mutate: refreshDashboard } = useAdminDashboard();
+export default function AdminView({ fallbackData }: { fallbackData?: AdminDashboardData }) {
+  // Cached + auto-revalidating (focus/reconnect + 30s) admin dashboard data,
+  // seeded from the server on first paint when available.
+  const { data: dashboard, mutate: refreshDashboard } = useAdminDashboard(fallbackData);
   const callers: Caller[] = dashboard?.callers ?? [];
   const topLeads: Lead[] = dashboard?.topLeads ?? [];
   const totalCallsToday = dashboard?.totalCallsToday ?? 0;

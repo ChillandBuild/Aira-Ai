@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { serverFetchJson } from "@/lib/serverApi";
-import { AnalyticsOverview } from "@/lib/api";
+import type { AnalyticsOverview } from "@/lib/api";
 import { DashboardClient } from "./DashboardClient";
 
 export default async function DashboardPage() {

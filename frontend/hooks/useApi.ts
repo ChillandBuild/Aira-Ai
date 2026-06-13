@@ -25,7 +25,7 @@ export interface AdminDashboardData {
   totalConversionsToday: number;
 }
 
-export function useAdminDashboard() {
+export function useAdminDashboard(fallbackData?: AdminDashboardData) {
   return useSWR<AdminDashboardData>(
     "telecalling/admin-dashboard",
     async () => {
@@ -41,6 +41,6 @@ export function useAdminDashboard() {
         totalConversionsToday: stats.conversions_today,
       };
     },
-    { ...defaultConfig, refreshInterval: 30_000 },
+    { ...defaultConfig, refreshInterval: 30_000, fallbackData },
   );
 }
