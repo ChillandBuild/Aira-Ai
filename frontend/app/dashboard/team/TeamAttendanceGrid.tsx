@@ -1,12 +1,19 @@
 "use client";
-import { useEffect, useState, useMemo } from "react";
-import { format, parseISO } from "date-fns";
-import { Loader2, CalendarCheck, UserCheck, UserX, Percent } from "lucide-react";
+import { useEffect, useState, useMemo, useCallback } from "react";
+import { format, parseISO, startOfMonth } from "date-fns";
+import { Loader2, CalendarCheck, UserCheck, UserX, Percent, CheckCircle2, XCircle } from "lucide-react";
 import { api, TeamAttendanceGridData } from "@/lib/api";
 import { dotColorClass, WEEKDAY_LABELS, buildMiniMonths } from "./helpers";
 
-export default function TeamAttendanceGrid() {
-  const [month, setMonth] = useState(() => format(new Date(), "yyyy-MM"));
+interface TeamAttendanceGridProps {
+  selectedCallerId?: string | null;
+  selectedCallerName?: string;
+}
+
+export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerName }: TeamAttendanceGridProps) {
+  const today = format(new Date(), "yyyy-MM-dd");
+  const [from, setFrom] = useState(() => format(startOfMonth(new Date()), "yyyy-MM-dd"));
+  const [to, setTo] = useState(() => format(new Date(), "yyyy-MM-dd"));
   const [callerFilter, setCallerFilter] = useState<string>("all");
   const [data, setData] = useState<TeamAttendanceGridData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -15,27 +22,61 @@ export default function TeamAttendanceGrid() {
   const [sixMonthLoading, setSixMonthLoading] = useState(true);
   const [sixMonthCallerName, setSixMonthCallerName] = useState<string>("");
 
+  const [markDate, setMarkDate] = useState(today);
+  const [marking, setMarking] = useState(false);
+
+  const fetchGrid = useCallback(() => {
+    setLoading(true);
+    return api.team.attendanceGrid({ from, to })
+      .then((res) => setData(res.data))
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, [from, to]);
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    api.team.attendanceGrid(month)
+    api.team.attendanceGrid({ from, to })
       .then((res) => { if (!cancelled) setData(res.data); })
       .catch(() => { if (!cancelled) setData(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [month]);
+  }, [from, to]);
 
   const rows = useMemo(() => {
     if (!data) return [];
+    if (selectedCallerId) return data.callers.filter((c) => c.caller_id === selectedCallerId);
     if (callerFilter === "all") return data.callers;
     return data.callers.filter((c) => c.caller_id === callerFilter);
-  }, [data, callerFilter]);
+  }, [data, callerFilter, selectedCallerId]);
 
   // Resolve which caller's 6-month calendar to show
   const sixMonthCallerId = useMemo(() => {
+    if (selectedCallerId) return selectedCallerId;
     if (callerFilter !== "all") return callerFilter;
     return data?.callers[0]?.caller_id ?? null;
-  }, [callerFilter, data]);
+  }, [callerFilter, data, selectedCallerId]);
+
+  const fetchSixMonth = useCallback(() => {
+    if (!sixMonthCallerId) {
+      setSixMonthDays([]);
+      setSixMonthLoading(false);
+      return Promise.resolve();
+    }
+    setSixMonthLoading(true);
+    return api.team.attendanceForCaller(sixMonthCallerId, 6)
+      .then((res) => {
+        setSixMonthDays(res.data.days);
+        if (selectedCallerId) {
+          setSixMonthCallerName(selectedCallerName ?? "");
+        } else {
+          const caller = data?.callers.find((c) => c.caller_id === sixMonthCallerId);
+          setSixMonthCallerName(caller?.name ?? "");
+        }
+      })
+      .catch(() => setSixMonthDays([]))
+      .finally(() => setSixMonthLoading(false));
+  }, [sixMonthCallerId, data, selectedCallerId, selectedCallerName]);
 
   useEffect(() => {
     if (!sixMonthCallerId) {
@@ -49,15 +90,32 @@ export default function TeamAttendanceGrid() {
       .then((res) => {
         if (cancelled) return;
         setSixMonthDays(res.data.days);
-        const caller = data?.callers.find((c) => c.caller_id === sixMonthCallerId);
-        setSixMonthCallerName(caller?.name ?? "");
+        if (selectedCallerId) {
+          setSixMonthCallerName(selectedCallerName ?? "");
+        } else {
+          const caller = data?.callers.find((c) => c.caller_id === sixMonthCallerId);
+          setSixMonthCallerName(caller?.name ?? "");
+        }
       })
       .catch(() => { if (!cancelled) setSixMonthDays([]); })
       .finally(() => { if (!cancelled) setSixMonthLoading(false); });
     return () => { cancelled = true; };
-  }, [sixMonthCallerId, data]);
+  }, [sixMonthCallerId, data, selectedCallerId, selectedCallerName]);
 
   const sixMonths = useMemo(() => buildMiniMonths(sixMonthDays, 6), [sixMonthDays]);
+
+  const handleMark = async (status: "present" | "absent") => {
+    if (!selectedCallerId || marking) return;
+    setMarking(true);
+    try {
+      await api.team.markAttendance(selectedCallerId, markDate, status);
+      await Promise.all([fetchGrid(), fetchSixMonth()]);
+    } catch {
+      // ignore
+    } finally {
+      setMarking(false);
+    }
+  };
 
   return (
     <div className="bg-surface rounded-card p-5 shadow-card ring-1 ring-[#c4c7c7]/15">
@@ -65,25 +123,73 @@ export default function TeamAttendanceGrid() {
         <h2 className="font-display text-sm font-bold text-tertiary flex items-center gap-2">
           <CalendarCheck size={16} className="text-primary" /> Team Attendance
         </h2>
-        <div className="flex items-center gap-2">
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="input h-9 text-xs w-auto"
-          />
-          <select
-            value={callerFilter}
-            onChange={(e) => setCallerFilter(e.target.value)}
-            className="input h-9 text-xs w-auto"
-          >
-            <option value="all">All Telecallers</option>
-            {(data?.callers ?? []).map((c) => (
-              <option key={c.caller_id} value={c.caller_id}>{c.name}</option>
-            ))}
-          </select>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
+            <span className="font-label text-[10px] text-slate-500 font-bold uppercase pl-1">Range:</span>
+            <input
+              type="date"
+              value={from}
+              max={to}
+              onChange={(e) => setFrom(e.target.value)}
+              className="px-2 py-1 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 h-9 focus:outline-none"
+            />
+            <span className="text-slate-400 text-xs">to</span>
+            <input
+              type="date"
+              value={to}
+              min={from}
+              max={today}
+              onChange={(e) => setTo(e.target.value)}
+              className="px-2 py-1 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 h-9 focus:outline-none"
+            />
+          </div>
+
+          {selectedCallerId ? (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 text-primary font-label text-[11px] font-bold">
+              Showing: {selectedCallerName ?? "Telecaller"}
+            </span>
+          ) : (
+            <select
+              value={callerFilter}
+              onChange={(e) => setCallerFilter(e.target.value)}
+              className="input h-9 text-xs w-auto"
+            >
+              <option value="all">All Telecallers</option>
+              {(data?.callers ?? []).map((c) => (
+                <option key={c.caller_id} value={c.caller_id}>{c.name}</option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
+
+      {selectedCallerId && (
+        <div className="flex items-center gap-2 mb-4 flex-wrap bg-surface-mid/10 border border-border-subtle rounded-xl px-3 py-2">
+          <span className="font-label text-[10px] text-ink-muted font-bold uppercase">Mark Attendance:</span>
+          <input
+            type="date"
+            value={markDate}
+            max={today}
+            onChange={(e) => setMarkDate(e.target.value)}
+            className="px-2 py-1 rounded bg-white border border-slate-200 font-body text-[11px] text-slate-800 h-7 focus:outline-none"
+          />
+          <button
+            onClick={() => handleMark("present")}
+            disabled={marking}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 font-label text-[11px] font-bold disabled:opacity-50 transition-colors"
+          >
+            <CheckCircle2 size={12} /> Present
+          </button>
+          <button
+            onClick={() => handleMark("absent")}
+            disabled={marking}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 font-label text-[11px] font-bold disabled:opacity-50 transition-colors"
+          >
+            <XCircle size={12} /> Absent
+          </button>
+          {marking && <Loader2 className="animate-spin text-primary" size={12} />}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
         <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
@@ -132,7 +238,7 @@ export default function TeamAttendanceGrid() {
                       <td key={d} className="px-0.5 py-1.5 text-center">
                         <span
                           title={`${c.name} — ${format(new Date(`${d}T00:00:00`), "MMM d")}: ${status}`}
-                          className={`inline-block w-2.5 h-2.5 rounded-full ${status === "present" ? "bg-emerald-500" : status === "absent" ? "bg-rose-400" : "bg-surface-mid/30"}`}
+                          className={`inline-block w-2.5 h-2.5 rounded-full ${dotColorClass(status)}`}
                         />
                       </td>
                     );
@@ -146,7 +252,7 @@ export default function TeamAttendanceGrid() {
 
       <div className="flex items-center gap-4 mt-4 pt-3 border-t border-border-subtle text-[10px] text-ink-muted font-body">
         <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Present</div>
-        <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-rose-400 inline-block" /> Absent</div>
+        <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Absent</div>
         <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-surface-mid/30 inline-block" /> Future</div>
       </div>
 
@@ -155,7 +261,7 @@ export default function TeamAttendanceGrid() {
         <div className="mt-5 pt-4 border-t border-border-subtle">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h3 className="font-display text-xs font-bold text-tertiary">6-Month Overview</h3>
-            {callerFilter === "all" && sixMonthCallerName && (
+            {!selectedCallerId && callerFilter === "all" && sixMonthCallerName && (
               <p className="text-[10px] text-ink-muted font-body">
                 Showing 6-month attendance for {sixMonthCallerName} — select a telecaller above to view another.
               </p>
@@ -168,21 +274,32 @@ export default function TeamAttendanceGrid() {
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               {sixMonths.map((m) => (
-                <div key={m.key} className="rounded-xl border border-border-subtle p-2">
-                  <div className="text-center text-[10px] font-label font-semibold text-ink-muted mb-1">{m.label}</div>
-                  <div className="grid grid-cols-7 gap-[2px] mb-1">
+                <div
+                  key={m.key}
+                  className="rounded-xl border border-border-subtle bg-surface p-1.5 sm:p-2 shadow-sm hover:shadow-md hover:border-primary/30 transition-all duration-150"
+                >
+                  <div className="text-center text-[10px] font-label font-bold text-tertiary mb-1.5 tracking-wide">{m.label}</div>
+                  <div className="grid grid-cols-7 gap-[1.5px] mb-1">
                     {WEEKDAY_LABELS.map((d, i) => (
-                      <div key={i} className="text-center text-[8px] text-ink-muted/60">{d}</div>
+                      <div key={i} className="text-center text-[7px] font-label font-semibold text-ink-muted/50 uppercase">{d}</div>
                     ))}
                   </div>
                   {m.weeks.map((week, wi) => (
-                    <div key={wi} className="grid grid-cols-7 gap-[2px] mb-[2px]">
+                    <div key={wi} className="grid grid-cols-7 gap-[1.5px] mb-[1.5px]">
                       {week.map((cell, di) => cell ? (
                         <span
                           key={cell.date}
                           title={`${format(parseISO(cell.date), "MMM d, yyyy")}: ${cell.status}`}
-                          className={`block w-full aspect-square rounded-sm ${dotColorClass(cell.status)}`}
-                        />
+                          className={`relative flex items-center justify-center w-full aspect-square rounded-[3px] ${dotColorClass(cell.status)}`}
+                        >
+                          <span
+                            className={`text-[7px] sm:text-[8px] leading-none font-semibold select-none ${
+                              cell.status === "present" || cell.status === "absent" ? "text-white" : "text-ink-muted/40"
+                            }`}
+                          >
+                            {format(parseISO(cell.date), "d")}
+                          </span>
+                        </span>
                       ) : (
                         <span key={`pad-${wi}-${di}`} className="block w-full aspect-square" />
                       ))}

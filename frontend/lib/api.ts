@@ -69,6 +69,7 @@ export interface Caller {
   status?: "active" | "break" | "logged_out";
   status_changed_at?: string;
   target?: number;
+  telecmi_agent_id?: string | null;
 }
 
 export interface CallerStats {
@@ -1241,9 +1242,13 @@ export const api = {
       }),
     remove: (userId: string) =>
       apiFetch<{ removed: boolean }>(`/api/v1/team/${userId}`, { method: "DELETE" }),
-    attendanceGrid: (month?: string) => {
-      const qs = month ? `?month=${month}` : "";
-      return apiFetch<{ data: TeamAttendanceGridData }>(`/api/v1/team/attendance${qs}`);
+    attendanceGrid: (params?: { month?: string; from?: string; to?: string }) => {
+      const qs = new URLSearchParams();
+      if (params?.month) qs.set("month", params.month);
+      if (params?.from) qs.set("from", params.from);
+      if (params?.to) qs.set("to", params.to);
+      const s = qs.toString();
+      return apiFetch<{ data: TeamAttendanceGridData }>(`/api/v1/team/attendance${s ? `?${s}` : ""}`);
     },
     attendanceForCaller: (callerId: string, months: number = 4) =>
       apiFetch<{ data: CallerAttendance }>(`/api/v1/team/attendance/${callerId}?months=${months}`),

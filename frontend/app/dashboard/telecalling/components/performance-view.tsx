@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import {
   Phone, TrendingUp, Users, Coffee, Clock, Eye, X, Check,
   Calendar, Download, ChevronUp, ChevronDown,
-  Loader2, Search, Award, BarChart2, ShieldAlert
+  Loader2, Search, Award, BarChart2, ShieldAlert, Trash2
 } from "lucide-react";
 import { api, Caller, CallLog, TimelineEvent, Lead, TelecallingAnalyticsExtended } from "@/lib/api";
 import TeamAttendanceGrid from "../../team/TeamAttendanceGrid";
@@ -18,7 +18,8 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
   const [stats, setStats] = useState<TelecallingAnalyticsExtended | null>(null);
   const [loadingStats, setLoadingStats] = useState(true);
   const [callersList, setCallersList] = useState<Caller[]>(callers);
-  
+  const [selectedCallerId, setSelectedCallerId] = useState<string | null>(null);
+
   // Daily Target inline editing state
   const [editingTarget, setEditingTarget] = useState<Record<string, number>>({});
   const [updatingTargetId, setUpdatingTargetId] = useState<string | null>(null);
@@ -146,6 +147,13 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
     loadTimelineEvents();
   }, [loadTimelineEvents]);
 
+  // Sync timeline dropdown to newly selected caller (without locking it)
+  useEffect(() => {
+    if (selectedCallerId) {
+      setSelectedCallerForTimeline(selectedCallerId);
+    }
+  }, [selectedCallerId]);
+
   // Fetch full details for the viewing lead modal
   useEffect(() => {
     if (!viewingLeadId) {
@@ -195,6 +203,22 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
       toast.error("Failed to update target");
     } finally {
       setUpdatingTargetId(null);
+    }
+  };
+
+  // Remove a caller
+  const handleRemoveCaller = async (callerId: string, callerName: string) => {
+    if (!confirm(`Remove ${callerName}?`)) return;
+    try {
+      await api.callers.remove(callerId);
+      toast.success(`${callerName} removed`);
+      await loadCallers();
+      if (selectedCallerId === callerId) {
+        setSelectedCallerId(null);
+      }
+    } catch (err) {
+      console.error("Failed to remove caller:", err);
+      toast.error("Failed to remove caller");
     }
   };
 
@@ -302,6 +326,11 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
     });
   };
 
+  // Selection derived state
+  const selectedCaller = callersList.find(c => c.id === selectedCallerId) ?? null;
+  const selectedCallerName = selectedCaller?.name;
+  const callerStats = stats?.per_caller?.find(p => p.caller_id === selectedCallerId);
+
   // Live Agent Status calculations
   const totalAgentsCount = callersList.length;
   const breakAgents = callersList.filter(c => c.status === "break");
@@ -366,15 +395,34 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
           {callersList.map(c => {
             const st = c.status || "active";
             const statusColor = st === "active" ? "text-emerald-700 bg-emerald-50 border-emerald-200" : st === "break" ? "text-amber-700 bg-amber-50 border-amber-200" : "text-slate-500 bg-slate-100 border-slate-200";
+            const isSelected = selectedCallerId === c.id;
             return (
-              <div key={c.id} className="flex items-center justify-between p-2.5 bg-surface-low rounded-xl border border-slate-100 text-xs">
-                <div className="truncate pr-2">
+              <div
+                key={c.id}
+                onClick={() => setSelectedCallerId(prev => prev === c.id ? null : c.id)}
+                className={`relative flex items-center justify-between p-2.5 bg-surface-low rounded-xl border text-xs cursor-pointer transition-all ${
+                  isSelected ? "ring-2 ring-primary border-primary/40 bg-primary/5" : "border-slate-100 hover:border-slate-200"
+                }`}
+              >
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemoveCaller(c.id, c.name);
+                  }}
+                  className="absolute top-1 right-1 p-1 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                  title={`Remove ${c.name}`}
+                >
+                  <Trash2 size={11} />
+                </button>
+                <div className="truncate pr-5">
                   <span className="font-bold text-slate-800">{c.name}</span>
                   {c.status_changed_at && (
                     <span className="block text-[10px] text-slate-400 font-medium">Since {timeAgo(c.status_changed_at)}</span>
                   )}
+                  <span className="block text-xs text-slate-500 mt-0.5">{c.phone || "—"}</span>
+                  <span className="block text-xs text-slate-500">{c.telecmi_agent_id || "—"}</span>
                 </div>
-                <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${statusColor}`}>
+                <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold shrink-0 ${statusColor}`}>
                   {st === "logged_out" ? "Offline" : st}
                 </span>
               </div>
@@ -384,19 +432,46 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
       </div>
 
       {/* 2. KPI Summary Grid */}
+      <div className="flex items-center gap-2 text-xs">
+        {selectedCallerId ? (
+          <>
+            <span className="font-label text-slate-500">
+              Showing: <span className="font-bold text-slate-800">{selectedCallerName}</span>
+            </span>
+            <button
+              onClick={() => setSelectedCallerId(null)}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-colors text-[10px] font-bold"
+            >
+              <X size={10} /> Clear
+            </button>
+          </>
+        ) : (
+          <span className="font-label text-slate-500">
+            Showing: <span className="font-bold text-slate-800">Team Overview</span>
+          </span>
+        )}
+      </div>
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <div className="bg-surface rounded-card p-4 shadow-card ring-1 ring-[#c4c7c7]/15">
           <div className="p-2 rounded-lg bg-indigo-50 w-fit mb-2 text-indigo-600"><Phone size={16} /></div>
           <span className="block text-2xl font-display font-black text-slate-800">
-            {loadingStats ? <Loader2 className="animate-spin text-slate-400" size={20} /> : (stats?.connect_rate ? `${Math.round(stats.connect_rate * 100)}%` : "0%")}
+            {loadingStats ? <Loader2 className="animate-spin text-slate-400" size={20} /> : (
+              selectedCallerId
+                ? (callerStats?.connect_rate ? `${Math.round(callerStats.connect_rate * 100)}%` : "0%")
+                : (stats?.connect_rate ? `${Math.round(stats.connect_rate * 100)}%` : "0%")
+            )}
           </span>
           <span className="text-slate-400 font-label text-[10px] uppercase font-bold tracking-wider mt-1 block">Connection Rate</span>
         </div>
-        
+
         <div className="bg-surface rounded-card p-4 shadow-card ring-1 ring-[#c4c7c7]/15">
           <div className="p-2 rounded-lg bg-sky-50 w-fit mb-2 text-sky-600"><Clock size={16} /></div>
           <span className="block text-2xl font-display font-black text-slate-800">
-            {loadingStats ? <Loader2 className="animate-spin text-slate-400" size={20} /> : (stats?.avg_talk_seconds ? `${Math.floor(stats.avg_talk_seconds / 60)}m ${stats.avg_talk_seconds % 60}s` : "0s")}
+            {loadingStats ? <Loader2 className="animate-spin text-slate-400" size={20} /> : (
+              selectedCallerId
+                ? (callerStats?.avg_talk_seconds ? `${Math.floor(callerStats.avg_talk_seconds / 60)}m ${callerStats.avg_talk_seconds % 60}s` : "0s")
+                : (stats?.avg_talk_seconds ? `${Math.floor(stats.avg_talk_seconds / 60)}m ${stats.avg_talk_seconds % 60}s` : "0s")
+            )}
           </span>
           <span className="text-slate-400 font-label text-[10px] uppercase font-bold tracking-wider mt-1 block">Avg Talk Time</span>
         </div>
@@ -406,11 +481,15 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
           <span className="block text-2xl font-display font-black text-slate-800">
             {loadingStats ? (
               <Loader2 className="animate-spin text-slate-400" size={20} />
+            ) : selectedCallerId ? (
+              callerStats?.idle_minutes_today ? `${Math.round(callerStats.idle_minutes_today)} min` : "0 min"
             ) : (
               stats?.idle_minutes_today ? `${Math.round(stats.idle_minutes_today)} min` : "0 min"
             )}
           </span>
-          <span className="text-slate-400 font-label text-[10px] uppercase font-bold tracking-wider mt-1 block">Total Team Idle</span>
+          <span className="text-slate-400 font-label text-[10px] uppercase font-bold tracking-wider mt-1 block">
+            {selectedCallerId ? "Idle Minutes" : "Total Team Idle"}
+          </span>
         </div>
 
         <div className="bg-surface rounded-card p-4 shadow-card ring-1 ring-[#c4c7c7]/15">
@@ -424,7 +503,11 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
         <div className="bg-surface rounded-card p-4 shadow-card ring-1 ring-[#c4c7c7]/15">
           <div className="p-2 rounded-lg bg-purple-50 w-fit mb-2 text-purple-600"><Award size={16} /></div>
           <span className="block text-2xl font-display font-black text-slate-800">
-            {loadingStats ? <Loader2 className="animate-spin text-slate-400" size={20} /> : (stats?.quality_avg ? `${stats.quality_avg.toFixed(1)}/10` : "\u2014")}
+            {loadingStats ? <Loader2 className="animate-spin text-slate-400" size={20} /> : (
+              selectedCallerId
+                ? (callerStats?.quality_avg ? `${callerStats.quality_avg.toFixed(1)}/10` : "\u2014")
+                : (stats?.quality_avg ? `${stats.quality_avg.toFixed(1)}/10` : "\u2014")
+            )}
           </span>
           <span className="text-slate-400 font-label text-[10px] uppercase font-bold tracking-wider mt-1 block">Quality Score</span>
         </div>
@@ -432,14 +515,16 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
         <div className="bg-surface rounded-card p-4 shadow-card ring-1 ring-[#c4c7c7]/15">
           <div className="p-2 rounded-lg bg-rose-50 w-fit mb-2 text-rose-600"><BarChart2 size={16} /></div>
           <span className="block text-2xl font-display font-black text-slate-800">
-            {loadingStats ? <Loader2 className="animate-spin text-slate-400" size={20} /> : (stats?.calls_today || 0)}
+            {loadingStats ? <Loader2 className="animate-spin text-slate-400" size={20} /> : (
+              selectedCallerId ? (callerStats?.calls_today ?? 0) : (stats?.calls_today || 0)
+            )}
           </span>
           <span className="text-slate-400 font-label text-[10px] uppercase font-bold tracking-wider mt-1 block">Total Calls Today</span>
         </div>
       </div>
 
       {/* 2b. Team Attendance */}
-      <TeamAttendanceGrid />
+      <TeamAttendanceGrid selectedCallerId={selectedCallerId} selectedCallerName={selectedCallerName} />
 
       {/* 3. Performance Table & Export */}
       <div className="bg-surface rounded-card p-6 shadow-card ring-1 ring-[#c4c7c7]/15">
@@ -522,7 +607,12 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
                   const isUpdating = updatingTargetId === row.caller_id;
 
                   return (
-                    <tr key={row.caller_id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                    <tr
+                      key={row.caller_id}
+                      className={`border-b border-slate-100 hover:bg-slate-50/50 transition-colors ${
+                        selectedCallerId === row.caller_id ? "bg-primary/5" : ""
+                      }`}
+                    >
                       <td className="py-3.5 px-4 font-bold text-slate-800">{row.name}</td>
                       <td className="py-3.5 px-4 text-slate-600 font-semibold">{row.calls_today}</td>
                       <td className="py-3.5 px-4 text-slate-600 font-semibold">

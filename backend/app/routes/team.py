@@ -1,7 +1,7 @@
 import logging
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr
 
 from app.db.supabase import get_supabase
@@ -181,26 +181,41 @@ def remove_member(user_id: str, ctx: dict = Depends(get_tenant_and_role)):
 
 
 @router.get("/attendance")
-def get_team_attendance(month: str | None = None, ctx: dict = Depends(get_tenant_and_role)):
+def get_team_attendance(
+    month: str | None = None,
+    from_date: str | None = Query(None, alias="from"),
+    to_date: str | None = Query(None, alias="to"),
+    ctx: dict = Depends(get_tenant_and_role),
+):
     if ctx["role"] != "owner":
         raise HTTPException(status_code=403, detail="Only owners can view attendance")
     db = get_supabase()
     today = datetime.utcnow().date()
 
-    if month:
+    if from_date and to_date:
         try:
-            year_str, mon_str = month.split("-")
-            month_start = date(int(year_str), int(mon_str), 1)
-        except (ValueError, TypeError):
-            raise HTTPException(status_code=400, detail="month must be in YYYY-MM format")
+            range_start = date.fromisoformat(from_date)
+            range_end = date.fromisoformat(to_date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="from/to must be in YYYY-MM-DD format")
+        if range_end < range_start:
+            range_start, range_end = range_end, range_start
+        month_start, month_end = range_start, range_end
     else:
-        month_start = today.replace(day=1)
+        if month:
+            try:
+                year_str, mon_str = month.split("-")
+                month_start = date(int(year_str), int(mon_str), 1)
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=400, detail="month must be in YYYY-MM format")
+        else:
+            month_start = today.replace(day=1)
 
-    if month_start.month == 12:
-        next_month = date(month_start.year + 1, 1, 1)
-    else:
-        next_month = date(month_start.year, month_start.month + 1, 1)
-    month_end = next_month - timedelta(days=1)
+        if month_start.month == 12:
+            next_month = date(month_start.year + 1, 1, 1)
+        else:
+            next_month = date(month_start.year, month_start.month + 1, 1)
+        month_end = next_month - timedelta(days=1)
 
     members = (
         db.table("tenant_users")
