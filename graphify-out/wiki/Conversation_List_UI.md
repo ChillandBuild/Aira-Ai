@@ -1,44 +1,47 @@
 # Conversation List UI
 
-> 14 nodes · cohesion 0.14
+> 17 nodes · cohesion 0.20
 
 ## Key Concepts
 
 - **conversations.py** (26 connections) — `backend/app/routes/conversations.py`
-- **formatIST()** (3 connections) — `frontend/lib/utils.ts`
-- **Props** (2 connections) — `frontend/components/conversation-list.tsx`
-- **AVATAR_COLORS** (1 connections) — `frontend/components/conversation-list.tsx`
-- **getAvatarColor()** (1 connections) — `frontend/components/conversation-list.tsx`
-- **getInitials()** (1 connections) — `frontend/components/conversation-list.tsx`
-- **ConversationLead** (1 connections) — `frontend/components/conversation-list.tsx`
-- **IgIcon()** (1 connections) — `frontend/components/conversation-list.tsx`
-- **TgIcon()** (1 connections) — `frontend/components/conversation-list.tsx`
-- **FbIcon()** (1 connections) — `frontend/components/conversation-list.tsx`
-- **PlatformFilter** (1 connections) — `frontend/components/conversation-list.tsx`
-- **PlatformIconProps** (1 connections) — `frontend/components/conversation-list.tsx`
-- **PLATFORMS** (1 connections) — `frontend/components/conversation-list.tsx`
-- **SEGMENTS** (1 connections) — `frontend/components/conversation-list.tsx`
+- **conversation-list.tsx** (23 connections) — `frontend/components/conversation-list.tsx`
+- **list_conversations()** (4 connections) — `backend/app/routes/conversations.py`
+- **Props** (3 connections) — `frontend/components/conversation-list.tsx`
+- **AVATAR_COLORS** (2 connections) — `frontend/components/conversation-list.tsx`
+- **getAvatarColor()** (2 connections) — `frontend/components/conversation-list.tsx`
+- **getInitials()** (2 connections) — `frontend/components/conversation-list.tsx`
+- **ConversationLead** (2 connections) — `frontend/components/conversation-list.tsx`
+- **IgIcon()** (2 connections) — `frontend/components/conversation-list.tsx`
+- **TgIcon()** (2 connections) — `frontend/components/conversation-list.tsx`
+- **FbIcon()** (2 connections) — `frontend/components/conversation-list.tsx`
+- **PlatformFilter** (2 connections) — `frontend/components/conversation-list.tsx`
+- **PlatformIconProps** (2 connections) — `frontend/components/conversation-list.tsx`
+- **PLATFORMS** (2 connections) — `frontend/components/conversation-list.tsx`
+- **SEGMENTS** (2 connections) — `frontend/components/conversation-list.tsx`
+- **int** (1 connections) — `backend/app/routes/conversations.py`
+- **str** (1 connections) — `backend/app/routes/conversations.py`
 
 ## Relationships
 
-- [[Notes Page]] (7 shared connections)
-- [[Upload Page]] (3 shared connections)
+- [[API Client (frontend)]] (11 shared connections)
+- [[Inboundleadsclient (frontend)]] (5 shared connections)
+- [[Conversations Page]] (3 shared connections)
 - [[Pydantic Schemas]] (2 shared connections)
+- [[Api (frontend)]] (2 shared connections)
 - [[App Entry & Schedulers]] (1 shared connections)
-- [[Lead Details Panel]] (1 shared connections)
-- [[API Client (frontend)]] (1 shared connections)
-- [[Leads API]] (1 shared connections)
+- [[Knowledge Page]] (1 shared connections)
+- [[Callers CRUD & Coaching]] (1 shared connections)
 
 ## Source Files
 
 - `backend/app/routes/conversations.py`
 - `frontend/components/conversation-list.tsx`
-- `frontend/lib/utils.ts`
 
 ## Audit Trail
 
-- EXTRACTED: 42 (100%)
-- INFERRED: 0 (0%)
+- EXTRACTED: 79 (99%)
+- INFERRED: 1 (1%)
 - AMBIGUOUS: 0 (0%)
 
 ---

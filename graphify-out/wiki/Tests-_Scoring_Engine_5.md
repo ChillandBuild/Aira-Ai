@@ -1,15 +1,16 @@
 # Tests: Scoring Engine
 
-> 9 nodes · cohesion 0.36
+> 10 nodes · cohesion 0.33
 
 ## Key Concepts
 
-- **TestCompositeScoreLogic** (9 connections) — `backend/tests/test_scoring_engine.py`
-- **._composite()** (6 connections) — `backend/tests/test_scoring_engine.py`
+- **TestCompositeScoreLogic** (10 connections) — `backend/tests/test_scoring_engine.py`
+- **._composite()** (7 connections) — `backend/tests/test_scoring_engine.py`
 - **.test_hot_lead_ok_message_stays_high()** (2 connections) — `backend/tests/test_scoring_engine.py`
 - **.test_hot_lead_does_not_drop_on_ok()** (2 connections) — `backend/tests/test_scoring_engine.py`
 - **.test_booking_keyword_pushes_above_threshold()** (2 connections) — `backend/tests/test_scoring_engine.py`
 - **.test_engagement_decay_drifts_hot_lead()** (2 connections) — `backend/tests/test_scoring_engine.py`
+- **.test_score_clamped_at_10()** (2 connections) — `backend/tests/test_scoring_engine.py`
 - **.test_score_clamped_at_1()** (2 connections) — `backend/tests/test_scoring_engine.py`
 - **.test_rejection_overrides_everything()** (2 connections) — `backend/tests/test_scoring_engine.py`
 - **Verify composite arithmetic stays correct and clamped.** (1 connections) — `backend/tests/test_scoring_engine.py`
@@ -24,8 +25,8 @@
 
 ## Audit Trail
 
-- EXTRACTED: 27 (96%)
-- INFERRED: 1 (4%)
+- EXTRACTED: 31 (97%)
+- INFERRED: 1 (3%)
 - AMBIGUOUS: 0 (0%)
 
 ---

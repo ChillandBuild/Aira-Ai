@@ -1,46 +1,50 @@
 # Authrolecontext (frontend)
 
-> 23 nodes · cohesion 0.13
+> 36 nodes · cohesion 0.10
 
 ## Key Concepts
 
-- **AuthRoleContext.tsx** (26 connections) — `frontend/app/dashboard/contexts/AuthRoleContext.tsx`
+- **AuthRoleContext.tsx** (35 connections) — `frontend/app/dashboard/contexts/AuthRoleContext.tsx`
+- **ClientLayout.tsx** (19 connections) — `frontend/app/dashboard/ClientLayout.tsx`
 - **sidebar.tsx** (17 connections) — `frontend/components/sidebar.tsx`
-- **ClientLayout.tsx** (12 connections) — `frontend/app/dashboard/ClientLayout.tsx`
-- **createClient()** (10 connections) — `frontend/lib/supabase/client.ts`
-- **client.ts** (6 connections) — `frontend/lib/supabase/client.ts`
-- **SessionTracker.tsx** (5 connections) — `frontend/components/SessionTracker.tsx`
+- **createClient()** (12 connections) — `frontend/lib/supabase/client.ts`
+- **useLogout.ts** (9 connections) — `frontend/hooks/useLogout.ts`
+- **CalendarPanel.tsx** (8 connections) — `frontend/components/CalendarPanel.tsx`
+- **ProfileMenu.tsx** (8 connections) — `frontend/components/ProfileMenu.tsx`
+- **client.ts** (8 connections) — `frontend/lib/supabase/client.ts`
+- **AppHeader.tsx** (6 connections) — `frontend/components/AppHeader.tsx`
+- **SessionTracker.tsx** (6 connections) — `frontend/components/SessionTracker.tsx`
+- **useLogout()** (5 connections) — `frontend/hooks/useLogout.ts`
+- **clearRoleCache()** (4 connections) — `frontend/app/dashboard/contexts/AuthRoleContext.tsx`
 - **page.tsx** (4 connections) — `frontend/app/operator/login/page.tsx`
+- **ProfileMenu()** (4 connections) — `frontend/components/ProfileMenu.tsx`
+- **Sidebar()** (4 connections) — `frontend/components/sidebar.tsx`
 - **LogoutButton()** (4 connections) — `frontend/components/sidebar.tsx`
 - **page.tsx** (3 connections) — `frontend/app/(auth)/login/page.tsx`
-- **clearRoleCache()** (3 connections) — `frontend/app/dashboard/contexts/AuthRoleContext.tsx`
+- **CalendarPanel()** (3 connections) — `frontend/components/CalendarPanel.tsx`
+- **SessionTracker()** (3 connections) — `frontend/components/SessionTracker.tsx`
 - **ActiveCallProvider()** (2 connections) — `frontend/app/dashboard/contexts/ActiveCallContext.tsx`
 - **AuthRoleProvider()** (2 connections) — `frontend/app/dashboard/contexts/AuthRoleContext.tsx`
+- **AppHeader()** (2 connections) — `frontend/components/AppHeader.tsx`
 - **logo.tsx** (2 connections) — `frontend/components/logo.tsx`
 - **AiraLogo()** (2 connections) — `frontend/components/logo.tsx`
-- **LoginPage()** (1 connections) — `frontend/app/(auth)/login/page.tsx`
-- **RoleCtx** (1 connections) — `frontend/app/dashboard/contexts/AuthRoleContext.tsx`
-- **CacheEntry** (1 connections) — `frontend/app/dashboard/contexts/AuthRoleContext.tsx`
-- **readCache()** (1 connections) — `frontend/app/dashboard/contexts/AuthRoleContext.tsx`
-- **writeCache()** (1 connections) — `frontend/app/dashboard/contexts/AuthRoleContext.tsx`
-- **OperatorLoginPage()** (1 connections) — `frontend/app/operator/login/page.tsx`
-- **NavItem** (1 connections) — `frontend/components/sidebar.tsx`
-- **CHANNELS_ITEMS** (1 connections) — `frontend/components/sidebar.tsx`
-- **TELECALLING_ITEMS** (1 connections) — `frontend/components/sidebar.tsx`
+- **Todo** (2 connections) — `frontend/lib/api.ts`
+- *... and 11 more nodes in this community*
 
 ## Relationships
 
-- [[Notes Page]] (10 shared connections)
-- [[API Client (frontend)]] (9 shared connections)
-- [[Upload Page]] (8 shared connections)
-- [[Settings Page]] (4 shared connections)
-- [[Operator Console & Audit]] (2 shared connections)
-- [[Route (frontend)]] (1 shared connections)
-- [[Bot Flow UI: Blockmeta]] (1 shared connections)
+- [[Knowledge Page]] (16 shared connections)
+- [[Api (frontend)]] (12 shared connections)
+- [[Notes Api (frontend)]] (9 shared connections)
+- [[Winnerbanner (frontend)]] (7 shared connections)
+- [[API Client (frontend)]] (4 shared connections)
+- [[Inboundleadsclient (frontend)]] (4 shared connections)
+- [[Conversations Page]] (3 shared connections)
+- [[App Settings API]] (2 shared connections)
+- [[Inboxconfigpanel (frontend)]] (1 shared connections)
 - [[Numbers Page]] (1 shared connections)
 - [[Outbound Leads Page]] (1 shared connections)
-- [[Assignment Log & Leaderboard]] (1 shared connections)
-- [[Reengagement API]] (1 shared connections)
+- [[Settings Page]] (1 shared connections)
 
 ## Source Files
 
@@ -49,14 +53,19 @@
 - `frontend/app/dashboard/contexts/ActiveCallContext.tsx`
 - `frontend/app/dashboard/contexts/AuthRoleContext.tsx`
 - `frontend/app/operator/login/page.tsx`
+- `frontend/components/AppHeader.tsx`
+- `frontend/components/CalendarPanel.tsx`
+- `frontend/components/ProfileMenu.tsx`
 - `frontend/components/SessionTracker.tsx`
 - `frontend/components/logo.tsx`
 - `frontend/components/sidebar.tsx`
+- `frontend/hooks/useLogout.ts`
+- `frontend/lib/api.ts`
 - `frontend/lib/supabase/client.ts`
 
 ## Audit Trail
 
-- EXTRACTED: 106 (99%)
+- EXTRACTED: 184 (99%)
 - INFERRED: 1 (1%)
 - AMBIGUOUS: 0 (0%)
 

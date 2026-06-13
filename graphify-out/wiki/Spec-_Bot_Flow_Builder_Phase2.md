@@ -1,38 +1,38 @@
 # Spec: Bot Flow Builder Phase2
 
-> 14 nodes · cohesion 0.20
+> 17 nodes · cohesion 0.12
 
 ## Key Concepts
 
-- **Bot Flow Builder Phase 1 Design Spec (2026-05-31)** (20 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-design.md`
-- **Bot Flow Builder (Visual WhatsApp Flow Builder)** (4 connections) — `CLAUDE.md`
-- **Resumable Step-Pointer State Machine (automation_flow_runs)** (4 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
-- **Variable System ({{var}} Interpolation + Run Variable Bag)** (2 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
-- **SSRF Guard for http_api Block** (2 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
-- **Migration 073 (Bot Flow Builder — extend automations, node counters)** (2 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-design.md`
-- **DNS Rebinding Risk on http_api (Accepted Residual Risk)** (2 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
-- **automation_flow_runs Table (Durable Run State)** (2 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
-- **_next_step_id Pure Helper (Unit-Testable Tree Traversal)** (2 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
-- **Vertical Stacked-Card Builder UI (vs Node Canvas)** (1 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-design.md`
-- **Migration 074 (automation_flow_runs — resumable run-state)** (1 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
-- **Per-Node Analytics (sent/delivered/error counters on automation_steps)** (1 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-design.md`
-- **Interactive Block (N-way Button Branch = button id)** (1 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
-- **Map View (Read-Only Node Graph Toggle)** (1 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
+- **Bot Flow Builder — Phase 2 Design Spec** (9 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
+- **Architecture** (8 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
+- **2026-05-31-bot-flow-builder-phase2-design.md** (1 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
+- **Summary** (1 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
+- **Critical precondition: the current resume path is broken** (1 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
+- **New execution model: step-pointer state machine** (1 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
+- **New table — `automation_flow_runs` (migration 074)** (1 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
+- **Variable system** (1 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
+- **Pause-and-resume-on-reply — 4-channel interception** (1 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
+- **Power blocks (Milestone C)** (1 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
+- **Multi-way branching** (1 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
+- **Map view (parallelizable immediately)** (1 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
+- **Milestones (verified, sequential where dependent)** (1 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
+- **Runtime test plan (designed now, per advisor)** (1 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
+- **Risks** (1 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
+- **Known residual risks (post code+security review)** (1 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
+- **Out of scope (later follow-up)** (1 connections) — `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
 
 ## Relationships
 
-- [[Spec: Escalation Toggle Evaluation]] (4 shared connections)
-- [[Spec: Bot Flow Builder]] (2 shared connections)
+- No strong cross-community connections detected
 
 ## Source Files
 
-- `CLAUDE.md`
-- `docs/superpowers/specs/2026-05-31-bot-flow-builder-design.md`
 - `docs/superpowers/specs/2026-05-31-bot-flow-builder-phase2-design.md`
 
 ## Audit Trail
 
-- EXTRACTED: 45 (100%)
+- EXTRACTED: 32 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

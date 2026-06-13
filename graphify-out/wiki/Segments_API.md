@@ -8,14 +8,14 @@
 - **upsert_template()** (6 connections) — `backend/app/routes/segments.py`
 - **broadcast_to_segment()** (5 connections) — `backend/app/routes/segments.py`
 - **_ensure_templates()** (4 connections) — `backend/app/routes/segments.py`
-- **list_templates()** (4 connections) — `backend/app/routes/segments.py`
 - **str** (4 connections) — `backend/app/routes/segments.py`
+- **list_templates()** (4 connections) — `backend/app/routes/segments.py`
 - **TemplateUpdate** (3 connections) — `backend/app/routes/segments.py`
 
 ## Relationships
 
-- [[Leads API]] (3 shared connections)
-- [[Reengagement API]] (2 shared connections)
+- [[Callers CRUD & Coaching]] (3 shared connections)
+- [[Meta Cloud API Client]] (2 shared connections)
 - [[App Entry & Schedulers]] (1 shared connections)
 - [[Pydantic Schemas]] (1 shared connections)
 - [[Booking Flow]] (1 shared connections)

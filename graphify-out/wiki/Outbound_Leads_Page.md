@@ -1,26 +1,13 @@
 # Outbound Leads Page
 
-> 32 nodes · cohesion 0.07
+> 22 nodes · cohesion 0.09
 
 ## Key Concepts
 
-- **page.tsx** (28 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
-- **chat-thread.tsx** (19 connections) — `frontend/components/chat-thread.tsx`
-- **supabase** (5 connections) — `frontend/lib/supabase.ts`
-- **supabase.ts** (4 connections) — `frontend/lib/supabase.ts`
-- **MediaBubble()** (2 connections) — `frontend/components/chat-thread.tsx`
-- **Message** (2 connections) — `frontend/lib/api.ts`
+- **page.tsx** (32 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
 - **SegmentDropdown()** (2 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
 - **BroadcastSegmentDropdown()** (2 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
 - **ExportAllDropdown()** (2 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
-- **AVATAR_COLORS** (1 connections) — `frontend/components/chat-thread.tsx`
-- **getAvatarColor()** (1 connections) — `frontend/components/chat-thread.tsx`
-- **getInitials()** (1 connections) — `frontend/components/chat-thread.tsx`
-- **IgIcon()** (1 connections) — `frontend/components/chat-thread.tsx`
-- **TgIcon()** (1 connections) — `frontend/components/chat-thread.tsx`
-- **FbIcon()** (1 connections) — `frontend/components/chat-thread.tsx`
-- **MessageBubble** (1 connections) — `frontend/components/chat-thread.tsx`
-- **FilePreview()** (1 connections) — `frontend/components/chat-thread.tsx`
 - **ParsedData** (1 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
 - **OptInValidation** (1 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
 - **SendResult** (1 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
@@ -29,27 +16,34 @@
 - **TagStats** (1 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
 - **PRESET_COLORS** (1 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
 - **getTagStyle()** (1 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
-- *... and 7 more nodes in this community*
+- **ScheduleType** (1 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
+- **Button** (1 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
+- **Template** (1 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
+- **OPT_IN_OPTIONS** (1 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
+- **STEPS** (1 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
+- **StepIndicator()** (1 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
+- **SEGMENT_OPTIONS** (1 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
+- **RetryAttempt** (1 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
+- **RetryTimelineData** (1 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
+- **RetryTimeline()** (1 connections) — `frontend/app/dashboard/outbound-leads/page.tsx`
 
 ## Relationships
 
-- [[Upload Page]] (12 shared connections)
-- [[Notes Page]] (4 shared connections)
-- [[API Client (frontend)]] (3 shared connections)
-- [[Lead Details Panel]] (1 shared connections)
+- [[Knowledge Page]] (4 shared connections)
+- [[Inboundleadsclient (frontend)]] (4 shared connections)
+- [[Chat Thread Component]] (2 shared connections)
 - [[Authrolecontext (frontend)]] (1 shared connections)
-- [[Settings Page]] (1 shared connections)
+- [[Api (frontend)]] (1 shared connections)
+- [[Notes Api (frontend)]] (1 shared connections)
+- [[API Client (frontend)]] (1 shared connections)
 
 ## Source Files
 
 - `frontend/app/dashboard/outbound-leads/page.tsx`
-- `frontend/components/chat-thread.tsx`
-- `frontend/lib/api.ts`
-- `frontend/lib/supabase.ts`
 
 ## Audit Trail
 
-- EXTRACTED: 89 (100%)
+- EXTRACTED: 56 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

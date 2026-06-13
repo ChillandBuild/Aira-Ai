@@ -1,31 +1,31 @@
 # cn()
 
-> God node · 44 connections · `frontend/lib/utils.ts`
+> God node · 51 connections · `frontend/lib/utils.ts`
 
-**Community:** [[Upload Page]]
+**Community:** [[Inboundleadsclient (frontend)]]
 
 ## Connections by Relation
 
 ### calls
 - [[InboundLead]] `EXTRACTED`
+- [[ChatThread()]] `EXTRACTED`
+- [[LeadDetailsPanel()]] `EXTRACTED`
+- [[SegmentBadge()]] `EXTRACTED`
+- [[DashboardClient()]] `EXTRACTED`
+- [[InboundLeadsClient()]] `EXTRACTED`
 - [[KnowledgePage()]] `EXTRACTED`
 - [[NumbersPageContent()]] `EXTRACTED`
-- [[BroadcastTag]] `EXTRACTED`
-- [[Sidebar()]] `EXTRACTED`
 - [[OutboundLeadsPage()]] `EXTRACTED`
-- [[ChannelBadge()]] `EXTRACTED`
+- [[InboxRail()]] `EXTRACTED`
+- [[Sidebar()]] `EXTRACTED`
+- [[InboundLeadsPage()]] `EXTRACTED`
 - [[InboxPage()]] `EXTRACTED`
 - [[DashboardPage()]] `EXTRACTED`
-- [[UploadPage()]] `EXTRACTED`
+- [[CalendarPanel()]] `EXTRACTED`
+- [[ConversationList()]] `EXTRACTED`
 - [[ScoreEvent]] `EXTRACTED`
-- [[SegmentDropdown()]] `EXTRACTED`
-- [[ExportAllDropdown()]] `EXTRACTED`
+- [[ScoreEventCard()]] `EXTRACTED`
 - [[ChannelsHubPage()]] `EXTRACTED`
-- [[ScoreBar()]] `EXTRACTED`
-- [[MetaAdLeadsPage()]] `EXTRACTED`
-- [[SegmentDropdown()]] `EXTRACTED`
-- [[ExportAllDropdown()]] `EXTRACTED`
-- [[MediaBubble()]] `EXTRACTED`
 - [[ChannelBadge()]] `EXTRACTED`
 
 ### contains
@@ -33,20 +33,22 @@
 
 ### imports
 - [[page.tsx]] `EXTRACTED`
+- [[page.tsx]] `EXTRACTED`
 - [[conversations.py]] `EXTRACTED`
+- [[LeadsClient.tsx]] `EXTRACTED`
 - [[page.tsx]] `EXTRACTED`
 - [[page.tsx]] `EXTRACTED`
 - [[page.tsx]] `EXTRACTED`
-- [[page.tsx]] `EXTRACTED`
+- [[conversation-list.tsx]] `EXTRACTED`
 - [[lead-details-panel.tsx]] `EXTRACTED`
+- [[InboundLeadsClient.tsx]] `EXTRACTED`
 - [[chat-thread.tsx]] `EXTRACTED`
+- [[page.tsx]] `EXTRACTED`
+- [[page.tsx]] `EXTRACTED`
+- [[page.tsx]] `EXTRACTED`
 - [[sidebar.tsx]] `EXTRACTED`
-- [[page.tsx]] `EXTRACTED`
-- [[page.tsx]] `EXTRACTED`
-- [[page.tsx]] `EXTRACTED`
-- [[page.tsx]] `EXTRACTED`
-- [[page.tsx]] `EXTRACTED`
-- [[page.tsx]] `EXTRACTED`
+- [[DashboardClient.tsx]] `EXTRACTED`
+- [[inbox-rail.tsx]] `EXTRACTED`
 - [[segment-badge.tsx]] `EXTRACTED`
 - [[CalendarPanel.tsx]] `EXTRACTED`
 - [[stat-card.tsx]] `EXTRACTED`

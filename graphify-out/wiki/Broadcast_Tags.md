@@ -13,13 +13,13 @@
 - **TagCreate** (3 connections) — `backend/app/routes/tags.py`
 - **TagUpdate** (3 connections) — `backend/app/routes/tags.py`
 - **list_tags()** (3 connections) — `backend/app/routes/tags.py`
-- **Return per-tag stats: total_sent, hot, warm, cold counts.** (1 connections) — `backend/app/routes/tags.py`
 - **Per-tag stats: total_sent, hot, warm, cold, disqualified, opted_out, failed.** (1 connections) — `backend/app/routes/tags.py`
+- **Return per-tag stats: total_sent, hot, warm, cold counts.** (1 connections) — `backend/app/routes/tags.py`
 
 ## Relationships
 
-- [[Leads API]] (5 shared connections)
-- [[Reengagement API]] (3 shared connections)
+- [[Callers CRUD & Coaching]] (5 shared connections)
+- [[Meta Cloud API Client]] (3 shared connections)
 - [[Pydantic Schemas]] (2 shared connections)
 - [[App Entry & Schedulers]] (1 shared connections)
 
