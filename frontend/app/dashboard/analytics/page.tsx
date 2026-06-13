@@ -620,7 +620,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "channels", label: "Channels" },
   { id: "inbound", label: "Inbound" },
-  { id: "templates", label: "Outbound" },
+  { id: "templates", label: "Templates" },
 ];
 
 const RANGES: { id: DateRange; label: string }[] = [
