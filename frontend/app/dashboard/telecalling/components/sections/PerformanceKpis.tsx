@@ -76,7 +76,12 @@ export default function PerformanceKpis({ stats, callerStats, selectedCallerId, 
   const avgTalk = selectedCallerId ? (callerStats?.avg_talk_seconds ?? 0) : (stats?.avg_talk_seconds ?? 0);
   const idle = selectedCallerId ? (callerStats?.idle_minutes_today ?? 0) : (stats?.idle_minutes_today ?? 0);
   const conversions = stats?.conversions_today ?? stats?.outcome_breakdown?.converted ?? 0;
+  const convRate = selectedCallerId
+    ? (callerStats?.conversion_rate ?? 0)
+    : (callsVal > 0 ? conversions / callsVal : 0);
   const quality = selectedCallerId ? callerStats?.quality_avg : stats?.quality_avg;
+
+  const compConvRate = (m: { conversions: number; calls: number }) => (m.calls > 0 ? (m.conversions / m.calls) * 100 : 0);
 
   // Deltas only meaningful at team level (comparison is team-wide, no per-caller history).
   const callsDeltas: TileDeltas = {
@@ -99,11 +104,15 @@ export default function PerformanceKpis({ stats, callerStats, selectedCallerId, 
     yesterday: comp ? computeDelta(conversions, comp.yesterday.conversions) : null,
     avg7d: comp ? computeDelta(conversions, comp.avg_7d.conversions) : null,
   };
+  const convRateDeltas: TileDeltas = {
+    yesterday: comp ? computeDelta(convRate * 100, compConvRate(comp.yesterday)) : null,
+    avg7d: comp ? computeDelta(convRate * 100, compConvRate(comp.avg_7d)) : null,
+  };
 
   const teamOnly = isTeam ? undefined : { yesterday: null, avg7d: null };
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
       <Tile
         loading={loading}
         icon={<Phone size={16} />}
@@ -142,6 +151,16 @@ export default function PerformanceKpis({ stats, callerStats, selectedCallerId, 
         label="Conversions"
         tooltip="Conversions = calls with a 'converted' outcome today"
         deltas={isTeam ? convDeltas : teamOnly}
+      />
+      <Tile
+        loading={loading}
+        icon={<TrendingUp size={16} />}
+        iconClass="bg-teal-50 text-teal-600"
+        value={formatPct(convRate)}
+        label="Conversion Rate"
+        tooltip="Conversion Rate = converted ÷ calls"
+        deltas={isTeam ? convRateDeltas : teamOnly}
+        deltaOpts={{ unit: "pts" }}
       />
       <Tile
         loading={loading}
