@@ -29,6 +29,29 @@ class MarkHolidayPayload(BaseModel):
     date: str
 
 
+def _active_team_callers(db, tenant_id: str) -> list[dict]:
+    """Active, non-owner callers for a tenant (mirrors list_callers filtering)."""
+    owner = (
+        db.table("tenant_users")
+        .select("user_id")
+        .eq("tenant_id", tenant_id)
+        .eq("role", "owner")
+        .maybe_single()
+        .execute()
+    )
+    owner_user_id = (owner.data or {}).get("user_id")
+
+    query = (
+        db.table("callers")
+        .select("id, name")
+        .eq("tenant_id", tenant_id)
+        .eq("active", True)
+    )
+    if owner_user_id:
+        query = query.neq("user_id", owner_user_id)
+    return query.execute().data or []
+
+
 @router.get("/me")
 def get_me(ctx: dict = Depends(get_tenant_and_role)):
     db = get_supabase()
@@ -221,23 +244,7 @@ def get_team_attendance(
             next_month = date(month_start.year, month_start.month + 1, 1)
         month_end = next_month - timedelta(days=1)
 
-    members = (
-        db.table("tenant_users")
-        .select("user_id")
-        .eq("tenant_id", ctx["tenant_id"])
-        .execute()
-    )
-    user_ids = [m["user_id"] for m in (members.data or [])]
-    callers: list[dict] = []
-    if user_ids:
-        caller_rows = (
-            db.table("callers")
-            .select("id, name")
-            .in_("user_id", user_ids)
-            .eq("tenant_id", ctx["tenant_id"])
-            .execute()
-        )
-        callers = caller_rows.data or []
+    callers = _active_team_callers(db, ctx["tenant_id"])
     caller_ids = [c["id"] for c in callers]
 
     days = date_range(month_start, month_end)
@@ -302,14 +309,15 @@ def get_caller_attendance(caller_id: str, months: int = 4, ctx: dict = Depends(g
 
     today = datetime.utcnow().date()
     start = today - timedelta(days=30 * months)
-    days = date_range(start, today)
+    end = today + timedelta(days=14)
+    days = date_range(start, end)
 
     override_rows = (
         db.table("caller_attendance_overrides")
         .select("date, status")
         .eq("caller_id", caller_id)
         .gte("date", start.isoformat())
-        .lte("date", today.isoformat())
+        .lte("date", end.isoformat())
         .execute()
     )
     overrides = {r["date"]: r["status"] for r in (override_rows.data or [])}
@@ -348,23 +356,7 @@ def mark_holiday(payload: MarkHolidayPayload, ctx: dict = Depends(get_tenant_and
 
     db = get_supabase()
 
-    members = (
-        db.table("tenant_users")
-        .select("user_id")
-        .eq("tenant_id", ctx["tenant_id"])
-        .execute()
-    )
-    user_ids = [m["user_id"] for m in (members.data or [])]
-    caller_ids: list[str] = []
-    if user_ids:
-        caller_rows = (
-            db.table("callers")
-            .select("id")
-            .in_("user_id", user_ids)
-            .eq("tenant_id", ctx["tenant_id"])
-            .execute()
-        )
-        caller_ids = [c["id"] for c in (caller_rows.data or [])]
+    caller_ids = [c["id"] for c in _active_team_callers(db, ctx["tenant_id"])]
 
     if not caller_ids:
         return {"data": {"date": payload.date, "status": "holiday", "caller_count": 0}}

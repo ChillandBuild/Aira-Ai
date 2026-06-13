@@ -126,7 +126,11 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
     try {
       const res = await api.team.markHoliday(holidayDate);
       toast.success(`Marked ${holidayDate} as a holiday for all ${res.data.caller_count} telecallers`);
-      await Promise.all([fetchGrid(), fetchSixMonth()]);
+      if (holidayDate > to) {
+        setTo(holidayDate);
+      } else {
+        await Promise.all([fetchGrid(), fetchSixMonth()]);
+      }
     } catch {
       toast.error("Failed to mark holiday");
     } finally {
@@ -192,7 +196,7 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
               type="date"
               value={to}
               min={from}
-              max={today}
+              max={maxHolidayDate}
               onChange={(e) => setTo(e.target.value)}
               className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
             />
