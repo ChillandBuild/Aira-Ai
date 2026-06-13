@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { format, parseISO, subMonths, startOfMonth } from "date-fns";
+import { format, parseISO, subMonths } from "date-fns";
 import { Loader2, CalendarCheck, UserCheck, UserX, Percent, Download } from "lucide-react";
 import { api, AttendanceDay } from "@/lib/api";
 import { WEEKDAY_LABELS, buildMiniMonths } from "./helpers";
@@ -18,11 +18,7 @@ export default function AttendanceMini({ callerId, readOnly = false }: Attendanc
   const [saving, setSaving] = useState<"present" | "absent" | null>(null);
 
   // Date filters states
-  const [fromFilter, setFromFilter] = useState(() =>
-    readOnly
-      ? format(startOfMonth(new Date()), "yyyy-MM-dd")
-      : format(subMonths(new Date(), 5), "yyyy-MM-dd")
-  );
+  const [fromFilter, setFromFilter] = useState(() => format(subMonths(new Date(), 5), "yyyy-MM-dd"));
   const [toFilter, setToFilter] = useState(today);
 
   const load = useCallback(async () => {
@@ -108,16 +104,12 @@ export default function AttendanceMini({ callerId, readOnly = false }: Attendanc
   }
 
   return (
-    <div className={`bg-surface rounded-card border border-border-subtle shadow-card ${
-      readOnly ? "p-4 max-w-xl mx-auto" : "p-6"
-    }`}>
+    <div className="bg-surface rounded-card border border-border-subtle shadow-card p-6">
       {/* Header with Title and Filters */}
-      <div className={`flex items-center justify-between flex-wrap gap-4 border-b border-border-subtle pb-4 ${
-        readOnly ? "mb-4" : "mb-5"
-      }`}>
+      <div className="flex items-center justify-between flex-wrap gap-4 border-b border-border-subtle pb-4 mb-5">
         <div className="flex items-center gap-2">
-          <CalendarCheck size={readOnly ? 16 : 18} className="text-primary" />
-          <h3 className={`font-display font-bold text-tertiary ${readOnly ? "text-xs" : "text-sm"}`}>Attendance Log</h3>
+          <CalendarCheck size={18} className="text-primary" />
+          <h3 className="font-display font-bold text-tertiary text-sm">Attendance Log</h3>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -153,15 +145,13 @@ export default function AttendanceMini({ callerId, readOnly = false }: Attendanc
       </div>
 
       {/* KPI Stats Cards (Horizontal, Compact, and Beautiful) */}
-      <div className={`grid grid-cols-3 gap-3 ${readOnly ? "mb-4" : "mb-5"}`}>
-        <div className={`bg-emerald-55/40 rounded-xl border border-emerald-100 flex items-center shadow-sm hover:shadow transition-shadow ${
-          readOnly ? "p-2.5 gap-2" : "p-3 gap-3"
-        }`}>
-          <div className={`rounded-lg bg-emerald-100 text-emerald-600 shrink-0 ${readOnly ? "p-1.5" : "p-2"}`}>
-            <UserCheck size={readOnly ? 12 : 14} />
+      <div className="grid grid-cols-3 gap-3 mb-5">
+        <div className="bg-emerald-55/40 rounded-xl border border-emerald-100 flex items-center shadow-sm hover:shadow transition-shadow p-3 gap-3">
+          <div className="rounded-lg bg-emerald-100 text-emerald-600 shrink-0 p-2">
+            <UserCheck size={14} />
           </div>
           <div>
-            <span className={`block font-display font-black text-slate-850 leading-none ${readOnly ? "text-sm" : "text-lg"}`}>
+            <span className="block font-display font-black text-slate-850 leading-none text-lg">
               {presentCount}
             </span>
             <span className="text-emerald-700 font-label text-[8px] uppercase font-bold tracking-wider mt-0.5 block">
@@ -170,14 +160,12 @@ export default function AttendanceMini({ callerId, readOnly = false }: Attendanc
           </div>
         </div>
 
-        <div className={`bg-rose-55/40 rounded-xl border border-rose-100 flex items-center shadow-sm hover:shadow transition-shadow ${
-          readOnly ? "p-2.5 gap-2" : "p-3 gap-3"
-        }`}>
-          <div className={`rounded-lg bg-rose-100 text-rose-600 shrink-0 ${readOnly ? "p-1.5" : "p-2"}`}>
-            <UserX size={readOnly ? 12 : 14} />
+        <div className="bg-rose-55/40 rounded-xl border border-rose-100 flex items-center shadow-sm hover:shadow transition-shadow p-3 gap-3">
+          <div className="rounded-lg bg-rose-100 text-rose-600 shrink-0 p-2">
+            <UserX size={14} />
           </div>
           <div>
-            <span className={`block font-display font-black text-slate-855 leading-none ${readOnly ? "text-sm" : "text-lg"}`}>
+            <span className="block font-display font-black text-slate-855 leading-none text-lg">
               {absentCount}
             </span>
             <span className="text-rose-700 font-label text-[8px] uppercase font-bold tracking-wider mt-0.5 block">
@@ -186,14 +174,12 @@ export default function AttendanceMini({ callerId, readOnly = false }: Attendanc
           </div>
         </div>
 
-        <div className={`bg-indigo-55/40 rounded-xl border border-indigo-100 flex items-center shadow-sm hover:shadow transition-shadow ${
-          readOnly ? "p-2.5 gap-2" : "p-3 gap-3"
-        }`}>
-          <div className={`rounded-lg bg-indigo-100 text-indigo-600 shrink-0 ${readOnly ? "p-1.5" : "p-2"}`}>
-            <Percent size={readOnly ? 12 : 14} />
+        <div className="bg-indigo-55/40 rounded-xl border border-indigo-100 flex items-center shadow-sm hover:shadow transition-shadow p-3 gap-3">
+          <div className="rounded-lg bg-indigo-100 text-indigo-600 shrink-0 p-2">
+            <Percent size={14} />
           </div>
           <div>
-            <span className={`block font-display font-black text-slate-860 leading-none ${readOnly ? "text-sm" : "text-lg"}`}>
+            <span className="block font-display font-black text-slate-860 leading-none text-lg">
               {rate}%
             </span>
             <span className="text-indigo-700 font-label text-[8px] uppercase font-bold tracking-wider mt-0.5 block">
@@ -245,23 +231,24 @@ export default function AttendanceMini({ callerId, readOnly = false }: Attendanc
       {months.length === 0 ? (
         <div className="text-center py-8 text-xs text-ink-muted font-body">No attendance records in this range.</div>
       ) : (
-        <div className={`grid gap-4 ${
-          readOnly ? "grid-cols-1 max-w-sm mx-auto" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
-        }`}>
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
           {months.map((m) => (
-            <div key={m.key} className="rounded-2xl border border-border-subtle/80 bg-surface p-3 shadow-sm hover:shadow-md transition-shadow">
-              <div className="text-center text-[11px] font-label font-bold text-tertiary mb-2.5 tracking-wide bg-slate-50 py-1 rounded-lg border border-slate-100">
+            <div
+              key={m.key}
+              className="rounded-xl border border-border-subtle/80 bg-surface p-1.5 shadow-sm hover:shadow-md hover:border-primary/20 transition-all duration-150 max-w-[170px] w-full mx-auto"
+            >
+              <div className="text-center text-[9.5px] font-label font-bold text-tertiary mb-1.5 tracking-wide bg-slate-50 py-0.5 rounded-md border border-slate-100">
                 {m.label}
               </div>
-              <div className="grid grid-cols-7 gap-1.5 mb-1.5">
+              <div className="grid grid-cols-7 gap-[1px] mb-1">
                 {WEEKDAY_LABELS.map((d, i) => (
-                  <div key={i} className="text-center text-[8px] font-semibold text-ink-muted/50 uppercase">
+                  <div key={i} className="text-center text-[6.5px] font-label font-semibold text-ink-muted/50 uppercase">
                     {d}
                   </div>
                 ))}
               </div>
               {m.weeks.map((week, wi) => (
-                <div key={wi} className="grid grid-cols-7 gap-1.5 mb-1.5">
+                <div key={wi} className="grid grid-cols-7 gap-[1px] mb-[1px]">
                   {week.map((cell, di) => {
                     if (!cell) {
                       return <span key={`pad-${wi}-${di}`} className="block w-full aspect-square" />;
@@ -272,26 +259,26 @@ export default function AttendanceMini({ callerId, readOnly = false }: Attendanc
 
                     if (cell.status === "present") {
                       cellClass =
-                        "bg-gradient-to-br from-emerald-400 to-emerald-500 border border-emerald-500/20 shadow-[0_1px_2.5px_rgba(16,185,129,0.2)] hover:from-emerald-500 hover:to-emerald-600 hover:scale-105 transition-all cursor-pointer";
+                        "bg-gradient-to-br from-emerald-400 to-emerald-500 border border-emerald-500/20 shadow-[0_1px_2px_rgba(16,185,129,0.15)] hover:from-emerald-500 hover:to-emerald-600 hover:scale-105 transition-all cursor-pointer";
                       textClass = "text-white font-bold";
                     } else if (cell.status === "absent") {
                       cellClass =
-                        "bg-gradient-to-br from-rose-400 to-rose-500 border border-rose-500/20 shadow-[0_1px_2.5px_rgba(244,63,94,0.2)] hover:from-rose-500 hover:to-rose-600 hover:scale-105 transition-all cursor-pointer";
+                        "bg-gradient-to-br from-rose-400 to-rose-500 border border-rose-500/20 shadow-[0_1px_2px_rgba(244,63,94,0.15)] hover:from-rose-500 hover:to-rose-600 hover:scale-105 transition-all cursor-pointer";
                       textClass = "text-white font-bold";
                     } else if (cell.status === "holiday") {
                       cellClass =
-                        "bg-gradient-to-br from-sky-400 to-sky-500 border border-sky-500/20 shadow-[0_1px_2.5px_rgba(14,165,233,0.2)] hover:from-sky-500 hover:to-sky-600 hover:scale-105 transition-all cursor-pointer";
+                        "bg-gradient-to-br from-sky-400 to-sky-500 border border-sky-500/20 shadow-[0_1px_2px_rgba(14,165,233,0.15)] hover:from-sky-500 hover:to-sky-600 hover:scale-105 transition-all cursor-pointer";
                       textClass = "text-white font-bold";
                     } else {
                       cellClass = "bg-slate-50 border border-slate-100 hover:bg-slate-100";
-                      textClass = "text-slate-400 font-medium";
+                      textClass = "text-slate-400/80 font-medium";
                     }
 
                     return (
                       <span
                         key={cell.date}
                         title={`${format(parseISO(cell.date), "MMM d, yyyy")}: ${cell.status}`}
-                        className={`relative flex items-center justify-center w-full aspect-square rounded-[6px] select-none text-[9px] sm:text-[10px] ${cellClass}`}
+                        className={`relative flex items-center justify-center w-full aspect-square rounded-[3px] select-none text-[6.5px] sm:text-[7.5px] ${cellClass}`}
                       >
                         <span className={textClass}>{format(parseISO(cell.date), "d")}</span>
                       </span>
@@ -305,9 +292,7 @@ export default function AttendanceMini({ callerId, readOnly = false }: Attendanc
       )}
 
       {/* Legend */}
-      <div className={`flex items-center flex-wrap gap-x-4 gap-y-2 mt-5 pt-4 border-t border-border-subtle text-[10px] text-ink-muted font-body ${
-        readOnly ? "justify-center" : ""
-      }`}>
+      <div className="flex items-center flex-wrap gap-x-4 gap-y-2 mt-5 pt-4 border-t border-border-subtle text-[10px] text-ink-muted font-body justify-center">
         <div className="flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded bg-gradient-to-br from-emerald-400 to-emerald-500 inline-block border border-emerald-500/10 shadow-sm" /> Present
         </div>
