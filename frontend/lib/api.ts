@@ -1105,8 +1105,13 @@ export const api = {
       apiFetch<AnalyticsOverviewExtended>(`/api/v1/analytics/overview?range=${range}`),
     messaging: (channel: string = "all", range: "today" | "7d" | "30d" = "7d") =>
       apiFetch<MessagingAnalytics>(`/api/v1/analytics/messaging?channel=${channel}&range=${range}`),
-    telecallingExtended: () =>
-      apiFetch<TelecallingAnalyticsExtended>(`/api/v1/analytics/telecalling`),
+    telecallingExtended: (params?: { from?: string; to?: string }) => {
+      const qs = new URLSearchParams();
+      if (params?.from) qs.set("from", params.from);
+      if (params?.to) qs.set("to", params.to);
+      const s = qs.toString();
+      return apiFetch<TelecallingAnalyticsExtended>(`/api/v1/analytics/telecalling${s ? `?${s}` : ""}`);
+    },
     funnelExtended: () =>
       apiFetch<FunnelAnalyticsExtended>(`/api/v1/analytics/funnel`),
     templatePerformance: async () => {

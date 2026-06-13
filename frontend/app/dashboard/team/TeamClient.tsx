@@ -112,7 +112,7 @@ export function TeamClient({ fallbackTeam, fallbackCallers }: TeamClientProps) {
       <div className="mb-6 flex border-b border-border-subtle">
         <button onClick={() => setTab("performance")}
           className={`flex items-center gap-1.5 px-6 py-3 font-label font-semibold text-sm transition-all border-b-2 ${tab === "performance" ? "border-tertiary text-tertiary" : "border-transparent text-on-surface-muted hover:text-on-surface"}`}>
-          <TrendingUp size={14} /> Performance
+          <TrendingUp size={14} /> Team & Performance
         </button>
         <button onClick={() => setTab("log")}
           className={`flex items-center gap-1.5 px-6 py-3 font-label font-semibold text-sm transition-all border-b-2 ${tab === "log" ? "border-tertiary text-tertiary" : "border-transparent text-on-surface-muted hover:text-on-surface"}`}>

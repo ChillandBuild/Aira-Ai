@@ -5,8 +5,9 @@ import { toast } from "sonner";
 import {
   Phone, TrendingUp, Users, Coffee, Clock, Eye, X, Check,
   Calendar, Download, ChevronUp, ChevronDown,
-  Loader2, Search, Award, BarChart2, ShieldAlert, Trash2
+  Loader2, Search, Award, BarChart2, ShieldAlert, Trash2, Pencil
 } from "lucide-react";
+import { eachDayOfInterval, format } from "date-fns";
 import { api, Caller, CallLog, TimelineEvent, Lead, TelecallingAnalyticsExtended } from "@/lib/api";
 import TeamAttendanceGrid from "../../team/TeamAttendanceGrid";
 import { formatPhone, timeAgo, formatIST } from "@/lib/utils";
@@ -34,9 +35,25 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
   const [selectedCallerForTimeline, setSelectedCallerForTimeline] = useState<string>("");
   const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
   const [loadingTimeline, setLoadingTimeline] = useState(false);
-  const [timelineDate, setTimelineDate] = useState<string>(
+  const [timelineFrom, setTimelineFrom] = useState<string>(
     new Date().toISOString().split("T")[0]
   );
+  const [timelineTo, setTimelineTo] = useState<string>(
+    new Date().toISOString().split("T")[0]
+  );
+
+  // Overall stats date-range filter state
+  const [statsFrom, setStatsFrom] = useState<string>(
+    new Date().toISOString().split("T")[0]
+  );
+  const [statsTo, setStatsTo] = useState<string>(
+    new Date().toISOString().split("T")[0]
+  );
+
+  // Inline editing state for TeleCMI Agent ID on Live Agent Status cards
+  const [editingAgentIdFor, setEditingAgentIdFor] = useState<string | null>(null);
+  const [agentIdInputValue, setAgentIdInputValue] = useState<string>("");
+  const [savingAgentId, setSavingAgentId] = useState<string | null>(null);
 
   // QA Queue state
   const [qaQueue, setQaQueue] = useState<CallLog[]>([]);
@@ -69,7 +86,7 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
   const loadPerformanceStats = useCallback(async () => {
     setLoadingStats(true);
     try {
-      const data = await api.analytics.telecallingExtended();
+      const data = await api.analytics.telecallingExtended({ from: statsFrom, to: statsTo });
       setStats(data);
     } catch (err) {
       console.error("Failed to load telecalling extended stats:", err);
@@ -77,7 +94,7 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
     } finally {
       setLoadingStats(false);
     }
-  }, []);
+  }, [statsFrom, statsTo]);
 
   // Fetch callers
   const loadCallers = useCallback(async () => {
@@ -119,20 +136,38 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
     }
   }, []);
 
-  // Fetch timeline events for selected caller
+  // Fetch timeline events for selected caller across a date range
   const loadTimelineEvents = useCallback(async () => {
     if (!selectedCallerForTimeline) return;
     setLoadingTimeline(true);
     try {
-      const res = await api.analytics.callerTimeline(selectedCallerForTimeline, timelineDate);
-      setTimelineEvents(res.data || []);
+      let fromDate = new Date(timelineFrom);
+      let toDate = new Date(timelineTo);
+
+      // Cap the range at 31 days to avoid excessive requests
+      const maxDays = 31;
+      const dayMs = 24 * 60 * 60 * 1000;
+      if ((toDate.getTime() - fromDate.getTime()) / dayMs > maxDays - 1) {
+        fromDate = new Date(toDate.getTime() - (maxDays - 1) * dayMs);
+      }
+
+      const days = fromDate.getTime() <= toDate.getTime()
+        ? eachDayOfInterval({ start: fromDate, end: toDate })
+        : [toDate];
+
+      const results = await Promise.all(
+        days.map((d) => api.analytics.callerTimeline(selectedCallerForTimeline, format(d, "yyyy-MM-dd")))
+      );
+
+      const allEvents = results.flatMap((res) => res.data || []);
+      setTimelineEvents(allEvents);
     } catch (err) {
       console.error("Failed to load timeline events:", err);
       setTimelineEvents([]);
     } finally {
       setLoadingTimeline(false);
     }
-  }, [selectedCallerForTimeline, timelineDate]);
+  }, [selectedCallerForTimeline, timelineFrom, timelineTo]);
 
   // Load initial data
   useEffect(() => {
@@ -140,7 +175,7 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
     loadCallers();
     loadQaQueue();
     loadLeadsForAssign();
-  }, [loadPerformanceStats, loadCallers, loadQaQueue, loadLeadsForAssign]);
+  }, [loadPerformanceStats, loadCallers, loadQaQueue, loadLeadsForAssign, statsFrom, statsTo]);
 
   // Refetch timeline when selected agent or date changes
   useEffect(() => {
@@ -219,6 +254,25 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
     } catch (err) {
       console.error("Failed to remove caller:", err);
       toast.error("Failed to remove caller");
+    }
+  };
+
+  // Save edited TeleCMI Agent ID for a caller
+  const handleSaveAgentId = async (callerId: string) => {
+    setSavingAgentId(callerId);
+    try {
+      const trimmed = agentIdInputValue.trim();
+      const updated = await api.callers.update(callerId, { telecmi_agent_id: trimmed || null });
+      setCallersList(prev =>
+        prev.map(c => c.id === callerId ? { ...c, telecmi_agent_id: updated.telecmi_agent_id } : c)
+      );
+      setEditingAgentIdFor(null);
+      setAgentIdInputValue("");
+    } catch (err) {
+      console.error("Failed to update TeleCMI agent ID:", err);
+      toast.error("Failed to update TeleCMI agent ID");
+    } finally {
+      setSavingAgentId(null);
     }
   };
 
@@ -369,9 +423,27 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
     <div className="space-y-8 pb-12">
       {/* 1. Live Agent Status Strip */}
       <div className="bg-surface rounded-card p-5 shadow-card ring-1 ring-[#c4c7c7]/15">
-        <h2 className="font-display text-sm font-bold text-tertiary mb-3 flex items-center gap-2">
-          <Users size={16} className="text-primary" /> Live Agent Status
-        </h2>
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-3">
+          <h2 className="font-display text-sm font-bold text-tertiary flex items-center gap-2">
+            <Users size={16} className="text-primary" /> Live Agent Status
+          </h2>
+          <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
+            <span className="font-label text-[10px] text-slate-500 font-bold uppercase pl-1">Range:</span>
+            <input
+              type="date"
+              value={statsFrom}
+              onChange={(e) => setStatsFrom(e.target.value)}
+              className="px-2 py-1 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
+            />
+            <span className="text-slate-400 text-xs">to</span>
+            <input
+              type="date"
+              value={statsTo}
+              onChange={(e) => setStatsTo(e.target.value)}
+              className="px-2 py-1 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
+            />
+          </div>
+        </div>
         <div className="flex flex-wrap items-center gap-4 text-xs">
           <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg">
             <span className="font-bold text-slate-700">{totalAgentsCount} Total</span>
@@ -420,7 +492,56 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
                     <span className="block text-[10px] text-slate-400 font-medium">Since {timeAgo(c.status_changed_at)}</span>
                   )}
                   <span className="block text-xs text-slate-500 mt-0.5">{c.phone || "—"}</span>
-                  <span className="block text-xs text-slate-500">{c.telecmi_agent_id || "—"}</span>
+                  {editingAgentIdFor === c.id ? (
+                    <div className="flex items-center gap-1 mt-0.5" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="text"
+                        value={agentIdInputValue}
+                        onChange={(e) => setAgentIdInputValue(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        autoFocus
+                        className="w-20 px-1 py-0.5 rounded bg-white border border-slate-200 text-[11px] text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSaveAgentId(c.id);
+                        }}
+                        disabled={savingAgentId === c.id}
+                        className="p-0.5 text-emerald-600 hover:bg-emerald-50 rounded border border-emerald-200"
+                        title="Save Agent ID"
+                      >
+                        {savingAgentId === c.id ? <Loader2 className="animate-spin" size={10} /> : <Check size={10} />}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingAgentIdFor(null);
+                          setAgentIdInputValue("");
+                        }}
+                        disabled={savingAgentId === c.id}
+                        className="p-0.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded border border-slate-200"
+                        title="Cancel"
+                      >
+                        <X size={10} />
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="flex items-center gap-1 text-xs text-slate-500">
+                      {c.telecmi_agent_id || "—"}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingAgentIdFor(c.id);
+                          setAgentIdInputValue(c.telecmi_agent_id || "");
+                        }}
+                        className="p-0.5 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded"
+                        title="Edit TeleCMI Agent ID"
+                      >
+                        <Pencil size={9} />
+                      </button>
+                    </span>
+                  )}
                 </div>
                 <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold shrink-0 ${statusColor}`}>
                   {st === "logged_out" ? "Offline" : st}
@@ -677,7 +798,7 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
             <p className="font-label text-xs text-on-surface-muted">Analyze live calling activity blocks, status transitions, and gaps.</p>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <select
               value={selectedCallerForTimeline}
               onChange={(e) => setSelectedCallerForTimeline(e.target.value)}
@@ -685,12 +806,22 @@ export default function PerformanceView({ callers }: { callers: Caller[] }) {
             >
               {callersList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
-            <input 
-              type="date"
-              value={timelineDate}
-              onChange={(e) => setTimelineDate(e.target.value)}
-              className="px-2 py-1.5 rounded-xl bg-white border border-slate-250 font-body text-xs focus:outline-none"
-            />
+            <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
+              <span className="font-label text-[10px] text-slate-500 font-bold uppercase pl-1">From</span>
+              <input
+                type="date"
+                value={timelineFrom}
+                onChange={(e) => setTimelineFrom(e.target.value)}
+                className="px-2 py-1 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
+              />
+              <span className="text-slate-400 text-xs">to</span>
+              <input
+                type="date"
+                value={timelineTo}
+                onChange={(e) => setTimelineTo(e.target.value)}
+                className="px-2 py-1 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
+              />
+            </div>
           </div>
         </div>
 

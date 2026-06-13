@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { format, parseISO, startOfMonth } from "date-fns";
-import { Loader2, CalendarCheck, UserCheck, UserX, Percent, CheckCircle2, XCircle } from "lucide-react";
+import { Loader2, CalendarCheck, UserCheck, UserX, Percent, CheckCircle2, XCircle, Download } from "lucide-react";
 import { api, TeamAttendanceGridData } from "@/lib/api";
 import { dotColorClass, WEEKDAY_LABELS, buildMiniMonths } from "./helpers";
 
@@ -14,9 +14,9 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
   const today = format(new Date(), "yyyy-MM-dd");
   const [from, setFrom] = useState(() => format(startOfMonth(new Date()), "yyyy-MM-dd"));
   const [to, setTo] = useState(() => format(new Date(), "yyyy-MM-dd"));
-  const [callerFilter, setCallerFilter] = useState<string>("all");
   const [data, setData] = useState<TeamAttendanceGridData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
 
   const [sixMonthDays, setSixMonthDays] = useState<{ date: string; status: string }[]>([]);
   const [sixMonthLoading, setSixMonthLoading] = useState(true);
@@ -46,16 +46,14 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
   const rows = useMemo(() => {
     if (!data) return [];
     if (selectedCallerId) return data.callers.filter((c) => c.caller_id === selectedCallerId);
-    if (callerFilter === "all") return data.callers;
-    return data.callers.filter((c) => c.caller_id === callerFilter);
-  }, [data, callerFilter, selectedCallerId]);
+    return data.callers;
+  }, [data, selectedCallerId]);
 
   // Resolve which caller's 6-month calendar to show
   const sixMonthCallerId = useMemo(() => {
     if (selectedCallerId) return selectedCallerId;
-    if (callerFilter !== "all") return callerFilter;
     return data?.callers[0]?.caller_id ?? null;
-  }, [callerFilter, data, selectedCallerId]);
+  }, [data, selectedCallerId]);
 
   const fetchSixMonth = useCallback(() => {
     if (!sixMonthCallerId) {
@@ -117,6 +115,43 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
     }
   };
 
+  const handleExportCsv = () => {
+    if (!data) return;
+    setExporting(true);
+    try {
+      let csv: string;
+      let filename: string;
+
+      if (selectedCallerId) {
+        const callerGrid = data.grid[selectedCallerId] ?? {};
+        const rowsCsv = data.days.map((d) => `${d},${callerGrid[d] ?? "future"}`);
+        csv = ["Date,Status", ...rowsCsv].join("\n");
+        const safeName = (selectedCallerName ?? "telecaller").replace(/[^a-zA-Z0-9]/g, "_");
+        filename = `attendance_${safeName}_${from}_to_${to}.csv`;
+      } else {
+        const header = `Caller,${data.days.join(",")}`;
+        const rowsCsv = data.callers.map((c) => {
+          const statuses = data.days.map((d) => data.grid[c.caller_id]?.[d] ?? "future");
+          return `${c.name},${statuses.join(",")}`;
+        });
+        csv = [header, ...rowsCsv].join("\n");
+        filename = `team_attendance_${from}_to_${to}.csv`;
+      }
+
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="bg-surface rounded-card p-5 shadow-card ring-1 ring-[#c4c7c7]/15">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
@@ -125,13 +160,13 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
         </h2>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
-            <span className="font-label text-[10px] text-slate-500 font-bold uppercase pl-1">Range:</span>
+            <span className="font-label text-[10px] text-slate-500 font-bold uppercase pl-1">Export Attendance:</span>
             <input
               type="date"
               value={from}
               max={to}
               onChange={(e) => setFrom(e.target.value)}
-              className="px-2 py-1 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 h-9 focus:outline-none"
+              className="px-2 py-1 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
             />
             <span className="text-slate-400 text-xs">to</span>
             <input
@@ -140,25 +175,21 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
               min={from}
               max={today}
               onChange={(e) => setTo(e.target.value)}
-              className="px-2 py-1 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 h-9 focus:outline-none"
+              className="px-2 py-1 rounded bg-white border border-slate-200 font-body text-xs text-slate-800 focus:outline-none"
             />
+            <button
+              onClick={handleExportCsv}
+              disabled={exporting || !data}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-lg hover:bg-primary/95 disabled:opacity-50 font-label text-xs font-semibold transition-colors"
+            >
+              {exporting ? <Loader2 className="animate-spin" size={12} /> : <Download size={12} />} CSV
+            </button>
           </div>
 
-          {selectedCallerId ? (
+          {selectedCallerId && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 text-primary font-label text-[11px] font-bold">
               Showing: {selectedCallerName ?? "Telecaller"}
             </span>
-          ) : (
-            <select
-              value={callerFilter}
-              onChange={(e) => setCallerFilter(e.target.value)}
-              className="input h-9 text-xs w-auto"
-            >
-              <option value="all">All Telecallers</option>
-              {(data?.callers ?? []).map((c) => (
-                <option key={c.caller_id} value={c.caller_id}>{c.name}</option>
-              ))}
-            </select>
           )}
         </div>
       </div>
@@ -261,9 +292,9 @@ export default function TeamAttendanceGrid({ selectedCallerId, selectedCallerNam
         <div className="mt-5 pt-4 border-t border-border-subtle">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h3 className="font-display text-xs font-bold text-tertiary">6-Month Overview</h3>
-            {!selectedCallerId && callerFilter === "all" && sixMonthCallerName && (
+            {!selectedCallerId && sixMonthCallerName && (
               <p className="text-[10px] text-ink-muted font-body">
-                Showing 6-month attendance for {sixMonthCallerName} — select a telecaller above to view another.
+                Showing 6-month attendance for {sixMonthCallerName}.
               </p>
             )}
           </div>

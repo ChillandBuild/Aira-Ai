@@ -6,7 +6,7 @@ import csv
 import io
 import logging
 import statistics
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, HTTPException
@@ -107,23 +107,40 @@ async def template_performance(tenant_id: str = Depends(get_owner_tenant_id)):
 
 
 @router.get("/telecalling")
-async def telecalling_analytics(tenant_id: str = Depends(get_owner_tenant_id)):
+async def telecalling_analytics(
+    from_date: str | None = Query(None, alias="from"),
+    to_date: str | None = Query(None, alias="to"),
+    tenant_id: str = Depends(get_owner_tenant_id),
+):
     db = get_supabase()
-    
+
     # Day bounds must use UTC midnight
     now = datetime.now(timezone.utc)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_start_iso = today_start.isoformat()
     week = _week_start()
 
-    logs_today_res = (
+    # Reporting window: defaults to "today" when no from/to given.
+    if from_date and to_date:
+        try:
+            range_start = datetime.combine(date.fromisoformat(from_date), datetime.min.time()).replace(tzinfo=timezone.utc)
+            range_end_exclusive = datetime.combine(date.fromisoformat(to_date), datetime.min.time()).replace(tzinfo=timezone.utc) + timedelta(days=1)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="from/to must be in YYYY-MM-DD format")
+    else:
+        range_start = today_start
+        range_end_exclusive = None
+    range_start_iso = range_start.isoformat()
+    range_end_for_clip = min(range_end_exclusive, now) if range_end_exclusive else now
+
+    logs_today_query = (
         db.table("call_logs")
         .select("id,duration_seconds,outcome,caller_id,created_at,evaluation,lead_id,leads(created_at,assigned_at)")
         .eq("tenant_id", tenant_id)
-        .gte("created_at", today_start_iso)
-        .execute()
-        .data or []
+        .gte("created_at", range_start_iso)
     )
+    if range_end_exclusive:
+        logs_today_query = logs_today_query.lt("created_at", range_end_exclusive.isoformat())
+    logs_today_res = logs_today_query.execute().data or []
 
     logs_week_res = (
         db.table("call_logs")
@@ -141,15 +158,16 @@ async def telecalling_analytics(tenant_id: str = Depends(get_owner_tenant_id)):
         .execute()
         .data or []
     )
-    
-    status_logs_today = (
+
+    status_logs_query = (
         db.table("caller_status_logs")
         .select("id,caller_id,status,started_at,ended_at")
         .eq("tenant_id", tenant_id)
-        .gte("started_at", today_start_iso)
-        .execute()
-        .data or []
+        .gte("started_at", range_start_iso)
     )
+    if range_end_exclusive:
+        status_logs_query = status_logs_query.lt("started_at", range_end_exclusive.isoformat())
+    status_logs_today = status_logs_query.execute().data or []
 
     calls_today = len(logs_today_res)
     calls_this_week = len(logs_week_res)
@@ -260,9 +278,9 @@ async def telecalling_analytics(tenant_id: str = Depends(get_owner_tenant_id)):
         c_active_intervals = []
         for log in c_status_logs:
             s_time = datetime.fromisoformat(log["started_at"].replace("Z", "+00:00"))
-            s_time = max(s_time, today_start)
-            e_time = datetime.fromisoformat(log["ended_at"].replace("Z", "+00:00")) if log.get("ended_at") else now
-            e_time = max(e_time, today_start)
+            s_time = max(s_time, range_start)
+            e_time = datetime.fromisoformat(log["ended_at"].replace("Z", "+00:00")) if log.get("ended_at") else range_end_for_clip
+            e_time = max(e_time, range_start)
             if s_time < e_time and log["status"] == "active":
                 c_active_intervals.append((s_time, e_time))
 
@@ -314,7 +332,7 @@ async def telecalling_analytics(tenant_id: str = Depends(get_owner_tenant_id)):
                     if gap > 0:
                         c_gaps.append(gap)
                 last_call_end = datetime.fromisoformat(sorted_calls[-1]["created_at"].replace("Z", "+00:00")) + timedelta(seconds=sorted_calls[-1].get("duration_seconds") or 0)
-                gap_after = get_active_overlap(last_call_end, now)
+                gap_after = get_active_overlap(last_call_end, range_end_for_clip)
                 if gap_after > 0:
                     c_gaps.append(gap_after)
             else:
