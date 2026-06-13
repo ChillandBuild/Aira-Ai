@@ -1,5 +1,18 @@
 import useSWR, { SWRConfiguration } from "swr";
-import { api, AnalyticsOverview, Caller, Lead } from "@/lib/api";
+import {
+  api,
+  AnalyticsOverview,
+  Caller,
+  Lead,
+  TeamMember,
+  CallerStats,
+  CallLog,
+  NoteWithLead,
+  InboundLead,
+} from "@/lib/api";
+
+import { fetchNotes } from "@/app/dashboard/telecalling/lib/notes-api";
+import type { NotesResponse } from "@/app/dashboard/telecalling/types";
 
 // Shared SWR defaults: cache + revalidate on focus/reconnect, dedupe bursts.
 // No global polling — pages opt in via refreshInterval where freshness matters.
@@ -44,3 +57,137 @@ export function useAdminDashboard(fallbackData?: AdminDashboardData) {
     { ...defaultConfig, refreshInterval: 30_000, fallbackData },
   );
 }
+
+export function useLeads(
+  params: {
+    segment?: string;
+    limit?: number;
+    skip?: number;
+    assigned_to?: string;
+    source_filter?: string;
+    broadcast_id?: string;
+    ad_campaign_id?: string;
+  },
+  enabled = true,
+  fallbackData?: Lead[],
+) {
+  const key = enabled ? `leads:${JSON.stringify(params)}` : null;
+  return useSWR<Lead[]>(
+    key,
+    () => api.leads.list(params),
+    { ...defaultConfig, fallbackData },
+  );
+}
+
+export function useTeamList(enabled = true, fallbackData?: { data: TeamMember[] }) {
+  return useSWR<{ data: TeamMember[] }>(
+    enabled ? "team/list" : null,
+    () => api.team.list(),
+    { ...defaultConfig, fallbackData },
+  );
+}
+
+export function useCallers(enabled = true, fallbackData?: Caller[]) {
+  return useSWR<Caller[]>(
+    enabled ? "callers/list" : null,
+    () => api.callers.list(),
+    { ...defaultConfig, fallbackData },
+  );
+}
+
+export function useMyStats(enabled = true, fallbackData?: CallerStats) {
+  return useSWR<CallerStats>(
+    enabled ? "callers/my-stats" : null,
+    () => api.callers.myStats(),
+    { ...defaultConfig, fallbackData },
+  );
+}
+
+export function useMyPerformance(enabled = true, fallbackData?: { target: number; achieved: number }) {
+  return useSWR<{ target: number; achieved: number }>(
+    enabled ? "callers/my-performance" : null,
+    () => api.callers.myPerformance(),
+    { ...defaultConfig, fallbackData },
+  );
+}
+
+export function useCallerLogs(callerId: string | null, enabled = true, fallbackData?: CallLog[]) {
+  return useSWR<CallLog[]>(
+    enabled && callerId ? `callers/${callerId}/logs` : null,
+    () => api.callers.logs(callerId!),
+    { ...defaultConfig, fallbackData },
+  );
+}
+
+export function useLeadsWithActivity(enabled = true, fallbackData?: { data: Lead[] }) {
+  return useSWR<{ data: Lead[] }>(
+    enabled ? "notes/leads-with-activity" : null,
+    async () => {
+      try {
+        // leadsWithActivity returns a partial Lead shape; the notes UI treats
+        // these rows as Leads (id/name/phone/segment/score/created_at).
+        return (await api.notes.leadsWithActivity()) as unknown as { data: Lead[] };
+      } catch {
+        const [a, b, c, d] = await Promise.all([
+          api.leads.list({ segment: "A", limit: 50 }).catch(() => []),
+          api.leads.list({ segment: "B", limit: 50 }).catch(() => []),
+          api.leads.list({ segment: "C", limit: 50 }).catch(() => []),
+          api.leads.list({ segment: "D", limit: 50 }).catch(() => []),
+        ]);
+        return { data: [...a, ...b, ...c, ...d] };
+      }
+    },
+    { ...defaultConfig, fallbackData },
+  );
+}
+
+export function useInboundLeads(
+  params: {
+    origin?: string;
+    segment?: string;
+    ad_campaign_id?: string;
+    source?: string;
+    date_from?: string;
+    date_to?: string;
+    page?: number;
+    limit?: number;
+  },
+  enabled = true,
+  fallbackData?: { data: InboundLead[]; total: number; page: number; limit: number },
+) {
+  const key = enabled ? `inbound-leads:${JSON.stringify(params)}` : null;
+  return useSWR<{ data: InboundLead[]; total: number; page: number; limit: number }>(
+    key,
+    () => api.inboundLeads.list(params),
+    { ...defaultConfig, fallbackData },
+  );
+}
+
+export function useInboundCampaigns(
+  enabled = true,
+  fallbackData?: { id: string; campaign_name: string; platform: string }[],
+) {
+  return useSWR<{ id: string; campaign_name: string; platform: string }[]>(
+    enabled ? "inbound-leads/campaigns" : null,
+    () => api.inboundLeads.campaigns(),
+    { ...defaultConfig, fallbackData },
+  );
+}
+
+export function useNotes(leadId: string | null, enabled = true, fallbackData?: NotesResponse) {
+  return useSWR<NotesResponse>(
+    enabled && leadId ? `notes/${leadId}` : null,
+    () => fetchNotes(leadId!),
+    { ...defaultConfig, fallbackData },
+  );
+}
+
+export function useAllNotes(enabled = true, fallbackData?: { data: NoteWithLead[] }) {
+  return useSWR<{ data: NoteWithLead[] }>(
+    enabled ? "notes/all" : null,
+    () => api.notes.all(),
+    { ...defaultConfig, fallbackData },
+  );
+}
+
+
